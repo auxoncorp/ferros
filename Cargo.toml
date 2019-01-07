@@ -1,0 +1,27 @@
+[package]
+name = "lyft-fel4-ados"
+version = "0.1.0"
+authors = ["Russell Mull <russell@auxon.io>"]
+edition = "2015"
+
+[dependencies]
+# NOTE: We use a git dependency directly since the git submodules
+# don't currently work when pulled down from crates.io
+# libsel4-sys = "0.5"
+libsel4-sys = { git = "ssh://git@github.com/auxoncorp/libsel4-sys.git", branch = "add-greyhound2-platform-support" }
+
+[dependencies.wee_alloc]
+version = "0.4"
+features = ["static_array_backend"]
+optional = true
+
+[dependencies.proptest]
+version = "0.8.6"
+default-features = false
+features = ["alloc", "nightly"]
+optional = true
+
+[features]
+default = []
+alloc = ["wee_alloc"]
+test = ["alloc", "proptest"]
