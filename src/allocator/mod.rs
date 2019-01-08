@@ -1,6 +1,7 @@
 /// A Rust port of libsel4twinkle allocator.
 ///
 /// https://github.com/smaccm/libsel4twinkle
+use arrayvec::ArrayVec;
 use sel4_sys::{seL4_CPtr, seL4_Word};
 
 mod allocator;
@@ -15,7 +16,7 @@ pub const MIN_UNTYPED_SIZE: usize = 4;
 pub const MAX_UNTYPED_SIZE: usize = 32;
 
 // TODO - pull from configs
-pub const MAX_UNTYPED_ITEMS: usize = 256;
+pub const MAX_INIT_UNTYPED_ITEMS: usize = 256;
 
 pub const VKA_NO_PADDR: seL4_Word = 0;
 
@@ -25,6 +26,8 @@ const VSPACE_START: seL4_Word = 0x1000_0000;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     ResourceExhausted,
+    InvalidBootInfoCapability,
+    UntypedSizeOutOfRange,
     Other,
 }
 
@@ -34,6 +37,28 @@ pub struct UntypedItem {
     size_bits: usize,
     paddr: seL4_Word,
     is_device: bool,
+}
+
+impl UntypedItem {
+    pub fn new(
+        cap: seL4_CPtr,
+        size_bits: usize,
+        paddr: seL4_Word,
+        is_device: bool,
+    ) -> Result<UntypedItem, Error> {
+        if cap == 0 {
+            Err(Error::InvalidBootInfoCapability)
+        } else if size_bits < MIN_UNTYPED_SIZE || size_bits > MAX_UNTYPED_SIZE {
+            Err(Error::UntypedSizeOutOfRange)
+        } else {
+            Ok(UntypedItem {
+                cap,
+                size_bits,
+                paddr,
+                is_device,
+            })
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -66,9 +91,12 @@ pub struct Allocator {
     num_slots_used: usize,
 
     /// Initial memory items
-    num_init_untyped_items: usize,
-    init_untyped_items: [InitUntypedItem; MAX_UNTYPED_ITEMS],
+    init_untyped_items: ArrayVec<[InitUntypedItem; MAX_INIT_UNTYPED_ITEMS]>,
 
-    /// Untyped memory items we have created
+    /// Untyped memory items we have created.
+    ///
+    /// The index into this array is the bit capacity of the item (minus the min
+    /// size). Stored at that index is the capRange for untyped regions of that
+    /// size.
     untyped_items: [CapRange; (MAX_UNTYPED_SIZE - MIN_UNTYPED_SIZE) + 1],
 }

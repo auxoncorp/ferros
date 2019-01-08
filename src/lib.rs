@@ -7,6 +7,8 @@ extern crate alloc;
 
 extern crate sel4_sys;
 
+extern crate arrayvec;
+
 pub mod allocator;
 
 #[cfg(all(feature = "test"))]

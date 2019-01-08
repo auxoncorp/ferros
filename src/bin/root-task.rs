@@ -169,7 +169,8 @@ static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
 
 fn main() {
     let bootinfo = unsafe { &*BOOTINFO };
-    let mut allocator = iron_pegasus::allocator::Allocator::bootstrap(&bootinfo);
+    let mut allocator = iron_pegasus::allocator::Allocator::bootstrap(&bootinfo)
+        .expect("Failed to create bootstrap allocator");
 
     let untyped = allocator
         .alloc_untyped(seL4_TCBBits as usize, None, false)
