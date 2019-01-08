@@ -171,13 +171,10 @@ impl Allocator {
         item_size: usize,
         num_items: usize,
     ) -> Result<CapRange, Error> {
-        let mut result = CapRange { first: 0, count: 0 };
 
         // Determine the maximum number of items we have space in our CNode for
         let max_objects = self.cslots.count - self.num_slots_used;
         if num_items > max_objects {
-            result.count = 0;
-            result.first = 0;
             return Err(Error::ResourceExhausted);
         }
 
@@ -198,9 +195,10 @@ impl Allocator {
             return Err(Error::Other);
         }
 
-        // Save the allocation
-        result.count = num_items;
-        result.first = self.cslots.first + self.num_slots_used + self.root_cnode_offset as usize;
+        let result = CapRange {
+            first: self.cslots.first + self.num_slots_used + self.root_cnode_offset as usize,
+            count: num_items,
+        };
 
         // Record these slots as used
         self.num_slots_used += num_items;
