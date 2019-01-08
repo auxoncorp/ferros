@@ -182,24 +182,16 @@ fn main() {
     let bootinfo = unsafe { &*BOOTINFO };
     let mut allocator = lyft_fel4_ados::allocator::Allocator::bootstrap(&bootinfo);
 
+    let untyped = allocator.alloc_untyped(seL4_TCBBits as usize, None, false).unwrap();
+    let tcb_cap = allocator.retype_untyped_memory(untyped,
+                                                  api_object_seL4_TCBObject,
+                                                  seL4_TCBBits as usize,
+                                                  1)
+        .expect("Failed to retype untyped memory")
+        .first as u32;
+
     let cspace_cap = seL4_CapInitThreadCNode;
     let pd_cap = seL4_CapInitThreadVSpace;
-    let tcb_cap = bootinfo.empty.start;
-    let untyped = allocator.alloc_untyped(seL4_TCBBits as usize, None, false).unwrap();
-    let retype_err: seL4_Error = unsafe {
-        seL4_Untyped_Retype(
-            untyped,
-            api_object_seL4_TCBObject.into(),
-            seL4_TCBBits.into(),
-            cspace_cap.into(),
-            cspace_cap.into(),
-            seL4_WordBits.into(),
-            tcb_cap,
-            1,
-        )
-    };
-
-    assert!(retype_err == 0, "Failed to retype untyped memory");
 
     let tcb_err: seL4_Error = unsafe {
         seL4_TCB_Configure(

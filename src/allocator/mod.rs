@@ -39,8 +39,8 @@ pub struct UntypedItem {
 
 #[derive(Copy, Clone, Debug)]
 pub struct CapRange {
-    first: usize,
-    count: usize,
+    pub first: usize,
+    pub count: usize,
 }
 
 #[derive(Copy, Clone, Debug)]
