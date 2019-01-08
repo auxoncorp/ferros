@@ -6,20 +6,19 @@
 #![feature(global_asm)]
 #![feature(panic_info_message)]
 
-
+#[cfg(feature = "alloc")]
+extern crate alloc;
+extern crate lyft_fel4_ados;
+#[cfg(all(feature = "test", feature = "alloc"))]
+extern crate proptest;
 extern crate sel4_sys;
 #[cfg(feature = "alloc")]
 extern crate wee_alloc;
-#[cfg(feature = "alloc")]
-extern crate alloc;
-#[cfg(all(feature = "test", feature = "alloc"))]
-extern crate proptest;
-extern crate lyft_fel4_ados;
 
 use core::alloc::Layout;
 use core::intrinsics;
-use core::panic::PanicInfo;
 use core::mem;
+use core::panic::PanicInfo;
 use sel4_sys::*;
 
 #[cfg(feature = "alloc")]
@@ -30,56 +29,53 @@ static ALLOCATOR: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 #[allow(dead_code)]
 #[allow(non_upper_case_globals)]
 pub mod sel4_config {
-    pub const KernelDebugBuild:bool = true;
-    pub const KernelTimerTickMS:&'static str = "2";
-    pub const KernelArmExportPMUUser:bool = false;
-    pub const BuildWithCommonSimulationSettings:bool = true;
-    pub const HardwareDebugAPI:bool = false;
-    pub const KernelDebugDisableL2Cache:bool = false;
-    pub const LibSel4FunctionAttributes:&'static str = "public";
-    pub const KernelMaxNumNodes:&'static str = "1";
-    pub const KernelFPUMaxRestoresSinceSwitch:&'static str = "64";
-    pub const KernelStackBits:&'static str = "12";
-    pub const KernelBenchmarks:&'static str = "none";
-    pub const KernelColourPrinting:bool = true;
-    pub const ElfloaderMode:&'static str = "secure supervisor";
-    pub const KernelNumPriorities:&'static str = "256";
-    pub const LinkPageSize:&'static str = "4096";
-    pub const KernelVerificationBuild:bool = false;
-    pub const LibSel4DebugFunctionInstrumentation:&'static str = "none";
-    pub const UserLinkerGCSections:bool = false;
-    pub const KernelIPCBufferLocation:&'static str = "threadID_register";
-    pub const KernelRootCNodeSizeBits:&'static str = "19";
-    pub const KernelFWholeProgram:bool = false;
-    pub const ElfloaderErrata764369:bool = true;
-    pub const KernelMaxNumBootinfoUntypedCaps:&'static str = "230";
-    pub const KernelARMPlatform:&'static str = "sabre";
-    pub const KernelPrinting:bool = true;
-    pub const KernelDebugDisableBranchPrediction:bool = false;
-    pub const KernelUserStackTraceLength:&'static str = "16";
-    pub const KernelAArch32FPUEnableContextSwitch:bool = true;
-    pub const KernelArmEnableA9Prefetcher:bool = false;
-    pub const KernelArch:&'static str = "arm";
-    pub const ElfloaderImage:&'static str = "elf";
-    pub const KernelRetypeFanOutLimit:&'static str = "256";
-    pub const LibSel4DebugAllocBufferEntries:&'static str = "0";
-    pub const KernelTimeSlice:&'static str = "5";
-    pub const KernelFastpath:bool = true;
-    pub const KernelArmSel4Arch:&'static str = "aarch32";
-    pub const KernelResetChunkBits:&'static str = "8";
-    pub const KernelNumDomains:&'static str = "1";
-    pub const KernelMaxNumWorkUnitsPerPreemption:&'static str = "100";
-    pub const KernelOptimisation:&'static str = "-O2";
+    pub const KernelDebugBuild: bool = true;
+    pub const KernelTimerTickMS: &'static str = "2";
+    pub const KernelArmExportPMUUser: bool = false;
+    pub const BuildWithCommonSimulationSettings: bool = true;
+    pub const HardwareDebugAPI: bool = false;
+    pub const KernelDebugDisableL2Cache: bool = false;
+    pub const LibSel4FunctionAttributes: &'static str = "public";
+    pub const KernelMaxNumNodes: &'static str = "1";
+    pub const KernelFPUMaxRestoresSinceSwitch: &'static str = "64";
+    pub const KernelStackBits: &'static str = "12";
+    pub const KernelBenchmarks: &'static str = "none";
+    pub const KernelColourPrinting: bool = true;
+    pub const ElfloaderMode: &'static str = "secure supervisor";
+    pub const KernelNumPriorities: &'static str = "256";
+    pub const LinkPageSize: &'static str = "4096";
+    pub const KernelVerificationBuild: bool = false;
+    pub const LibSel4DebugFunctionInstrumentation: &'static str = "none";
+    pub const UserLinkerGCSections: bool = false;
+    pub const KernelIPCBufferLocation: &'static str = "threadID_register";
+    pub const KernelRootCNodeSizeBits: &'static str = "19";
+    pub const KernelFWholeProgram: bool = false;
+    pub const ElfloaderErrata764369: bool = true;
+    pub const KernelMaxNumBootinfoUntypedCaps: &'static str = "230";
+    pub const KernelARMPlatform: &'static str = "sabre";
+    pub const KernelPrinting: bool = true;
+    pub const KernelDebugDisableBranchPrediction: bool = false;
+    pub const KernelUserStackTraceLength: &'static str = "16";
+    pub const KernelAArch32FPUEnableContextSwitch: bool = true;
+    pub const KernelArmEnableA9Prefetcher: bool = false;
+    pub const KernelArch: &'static str = "arm";
+    pub const ElfloaderImage: &'static str = "elf";
+    pub const KernelRetypeFanOutLimit: &'static str = "256";
+    pub const LibSel4DebugAllocBufferEntries: &'static str = "0";
+    pub const KernelTimeSlice: &'static str = "5";
+    pub const KernelFastpath: bool = true;
+    pub const KernelArmSel4Arch: &'static str = "aarch32";
+    pub const KernelResetChunkBits: &'static str = "8";
+    pub const KernelNumDomains: &'static str = "1";
+    pub const KernelMaxNumWorkUnitsPerPreemption: &'static str = "100";
+    pub const KernelOptimisation: &'static str = "-O2";
 }
-
 
 pub static mut BOOTINFO: *mut seL4_BootInfo = (0 as *mut seL4_BootInfo);
 static mut RUN_ONCE: bool = false;
 
 #[no_mangle]
-pub unsafe extern "C" fn __sel4_start_init_boot_info(
-    bootinfo: *mut seL4_BootInfo,
-) {
+pub unsafe extern "C" fn __sel4_start_init_boot_info(bootinfo: *mut seL4_BootInfo) {
     if !RUN_ONCE {
         BOOTINFO = bootinfo;
         RUN_ONCE = true;
@@ -122,10 +118,7 @@ fn panic(info: &PanicInfo) -> ! {
                 loc.line()
             );
         } else {
-            let _ = write!(
-                sel4_sys::DebugOutHandle,
-                "panic: "
-            );
+            let _ = write!(sel4_sys::DebugOutHandle, "panic: ");
         }
 
         if let Some(fmt) = info.message() {
@@ -168,25 +161,21 @@ pub extern "C" fn oom(_layout: Layout) -> ! {
             "----- aborting from out-of-memory -----\n"
         );
     }
-    unsafe {
-        core::intrinsics::abort()
-    }
+    unsafe { core::intrinsics::abort() }
 }
 
 const CHILD_STACK_SIZE: usize = 4096;
-static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] =
-    &[0; CHILD_STACK_SIZE];
-
+static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
 
 fn main() {
     let bootinfo = unsafe { &*BOOTINFO };
     let mut allocator = lyft_fel4_ados::allocator::Allocator::bootstrap(&bootinfo);
 
-    let untyped = allocator.alloc_untyped(seL4_TCBBits as usize, None, false).unwrap();
-    let tcb_cap = allocator.retype_untyped_memory(untyped,
-                                                  api_object_seL4_TCBObject,
-                                                  seL4_TCBBits as usize,
-                                                  1)
+    let untyped = allocator
+        .alloc_untyped(seL4_TCBBits as usize, None, false)
+        .unwrap();
+    let tcb_cap = allocator
+        .retype_untyped_memory(untyped, api_object_seL4_TCBObject, seL4_TCBBits as usize, 1)
         .expect("Failed to retype untyped memory")
         .first as u32;
 
@@ -212,16 +201,17 @@ fn main() {
     let stack_top = stack_base + CHILD_STACK_SIZE;
     let mut regs: seL4_UserContext = unsafe { mem::zeroed() };
     #[cfg(feature = "test")]
-    { regs.pc = lyft_fel4_ados::fel4_test::run as seL4_Word; }
+    {
+        regs.pc = lyft_fel4_ados::fel4_test::run as seL4_Word;
+    }
     #[cfg(not(feature = "test"))]
-    { regs.pc = lyft_fel4_ados::run as seL4_Word; }
+    {
+        regs.pc = lyft_fel4_ados::run as seL4_Word;
+    }
     regs.sp = stack_top as seL4_Word;
 
-    let _: u32 =
-        unsafe { seL4_TCB_WriteRegisters(tcb_cap, 0, 0, 2, &mut regs) };
-    let _: u32 = unsafe {
-        seL4_TCB_SetPriority(tcb_cap, seL4_CapInitThreadTCB.into(), 255)
-    };
+    let _: u32 = unsafe { seL4_TCB_WriteRegisters(tcb_cap, 0, 0, 2, &mut regs) };
+    let _: u32 = unsafe { seL4_TCB_SetPriority(tcb_cap, seL4_CapInitThreadTCB.into(), 255) };
     let _: u32 = unsafe { seL4_TCB_Resume(tcb_cap) };
     loop {
         unsafe {
@@ -229,8 +219,9 @@ fn main() {
         }
     }
 }
-        
-global_asm!(r###"/* Copyright (c) 2015 The Robigalia Project Developers
+
+global_asm!(
+    r###"/* Copyright (c) 2015 The Robigalia Project Developers
  * Licensed under the Apache License, Version 2.0
  * <LICENSE-APACHE or
  * http://www.apache.org/licenses/LICENSE-2.0> or the MIT
@@ -264,5 +255,5 @@ _sel4_start:
 _stack_bottom:
     .space  65536
 _stack_top:
-"###);
-
+"###
+);

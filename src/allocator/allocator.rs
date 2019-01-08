@@ -2,12 +2,9 @@ use super::{
     Allocator, CapRange, Error, UntypedItem, MAX_UNTYPED_ITEMS, MAX_UNTYPED_SIZE, MIN_UNTYPED_SIZE,
 };
 use sel4_sys::{
-    api_object_seL4_UntypedObject, seL4_CPtr, seL4_CapInitThreadCNode, seL4_Untyped_Retype,
-    seL4_Word,
-    seL4_BootInfo, seL4_WordBits
+    api_object_seL4_UntypedObject, seL4_BootInfo, seL4_CPtr, seL4_CapInitThreadCNode,
+    seL4_Untyped_Retype, seL4_Word, seL4_WordBits,
 };
-
-
 
 impl Allocator {
     /// Initialise an allocator object.
@@ -28,8 +25,7 @@ impl Allocator {
         first_slot: usize,
         num_slots: usize,
         items: &[UntypedItem],
-    ) -> Allocator
-    {
+    ) -> Allocator {
         assert!(items.len() < MAX_UNTYPED_ITEMS);
 
         // Setup CNode information
@@ -50,24 +46,18 @@ impl Allocator {
             num_slots_used: 0,
 
             num_init_untyped_items: 0,
-            init_untyped_items: [
-                super::InitUntypedItem {
-                    item: UntypedItem {
-                        cap: 0,
-                        size_bits: 0,
-                        paddr: 0,
-                        is_device: false
-                    },
-                    is_free: false
-                }; MAX_UNTYPED_ITEMS
-            ],
+            init_untyped_items: [super::InitUntypedItem {
+                item: UntypedItem {
+                    cap: 0,
+                    size_bits: 0,
+                    paddr: 0,
+                    is_device: false,
+                },
+                is_free: false,
+            }; MAX_UNTYPED_ITEMS],
 
-            untyped_items: [
-                CapRange {
-                    first: 0,
-                    count: 0,
-                }; (MAX_UNTYPED_SIZE - MIN_UNTYPED_SIZE) + 1
-            ]
+            untyped_items: [CapRange { first: 0, count: 0 };
+                (MAX_UNTYPED_SIZE - MIN_UNTYPED_SIZE) + 1],
         };
 
         // Copy untyped items
@@ -82,7 +72,6 @@ impl Allocator {
 
         allocator
     }
-
 
     /// Create an object allocator managing the root CNode's free slots.
     pub fn bootstrap(bootinfo: &'static seL4_BootInfo) -> Allocator {
@@ -171,7 +160,6 @@ impl Allocator {
         item_size: usize,
         num_items: usize,
     ) -> Result<CapRange, Error> {
-
         // Determine the maximum number of items we have space in our CNode for
         let max_objects = self.cslots.count - self.num_slots_used;
         if num_items > max_objects {

@@ -1,6 +1,6 @@
+use super::cspacepath::CSpacePath;
 /// TODO - need a proper VKA abstration and implementation
 use super::{Allocator, Error};
-use super::cspacepath::CSpacePath;
 use sel4_sys::*;
 
 impl Allocator {

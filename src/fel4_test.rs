@@ -34,14 +34,15 @@ pub fn run() {
             "test_cap_rights_predictability",
             test_cap_rights_predictability(&mut runner),
         ),
-    ].iter()
-        {
-            if *found_success {
-                num_passed += 1;
-            } else {
-                num_failed += 1;
-            }
+    ]
+    .iter()
+    {
+        if *found_success {
+            num_passed += 1;
+        } else {
+            num_failed += 1;
         }
+    }
     debug_println!(
         "test result: {}. {} passed; {} failed\n\n",
         if num_failed == 0 { "ok" } else { "FAILED" },
@@ -58,7 +59,12 @@ fn test_message_info_predictability(
         &(0u32..0xfffff, 0u32..0x7, 0u32..0x3, 0u32..0x7f),
         |input| {
             let (label, caps, extra, length) = input;
-            let (label, caps, extra, length) = (label as seL4_Word, caps as seL4_Word, extra as seL4_Word, length as seL4_Word);
+            let (label, caps, extra, length) = (
+                label as seL4_Word,
+                caps as seL4_Word,
+                extra as seL4_Word,
+                length as seL4_Word,
+            );
             let out = unsafe {
                 let msg = seL4_MessageInfo_new(label, caps, extra, length);
                 let ptr = &msg as *const seL4_MessageInfo_t as *mut seL4_MessageInfo_t;
@@ -71,9 +77,9 @@ fn test_message_info_predictability(
             };
             let (out_label, out_caps, out_extra, out_length) = out;
             if label == out_label && caps == out_caps && extra == out_extra && length == out_length
-                {
-                    Ok(())
-                } else {
+            {
+                Ok(())
+            } else {
                 Err(TestCaseError::fail(format!(
                     "Mismatched input and output. {:?} vs {:?}",
                     input, &out

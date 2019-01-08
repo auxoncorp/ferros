@@ -1,5 +1,4 @@
 #![no_std]
-
 #![cfg_attr(feature = "alloc", feature(alloc))]
 
 #[cfg(all(feature = "alloc"))]
@@ -7,7 +6,6 @@
 extern crate alloc;
 
 extern crate sel4_sys;
-
 
 pub mod allocator;
 

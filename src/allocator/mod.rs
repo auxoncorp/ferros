@@ -1,7 +1,6 @@
 /// A Rust port of libsel4twinkle allocator.
 ///
 /// https://github.com/smaccm/libsel4twinkle
-
 use sel4_sys::{seL4_CPtr, seL4_Word};
 
 mod allocator;
