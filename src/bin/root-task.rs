@@ -8,7 +8,7 @@
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
-extern crate lyft_fel4_ados;
+extern crate iron_pegasus;
 #[cfg(all(feature = "test", feature = "alloc"))]
 extern crate proptest;
 extern crate sel4_sys;
@@ -169,7 +169,7 @@ static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
 
 fn main() {
     let bootinfo = unsafe { &*BOOTINFO };
-    let mut allocator = lyft_fel4_ados::allocator::Allocator::bootstrap(&bootinfo);
+    let mut allocator = iron_pegasus::allocator::Allocator::bootstrap(&bootinfo);
 
     let untyped = allocator
         .alloc_untyped(seL4_TCBBits as usize, None, false)
@@ -202,11 +202,11 @@ fn main() {
     let mut regs: seL4_UserContext = unsafe { mem::zeroed() };
     #[cfg(feature = "test")]
     {
-        regs.pc = lyft_fel4_ados::fel4_test::run as seL4_Word;
+        regs.pc = iron_pegasus::fel4_test::run as seL4_Word;
     }
     #[cfg(not(feature = "test"))]
     {
-        regs.pc = lyft_fel4_ados::run as seL4_Word;
+        regs.pc = iron_pegasus::run as seL4_Word;
     }
     regs.sp = stack_top as seL4_Word;
 
