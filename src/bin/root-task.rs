@@ -180,8 +180,7 @@ static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] =
 
 fn main() {
     let bootinfo = unsafe { &*BOOTINFO };
-    let mut allocator = lyft_fel4_ados::allocator::Allocator::new();
-    allocator.bootstrap(&bootinfo);
+    let mut allocator = lyft_fel4_ados::allocator::Allocator::bootstrap(&bootinfo);
 
     let cspace_cap = seL4_CapInitThreadCNode;
     let pd_cap = seL4_CapInitThreadVSpace;

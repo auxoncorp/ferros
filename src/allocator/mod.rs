@@ -6,7 +6,6 @@ use sel4_sys::{seL4_CPtr, seL4_Word};
 
 mod allocator;
 mod cspacepath;
-mod first_stage_allocator;
 mod io_map;
 mod object_allocator;
 mod vka;
@@ -30,7 +29,7 @@ pub enum Error {
     Other,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct UntypedItem {
     cap: seL4_CPtr,
     size_bits: usize,
@@ -38,14 +37,14 @@ pub struct UntypedItem {
     is_device: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct CapRange {
     first: usize,
     count: usize,
 }
 
-#[derive(Clone, Debug)]
-struct InitUntypedItem {
+#[derive(Copy, Clone, Debug)]
+pub struct InitUntypedItem {
     item: UntypedItem,
     is_free: bool,
 }
@@ -64,7 +63,7 @@ pub struct Allocator {
     /// Range of free slots in the root cnode
     cslots: CapRange,
 
-    /// Number fo slots we've used
+    /// Number of slots we've used
     num_slots_used: usize,
 
     /// Initial memory items

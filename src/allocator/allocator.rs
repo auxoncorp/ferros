@@ -1,73 +1,117 @@
 use super::{
     Allocator, CapRange, Error, UntypedItem, MAX_UNTYPED_ITEMS, MAX_UNTYPED_SIZE, MIN_UNTYPED_SIZE,
 };
-use core::mem;
 use sel4_sys::{
     api_object_seL4_UntypedObject, seL4_CPtr, seL4_CapInitThreadCNode, seL4_Untyped_Retype,
     seL4_Word,
+    seL4_BootInfo, seL4_WordBits
 };
 
+
+
 impl Allocator {
-    /// TODO - don't need to zero, just do a normal construct
-    pub fn new() -> Allocator {
-        let alloc: Allocator = unsafe { mem::zeroed() };
-
-        alloc
-    }
-
-    /// Initialise an allocator object at 'allocator'.
+    /// Initialise an allocator object.
     ///
     /// The struct 'Allocator' is memory where we should construct the
     /// allocator. All state will be kept in this struct, allowing multiple
     /// independent allocators to co-exist.
-    /// 'root_cnode', 'root_cnode_depth', 'first_slot' and 'num_slots' specify\
+    /// 'root_cnode', 'root_cnode_depth', 'first_slot' and 'num_slots' specify
     /// a CNode containing a contiguous range of free cap slots that we will
     /// use for our allocations.
     ///
     /// 'items' and 'num_items' specify untyped memory items that we will
     /// allocate from.
-    pub fn create(
-        &mut self,
+    pub fn new(
         root_cnode: seL4_CPtr,
         root_cnode_depth: usize,
         root_cnode_offset: usize,
         first_slot: usize,
         num_slots: usize,
         items: &[UntypedItem],
-    ) {
+    ) -> Allocator
+    {
         assert!(items.len() < MAX_UNTYPED_ITEMS);
 
         // Setup CNode information
-        self.root_cnode = root_cnode;
-        self.root_cnode_depth = root_cnode_depth as _;
-        self.root_cnode_offset = root_cnode_offset as _;
-        self.cslots.first = first_slot;
-        self.cslots.count = num_slots;
-        self.num_slots_used = 0;
-        self.num_init_untyped_items = 0;
+        let mut allocator = Allocator {
+            page_directory: 0,
+            page_table: 0,
+            last_allocated: 0,
 
-        // Setup all of our pools as empty
-        for i in MIN_UNTYPED_SIZE..=MAX_UNTYPED_SIZE {
-            self.untyped_items[i - MIN_UNTYPED_SIZE].first = 0;
-            self.untyped_items[i - MIN_UNTYPED_SIZE].count = 0;
-        }
+            root_cnode: root_cnode,
+            root_cnode_depth: root_cnode_depth as _,
+            root_cnode_offset: root_cnode_offset as _,
+
+            cslots: CapRange {
+                first: first_slot,
+                count: num_slots,
+            },
+
+            num_slots_used: 0,
+
+            num_init_untyped_items: 0,
+            init_untyped_items: [
+                super::InitUntypedItem {
+                    item: UntypedItem {
+                        cap: 0,
+                        size_bits: 0,
+                        paddr: 0,
+                        is_device: false
+                    },
+                    is_free: false
+                }; MAX_UNTYPED_ITEMS
+            ],
+
+            untyped_items: [
+                CapRange {
+                    first: 0,
+                    count: 0,
+                }; (MAX_UNTYPED_SIZE - MIN_UNTYPED_SIZE) + 1
+            ]
+        };
 
         // Copy untyped items
         for i in 0..items.len() {
-            self.add_root_untyped_item(
+            allocator.add_root_untyped_item(
                 items[i].cap,
                 items[i].size_bits,
                 items[i].paddr,
                 items[i].is_device,
             );
         }
+
+        allocator
+    }
+
+
+    /// Create an object allocator managing the root CNode's free slots.
+    pub fn bootstrap(bootinfo: &'static seL4_BootInfo) -> Allocator {
+        // Create the allocator
+        let mut allocator = Self::new(
+            seL4_CapInitThreadCNode,
+            seL4_WordBits as _,
+            0,
+            bootinfo.empty.start as _,
+            (bootinfo.empty.end - bootinfo.empty.start) as _,
+            &[],
+        );
+
+        // Give the allocator all of our free memory
+        for i in 0..(bootinfo.untyped.end - bootinfo.untyped.start) {
+            allocator.add_root_untyped_item(
+                bootinfo.untyped.start + i,
+                bootinfo.untypedList[i as usize].sizeBits as _,
+                bootinfo.untypedList[i as usize].paddr,
+                bootinfo.untypedList[i as usize].isDevice != 0,
+            );
+        }
+
+        allocator
     }
 
     /// Permanently add additional untyped memory to the allocator.
     ///
-    /// The allocator will permanently hold on to this memory
-    /// and continue using it until `destroy()` is called,
-    /// even if the allocator is reset.
+    /// The allocator will permanently hold on to this memory.
     pub fn add_root_untyped_item(
         &mut self,
         cap: seL4_CPtr,
