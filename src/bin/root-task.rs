@@ -173,28 +173,20 @@ pub extern "C" fn oom(_layout: Layout) -> ! {
     }
 }
 
-fn get_untyped(info: &seL4_BootInfo, size_bytes: usize) -> Option<seL4_CPtr> {
-    let mut idx = 0;
-    for i in info.untyped.start..info.untyped.end {
-        if (1 << info.untypedList[idx].sizeBits) >= size_bytes {
-            return Some(i);
-        }
-        idx += 1;
-    }
-    None
-}
-
 const CHILD_STACK_SIZE: usize = 4096;
 static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] =
     &[0; CHILD_STACK_SIZE];
 
-        
+
 fn main() {
     let bootinfo = unsafe { &*BOOTINFO };
+    let mut allocator = lyft_fel4_ados::allocator::Allocator::new();
+    allocator.bootstrap(&bootinfo);
+
     let cspace_cap = seL4_CapInitThreadCNode;
     let pd_cap = seL4_CapInitThreadVSpace;
     let tcb_cap = bootinfo.empty.start;
-    let untyped = get_untyped(bootinfo, 1 << seL4_TCBBits).unwrap();
+    let untyped = allocator.alloc_untyped(seL4_TCBBits as usize, None, false).unwrap();
     let retype_err: seL4_Error = unsafe {
         seL4_Untyped_Retype(
             untyped,
