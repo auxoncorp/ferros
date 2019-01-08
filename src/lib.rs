@@ -8,6 +8,9 @@ extern crate alloc;
 
 extern crate sel4_sys;
 
+
+mod allocator;
+
 #[cfg(all(feature = "test"))]
 extern crate proptest;
 
