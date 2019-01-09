@@ -9,7 +9,12 @@ extern crate sel4_sys;
 
 extern crate arrayvec;
 
+#[macro_use]
+extern crate typenum;
+
 pub mod allocator;
+
+pub mod fancy;
 
 #[cfg(all(feature = "test"))]
 extern crate proptest;

@@ -167,6 +167,43 @@ pub extern "C" fn oom(_layout: Layout) -> ! {
 const CHILD_STACK_SIZE: usize = 4096;
 static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
 
+// fn split_untyped(untyped: Untyped<U4>) -> (Untyped<U3>, Untyped<U3>) {
+
+// }
+
+// fn make_tcb(untyped: Untyped<U3>, ....) -> Option<TCB> {
+
+// }
+
+// fn make_endpoint(untyped: Untyped<U3>, ....) -> Endpoint {
+
+// }
+
+// struct Process {
+//     // the shit it needs
+//     stack: u8[1024],
+//     caps: (Endpoint, something...),
+//     children: (...)
+// }
+
+// trait Process<Req, Res> {
+//     fn size_bits() -> usize;
+//     fn call(&self, Req) -> Res;
+// }
+
+// fn spawn(parent_cnode, mem: Untyped<U5>, endpoint: Endpoint) {
+//     let (local_mem, child_mem) = mem.split();
+//     let cnode = make_cnode(local_mem, parent);
+//     let child_endpoint = endpoint.derive_into(cnode);
+//     let child_endpoint = endpoint.derive_into(cnode);
+// }
+
+// {
+//     let ep = make_endpoint(ut);
+//     let child1_ep = ep.derive_into(child1_cnode);
+//     let child2_ep = ep.derive_into(child2_cnode);
+// }
+
 fn main() {
     let bootinfo = unsafe { &*BOOTINFO };
     let mut allocator = iron_pegasus::allocator::Allocator::bootstrap(&bootinfo)
@@ -179,6 +216,9 @@ fn main() {
         .retype_untyped_memory(untyped, api_object_seL4_TCBObject, seL4_TCBBits as usize, 1)
         .expect("Failed to retype untyped memory")
         .first as u32;
+
+    // let tcb_cap = allocator.gimme<TCB>();
+    // let tcb = TCB::new(&allocator)?;
 
     let cspace_cap = seL4_CapInitThreadCNode;
     let pd_cap = seL4_CapInitThreadVSpace;

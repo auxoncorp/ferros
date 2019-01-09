@@ -9,6 +9,7 @@ edition = "2018"
 # don't currently work when pulled down from crates.io
 # libsel4-sys = "0.5"
 libsel4-sys = { git = "ssh://git@github.com/auxoncorp/libsel4-sys.git", branch = "add-greyhound2-platform-support" }
+typenum = "1.10.0"
 
 [dependencies.arrayvec]
 version = "0.4.10"
