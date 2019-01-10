@@ -25,6 +25,18 @@ use sel4_sys::*;
 #[global_allocator]
 static ALLOCATOR: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+macro_rules! debug_print {
+    ($($arg:tt)*) => ({
+        use core::fmt::Write;
+        DebugOutHandle.write_fmt(format_args!($($arg)*)).unwrap();
+    });
+}
+
+macro_rules! debug_println {
+    ($fmt:expr) => (debug_print!(concat!($fmt, "\n")));
+    ($fmt:expr, $($arg:tt)*) => (debug_print!(concat!($fmt, "\n"), $($arg)*));
+}
+
 // include the seL4 kernel configurations
 #[allow(dead_code)]
 #[allow(non_upper_case_globals)]
@@ -204,14 +216,84 @@ static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
 //     let child2_ep = ep.derive_into(child2_cnode);
 // }
 
+use iron_pegasus::fancy::{self, wrap_untyped, Capability, Split, Untyped};
+use typenum::{U19, U20};
+
 fn main() {
     let bootinfo = unsafe { &*BOOTINFO };
+    let root_cnode = fancy::root_cnode(&bootinfo);
+
+    debug_println!("Made root cnode: {:?}", root_cnode);
+
+    let bootinfo = unsafe { &*BOOTINFO };
+    let cspace_cap = seL4_CapInitThreadCNode;
+    let pd_cap = seL4_CapInitThreadVSpace;
+    let tcb_cap = bootinfo.empty.start;
+
+    // find an untyped of size 20 bits
+    let target_bit_size = 20; // 1 meg
+
+    // TODO: we should make an iterator for the untyped things
+    let mut found = None;
+    // let mut target_untyped_desc = None;
+    for i in 0..(bootinfo.untyped.end - bootinfo.untyped.start) {
+        let untyped_desc = &bootinfo.untypedList[i as usize];
+        let cap_index = bootinfo.untyped.start + i;
+
+        if untyped_desc.sizeBits == target_bit_size {
+            found = Some((cap_index, untyped_desc));
+            // target_cap = Some(cap_index);
+            // target_untyped_desc = Some(untyped_desc);
+            break;
+        }
+    }
+
+    let (cap_index, untyped_desc) = found.expect("Couldn't find initial untyped");
+    let one_meg: Capability<Untyped<U20>> =
+        wrap_untyped(cap_index as usize, untyped_desc).expect("target cap was somehow bogus");
+    debug_println!("made untyped {:?}", one_meg);
+
+    let (half_meg_1, half_meg_2, root_cnode) = one_meg
+        .split(root_cnode)
+        .expect("Couldn't split untyped half megs");
+    debug_println!(
+        "split thing into half megs: {:?} {:?} {:?}",
+        half_meg_1,
+        half_meg_2,
+        root_cnode
+    );
+
+    let (quarter_meg_1, quarter_meg_2, root_cnode) = half_meg_1
+        .split(root_cnode)
+        .expect("Couldn't split untyped quarter megs first time");
+    debug_println!(
+        "split thing into quarter megs first time: {:?} {:?} {:?}",
+        quarter_meg_1,
+        quarter_meg_2,
+        root_cnode
+    );
+
+
+    let (quarter_meg_3, quarter_meg_4, root_cnode) = half_meg_2
+        .split(root_cnode)
+        .expect("Couldn't split untyped quarter megs second time");
+    debug_println!(
+        "split thing into quarter megs second time: {:?} {:?} {:?}",
+        quarter_meg_3,
+        quarter_meg_4,
+        root_cnode
+    );
+
+
+
+
     let mut allocator = iron_pegasus::allocator::Allocator::bootstrap(&bootinfo)
         .expect("Failed to create bootstrap allocator");
 
     let untyped = allocator
         .alloc_untyped(seL4_TCBBits as usize, None, false)
         .unwrap();
+
     let tcb_cap = allocator
         .retype_untyped_memory(untyped, api_object_seL4_TCBObject, seL4_TCBBits as usize, 1)
         .expect("Failed to retype untyped memory")
