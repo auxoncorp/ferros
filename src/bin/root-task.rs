@@ -217,7 +217,7 @@ static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
 // }
 
 use iron_pegasus::fancy::{
-    self, wrap_untyped, CNode, Capability, RetypeLocal, Split, ThreadControlBlock, Untyped,
+    self, wrap_untyped, CNode, Capability, ThreadControlBlock, Untyped,
 };
 use iron_pegasus::micro_alloc::{self, GetUntyped};
 use typenum::{U19, U20, U8};

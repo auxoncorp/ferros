@@ -17,8 +17,7 @@ pub trait CapType {
     fn sel4_type_id() -> usize;
 }
 
-pub trait FixedSizeCap { }
-
+pub trait FixedSizeCap {}
 
 #[derive(Debug)]
 pub struct Capability<CT: CapType> {
@@ -127,56 +126,32 @@ pub enum Error {
     UntypedRetype(u32),
 }
 
-pub trait Split<Radix: Unsigned, FreeSlots: Unsigned>
-where
-    FreeSlots: Sub<B1>,
-    Sub1<FreeSlots>: Unsigned,
-    <Self as Split<Radix, FreeSlots>>::OutputBitSize: Unsigned,
-{
-    type OutputBitSize;
-
-    fn split(
+impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
+    pub fn split<Radix: Unsigned, FreeSlots: Unsigned>(
         self,
         dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
     ) -> Result<
         (
-            Capability<Untyped<Self::OutputBitSize>>,
-            Capability<Untyped<Self::OutputBitSize>>,
+            Capability<Untyped<Sub1<BitSize>>>,
+            Capability<Untyped<Sub1<BitSize>>>,
             Capability<CNode<Radix, Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>>,
         ),
         Error,
-    >;
-}
+    >
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
 
-impl<Radix: Unsigned, FreeSlots: Unsigned, BitSize: Unsigned> Split<Radix, FreeSlots>
-    for Capability<Untyped<BitSize>>
-where
-    FreeSlots: Sub<B1>,
-    Sub1<FreeSlots>: Unsigned,
-
-    BitSize: Sub<B1>,
-    Sub1<BitSize>: Unsigned,
-{
-    type OutputBitSize = Sub1<BitSize>;
-
-    fn split(
-        self,
-        dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
-    ) -> Result<
-        (
-            Capability<Untyped<Self::OutputBitSize>>,
-            Capability<Untyped<Self::OutputBitSize>>,
-            Capability<CNode<Radix, Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>>,
-        ),
-        Error,
-    > {
+        BitSize: Sub<B1>,
+        Sub1<BitSize>: Unsigned,
+    {
         let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
 
         let err = unsafe {
             seL4_Untyped_Retype(
                 self.cptr as u32,                          // _service
                 Untyped::<BitSize>::sel4_type_id() as u32, // type
-                Self::OutputBitSize::to_u32(),             // size_bits
+                (BitSize::to_u32() - 1),                   // size_bits
                 dest_slot.cptr as u32,                     // root
                 0,                                         // index
                 0,                                         // depth
@@ -200,14 +175,8 @@ where
             dest_cnode,
         ))
     }
-}
 
-pub trait RetypeLocal<Radix: Unsigned, FreeSlots: Unsigned, TargetCapType: CapType>
-where
-    FreeSlots: Sub<B1>,
-    Sub1<FreeSlots>: Unsigned,
-{
-    fn retype_local(
+    pub fn retype_local<Radix: Unsigned, FreeSlots: Unsigned, TargetCapType: CapType>(
         self,
         dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
     ) -> Result<
@@ -216,27 +185,11 @@ where
             Capability<CNode<Radix, Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>>,
         ),
         Error,
-    >;
-}
-
-impl<Radix: Unsigned, FreeSlots: Unsigned, TargetCapType: CapType, BitSize: Unsigned>
-    RetypeLocal<Radix, FreeSlots, TargetCapType> for Capability<Untyped<BitSize>>
-where
-    FreeSlots: Sub<B1>,
-    Sub1<FreeSlots>: Unsigned,
-    TargetCapType: FixedSizeCap
-    // TODO: make sure the untyped has enough room for the target object
-{
-    fn retype_local(
-        self,
-        dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
-    ) -> Result<
-        (
-            Capability<TargetCapType>,
-            Capability<CNode<Radix, Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>>,
-        ),
-        Error,
-    > {
+    >
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
+    {
         let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
 
         let err = unsafe {
@@ -264,9 +217,7 @@ where
             dest_cnode,
         ))
     }
-}
 
-impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
     pub fn retype_local_cnode<Radix: Unsigned, FreeSlots: Unsigned, ChildRadix: Unsigned>(
         self,
         dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
@@ -287,14 +238,14 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
 
         let err = unsafe {
             seL4_Untyped_Retype(
-                self.cptr as u32, // _service
+                self.cptr as u32,               // _service
                 api_object_seL4_CapTableObject, // type
-                ChildRadix::to_u32(), // size_bits
-                dest_slot.cptr as u32, // root
-                0,                // index
-                0,                // depth
-                dest_slot.offset as u32, // offset
-                1,                // num_objects
+                ChildRadix::to_u32(),           // size_bits
+                dest_slot.cptr as u32,          // root
+                0,                              // index
+                0,                              // depth
+                dest_slot.offset as u32,        // offset
+                1,                              // num_objects
             )
         };
 
@@ -324,7 +275,7 @@ impl CapType for ThreadControlBlock {
     }
 }
 
-impl FixedSizeCap for ThreadControlBlock { }
+impl FixedSizeCap for ThreadControlBlock {}
 
 // trait Configure {
 //     fn configure(
