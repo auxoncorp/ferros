@@ -216,42 +216,24 @@ static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
 //     let child2_ep = ep.derive_into(child2_cnode);
 // }
 
-use iron_pegasus::fancy::{self, wrap_untyped, Capability, Split, Untyped, ThreadControlBlock, Retype};
+use iron_pegasus::fancy::{
+    self, wrap_untyped, Capability, Retype, Split, ThreadControlBlock, Untyped,
+};
+use iron_pegasus::micro_alloc::{self, GetUntyped};
 use typenum::{U19, U20};
 
 fn main() {
     let bootinfo = unsafe { &*BOOTINFO };
     let root_cnode = fancy::root_cnode(&bootinfo);
+    let mut allocator =
+        micro_alloc::Allocator::bootstrap(&bootinfo).expect("Couldn't set up bootstrap allocator");
 
     debug_println!("Made root cnode: {:?}", root_cnode);
 
-    let bootinfo = unsafe { &*BOOTINFO };
-    let cspace_cap = seL4_CapInitThreadCNode;
-    let pd_cap = seL4_CapInitThreadVSpace;
-    let tcb_cap = bootinfo.empty.start;
-
-    // find an untyped of size 20 bits
-    let target_bit_size = 20; // 1 meg
-
-    // TODO: we should make an iterator for the untyped things
-    let mut found = None;
-    // let mut target_untyped_desc = None;
-    for i in 0..(bootinfo.untyped.end - bootinfo.untyped.start) {
-        let untyped_desc = &bootinfo.untypedList[i as usize];
-        let cap_index = bootinfo.untyped.start + i;
-
-        if untyped_desc.sizeBits == target_bit_size {
-            found = Some((cap_index, untyped_desc));
-            // target_cap = Some(cap_index);
-            // target_untyped_desc = Some(untyped_desc);
-            break;
-        }
-    }
-
-    let (cap_index, untyped_desc) = found.expect("Couldn't find initial untyped");
-    let one_meg: Capability<Untyped<U20>> =
-        wrap_untyped(cap_index as usize, untyped_desc).expect("target cap was somehow bogus");
-    debug_println!("made untyped {:?}", one_meg);
+    // find an untyped of size 20 bits (1 meg)
+    let one_meg = allocator
+        .get_untyped::<U20>()
+        .expect("Couldn't find initial untyped");
 
     let (half_meg_1, half_meg_2, root_cnode) = one_meg
         .split(root_cnode)
@@ -286,10 +268,18 @@ fn main() {
     let (my_tcb, root_cnode): (Capability<ThreadControlBlock>, _) = quarter_meg_1
         .retype(root_cnode)
         .expect("couldn't retyped to tcb");
-    debug_println!("retyped as thread control block {:?} {:?}", my_tcb, root_cnode);
-
+    debug_println!(
+        "retyped as thread control block {:?} {:?}",
+        my_tcb,
+        root_cnode
+    );
 
     ///////////////// old code
+
+    // let bootinfo = unsafe { &*BOOTINFO };
+    // let cspace_cap = seL4_CapInitThreadCNode;
+    // let pd_cap = seL4_CapInitThreadVSpace;
+    // let tcb_cap = bootinfo.empty.start;
 
     // let mut allocator = iron_pegasus::allocator::Allocator::bootstrap(&bootinfo)
     //     .expect("Failed to create bootstrap allocator");
