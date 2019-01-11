@@ -217,10 +217,10 @@ static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
 // }
 
 use iron_pegasus::fancy::{
-    self, wrap_untyped, Capability, RetypeLocal, Split, ThreadControlBlock, Untyped,
+    self, wrap_untyped, CNode, Capability, RetypeLocal, Split, ThreadControlBlock, Untyped,
 };
 use iron_pegasus::micro_alloc::{self, GetUntyped};
-use typenum::{U19, U20};
+use typenum::{U19, U20, U8};
 
 fn main() {
     let bootinfo = unsafe { &*BOOTINFO };
@@ -228,7 +228,7 @@ fn main() {
     let mut allocator =
         micro_alloc::Allocator::bootstrap(&bootinfo).expect("Couldn't set up bootstrap allocator");
 
-    debug_println!("Made root cnode: {:?}", root_cnode);
+    debug_println!("Made root cnode: {:?}\n\n", root_cnode);
 
     // find an untyped of size 20 bits (1 meg)
     let one_meg = allocator
@@ -239,7 +239,7 @@ fn main() {
         .split(root_cnode)
         .expect("Couldn't split untyped half megs");
     debug_println!(
-        "split thing into half megs: {:?} {:?} {:?}",
+        "split thing into half megs: {:?} {:?} {:?}\n\n",
         half_meg_1,
         half_meg_2,
         root_cnode
@@ -249,7 +249,7 @@ fn main() {
         .split(root_cnode)
         .expect("Couldn't split untyped quarter megs first time");
     debug_println!(
-        "split thing into quarter megs first time: {:?} {:?} {:?}",
+        "split thing into quarter megs first time: {:?} {:?} {:?}\n\n",
         quarter_meg_1,
         quarter_meg_2,
         root_cnode
@@ -259,7 +259,7 @@ fn main() {
         .split(root_cnode)
         .expect("Couldn't split untyped quarter megs second time");
     debug_println!(
-        "split thing into quarter megs second time: {:?} {:?} {:?}",
+        "split thing into quarter megs second time: {:?} {:?} {:?}\n\n",
         quarter_meg_3,
         quarter_meg_4,
         root_cnode
@@ -269,8 +269,17 @@ fn main() {
         .retype_local(root_cnode)
         .expect("couldn't retyped to tcb");
     debug_println!(
-        "retyped as thread control block {:?} {:?}",
+        "retyped as thread control block {:?} {:?}\n\n",
         my_tcb,
+        root_cnode
+    );
+
+    let (proc_cnode, root_cnode): (Capability<CNode<U8, _, _>>, _) = quarter_meg_2
+        .retype_local_cnode(root_cnode)
+        .expect("Couldn't retype to child proc cnode");
+    debug_println!(
+        "retyped child proc cnode {:?} {:?}\n\n",
+        proc_cnode,
         root_cnode
     );
 

@@ -14,6 +14,7 @@ extern crate typenum;
 
 pub mod micro_alloc;
 pub mod fancy;
+mod pow;
 
 #[cfg(all(feature = "test"))]
 extern crate proptest;

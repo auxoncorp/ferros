@@ -11,6 +11,8 @@ use typenum::{
     U8,
 };
 
+use crate::pow::{Pow, _Pow};
+
 pub trait CapType {
     fn sel4_type_id() -> usize;
 }
@@ -248,6 +250,52 @@ where
                 0,                                    // depth
                 dest_slot.offset as u32,              // offset
                 1,                                    // num_objects
+            )
+        };
+
+        if err != 0 {
+            return Err(Error::UntypedRetype(err));
+        }
+
+        Ok((
+            Capability {
+                cptr: dest_slot.offset,
+                _cap_type: PhantomData,
+            },
+            dest_cnode,
+        ))
+    }
+}
+
+impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
+    pub fn retype_local_cnode<Radix: Unsigned, FreeSlots: Unsigned, ChildRadix: Unsigned>(
+        self,
+        dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
+    ) -> Result<
+        (
+            Capability<CNode<ChildRadix, Pow<ChildRadix>, CNodeRoles::ChildProcess>>,
+            Capability<CNode<Radix, Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>>,
+        ),
+        Error,
+    >
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
+        ChildRadix: _Pow,
+        Pow<ChildRadix>: Unsigned,
+    {
+        let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
+
+        let err = unsafe {
+            seL4_Untyped_Retype(
+                self.cptr as u32, // _service
+                api_object_seL4_CapTableObject, // type
+                ChildRadix::to_u32(), // size_bits
+                dest_slot.cptr as u32, // root
+                0,                // index
+                0,                // depth
+                dest_slot.offset as u32, // offset
+                1,                // num_objects
             )
         };
 
