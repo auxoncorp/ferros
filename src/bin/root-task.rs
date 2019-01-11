@@ -216,9 +216,7 @@ static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
 //     let child2_ep = ep.derive_into(child2_cnode);
 // }
 
-use iron_pegasus::fancy::{
-    self, wrap_untyped, CNode, Capability, ThreadControlBlock, Untyped,
-};
+use iron_pegasus::fancy::{self, wrap_untyped, CNode, Capability, ThreadControlBlock, Untyped};
 use iron_pegasus::micro_alloc::{self, GetUntyped};
 use typenum::{U19, U20, U8};
 
@@ -282,6 +280,9 @@ fn main() {
         proc_cnode,
         root_cnode
     );
+
+    let suspend_err = unsafe { seL4_TCB_Suspend(seL4_CapInitThreadTCB) };
+    assert!(suspend_err == 0);
 
     ///////////////// old code
 
