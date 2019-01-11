@@ -17,6 +17,9 @@ pub trait CapType {
     fn sel4_type_id() -> usize;
 }
 
+pub trait FixedSizeCap { }
+
+
 #[derive(Debug)]
 pub struct Capability<CT: CapType> {
     cptr: usize,
@@ -221,6 +224,7 @@ impl<Radix: Unsigned, FreeSlots: Unsigned, TargetCapType: CapType, BitSize: Unsi
 where
     FreeSlots: Sub<B1>,
     Sub1<FreeSlots>: Unsigned,
+    TargetCapType: FixedSizeCap
     // TODO: make sure the untyped has enough room for the target object
 {
     fn retype_local(
@@ -319,6 +323,8 @@ impl CapType for ThreadControlBlock {
         api_object_seL4_TCBObject as usize
     }
 }
+
+impl FixedSizeCap for ThreadControlBlock { }
 
 // trait Configure {
 //     fn configure(
