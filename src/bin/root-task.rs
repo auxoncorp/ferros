@@ -216,7 +216,9 @@ static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
 //     let child2_ep = ep.derive_into(child2_cnode);
 // }
 
-use iron_pegasus::fancy::{self, wrap_untyped, CNode, Capability, ThreadControlBlock, Untyped};
+use iron_pegasus::fancy::{
+    self, wrap_untyped, CNode, Capability, ChildCapability, Endpoint, ThreadControlBlock, Untyped,
+};
 use iron_pegasus::micro_alloc::{self, GetUntyped};
 use typenum::{U19, U20, U8};
 
@@ -263,26 +265,64 @@ fn main() {
         root_cnode
     );
 
-    let (my_tcb, root_cnode): (Capability<ThreadControlBlock>, _) = quarter_meg_1
-        .retype_local(root_cnode)
-        .expect("couldn't retyped to tcb");
-    debug_println!(
-        "retyped as thread control block {:?} {:?}\n\n",
-        my_tcb,
-        root_cnode
-    );
-
-    let (proc_cnode, root_cnode): (Capability<CNode<U8, _, _>>, _) = quarter_meg_2
+    let (child_cnode, root_cnode): (Capability<CNode<U8, _, _>>, _) = quarter_meg_2
         .retype_local_cnode(root_cnode)
         .expect("Couldn't retype to child proc cnode");
     debug_println!(
         "retyped child proc cnode {:?} {:?}\n\n",
-        proc_cnode,
+        child_cnode,
         root_cnode
     );
 
-    let suspend_err = unsafe { seL4_TCB_Suspend(seL4_CapInitThreadTCB) };
-    assert!(suspend_err == 0);
+    let (child_endpoint, child_cnode): (ChildCapability<Endpoint>, _) = quarter_meg_3
+        .retype_child(child_cnode)
+        .expect("Couldn't retype to child proc endpoint");
+    debug_println!(
+        "retyped child proc endpoint {:?} {:?}\n\n",
+        child_endpoint,
+        root_cnode
+    );
+
+    let (mut child_tcb, root_cnode): (Capability<ThreadControlBlock>, _) = quarter_meg_1
+        .retype_local(root_cnode)
+        .expect("couldn't retyped to tcb");
+    debug_println!(
+        "retyped as thread control block {:?} {:?}\n\n",
+        child_tcb,
+        root_cnode
+    );
+
+    child_tcb
+        .configure(child_cnode, seL4_CapInitThreadVSpace)
+        .expect("Couldn't configure child tcb");
+
+    debug_println!("conigured child tcb",);
+
+    // let suspend_err = unsafe { seL4_TCB_Suspend(seL4_CapInitThreadTCB) };
+    // assert!(suspend_err == 0);
+
+
+    let stack_base = unsafe { CHILD_STACK as usize };
+    let stack_top = stack_base + CHILD_STACK_SIZE;
+    let mut regs: seL4_UserContext = unsafe { mem::zeroed() };
+    #[cfg(feature = "test")]
+    {
+        regs.pc = iron_pegasus::fel4_test::run as seL4_Word;
+    }
+    #[cfg(not(feature = "test"))]
+    {
+        regs.pc = iron_pegasus::run as seL4_Word;
+    }
+    regs.sp = stack_top as seL4_Word;
+
+    let _: u32 = unsafe { seL4_TCB_WriteRegisters(child_tcb.cptr as u32, 0, 0, 2, &mut regs) };
+    let _: u32 = unsafe { seL4_TCB_SetPriority(child_tcb.cptr as u32, seL4_CapInitThreadTCB.into(), 255) };
+    let _: u32 = unsafe { seL4_TCB_Resume(child_tcb.cptr as u32) };
+    loop {
+        unsafe {
+            seL4_Yield();
+        }
+    }
 
     ///////////////// old code
 

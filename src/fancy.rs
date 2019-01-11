@@ -1,9 +1,11 @@
 use core::marker::PhantomData;
+use core::mem::size_of;
 use core::ops::{Add, Sub};
 use sel4_sys::{
-    api_object_seL4_CapTableObject, api_object_seL4_TCBObject, api_object_seL4_UntypedObject,
-    seL4_BootInfo, seL4_CPtr, seL4_CapInitThreadCNode, seL4_UntypedDesc, seL4_Untyped_Retype,
-    seL4_Word, seL4_WordBits,
+    api_object_seL4_CapTableObject, api_object_seL4_EndpointObject, api_object_seL4_TCBObject,
+    api_object_seL4_UntypedObject, seL4_BootInfo, seL4_CNode_CapData_new, seL4_CPtr,
+    seL4_CapInitThreadCNode, seL4_CapNull, seL4_NilData, seL4_TCB_Configure, seL4_UntypedDesc,
+    seL4_Untyped_Retype, seL4_Word, seL4_WordBits,
 };
 use typenum::operator_aliases::{Add1, Diff, Shleft, Sub1};
 use typenum::{
@@ -21,7 +23,13 @@ pub trait FixedSizeCap {}
 
 #[derive(Debug)]
 pub struct Capability<CT: CapType> {
-    cptr: usize,
+    pub cptr: usize,
+    _cap_type: PhantomData<CT>,
+}
+
+#[derive(Debug)]
+pub struct ChildCapability<CT: CapType> {
+    child_cptr: usize,
     _cap_type: PhantomData<CT>,
 }
 
@@ -124,6 +132,7 @@ pub fn wrap_untyped<BitSize: Unsigned>(
 #[derive(Debug)]
 pub enum Error {
     UntypedRetype(u32),
+    TCBConfigure(u32),
 }
 
 impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
@@ -189,6 +198,7 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
     where
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
+        TargetCapType: FixedSizeCap,
     {
         let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
 
@@ -261,6 +271,49 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
             dest_cnode,
         ))
     }
+
+    pub fn retype_child<Radix: Unsigned, FreeSlots: Unsigned, TargetCapType: CapType>(
+        self,
+        dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::ChildProcess>>,
+    ) -> Result<
+        (
+            ChildCapability<TargetCapType>,
+            Capability<CNode<Radix, Sub1<FreeSlots>, CNodeRoles::ChildProcess>>,
+        ),
+        Error,
+    >
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
+        TargetCapType: FixedSizeCap,
+    {
+        let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
+
+        let err = unsafe {
+            seL4_Untyped_Retype(
+                self.cptr as u32,                     // _service
+                TargetCapType::sel4_type_id() as u32, // type
+                0,                                    // size_bits
+                dest_slot.cptr as u32,                // root
+                0,                                    // index
+                0,                                    // depth
+                dest_slot.offset as u32,              // offset
+                1,                                    // num_objects
+            )
+        };
+
+        if err != 0 {
+            return Err(Error::UntypedRetype(err));
+        }
+
+        Ok((
+            ChildCapability {
+                child_cptr: dest_slot.offset,
+                _cap_type: PhantomData,
+            },
+            dest_cnode,
+        ))
+    }
 }
 
 /////////
@@ -277,37 +330,80 @@ impl CapType for ThreadControlBlock {
 
 impl FixedSizeCap for ThreadControlBlock {}
 
-// trait Configure {
-//     fn configure(
-//         &self,
-//         fault_ep: Capability<Endpoint>,
-//         cspace_root: Capability<CNode>,
-//         cspace_root_data: usize,
-//         vspace_root: Capability<VSpace>,
-//         vspace_root_data: usize,
-//         buffer: usize,
-//         buffer_frame: Capability<Frame>,
-//     ) {
-//         unimplemented!()
-//     }
-// }
+impl Capability<ThreadControlBlock> {
+    pub fn configure<Radix: Unsigned, FreeSlots: Unsigned>(
+        &mut self,
+        // fault_ep: Capability<Endpoint>,
+        cspace_root: Capability<CNode<Radix, FreeSlots, CNodeRoles::ChildProcess>>,
+        // cspace_root_data: usize, // set the guard bits here
+        vspace_root: u32, //Capability<VSpace>,
+        // vspace_root_data: usize, // always 0
+        // buffer: usize,
+        // buffer_frame: Capability<Frame>,
+    ) -> Result<(), Error> {
+        // Set up the cspace's guard to take the part of the cptr that's not
+        // used by the radix.
+        let cspace_root_data = unsafe {
+            seL4_CNode_CapData_new(
+                0,                                                     // guard
+                ((8 * size_of::<usize>()) - Radix::to_usize()) as u32, // guard size in bits
+            )
+        }
+        .words[0];
+
+        let tcb_err = unsafe {
+            seL4_TCB_Configure(
+                self.cptr as u32,
+                seL4_CapNull.into(),
+                cspace_root.cptr as u32,
+                cspace_root_data,
+                vspace_root, //vspace_root.cptr as u32,
+                seL4_NilData.into(),
+                0,
+                0,
+            )
+        };
+
+        if tcb_err != 0 {
+            Err(Error::TCBConfigure(tcb_err))
+        } else {
+            Ok(())
+        }
+    }
+}
 
 // Others
 
-// #[derive(Debug)]
-// pub struct Endpoint {}
+#[derive(Debug)]
+pub struct Endpoint {}
 
-// impl CapType for Endpoint {
-//     fn sel4_type_id() -> usize {
-//         api_object_seL4_Endpoint as usize
-//     }
-// }
+impl CapType for Endpoint {
+    fn sel4_type_id() -> usize {
+        api_object_seL4_EndpointObject as usize
+    }
+}
 
-// #[derive(Debug)]
-// pub struct CNode {}
+impl FixedSizeCap for Endpoint {}
 
-// impl CapType for Endpoint {
-//     fn sel4_type_id() -> usize {
-//         api_object_seL4_CNode as usize
-//     }
-// }
+#[derive(Debug)]
+pub struct VSpace {}
+
+impl CapType for VSpace {
+    fn sel4_type_id() -> usize {
+        api_object_seL4_EndpointObject as usize
+    }
+}
+
+impl FixedSizeCap for VSpace {}
+
+#[derive(Debug)]
+pub struct Frame {}
+
+impl CapType for Frame {
+    fn sel4_type_id() -> usize {
+        0
+        // api_object_seL4_EndpointObject as usize
+    }
+}
+
+impl FixedSizeCap for Frame {}
