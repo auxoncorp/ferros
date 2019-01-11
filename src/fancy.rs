@@ -52,7 +52,7 @@ impl<Radix: Unsigned, FreeSlots: Unsigned, Role: CNodeRole> CapType
 }
 
 #[derive(Debug)]
-pub struct CNodeSlot {
+struct CNodeSlot {
     cptr: usize,
     offset: usize,
 }
