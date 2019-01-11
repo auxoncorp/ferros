@@ -86,12 +86,7 @@ pub fn root_cnode(
 ) -> Capability<CNode<U19, U256, CNodeRoles::CSpaceRoot>> {
     Capability {
         cptr: seL4_CapInitThreadCNode as usize,
-        _cap_type: PhantomData
-        // index: seL4_WordBits as usize,
-        // depth: 0,
-        // offset: bootinfo.empty.start as usize,
-        // _radix: PhantomData,
-        // _free_slots: PhantomData,
+        _cap_type: PhantomData,
     }
 }
 
