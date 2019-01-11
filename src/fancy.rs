@@ -1,79 +1,16 @@
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
 use sel4_sys::{
-    api_object_seL4_TCBObject, api_object_seL4_UntypedObject, seL4_BootInfo, seL4_CPtr,
-    seL4_CapInitThreadCNode, seL4_UntypedDesc, seL4_Untyped_Retype, seL4_Word, seL4_WordBits,
+    api_object_seL4_CapTableObject, api_object_seL4_TCBObject, api_object_seL4_UntypedObject,
+    seL4_BootInfo, seL4_CPtr, seL4_CapInitThreadCNode, seL4_UntypedDesc, seL4_Untyped_Retype,
+    seL4_Word, seL4_WordBits,
 };
 use typenum::operator_aliases::{Add1, Diff, Shleft, Sub1};
 use typenum::{
-    Bit, Exp, IsGreaterOrEqual, UInt, UTerm, Unsigned, B0, B1, U1, U12, U2, U24, U256, U3, U32, U5,
+    Bit, Exp, IsGreaterOrEqual, UInt, UTerm, Unsigned, B0, B1, U1, U19, U2, U24, U256, U3, U32, U5,
     U8,
 };
 
-#[derive(Debug)]
-pub struct CNode<Radix: Unsigned, FreeSlots: Unsigned> {
-    cptr: seL4_CPtr,
-    depth: usize,
-    index: usize,
-
-    offset: usize,
-
-    _radix: PhantomData<Radix>,
-    _free_slots: PhantomData<FreeSlots>,
-}
-
-#[derive(Debug)]
-pub struct CNodeSlot {
-    cptr: seL4_CPtr,
-    depth: usize,
-    index: usize,
-    offset: usize,
-}
-
-impl<Radix: Unsigned, FreeSlots: Unsigned> CNode<Radix, FreeSlots>
-where
-    FreeSlots: Sub<B1>,
-    Sub1<FreeSlots>: Unsigned,
-{
-    // TODO: this should return the tuple of (CNode, consumed slot)
-    // this probably means we need a Slot struct.
-    fn consume_slot(self) -> (CNode<Radix, Sub1<FreeSlots>>, CNodeSlot) {
-        (
-            // TODO: do this with transmute
-            CNode {
-                cptr: self.cptr,
-                index: self.index,
-                depth: self.depth,
-                offset: self.offset + 1,
-                _radix: PhantomData,
-                _free_slots: PhantomData,
-            },
-            CNodeSlot {
-                cptr: self.cptr,
-                index: self.index,
-                depth: self.depth,
-                offset: self.offset,
-            },
-        )
-    }
-}
-
-// TODO: how many slots are there really? We should be able to know this at build
-// time.
-// TODO: ideally, this should only be callable once in the process. Is that possible?
-pub fn root_cnode(bootinfo: &'static seL4_BootInfo) -> CNode<U12, U256> {
-    CNode {
-        cptr: seL4_CapInitThreadCNode,
-        index: seL4_WordBits as usize,
-        depth: 0,
-        offset: bootinfo.empty.start as usize,
-        _radix: PhantomData,
-        _free_slots: PhantomData,
-    }
-}
-
-/////
-// Capability types
 pub trait CapType {
     fn sel4_type_id() -> usize;
 }
@@ -84,7 +21,82 @@ pub struct Capability<CT: CapType> {
     _cap_type: PhantomData<CT>,
 }
 
-// Untyped
+pub trait CNodeRole {}
+pub mod CNodeRoles {
+    use super::CNodeRole;
+
+    #[derive(Debug)]
+    pub struct CSpaceRoot {}
+    impl CNodeRole for CSpaceRoot {}
+
+    #[derive(Debug)]
+    pub struct ChildProcess {}
+    impl CNodeRole for ChildProcess {}
+}
+
+#[derive(Debug)]
+pub struct CNode<Radix: Unsigned, FreeSlots: Unsigned, Role: CNodeRole> {
+    _radix: PhantomData<Radix>,
+    _free_slots: PhantomData<FreeSlots>,
+    _role: PhantomData<Role>,
+}
+
+impl<Radix: Unsigned, FreeSlots: Unsigned, Role: CNodeRole> CapType
+    for CNode<Radix, FreeSlots, Role>
+{
+    fn sel4_type_id() -> usize {
+        api_object_seL4_CapTableObject as usize
+    }
+}
+
+#[derive(Debug)]
+pub struct CNodeSlot {
+    cptr: usize,
+    offset: usize,
+}
+
+impl<Radix: Unsigned, FreeSlots: Unsigned, Role: CNodeRole>
+    Capability<CNode<Radix, FreeSlots, Role>>
+where
+    FreeSlots: Sub<B1>,
+    Sub1<FreeSlots>: Unsigned,
+{
+    fn consume_slot(self) -> (Capability<CNode<Radix, Sub1<FreeSlots>, Role>>, CNodeSlot) {
+        (
+            Capability {
+                cptr: self.cptr,
+                _cap_type: PhantomData,
+            },
+            CNodeSlot {
+                cptr: self.cptr,
+                offset: (1 << Radix::to_u8()) - FreeSlots::to_usize(),
+            },
+        )
+    }
+}
+
+// TODO: how many slots are there really? We should be able to know this at build
+// time.
+// Answer: The radix is 19, and there are 12 initial caps.
+// TODO: ideally, this should only be callable once in the process. Is that possible?
+pub fn root_cnode(
+    bootinfo: &'static seL4_BootInfo,
+) -> Capability<CNode<U19, U256, CNodeRoles::CSpaceRoot>> {
+    Capability {
+        cptr: seL4_CapInitThreadCNode as usize,
+        _cap_type: PhantomData
+        // index: seL4_WordBits as usize,
+        // depth: 0,
+        // offset: bootinfo.empty.start as usize,
+        // _radix: PhantomData,
+        // _free_slots: PhantomData,
+    }
+}
+
+/////////////
+// Untyped //
+/////////////
+
 #[derive(Debug)]
 pub struct Untyped<BitSize: Unsigned> {
     _bit_size: PhantomData<BitSize>,
@@ -93,16 +105,6 @@ pub struct Untyped<BitSize: Unsigned> {
 impl<BitSize: Unsigned> CapType for Untyped<BitSize> {
     fn sel4_type_id() -> usize {
         api_object_seL4_UntypedObject as usize
-    }
-}
-
-// TCB
-#[derive(Debug)]
-pub struct ThreadControlBlock {}
-
-impl CapType for ThreadControlBlock {
-    fn sel4_type_id() -> usize {
-        api_object_seL4_TCBObject as usize
     }
 }
 
@@ -135,12 +137,12 @@ where
 
     fn split(
         self,
-        dest_cnode: CNode<Radix, FreeSlots>,
+        dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
     ) -> Result<
         (
             Capability<Untyped<Self::OutputBitSize>>,
             Capability<Untyped<Self::OutputBitSize>>,
-            CNode<Radix, Sub1<FreeSlots>>,
+            Capability<CNode<Radix, Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>>,
         ),
         Error,
     >;
@@ -159,12 +161,12 @@ where
 
     fn split(
         self,
-        dest_cnode: CNode<Radix, FreeSlots>,
+        dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
     ) -> Result<
         (
             Capability<Untyped<Self::OutputBitSize>>,
             Capability<Untyped<Self::OutputBitSize>>,
-            CNode<Radix, Sub1<FreeSlots>>,
+            Capability<CNode<Radix, Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>>,
         ),
         Error,
     > {
@@ -175,9 +177,9 @@ where
                 self.cptr as u32,                          // _service
                 Untyped::<BitSize>::sel4_type_id() as u32, // type
                 Self::OutputBitSize::to_u32(),             // size_bits
-                dest_slot.cptr,                            // root
-                dest_slot.index as u32,                    // index
-                dest_slot.depth as u32,                    // depth
+                dest_slot.cptr as u32,                     // root
+                0,                                         // index
+                0,                                         // depth
                 dest_slot.offset as u32,                   // offset
                 1,                                         // num_objects
             )
@@ -192,12 +194,7 @@ where
                 _cap_type: PhantomData,
             },
             Capability {
-                cptr: if dest_slot.depth == 0 {
-                    dest_slot.offset
-                } else {
-                    unimplemented!()
-                },
-
+                cptr: dest_slot.offset,
                 _cap_type: PhantomData,
             },
             dest_cnode,
@@ -205,30 +202,40 @@ where
     }
 }
 
-//pub trait Retype
-
-pub trait Retype<Radix: Unsigned, FreeSlots: Unsigned, TargetCapType: CapType>
+pub trait RetypeLocal<Radix: Unsigned, FreeSlots: Unsigned, TargetCapType: CapType>
 where
     FreeSlots: Sub<B1>,
     Sub1<FreeSlots>: Unsigned,
 {
-    fn retype(
+    fn retype_local(
         self,
-        dest_cnode: CNode<Radix, FreeSlots>,
-    ) -> Result<(Capability<TargetCapType>, CNode<Radix, Sub1<FreeSlots>>), Error>;
+        dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
+    ) -> Result<
+        (
+            Capability<TargetCapType>,
+            Capability<CNode<Radix, Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>>,
+        ),
+        Error,
+    >;
 }
 
 impl<Radix: Unsigned, FreeSlots: Unsigned, TargetCapType: CapType, BitSize: Unsigned>
-    Retype<Radix, FreeSlots, TargetCapType> for Capability<Untyped<BitSize>>
+    RetypeLocal<Radix, FreeSlots, TargetCapType> for Capability<Untyped<BitSize>>
 where
     FreeSlots: Sub<B1>,
     Sub1<FreeSlots>: Unsigned,
-    // TODO: make sure the untyped has enough room for the target type
+    // TODO: make sure the untyped has enough room for the target object
 {
-    fn retype(
+    fn retype_local(
         self,
-        dest_cnode: CNode<Radix, FreeSlots>,
-    ) -> Result<(Capability<TargetCapType>, CNode<Radix, Sub1<FreeSlots>>), Error> {
+        dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
+    ) -> Result<
+        (
+            Capability<TargetCapType>,
+            Capability<CNode<Radix, Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>>,
+        ),
+        Error,
+    > {
         let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
 
         let err = unsafe {
@@ -236,28 +243,71 @@ where
                 self.cptr as u32,                     // _service
                 TargetCapType::sel4_type_id() as u32, // type
                 0,                                    // size_bits
-                dest_slot.cptr,                       // root
-                dest_slot.index as u32,               // index
-                dest_slot.depth as u32,               // depth
+                dest_slot.cptr as u32,                // root
+                0,                                    // index
+                0,                                    // depth
                 dest_slot.offset as u32,              // offset
                 1,                                    // num_objects
             )
         };
+
         if err != 0 {
             return Err(Error::UntypedRetype(err));
         }
 
         Ok((
             Capability {
-                cptr: if dest_slot.depth == 0 {
-                    dest_slot.offset
-                } else {
-                    unimplemented!()
-                },
-
+                cptr: dest_slot.offset,
                 _cap_type: PhantomData,
             },
             dest_cnode,
         ))
     }
 }
+
+/////////
+// TCB //
+/////////
+#[derive(Debug)]
+pub struct ThreadControlBlock {}
+
+impl CapType for ThreadControlBlock {
+    fn sel4_type_id() -> usize {
+        api_object_seL4_TCBObject as usize
+    }
+}
+
+// trait Configure {
+//     fn configure(
+//         &self,
+//         fault_ep: Capability<Endpoint>,
+//         cspace_root: Capability<CNode>,
+//         cspace_root_data: usize,
+//         vspace_root: Capability<VSpace>,
+//         vspace_root_data: usize,
+//         buffer: usize,
+//         buffer_frame: Capability<Frame>,
+//     ) {
+//         unimplemented!()
+//     }
+// }
+
+// Others
+
+// #[derive(Debug)]
+// pub struct Endpoint {}
+
+// impl CapType for Endpoint {
+//     fn sel4_type_id() -> usize {
+//         api_object_seL4_Endpoint as usize
+//     }
+// }
+
+// #[derive(Debug)]
+// pub struct CNode {}
+
+// impl CapType for Endpoint {
+//     fn sel4_type_id() -> usize {
+//         api_object_seL4_CNode as usize
+//     }
+// }

@@ -217,7 +217,7 @@ static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
 // }
 
 use iron_pegasus::fancy::{
-    self, wrap_untyped, Capability, Retype, Split, ThreadControlBlock, Untyped,
+    self, wrap_untyped, Capability, RetypeLocal, Split, ThreadControlBlock, Untyped,
 };
 use iron_pegasus::micro_alloc::{self, GetUntyped};
 use typenum::{U19, U20};
@@ -266,7 +266,7 @@ fn main() {
     );
 
     let (my_tcb, root_cnode): (Capability<ThreadControlBlock>, _) = quarter_meg_1
-        .retype(root_cnode)
+        .retype_local(root_cnode)
         .expect("couldn't retyped to tcb");
     debug_println!(
         "retyped as thread control block {:?} {:?}",
