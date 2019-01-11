@@ -1,8 +1,8 @@
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
 use sel4_sys::{
-    api_object_seL4_UntypedObject, seL4_BootInfo, seL4_CPtr, seL4_CapInitThreadCNode,
-    seL4_UntypedDesc, seL4_Untyped_Retype, seL4_Word, seL4_WordBits,
+    api_object_seL4_TCBObject, api_object_seL4_UntypedObject, seL4_BootInfo, seL4_CPtr,
+    seL4_CapInitThreadCNode, seL4_UntypedDesc, seL4_Untyped_Retype, seL4_Word, seL4_WordBits,
 };
 use typenum::operator_aliases::{Add1, Diff, Shleft, Sub1};
 use typenum::{
@@ -72,6 +72,8 @@ pub fn root_cnode(bootinfo: &'static seL4_BootInfo) -> CNode<U12, U256> {
     }
 }
 
+/////
+// Capability types
 pub trait CapType {
     fn sel4_type_id() -> usize;
 }
@@ -82,9 +84,26 @@ pub struct Capability<CT: CapType> {
     _cap_type: PhantomData<CT>,
 }
 
+// Untyped
 #[derive(Debug)]
 pub struct Untyped<BitSize: Unsigned> {
     _bit_size: PhantomData<BitSize>,
+}
+
+impl<BitSize: Unsigned> CapType for Untyped<BitSize> {
+    fn sel4_type_id() -> usize {
+        api_object_seL4_UntypedObject as usize
+    }
+}
+
+// TCB
+#[derive(Debug)]
+pub struct ThreadControlBlock {}
+
+impl CapType for ThreadControlBlock {
+    fn sel4_type_id() -> usize {
+        api_object_seL4_TCBObject as usize
+    }
 }
 
 pub fn wrap_untyped<BitSize: Unsigned>(
@@ -98,12 +117,6 @@ pub fn wrap_untyped<BitSize: Unsigned>(
         })
     } else {
         None
-    }
-}
-
-impl<BitSize: Unsigned> CapType for Untyped<BitSize> {
-    fn sel4_type_id() -> usize {
-        api_object_seL4_UntypedObject as usize
     }
 }
 
@@ -192,49 +205,59 @@ where
     }
 }
 
-// impl<BitSize> Split
+//pub trait Retype
 
-// impl<BitSize: Unsigned> Untyped<BitSize> {
-//     fn split<FreeSlots: Unsigned>(self, dest_cnode: CNode<FreeSlots>) {
+pub trait Retype<Radix: Unsigned, FreeSlots: Unsigned, TargetCapType: CapType>
+where
+    FreeSlots: Sub<B1>,
+    Sub1<FreeSlots>: Unsigned,
+{
+    fn retype(
+        self,
+        dest_cnode: CNode<Radix, FreeSlots>,
+    ) -> Result<(Capability<TargetCapType>, CNode<Radix, Sub1<FreeSlots>>), Error>;
+}
 
-//     }
-// }
+impl<Radix: Unsigned, FreeSlots: Unsigned, TargetCapType: CapType, BitSize: Unsigned>
+    Retype<Radix, FreeSlots, TargetCapType> for Capability<Untyped<BitSize>>
+where
+    FreeSlots: Sub<B1>,
+    Sub1<FreeSlots>: Unsigned,
+    // TODO: make sure the untyped has enough room for the target type
+{
+    fn retype(
+        self,
+        dest_cnode: CNode<Radix, FreeSlots>,
+    ) -> Result<(Capability<TargetCapType>, CNode<Radix, Sub1<FreeSlots>>), Error> {
+        let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
 
-// impl<B, W, FreeSlots, AllocBits> UntypedRetype<B, W, FreeSlots, AllocBits> for Untyped<B, W>
-// where
-//     B: Unsigned,
-//     W: Unsigned,
-//     FreeSlots: Unsigned + Sub<B1>,
+        let err = unsafe {
+            seL4_Untyped_Retype(
+                self.cptr as u32,                     // _service
+                TargetCapType::sel4_type_id() as u32, // type
+                0,                                    // size_bits
+                dest_slot.cptr,                       // root
+                dest_slot.index as u32,               // index
+                dest_slot.depth as u32,               // depth
+                dest_slot.offset as u32,              // offset
+                1,                                    // num_objects
+            )
+        };
+        if err != 0 {
+            return Err(Error::UntypedRetype(err));
+        }
 
-//     AllocBits: Unsigned + Wow,
-//     Sub1<FreeSlots>: Unsigned,
+        Ok((
+            Capability {
+                cptr: if dest_slot.depth == 0 {
+                    dest_slot.offset
+                } else {
+                    unimplemented!()
+                },
 
-//     W: Sub<Wowow<AllocBits>>,
-//     Diff<W, Wowow<AllocBits>>: Unsigned,
-
-//     Wowow<AllocBits>: typenum::Unsigned,
-
-// {
-//     type AllocationBytes = Wowow<AllocBits>;
-//     type OutputW = Diff<W, Self::AllocationBytes>;
-//     type OutputAS = Sub1<FreeSlots>;
-
-//     fn retype(
-//         self,
-//         dest_cnode: CNode<FreeSlots>,
-//     ) -> (
-//         Untyped<AllocBits, Self::AllocationBytes>,
-//         Untyped<B, Self::OutputW>,
-//         CNode<Self::OutputAS>,
-//     ) {
-//         unimplemented!()
-//     }
-// }
-
-// fn testittoo() {
-//     let cnode: CNode<U3> = unimplemented!();
-//     let mem: Untyped<U5, U32> = unimplemented!();
-
-//     // let (new_one, mem, cnode): (Untyped<U3, U8>, Untyped<U5, U24>, CNode<U2>) = mem.retype(cnode);
-//     let (new_one, mem, cnode): (Untyped<U3, U8>, _, _) = mem.retype(cnode);
-// }
+                _cap_type: PhantomData,
+            },
+            dest_cnode,
+        ))
+    }
+}

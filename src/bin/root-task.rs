@@ -216,7 +216,7 @@ static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
 //     let child2_ep = ep.derive_into(child2_cnode);
 // }
 
-use iron_pegasus::fancy::{self, wrap_untyped, Capability, Split, Untyped};
+use iron_pegasus::fancy::{self, wrap_untyped, Capability, Split, Untyped, ThreadControlBlock, Retype};
 use typenum::{U19, U20};
 
 fn main() {
@@ -273,7 +273,6 @@ fn main() {
         root_cnode
     );
 
-
     let (quarter_meg_3, quarter_meg_4, root_cnode) = half_meg_2
         .split(root_cnode)
         .expect("Couldn't split untyped quarter megs second time");
@@ -284,63 +283,68 @@ fn main() {
         root_cnode
     );
 
+    let (my_tcb, root_cnode): (Capability<ThreadControlBlock>, _) = quarter_meg_1
+        .retype(root_cnode)
+        .expect("couldn't retyped to tcb");
+    debug_println!("retyped as thread control block {:?} {:?}", my_tcb, root_cnode);
 
 
+    ///////////////// old code
 
-    let mut allocator = iron_pegasus::allocator::Allocator::bootstrap(&bootinfo)
-        .expect("Failed to create bootstrap allocator");
+    // let mut allocator = iron_pegasus::allocator::Allocator::bootstrap(&bootinfo)
+    //     .expect("Failed to create bootstrap allocator");
 
-    let untyped = allocator
-        .alloc_untyped(seL4_TCBBits as usize, None, false)
-        .unwrap();
+    // let untyped = allocator
+    //     .alloc_untyped(seL4_TCBBits as usize, None, false)
+    //     .unwrap();
 
-    let tcb_cap = allocator
-        .retype_untyped_memory(untyped, api_object_seL4_TCBObject, seL4_TCBBits as usize, 1)
-        .expect("Failed to retype untyped memory")
-        .first as u32;
+    // let tcb_cap = allocator
+    //     .retype_untyped_memory(untyped, api_object_seL4_TCBObject, seL4_TCBBits as usize, 1)
+    //     .expect("Failed to retype untyped memory")
+    //     .first as u32;
 
-    // let tcb_cap = allocator.gimme<TCB>();
-    // let tcb = TCB::new(&allocator)?;
+    // // let tcb_cap = allocator.gimme<TCB>();
+    // // let tcb = TCB::new(&allocator)?;
 
-    let cspace_cap = seL4_CapInitThreadCNode;
-    let pd_cap = seL4_CapInitThreadVSpace;
+    // let cspace_cap = seL4_CapInitThreadCNode;
+    // let pd_cap = seL4_CapInitThreadVSpace;
 
-    let tcb_err: seL4_Error = unsafe {
-        seL4_TCB_Configure(
-            tcb_cap,
-            seL4_CapNull.into(),
-            cspace_cap.into(),
-            seL4_NilData.into(),
-            pd_cap.into(),
-            seL4_NilData.into(),
-            0,
-            0,
-        )
-    };
+    // let tcb_err: seL4_Error = unsafe {
+    //     seL4_TCB_Configure(
+    //         tcb_cap,
+    //         seL4_CapNull.into(),
+    //         cspace_cap.into(),
+    //         seL4_NilData.into(),
+    //         pd_cap.into(),
+    //         seL4_NilData.into(),
+    //         0,
+    //         0,
+    //     )
+    // };
 
-    assert!(tcb_err == 0, "Failed to configure TCB");
+    // assert!(tcb_err == 0, "Failed to configure TCB");
 
-    let stack_base = unsafe { CHILD_STACK as usize };
-    let stack_top = stack_base + CHILD_STACK_SIZE;
-    let mut regs: seL4_UserContext = unsafe { mem::zeroed() };
-    #[cfg(feature = "test")]
-    {
-        regs.pc = iron_pegasus::fel4_test::run as seL4_Word;
-    }
-    #[cfg(not(feature = "test"))]
-    {
-        regs.pc = iron_pegasus::run as seL4_Word;
-    }
-    regs.sp = stack_top as seL4_Word;
+    // let stack_base = unsafe { CHILD_STACK as usize };
+    // let stack_top = stack_base + CHILD_STACK_SIZE;
+    // let mut regs: seL4_UserContext = unsafe { mem::zeroed() };
+    // #[cfg(feature = "test")]
+    // {
+    //     regs.pc = iron_pegasus::fel4_test::run as seL4_Word;
+    // }
+    // #[cfg(not(feature = "test"))]
+    // {
+    //     regs.pc = iron_pegasus::run as seL4_Word;
+    // }
+    // regs.sp = stack_top as seL4_Word;
 
-    let _: u32 = unsafe { seL4_TCB_WriteRegisters(tcb_cap, 0, 0, 2, &mut regs) };
-    let _: u32 = unsafe { seL4_TCB_SetPriority(tcb_cap, seL4_CapInitThreadTCB.into(), 255) };
-    let _: u32 = unsafe { seL4_TCB_Resume(tcb_cap) };
-    loop {
-        unsafe {
-            seL4_Yield();
-        }
-    }
+    // let _: u32 = unsafe { seL4_TCB_WriteRegisters(tcb_cap, 0, 0, 2, &mut regs) };
+    // let _: u32 = unsafe { seL4_TCB_SetPriority(tcb_cap, seL4_CapInitThreadTCB.into(), 255) };
+    // let _: u32 = unsafe { seL4_TCB_Resume(tcb_cap) };
+    // loop {
+    //     unsafe {
+    //         seL4_Yield();
+    //     }
+    // }
 }
 
 global_asm!(
