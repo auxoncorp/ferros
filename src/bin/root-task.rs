@@ -217,10 +217,11 @@ static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
 // }
 
 use iron_pegasus::fancy::{
-    self, wrap_untyped, CNode, Capability, ChildCapability, Endpoint, ThreadControlBlock, Untyped,
+    self, wrap_untyped, CNode, Capability, ChildCapability, Endpoint, Page, PageDirectory,
+    PageTable, ThreadControlBlock, Untyped,
 };
 use iron_pegasus::micro_alloc::{self, GetUntyped};
-use typenum::{U19, U20, U8};
+use typenum::{U19, U20, U8, U12};
 
 fn main() {
     let bootinfo = unsafe { &*BOOTINFO };
@@ -235,37 +236,21 @@ fn main() {
         .get_untyped::<U20>()
         .expect("Couldn't find initial untyped");
 
-    let (half_meg_1, half_meg_2, root_cnode) = one_meg
-        .split(root_cnode)
-        .expect("Couldn't split untyped half megs");
-    debug_println!(
-        "split thing into half megs: {:?} {:?} {:?}\n\n",
-        half_meg_1,
-        half_meg_2,
-        root_cnode
-    );
+    // q: 18 bits
+    let (q1, q2, q3, q4, root_cnode) = one_meg.quarter(root_cnode).expect("first quartering");
 
-    let (quarter_meg_1, quarter_meg_2, root_cnode) = half_meg_1
-        .split(root_cnode)
-        .expect("Couldn't split untyped quarter megs first time");
-    debug_println!(
-        "split thing into quarter megs first time: {:?} {:?} {:?}\n\n",
-        quarter_meg_1,
-        quarter_meg_2,
-        root_cnode
-    );
+    // r: 16 bits
+    let (r1, r2, r3, r4, root_cnode) = q1.quarter(root_cnode).expect("second quartering");
 
-    let (quarter_meg_3, quarter_meg_4, root_cnode) = half_meg_2
-        .split(root_cnode)
-        .expect("Couldn't split untyped quarter megs second time");
-    debug_println!(
-        "split thing into quarter megs second time: {:?} {:?} {:?}\n\n",
-        quarter_meg_3,
-        quarter_meg_4,
-        root_cnode
-    );
+    // s: 14 bits
+    let (s1, s2, s3, s4, root_cnode) = r1.quarter(root_cnode).expect("fourth quartering");
 
-    let (child_cnode, root_cnode): (Capability<CNode<U8, _, _>>, _) = quarter_meg_2
+    // t: 12 bits
+    let (t1, t2, t3, t4, root_cnode) = s1.quarter(root_cnode).expect("fifth quartering");
+    let (t5, t6, t7, t8, root_cnode) = s2.quarter(root_cnode).expect("sixth quartering");
+
+
+    let (child_cnode, root_cnode): (Capability<CNode<U12, _, _>>, _) = r2
         .retype_local_cnode(root_cnode)
         .expect("Couldn't retype to child proc cnode");
     debug_println!(
@@ -274,7 +259,7 @@ fn main() {
         root_cnode
     );
 
-    let (child_endpoint, child_cnode): (ChildCapability<Endpoint>, _) = quarter_meg_3
+    let (child_endpoint, child_cnode): (ChildCapability<Endpoint>, _) = t2
         .retype_child(child_cnode)
         .expect("Couldn't retype to child proc endpoint");
     debug_println!(
@@ -283,7 +268,7 @@ fn main() {
         root_cnode
     );
 
-    let (mut child_tcb, root_cnode): (Capability<ThreadControlBlock>, _) = quarter_meg_1
+    let (mut child_tcb, root_cnode): (Capability<ThreadControlBlock>, _) = t3
         .retype_local(root_cnode)
         .expect("couldn't retyped to tcb");
     debug_println!(
@@ -292,15 +277,30 @@ fn main() {
         root_cnode
     );
 
+    let (mut child_page_directory, root_cnode): (Capability<PageDirectory>, _) =
+        s3.retype_local(root_cnode).expect("retype page directory");
+    // Capability::<PageDirectory>::wrap_cptr(seL4_CapInitThreadVSpace as usize);
+
+    let (child_page_table, root_cnode): (Capability<PageTable>, _) =
+        t5.retype_local(root_cnode).expect("retype page table");
+
+    child_page_directory
+        .map_page_table(&child_page_table, 0x0000000)
+        .expect("map page table");
+
+    debug_println!("mapped page table {:?}\n\n", child_page_table);
+
     child_tcb
-        .configure(child_cnode, seL4_CapInitThreadVSpace)
+        .configure(child_cnode, child_page_table)
         .expect("Couldn't configure child tcb");
 
-    debug_println!("conigured child tcb",);
+    debug_println!("conigured child tcb\n\n",);
+
+    // let (page_table, root_cnode): (Capability<PageTable>, _) =
+    //     b.retype_local(root_cnode).expect("retype page table");
 
     // let suspend_err = unsafe { seL4_TCB_Suspend(seL4_CapInitThreadTCB) };
     // assert!(suspend_err == 0);
-
 
     let stack_base = unsafe { CHILD_STACK as usize };
     let stack_top = stack_base + CHILD_STACK_SIZE;
@@ -316,7 +316,8 @@ fn main() {
     regs.sp = stack_top as seL4_Word;
 
     let _: u32 = unsafe { seL4_TCB_WriteRegisters(child_tcb.cptr as u32, 0, 0, 2, &mut regs) };
-    let _: u32 = unsafe { seL4_TCB_SetPriority(child_tcb.cptr as u32, seL4_CapInitThreadTCB.into(), 255) };
+    let _: u32 =
+        unsafe { seL4_TCB_SetPriority(child_tcb.cptr as u32, seL4_CapInitThreadTCB.into(), 255) };
     let _: u32 = unsafe { seL4_TCB_Resume(child_tcb.cptr as u32) };
     loop {
         unsafe {

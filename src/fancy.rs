@@ -2,15 +2,19 @@ use core::marker::PhantomData;
 use core::mem::size_of;
 use core::ops::{Add, Sub};
 use sel4_sys::{
-    api_object_seL4_CapTableObject, api_object_seL4_EndpointObject, api_object_seL4_TCBObject,
-    api_object_seL4_UntypedObject, seL4_BootInfo, seL4_CNode_CapData_new, seL4_CPtr,
+    _object_seL4_ARM_PageDirectoryObject, _object_seL4_ARM_PageTableObject,
+    _object_seL4_ARM_SmallPageObject, api_object_seL4_CapTableObject,
+    api_object_seL4_EndpointObject, api_object_seL4_TCBObject, api_object_seL4_UntypedObject,
+    seL4_ARM_ASIDControl_MakePool, seL4_ARM_ASIDPool, seL4_ARM_PageTable_Map,
+    seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever, seL4_ARM_VMAttributes_seL4_ARM_PageCacheable,
+    seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled, seL4_BootInfo, seL4_CNode_CapData_new, seL4_CPtr,
     seL4_CapInitThreadCNode, seL4_CapNull, seL4_NilData, seL4_TCB_Configure, seL4_UntypedDesc,
     seL4_Untyped_Retype, seL4_Word, seL4_WordBits,
 };
 use typenum::operator_aliases::{Add1, Diff, Shleft, Sub1};
 use typenum::{
-    Bit, Exp, IsGreaterOrEqual, UInt, UTerm, Unsigned, B0, B1, U1, U19, U2, U24, U256, U3, U32, U5,
-    U8,
+    Bit, Exp, IsGreaterOrEqual, UInt, UTerm, Unsigned, B0, B1, U1, U12, U19, U2, U24, U256, U3,
+    U32, U5, U8,
 };
 
 use crate::pow::{Pow, _Pow};
@@ -19,6 +23,7 @@ pub trait CapType {
     fn sel4_type_id() -> usize;
 }
 
+// TODO: this is more specifically "fixed size and also not a funny vspace thing"
 pub trait FixedSizeCap {}
 
 #[derive(Debug)]
@@ -133,6 +138,7 @@ pub fn wrap_untyped<BitSize: Unsigned>(
 pub enum Error {
     UntypedRetype(u32),
     TCBConfigure(u32),
+    MapPageTable(u32),
 }
 
 impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
@@ -185,6 +191,78 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
         ))
     }
 
+    pub fn quarter<Radix: Unsigned, FreeSlots: Unsigned>(
+        self,
+        dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
+    ) -> Result<
+        (
+            Capability<Untyped<Diff<BitSize, U2>>>,
+            Capability<Untyped<Diff<BitSize, U2>>>,
+            Capability<Untyped<Diff<BitSize, U2>>>,
+            Capability<Untyped<Diff<BitSize, U2>>>,
+            Capability<CNode<Radix, Sub1<Sub1<Sub1<FreeSlots>>>, CNodeRoles::CSpaceRoot>>,
+        ),
+        Error,
+    >
+    where
+        FreeSlots: Sub<U3>,
+        Diff<FreeSlots, U3>: Unsigned,
+
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
+
+        Sub1<FreeSlots>: Sub<B1>,
+        Sub1<Sub1<FreeSlots>>: Unsigned,
+
+        Sub1<Sub1<FreeSlots>>: Sub<B1>,
+        Sub1<Sub1<Sub1<FreeSlots>>>: Unsigned,
+
+        BitSize: Sub<U2>,
+        Diff<BitSize, U2>: Unsigned,
+    {
+        let (dest_cnode, dest_slot1) = dest_cnode.consume_slot();
+        let (dest_cnode, dest_slot2) = dest_cnode.consume_slot();
+        let (dest_cnode, dest_slot3) = dest_cnode.consume_slot();
+
+        let err = unsafe {
+            seL4_Untyped_Retype(
+                self.cptr as u32,                          // _service
+                Untyped::<BitSize>::sel4_type_id() as u32, // type
+                (BitSize::to_u32() - 2),                   // size_bits
+                dest_slot1.cptr as u32,                    // root
+                0,                                         // index
+                0,                                         // depth
+                dest_slot1.offset as u32,                  // offset
+                3,                                         // num_objects
+            )
+        };
+        if err != 0 {
+            return Err(Error::UntypedRetype(err));
+        }
+
+        Ok((
+            Capability {
+                cptr: self.cptr,
+                _cap_type: PhantomData,
+            },
+            Capability {
+                cptr: dest_slot1.offset,
+                _cap_type: PhantomData,
+            },
+            Capability {
+                cptr: dest_slot2.offset,
+                _cap_type: PhantomData,
+            },
+            Capability {
+                cptr: dest_slot3.offset,
+                _cap_type: PhantomData,
+            },
+            dest_cnode,
+        ))
+    }
+
+    // TODO add required bits as an associated type for each TargetCapType, require that
+    // this untyped is big enough
     pub fn retype_local<Radix: Unsigned, FreeSlots: Unsigned, TargetCapType: CapType>(
         self,
         dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
@@ -228,6 +306,7 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
         ))
     }
 
+    // TODO: the required size of the untyped depends in some way on the child radix, but HOW?
     pub fn retype_local_cnode<Radix: Unsigned, FreeSlots: Unsigned, ChildRadix: Unsigned>(
         self,
         dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
@@ -316,6 +395,49 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
     }
 }
 
+impl Capability<Untyped<U12>> {
+    // TODO put retype local into a trait so we can dispatch via the target cap type
+    pub fn retype_asid_pool<Radix: Unsigned, FreeSlots: Unsigned>(
+        self,
+        asid_control: Capability<ASIDControl>,
+        dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
+    ) -> Result<
+        (
+            Capability<ASIDPool>,
+            Capability<CNode<Radix, Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>>,
+        ),
+        Error,
+    >
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
+    {
+        let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
+
+        let err = unsafe {
+            seL4_ARM_ASIDControl_MakePool(
+                asid_control.cptr as u32,       // _service
+                self.cptr as u32,               // untyped
+                dest_slot.cptr as u32,          // root
+                dest_slot.offset as u32,        // index
+                (8 * size_of::<usize>()) as u8, // depth
+            )
+        };
+
+        if err != 0 {
+            return Err(Error::UntypedRetype(err));
+        }
+
+        Ok((
+            Capability {
+                cptr: dest_slot.offset,
+                _cap_type: PhantomData,
+            },
+            dest_cnode,
+        ))
+    }
+}
+
 /////////
 // TCB //
 /////////
@@ -336,10 +458,10 @@ impl Capability<ThreadControlBlock> {
         // fault_ep: Capability<Endpoint>,
         cspace_root: Capability<CNode<Radix, FreeSlots, CNodeRoles::ChildProcess>>,
         // cspace_root_data: usize, // set the guard bits here
-        vspace_root: u32, //Capability<VSpace>,
-        // vspace_root_data: usize, // always 0
-        // buffer: usize,
-        // buffer_frame: Capability<Frame>,
+        vspace_root: Capability<PageTable>, // TODO make a marker trait for VSpace
+                                            // vspace_root_data: usize, // always 0
+                                            // buffer: usize,
+                                            // buffer_frame: Capability<Frame>,
     ) -> Result<(), Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
         // used by the radix.
@@ -357,7 +479,7 @@ impl Capability<ThreadControlBlock> {
                 seL4_CapNull.into(),
                 cspace_root.cptr as u32,
                 cspace_root_data,
-                vspace_root, //vspace_root.cptr as u32,
+                vspace_root.cptr as u32,
                 seL4_NilData.into(),
                 0,
                 0,
@@ -385,25 +507,101 @@ impl CapType for Endpoint {
 
 impl FixedSizeCap for Endpoint {}
 
+// asid control
 #[derive(Debug)]
-pub struct VSpace {}
+pub struct ASIDControl {}
 
-impl CapType for VSpace {
+impl CapType for ASIDControl {
     fn sel4_type_id() -> usize {
-        api_object_seL4_EndpointObject as usize
+        0 // TODO WUT
     }
 }
 
-impl FixedSizeCap for VSpace {}
-
-#[derive(Debug)]
-pub struct Frame {}
-
-impl CapType for Frame {
-    fn sel4_type_id() -> usize {
-        0
-        // api_object_seL4_EndpointObject as usize
+impl ASIDControl {
+    // TODO this should happen in the bootstrap adapter
+    pub fn wrap_cptr(cptr: usize) -> Capability<ASIDControl> {
+        Capability {
+            cptr: cptr,
+            _cap_type: PhantomData,
+        }
     }
 }
 
-impl FixedSizeCap for Frame {}
+// asid pool
+#[derive(Debug)]
+pub struct ASIDPool {}
+
+impl CapType for ASIDPool {
+    fn sel4_type_id() -> usize {
+        0 // TODO WUT
+    }
+}
+
+#[derive(Debug)]
+pub struct PageDirectory {}
+
+impl CapType for PageDirectory {
+    fn sel4_type_id() -> usize {
+        _object_seL4_ARM_PageDirectoryObject as usize
+    }
+}
+
+impl FixedSizeCap for PageDirectory {}
+
+impl Capability<PageDirectory> {
+    // TODO this should happen in the bootstrap adapter
+    pub fn wrap_cptr(cptr: usize) -> Capability<PageDirectory> {
+        Capability {
+            cptr: cptr,
+            _cap_type: PhantomData,
+        }
+    }
+
+    pub fn map_page_table(
+        &mut self,
+        page_table: &Capability<PageTable>,
+        virtual_address: usize,
+    ) -> Result<(), Error> {
+        // map the page table
+        let err = unsafe {
+            seL4_ARM_PageTable_Map(
+                page_table.cptr as u32,
+                self.cptr as u32,
+                virtual_address as u32,
+                // TODO: JON! What do we write here? The default (according to
+                // sel4_ appears to be pageCachable | parityEnabled)
+                seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
+                    | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled
+                    | seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever,
+            )
+        };
+
+        if err != 0 {
+            Err(Error::MapPageTable(err))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct PageTable {}
+
+impl CapType for PageTable {
+    fn sel4_type_id() -> usize {
+        _object_seL4_ARM_PageTableObject as usize
+    }
+}
+
+impl FixedSizeCap for PageTable {}
+
+#[derive(Debug)]
+pub struct Page {}
+
+impl CapType for Page {
+    fn sel4_type_id() -> usize {
+        _object_seL4_ARM_SmallPageObject as usize
+    }
+}
+
+impl FixedSizeCap for Page {}
