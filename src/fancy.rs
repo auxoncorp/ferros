@@ -5,11 +5,12 @@ use sel4_sys::{
     _object_seL4_ARM_PageDirectoryObject, _object_seL4_ARM_PageTableObject,
     _object_seL4_ARM_SmallPageObject, api_object_seL4_CapTableObject,
     api_object_seL4_EndpointObject, api_object_seL4_TCBObject, api_object_seL4_UntypedObject,
-    seL4_ARM_ASIDControl_MakePool, seL4_ARM_ASIDPool, seL4_ARM_PageTable_Map,
-    seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever, seL4_ARM_VMAttributes_seL4_ARM_PageCacheable,
-    seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled, seL4_BootInfo, seL4_CNode_CapData_new, seL4_CPtr,
-    seL4_CapInitThreadCNode, seL4_CapNull, seL4_NilData, seL4_TCB_Configure, seL4_UntypedDesc,
-    seL4_Untyped_Retype, seL4_Word, seL4_WordBits,
+    seL4_ARM_ASIDControl_MakePool, seL4_ARM_ASIDPool, seL4_ARM_ASIDPool_Assign,
+    seL4_ARM_PageTable_Map, seL4_ARM_Page_Map, seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever,
+    seL4_ARM_VMAttributes_seL4_ARM_PageCacheable, seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled,
+    seL4_BootInfo, seL4_CNode_CapData_new, seL4_CPtr, seL4_CapInitThreadCNode, seL4_CapNull,
+    seL4_CapRights_new, seL4_NilData, seL4_TCB_Configure, seL4_UntypedDesc, seL4_Untyped_Retype,
+    seL4_Word, seL4_WordBits,
 };
 use typenum::operator_aliases::{Add1, Diff, Shleft, Sub1};
 use typenum::{
@@ -139,6 +140,8 @@ pub enum Error {
     UntypedRetype(u32),
     TCBConfigure(u32),
     MapPageTable(u32),
+    ASIDPoolAssign(u32),
+    MapPage(u32),
 }
 
 impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
@@ -307,6 +310,7 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
     }
 
     // TODO: the required size of the untyped depends in some way on the child radix, but HOW?
+    // answer: it needs 4 more bits, this value is seL4_SlotBits.
     pub fn retype_local_cnode<Radix: Unsigned, FreeSlots: Unsigned, ChildRadix: Unsigned>(
         self,
         dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
@@ -458,10 +462,10 @@ impl Capability<ThreadControlBlock> {
         // fault_ep: Capability<Endpoint>,
         cspace_root: Capability<CNode<Radix, FreeSlots, CNodeRoles::ChildProcess>>,
         // cspace_root_data: usize, // set the guard bits here
-        vspace_root: Capability<PageTable>, // TODO make a marker trait for VSpace
-                                            // vspace_root_data: usize, // always 0
-                                            // buffer: usize,
-                                            // buffer_frame: Capability<Frame>,
+        vspace_root: Capability<PageDirectory>, // TODO make a marker trait for VSpace?
+                                                // vspace_root_data: usize, // always 0
+                                                // buffer: usize,
+                                                // buffer_frame: Capability<Frame>,
     ) -> Result<(), Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
         // used by the radix.
@@ -476,7 +480,7 @@ impl Capability<ThreadControlBlock> {
         let tcb_err = unsafe {
             seL4_TCB_Configure(
                 self.cptr as u32,
-                seL4_CapNull.into(),
+                seL4_CapNull.into(), // fault_ep.cptr as u32,
                 cspace_root.cptr as u32,
                 cspace_root_data,
                 vspace_root.cptr as u32,
@@ -517,7 +521,7 @@ impl CapType for ASIDControl {
     }
 }
 
-impl ASIDControl {
+impl Capability<ASIDControl> {
     // TODO this should happen in the bootstrap adapter
     pub fn wrap_cptr(cptr: usize) -> Capability<ASIDControl> {
         Capability {
@@ -528,12 +532,26 @@ impl ASIDControl {
 }
 
 // asid pool
+// TODO: track capacity with the types
+// TODO: track in the pagedirectory type whether it has been assigned (mapped), and for pagetable too
 #[derive(Debug)]
 pub struct ASIDPool {}
 
 impl CapType for ASIDPool {
     fn sel4_type_id() -> usize {
         0 // TODO WUT
+    }
+}
+
+impl Capability<ASIDPool> {
+    pub fn assign(&mut self, vspace: &mut Capability<PageDirectory>) -> Result<(), Error> {
+        let err = unsafe { seL4_ARM_ASIDPool_Assign(self.cptr as u32, vspace.cptr as u32) };
+
+        if err != 0 {
+            Err(Error::ASIDPoolAssign(err))
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -582,6 +600,32 @@ impl Capability<PageDirectory> {
             Ok(())
         }
     }
+
+    pub fn map_page(
+        &mut self,
+        page: &Capability<Page>,
+        virtual_address: usize,
+    ) -> Result<(), Error> {
+        let err = unsafe {
+            seL4_ARM_Page_Map(
+                page.cptr as u32,
+                self.cptr as u32,
+                virtual_address as u32,
+                seL4_CapRights_new(0, 1, 1), // read/write
+                // TODO: JON! What do we write here? The default (according to
+                // sel4_ appears to be pageCachable | parityEnabled)
+                seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
+                    | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled
+                    | seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever,
+            )
+        };
+
+        if err != 0 {
+            Err(Error::MapPage(err))
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -594,6 +638,8 @@ impl CapType for PageTable {
 }
 
 impl FixedSizeCap for PageTable {}
+
+impl Capability<PageTable> {}
 
 #[derive(Debug)]
 pub struct Page {}
