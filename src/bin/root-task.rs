@@ -179,12 +179,13 @@ pub extern "C" fn oom(_layout: Layout) -> ! {
 const CHILD_STACK_SIZE: usize = 4096;
 static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
 
+use core::mem::size_of;
 use iron_pegasus::fancy::{
     self, wrap_untyped, ASIDControl, ASIDPool, CNode, Capability, ChildCapability, Endpoint, Page,
     PageDirectory, PageTable, ThreadControlBlock, Untyped,
 };
 use iron_pegasus::micro_alloc::{self, GetUntyped};
-use typenum::{Unsigned, U12, U19, U20, U8};
+use typenum::{Unsigned, U12, U19, U20, U256, U8};
 
 fn main() {
     let bootinfo = unsafe { &*BOOTINFO };
@@ -257,8 +258,10 @@ fn main() {
     let (child_page_table, root_cnode): (Capability<PageTable>, _) =
         t5.retype_local(root_cnode).expect("retype page table");
 
+    let stack_base = 0x10000000;
+
     child_page_directory
-        .map_page_table(&child_page_table, 0x10000000)
+        .map_page_table(&child_page_table, stack_base)
         .expect("map page table");
 
     debug_println!("mapped page table {:?}\n\n", child_page_table);
@@ -268,8 +271,14 @@ fn main() {
         .expect("retype child stack page");
 
     child_page_directory
-        .map_page(&child_stack_page, 0x10000000)
+        .map_page(&child_stack_page, stack_base)
         .expect("map child stack page");
+
+    debug_println!(
+        "mapped child stack page {:?} at 0x{:08x}\n\n",
+        child_stack_page,
+        stack_base
+    );
 
     // map in the user image
 
@@ -281,14 +290,63 @@ fn main() {
     // looks like the .text section is where the code is. We need some way to
     // get access to its address here in userland, but for now I'll hardcode it.
 
-    let text_section_start = 0x00010300;
+    // the paging structures are sized like this:
+    // page directory: address bits 20 - 31
+    // page table:     address bits 12 - 19
+
+    //     28   24   20   16   12    8    4    0
+    // 0b1111 1111 1111 1111 1111 1111 1111 1111
+    //   --directory--- --table-- ----page-----
+
+    // this is the page-aligned address where the program data starts. I found
+    // this out from readelf.
+    let mut vaddr = 0x10000;
+
+    let (frame_page_table, root_cnode): (Capability<PageTable>, _) =
+        t7.retype_local(root_cnode).expect("alloc frame page table");
+
+    child_page_directory
+        .map_page_table(&frame_page_table, vaddr)
+        .expect("map frame page table");
+
+    debug_println!("mapped page table at 0x{:08x}\n\n", vaddr);
+
+    let (dest_region, root_cnode) = root_cnode.reserve_region::<U256>();
+    let mut copy_dest_slot = dest_region.start;
 
     // This is, in theory, described on page 44 of the manual.
-    for image_cptr in bootinfo.userImagePaging.start..bootinfo.userImagePaging.end {
-        // ...
-    }
+    for page_cptr in bootinfo.userImageFrames.start..bootinfo.userImageFrames.end {
+        assert!(copy_dest_slot < dest_region.end);
 
-    debug_println!("mapped child stack page {:?}\n\n", child_stack_page);
+        // copy the cap
+        let err = unsafe {
+            seL4_CNode_Copy(
+                root_cnode.cptr as u32,         // _service
+                copy_dest_slot as u32,          // index
+                (8 * size_of::<usize>()) as u8, // depth
+                root_cnode.cptr as u32,         // src_root
+                page_cptr,                      // src_index
+                32,                             // src_depth
+                seL4_CapRights_new(0, 1, 0),    // read only
+            )
+        };
+        assert!(err == 0);
+
+        let copied_page_cap = Capability::<Page>::wrap_cptr(copy_dest_slot as usize);
+
+        child_page_directory
+            .map_page(&copied_page_cap, vaddr)
+            .expect("map user image page");
+
+        debug_println!(
+            "  mapped user image page (cptr {:?}) at vaddr {:08x}",
+            copied_page_cap,
+            vaddr
+        );
+
+        vaddr += 0x1000;
+        copy_dest_slot += 1;
+    }
 
     child_tcb
         .configure(
@@ -300,14 +358,8 @@ fn main() {
 
     debug_println!("configured child tcb!\n\n",);
 
-    // let (page_table, root_cnode): (Capability<PageTable>, _) =
-    //     b.retype_local(root_cnode).expect("retype page table");
-
-    // let suspend_err = unsafe { seL4_TCB_Suspend(seL4_CapInitThreadTCB) };
-    // assert!(suspend_err == 0);
-
-    let stack_base = 0x10000000; //unsafe { CHILD_STACK as usize };
-    let stack_top = stack_base + U12::to_u32();
+    // TODO: this isn't quite right, but it's within the mapped area at least.
+    let stack_top = stack_base + 0xfff;
     let mut regs: seL4_UserContext = unsafe { mem::zeroed() };
     #[cfg(feature = "test")]
     {
@@ -334,68 +386,6 @@ fn main() {
             seL4_Yield();
         }
     }
-
-    ///////////////// old code
-
-    // let bootinfo = unsafe { &*BOOTINFO };
-    // let cspace_cap = seL4_CapInitThreadCNode;
-    // let pd_cap = seL4_CapInitThreadVSpace;
-    // let tcb_cap = bootinfo.empty.start;
-
-    // let mut allocator = iron_pegasus::allocator::Allocator::bootstrap(&bootinfo)
-    //     .expect("Failed to create bootstrap allocator");
-
-    // let untyped = allocator
-    //     .alloc_untyped(seL4_TCBBits as usize, None, false)
-    //     .unwrap();
-
-    // let tcb_cap = allocator
-    //     .retype_untyped_memory(untyped, api_object_seL4_TCBObject, seL4_TCBBits as usize, 1)
-    //     .expect("Failed to retype untyped memory")
-    //     .first as u32;
-
-    // // let tcb_cap = allocator.gimme<TCB>();
-    // // let tcb = TCB::new(&allocator)?;
-
-    // let cspace_cap = seL4_CapInitThreadCNode;
-    // let pd_cap = seL4_CapInitThreadVSpace;
-
-    // let tcb_err: seL4_Error = unsafe {
-    //     seL4_TCB_Configure(
-    //         tcb_cap,
-    //         seL4_CapNull.into(),
-    //         cspace_cap.into(),
-    //         seL4_NilData.into(),
-    //         pd_cap.into(),
-    //         seL4_NilData.into(),
-    //         0,
-    //         0,
-    //     )
-    // };
-
-    // assert!(tcb_err == 0, "Failed to configure TCB");
-
-    // let stack_base = unsafe { CHILD_STACK as usize };
-    // let stack_top = stack_base + CHILD_STACK_SIZE;
-    // let mut regs: seL4_UserContext = unsafe { mem::zeroed() };
-    // #[cfg(feature = "test")]
-    // {
-    //     regs.pc = iron_pegasus::fel4_test::run as seL4_Word;
-    // }
-    // #[cfg(not(feature = "test"))]
-    // {
-    //     regs.pc = iron_pegasus::run as seL4_Word;
-    // }
-    // regs.sp = stack_top as seL4_Word;
-
-    // let _: u32 = unsafe { seL4_TCB_WriteRegisters(tcb_cap, 0, 0, 2, &mut regs) };
-    // let _: u32 = unsafe { seL4_TCB_SetPriority(tcb_cap, seL4_CapInitThreadTCB.into(), 255) };
-    // let _: u32 = unsafe { seL4_TCB_Resume(tcb_cap) };
-    // loop {
-    //     unsafe {
-    //         seL4_Yield();
-    //     }
-    // }
 }
 
 global_asm!(

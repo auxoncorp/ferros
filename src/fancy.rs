@@ -8,17 +8,27 @@ use sel4_sys::{
     seL4_ARM_ASIDControl_MakePool, seL4_ARM_ASIDPool, seL4_ARM_ASIDPool_Assign,
     seL4_ARM_PageTable_Map, seL4_ARM_Page_Map, seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever,
     seL4_ARM_VMAttributes_seL4_ARM_PageCacheable, seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled,
-    seL4_BootInfo, seL4_CNode_CapData_new, seL4_CPtr, seL4_CapInitThreadCNode, seL4_CapNull,
-    seL4_CapRights_new, seL4_NilData, seL4_TCB_Configure, seL4_UntypedDesc, seL4_Untyped_Retype,
-    seL4_Word, seL4_WordBits,
+    seL4_BootInfo, seL4_CNode_CapData_new, seL4_CNode_Copy, seL4_CPtr, seL4_CapInitThreadCNode,
+    seL4_CapNull, seL4_CapRights_new, seL4_CapRights_t, seL4_NilData, seL4_SlotRegion,
+    seL4_TCB_Configure, seL4_UntypedDesc, seL4_Untyped_Retype, seL4_Word, seL4_WordBits,
 };
 use typenum::operator_aliases::{Add1, Diff, Shleft, Sub1};
 use typenum::{
-    Bit, Exp, IsGreaterOrEqual, UInt, UTerm, Unsigned, B0, B1, U1, U12, U19, U2, U24, U256, U3,
-    U32, U5, U8,
+    Bit, Exp, IsGreaterOrEqual, UInt, UTerm, Unsigned, B0, B1, U1, U1024, U12, U19, U2, U24, U256,
+    U3, U32, U5, U8,
 };
 
 use crate::pow::{Pow, _Pow};
+
+#[derive(Debug)]
+pub enum Error {
+    UntypedRetype(u32),
+    TCBConfigure(u32),
+    MapPageTable(u32),
+    ASIDPoolAssign(u32),
+    MapPage(u32),
+    CNodeCopy(u32),
+}
 
 pub trait CapType {
     fn sel4_type_id() -> usize;
@@ -75,11 +85,13 @@ struct CNodeSlot {
 
 impl<Radix: Unsigned, FreeSlots: Unsigned, Role: CNodeRole>
     Capability<CNode<Radix, FreeSlots, Role>>
-where
-    FreeSlots: Sub<B1>,
-    Sub1<FreeSlots>: Unsigned,
 {
-    fn consume_slot(self) -> (Capability<CNode<Radix, Sub1<FreeSlots>, Role>>, CNodeSlot) {
+    // TODO: reverse these args to be consistent with everything else
+    fn consume_slot(self) -> (Capability<CNode<Radix, Sub1<FreeSlots>, Role>>, CNodeSlot)
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
+    {
         (
             Capability {
                 cptr: self.cptr,
@@ -91,6 +103,31 @@ where
             },
         )
     }
+
+    // Reserve n slots that you're going to need for something outside this
+    // api. Return the offset of the first slot and the updated cnode.
+    pub fn reserve_region<Count: Unsigned>(
+        self,
+    ) -> (
+        seL4_SlotRegion,
+        Capability<CNode<Radix, Diff<FreeSlots, Count>, Role>>,
+    )
+    where
+        FreeSlots: Sub<Count>,
+        Diff<FreeSlots, Count>: Unsigned,
+    {
+        let start = ((1 << Radix::to_u8()) - FreeSlots::to_usize()) as u32;
+        (
+            seL4_SlotRegion {
+                start: start,
+                end: start + Count::to_u32(),
+            },
+            Capability {
+                cptr: self.cptr,
+                _cap_type: PhantomData,
+            },
+        )
+    }
 }
 
 // TODO: how many slots are there really? We should be able to know this at build
@@ -99,10 +136,55 @@ where
 // TODO: ideally, this should only be callable once in the process. Is that possible?
 pub fn root_cnode(
     bootinfo: &'static seL4_BootInfo,
-) -> Capability<CNode<U19, U256, CNodeRoles::CSpaceRoot>> {
+) -> Capability<CNode<U19, U1024, CNodeRoles::CSpaceRoot>> {
     Capability {
         cptr: seL4_CapInitThreadCNode as usize,
         _cap_type: PhantomData,
+    }
+}
+
+impl<CT: CapType> Capability<CT> {
+    pub fn copy_local<Radix: Unsigned, FreeSlots: Unsigned>(
+        &self,
+        dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
+        rights: seL4_CapRights_t,
+    ) -> Result<
+        (
+            Capability<CT>,
+            Capability<CNode<Radix, Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>>,
+        ),
+        Error,
+    >
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
+    {
+        let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
+
+        let err = unsafe {
+            seL4_CNode_Copy(
+                dest_slot.cptr as u32,          // _service
+                dest_slot.offset as u32,        // index
+                (8 * size_of::<usize>()) as u8, // depth
+                // TODO this is hardcoded to the root task cnode
+                2,                              // src_root
+                self.cptr as u32,               // src_index
+                32,                             // src_depth
+                rights,                         // rights
+            )
+        };
+
+        if err != 0 {
+            Err(Error::CNodeCopy(err))
+        } else {
+            Ok((
+                Capability {
+                    cptr: dest_slot.offset,
+                    _cap_type: PhantomData,
+                },
+                dest_cnode,
+            ))
+        }
     }
 }
 
@@ -133,15 +215,6 @@ pub fn wrap_untyped<BitSize: Unsigned>(
     } else {
         None
     }
-}
-
-#[derive(Debug)]
-pub enum Error {
-    UntypedRetype(u32),
-    TCBConfigure(u32),
-    MapPageTable(u32),
-    ASIDPoolAssign(u32),
-    MapPage(u32),
 }
 
 impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
@@ -589,8 +662,7 @@ impl Capability<PageDirectory> {
                 // TODO: JON! What do we write here? The default (according to
                 // sel4_ appears to be pageCachable | parityEnabled)
                 seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
-                    | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled
-                    | seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever,
+                    | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled, // | seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever
             )
         };
 
@@ -616,7 +688,7 @@ impl Capability<PageDirectory> {
                 // sel4_ appears to be pageCachable | parityEnabled)
                 seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
                     | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled
-                    | seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever,
+                    // | seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever,
             )
         };
 
@@ -639,7 +711,14 @@ impl CapType for PageTable {
 
 impl FixedSizeCap for PageTable {}
 
-impl Capability<PageTable> {}
+impl Capability<PageTable> {
+    pub fn wrap_cptr(cptr: usize) -> Capability<PageTable> {
+        Capability {
+            cptr: cptr,
+            _cap_type: PhantomData,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Page {}
@@ -651,3 +730,12 @@ impl CapType for Page {
 }
 
 impl FixedSizeCap for Page {}
+
+impl Capability<Page> {
+    pub fn wrap_cptr(cptr: usize) -> Capability<Page> {
+        Capability {
+            cptr: cptr,
+            _cap_type: PhantomData,
+        }
+    }
+}
