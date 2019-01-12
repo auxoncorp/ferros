@@ -1,17 +1,7 @@
 use core::marker::PhantomData;
-use core::mem::size_of;
+use core::mem::{size_of, transmute};
 use core::ops::{Add, Sub};
-use sel4_sys::{
-    _object_seL4_ARM_PageDirectoryObject, _object_seL4_ARM_PageTableObject,
-    _object_seL4_ARM_SmallPageObject, api_object_seL4_CapTableObject,
-    api_object_seL4_EndpointObject, api_object_seL4_TCBObject, api_object_seL4_UntypedObject,
-    seL4_ARM_ASIDControl_MakePool, seL4_ARM_ASIDPool, seL4_ARM_ASIDPool_Assign,
-    seL4_ARM_PageTable_Map, seL4_ARM_Page_Map, seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever,
-    seL4_ARM_VMAttributes_seL4_ARM_PageCacheable, seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled,
-    seL4_BootInfo, seL4_CNode_CapData_new, seL4_CNode_Copy, seL4_CPtr, seL4_CapInitThreadCNode,
-    seL4_CapNull, seL4_CapRights_new, seL4_CapRights_t, seL4_NilData, seL4_SlotRegion,
-    seL4_TCB_Configure, seL4_UntypedDesc, seL4_Untyped_Retype, seL4_Word, seL4_WordBits,
-};
+use sel4_sys::*;
 use typenum::operator_aliases::{Add1, Diff, Shleft, Sub1};
 use typenum::{
     Bit, Exp, IsGreaterOrEqual, UInt, UTerm, Unsigned, B0, B1, U1, U1024, U12, U19, U2, U24, U256,
@@ -63,19 +53,21 @@ pub mod CNodeRoles {
 }
 
 #[derive(Debug)]
-pub struct CNode<Radix: Unsigned, FreeSlots: Unsigned, Role: CNodeRole> {
-    _radix: PhantomData<Radix>,
+pub struct CNode<FreeSlots: Unsigned, Role: CNodeRole> {
+    radix: u8,
+    next_free_slot: usize,
+    cptr: usize,
     _free_slots: PhantomData<FreeSlots>,
     _role: PhantomData<Role>,
 }
 
-impl<Radix: Unsigned, FreeSlots: Unsigned, Role: CNodeRole> CapType
-    for CNode<Radix, FreeSlots, Role>
-{
-    fn sel4_type_id() -> usize {
-        api_object_seL4_CapTableObject as usize
-    }
-}
+// impl<Radix: Unsigned, FreeSlots: Unsigned, Role: CNodeRole> CapType
+//     for CNode<Radix, FreeSlots, Role>
+// {
+//     fn sel4_type_id() -> usize {
+//         api_object_seL4_CapTableObject as usize
+//     }
+// }
 
 #[derive(Debug)]
 struct CNodeSlot {
@@ -83,48 +75,84 @@ struct CNodeSlot {
     offset: usize,
 }
 
-impl<Radix: Unsigned, FreeSlots: Unsigned, Role: CNodeRole>
-    Capability<CNode<Radix, FreeSlots, Role>>
-{
+impl<FreeSlots: Unsigned, Role: CNodeRole> CNode<FreeSlots, Role> {
     // TODO: reverse these args to be consistent with everything else
-    fn consume_slot(self) -> (Capability<CNode<Radix, Sub1<FreeSlots>, Role>>, CNodeSlot)
+    fn consume_slot(self) -> (CNode<Sub1<FreeSlots>, Role>, CNodeSlot)
     where
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
     {
         (
-            Capability {
+            // TODO: use mem::transmute
+            CNode {
+                radix: self.radix,
+                next_free_slot: self.next_free_slot + 1,
                 cptr: self.cptr,
-                _cap_type: PhantomData,
+                _free_slots: PhantomData,
+                _role: PhantomData,
             },
             CNodeSlot {
                 cptr: self.cptr,
-                offset: (1 << Radix::to_u8()) - FreeSlots::to_usize(),
+                offset: self.next_free_slot,
             },
         )
     }
 
-    // Reserve n slots that you're going to need for something outside this
-    // api. Return the offset of the first slot and the updated cnode.
+    // Reserve Count slots. Return another node with the same cptr, but the
+    // requested capacity.
     pub fn reserve_region<Count: Unsigned>(
         self,
+    ) -> (CNode<Count, Role>, CNode<Diff<FreeSlots, Count>, Role>)
+    where
+        FreeSlots: Sub<Count>,
+        Diff<FreeSlots, Count>: Unsigned,
+    {
+        (
+            CNode {
+                radix: self.radix,
+                next_free_slot: self.next_free_slot,
+                cptr: self.cptr,
+                _free_slots: PhantomData,
+                _role: PhantomData,
+            },
+            // TODO: use mem::transmute
+            CNode {
+                radix: self.radix,
+                next_free_slot: self.next_free_slot + Count::to_usize(),
+                cptr: self.cptr,
+                _free_slots: PhantomData,
+                _role: PhantomData,
+            },
+        )
+    }
+
+    pub fn reservation_iter<Count: Unsigned>(
+        self,
     ) -> (
-        seL4_SlotRegion,
-        Capability<CNode<Radix, Diff<FreeSlots, Count>, Role>>,
+        impl Iterator<Item = CNode<U1, Role>>,
+        CNode<Diff<FreeSlots, Count>, Role>,
     )
     where
         FreeSlots: Sub<Count>,
         Diff<FreeSlots, Count>: Unsigned,
     {
-        let start = ((1 << Radix::to_u8()) - FreeSlots::to_usize()) as u32;
+        let iter_radix = self.radix;
+        let iter_cptr = self.cptr;
         (
-            seL4_SlotRegion {
-                start: start,
-                end: start + Count::to_u32(),
-            },
-            Capability {
+            (self.next_free_slot..self.next_free_slot + Count::to_usize()).map(move |slot| CNode {
+                radix: iter_radix,
+                next_free_slot: slot,
+                cptr: iter_cptr,
+                _free_slots: PhantomData,
+                _role: PhantomData,
+            }),
+            // TODO: use mem::transmute
+            CNode {
+                radix: self.radix,
+                next_free_slot: self.next_free_slot + Count::to_usize(),
                 cptr: self.cptr,
-                _cap_type: PhantomData,
+                _free_slots: PhantomData,
+                _role: PhantomData,
             },
         )
     }
@@ -132,26 +160,28 @@ impl<Radix: Unsigned, FreeSlots: Unsigned, Role: CNodeRole>
 
 // TODO: how many slots are there really? We should be able to know this at build
 // time.
-// Answer: The radix is 19, and there are 12 initial caps.
+// Answer: The radix is 19, and there are 12 initial caps. But there are also a bunch
+// of random things in the bootinfo.
 // TODO: ideally, this should only be callable once in the process. Is that possible?
-pub fn root_cnode(
-    bootinfo: &'static seL4_BootInfo,
-) -> Capability<CNode<U19, U1024, CNodeRoles::CSpaceRoot>> {
-    Capability {
+pub fn root_cnode(bootinfo: &'static seL4_BootInfo) -> CNode<U1024, CNodeRoles::CSpaceRoot> {
+    CNode {
+        radix: 19,
+        next_free_slot: 1000, // TODO: look at the bootinfo to determine the real value
         cptr: seL4_CapInitThreadCNode as usize,
-        _cap_type: PhantomData,
+        _free_slots: PhantomData,
+        _role: PhantomData,
     }
 }
 
 impl<CT: CapType> Capability<CT> {
-    pub fn copy_local<Radix: Unsigned, FreeSlots: Unsigned>(
+    pub fn copy_local<FreeSlots: Unsigned>(
         &self,
-        dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
+        dest_cnode: CNode<FreeSlots, CNodeRoles::CSpaceRoot>,
         rights: seL4_CapRights_t,
     ) -> Result<
         (
             Capability<CT>,
-            Capability<CNode<Radix, Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>>,
+            CNode<Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>,
         ),
         Error,
     >
@@ -163,14 +193,14 @@ impl<CT: CapType> Capability<CT> {
 
         let err = unsafe {
             seL4_CNode_Copy(
-                dest_slot.cptr as u32,          // _service
-                dest_slot.offset as u32,        // index
-                (8 * size_of::<usize>()) as u8, // depth
+                dest_slot.cptr as u32,   // _service
+                dest_slot.offset as u32, // index
+                CONFIG_WORD_SIZE as u8,  // depth
                 // TODO this is hardcoded to the root task cnode
-                2,                              // src_root
-                self.cptr as u32,               // src_index
-                32,                             // src_depth
-                rights,                         // rights
+                2,                      // src_root
+                self.cptr as u32,       // src_index
+                CONFIG_WORD_SIZE as u8, // src_depth
+                rights,                 // rights
             )
         };
 
@@ -218,14 +248,14 @@ pub fn wrap_untyped<BitSize: Unsigned>(
 }
 
 impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
-    pub fn split<Radix: Unsigned, FreeSlots: Unsigned>(
+    pub fn split<FreeSlots: Unsigned>(
         self,
-        dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
+        dest_cnode: CNode<FreeSlots, CNodeRoles::CSpaceRoot>,
     ) -> Result<
         (
             Capability<Untyped<Sub1<BitSize>>>,
             Capability<Untyped<Sub1<BitSize>>>,
-            Capability<CNode<Radix, Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>>,
+            CNode<Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>,
         ),
         Error,
     >
@@ -267,16 +297,16 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
         ))
     }
 
-    pub fn quarter<Radix: Unsigned, FreeSlots: Unsigned>(
+    pub fn quarter<FreeSlots: Unsigned>(
         self,
-        dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
+        dest_cnode: CNode<FreeSlots, CNodeRoles::CSpaceRoot>,
     ) -> Result<
         (
             Capability<Untyped<Diff<BitSize, U2>>>,
             Capability<Untyped<Diff<BitSize, U2>>>,
             Capability<Untyped<Diff<BitSize, U2>>>,
             Capability<Untyped<Diff<BitSize, U2>>>,
-            Capability<CNode<Radix, Sub1<Sub1<Sub1<FreeSlots>>>, CNodeRoles::CSpaceRoot>>,
+            CNode<Sub1<Sub1<Sub1<FreeSlots>>>, CNodeRoles::CSpaceRoot>,
         ),
         Error,
     >
@@ -296,6 +326,7 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
         BitSize: Sub<U2>,
         Diff<BitSize, U2>: Unsigned,
     {
+        // TODO: use reserve_range here
         let (dest_cnode, dest_slot1) = dest_cnode.consume_slot();
         let (dest_cnode, dest_slot2) = dest_cnode.consume_slot();
         let (dest_cnode, dest_slot3) = dest_cnode.consume_slot();
@@ -339,13 +370,13 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
 
     // TODO add required bits as an associated type for each TargetCapType, require that
     // this untyped is big enough
-    pub fn retype_local<Radix: Unsigned, FreeSlots: Unsigned, TargetCapType: CapType>(
+    pub fn retype_local<FreeSlots: Unsigned, TargetCapType: CapType>(
         self,
-        dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
+        dest_cnode: CNode<FreeSlots, CNodeRoles::CSpaceRoot>,
     ) -> Result<
         (
             Capability<TargetCapType>,
-            Capability<CNode<Radix, Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>>,
+            CNode<Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>,
         ),
         Error,
     >
@@ -384,13 +415,13 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
 
     // TODO: the required size of the untyped depends in some way on the child radix, but HOW?
     // answer: it needs 4 more bits, this value is seL4_SlotBits.
-    pub fn retype_local_cnode<Radix: Unsigned, FreeSlots: Unsigned, ChildRadix: Unsigned>(
+    pub fn retype_local_cnode<FreeSlots: Unsigned, ChildRadix: Unsigned>(
         self,
-        dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
+        dest_cnode: CNode<FreeSlots, CNodeRoles::CSpaceRoot>,
     ) -> Result<
         (
-            Capability<CNode<ChildRadix, Pow<ChildRadix>, CNodeRoles::ChildProcess>>,
-            Capability<CNode<Radix, Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>>,
+            CNode<Pow<ChildRadix>, CNodeRoles::ChildProcess>,
+            CNode<Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>,
         ),
         Error,
     >
@@ -420,21 +451,24 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
         }
 
         Ok((
-            Capability {
+            CNode {
+                radix: ChildRadix::to_u8(),
+                next_free_slot: 0,
                 cptr: dest_slot.offset,
-                _cap_type: PhantomData,
+                _free_slots: PhantomData,
+                _role: PhantomData,
             },
             dest_cnode,
         ))
     }
 
-    pub fn retype_child<Radix: Unsigned, FreeSlots: Unsigned, TargetCapType: CapType>(
+    pub fn retype_child<FreeSlots: Unsigned, TargetCapType: CapType>(
         self,
-        dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::ChildProcess>>,
+        dest_cnode: CNode<FreeSlots, CNodeRoles::ChildProcess>,
     ) -> Result<
         (
             ChildCapability<TargetCapType>,
-            Capability<CNode<Radix, Sub1<FreeSlots>, CNodeRoles::ChildProcess>>,
+            CNode<Sub1<FreeSlots>, CNodeRoles::ChildProcess>,
         ),
         Error,
     >
@@ -472,16 +506,17 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
     }
 }
 
+// The ASID pool needs an untyped of exactly 4k
 impl Capability<Untyped<U12>> {
     // TODO put retype local into a trait so we can dispatch via the target cap type
-    pub fn retype_asid_pool<Radix: Unsigned, FreeSlots: Unsigned>(
+    pub fn retype_asid_pool<FreeSlots: Unsigned>(
         self,
         asid_control: Capability<ASIDControl>,
-        dest_cnode: Capability<CNode<Radix, FreeSlots, CNodeRoles::CSpaceRoot>>,
+        dest_cnode: CNode<FreeSlots, CNodeRoles::CSpaceRoot>,
     ) -> Result<
         (
             Capability<ASIDPool>,
-            Capability<CNode<Radix, Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>>,
+            CNode<Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>,
         ),
         Error,
     >
@@ -530,10 +565,10 @@ impl CapType for ThreadControlBlock {
 impl FixedSizeCap for ThreadControlBlock {}
 
 impl Capability<ThreadControlBlock> {
-    pub fn configure<Radix: Unsigned, FreeSlots: Unsigned>(
+    pub fn configure<FreeSlots: Unsigned>(
         &mut self,
         // fault_ep: Capability<Endpoint>,
-        cspace_root: Capability<CNode<Radix, FreeSlots, CNodeRoles::ChildProcess>>,
+        cspace_root: CNode<FreeSlots, CNodeRoles::ChildProcess>,
         // cspace_root_data: usize, // set the guard bits here
         vspace_root: Capability<PageDirectory>, // TODO make a marker trait for VSpace?
                                                 // vspace_root_data: usize, // always 0
@@ -544,8 +579,8 @@ impl Capability<ThreadControlBlock> {
         // used by the radix.
         let cspace_root_data = unsafe {
             seL4_CNode_CapData_new(
-                0,                                                     // guard
-                ((8 * size_of::<usize>()) - Radix::to_usize()) as u32, // guard size in bits
+                0,                                           // guard
+                CONFIG_WORD_SIZE - cspace_root.radix as u32, // guard size in bits
             )
         }
         .words[0];

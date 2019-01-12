@@ -213,8 +213,8 @@ fn main() {
     let (t1, t2, t3, t4, root_cnode) = s1.quarter(root_cnode).expect("fifth quartering");
     let (t5, t6, t7, t8, root_cnode) = s2.quarter(root_cnode).expect("sixth quartering");
 
-    let (child_cnode, root_cnode): (Capability<CNode<U12, _, _>>, _) = r2
-        .retype_local_cnode(root_cnode)
+    let (child_cnode, root_cnode) = r2
+        .retype_local_cnode::<_, U12>(root_cnode)
         .expect("Couldn't retype to child proc cnode");
     debug_println!(
         "retyped child proc cnode {:?} {:?}\n\n",
@@ -298,55 +298,39 @@ fn main() {
     // 0b1111 1111 1111 1111 1111 1111 1111 1111
     //   --directory--- --table-- ----page-----
 
-    // this is the page-aligned address where the program data starts. I found
-    // this out from readelf.
-    let mut vaddr = 0x10000;
+    // TODO: This is the page-aligned address where the program data starts. I
+    // found this out from readelf. We need some basis for these numbers, and a
+    // way to get them automatically.
+    let program_vaddr_start = 0x00010000;
+    let program_vaddr_end = program_vaddr_start + 0x00060000;
 
     let (frame_page_table, root_cnode): (Capability<PageTable>, _) =
         t7.retype_local(root_cnode).expect("alloc frame page table");
 
     child_page_directory
-        .map_page_table(&frame_page_table, vaddr)
+        .map_page_table(&frame_page_table, program_vaddr_start)
         .expect("map frame page table");
 
-    debug_println!("mapped page table at 0x{:08x}\n\n", vaddr);
+    debug_println!("mapped page table at 0x{:08x}\n\n", program_vaddr_start);
 
-    let (dest_region, root_cnode) = root_cnode.reserve_region::<U256>();
-    let mut copy_dest_slot = dest_region.start;
+    let (dest_reservation_iter, root_cnode) = root_cnode.reservation_iter::<U256>();
+    let frame_iter = (bootinfo.userImageFrames.start..bootinfo.userImageFrames.end);
+    let vaddr_iter = (program_vaddr_start..program_vaddr_end).step_by(0x1000);
 
     // This is, in theory, described on page 44 of the manual.
-    for page_cptr in bootinfo.userImageFrames.start..bootinfo.userImageFrames.end {
-        assert!(copy_dest_slot < dest_region.end);
-
-        // copy the cap
-        let err = unsafe {
-            seL4_CNode_Copy(
-                root_cnode.cptr as u32,         // _service
-                copy_dest_slot as u32,          // index
-                (8 * size_of::<usize>()) as u8, // depth
-                root_cnode.cptr as u32,         // src_root
-                page_cptr,                      // src_index
-                32,                             // src_depth
-                seL4_CapRights_new(0, 1, 0),    // read only
-            )
-        };
-        assert!(err == 0);
-
-        let copied_page_cap = Capability::<Page>::wrap_cptr(copy_dest_slot as usize);
+    for ((page_cptr, dest_cnode), vaddr) in frame_iter.zip(dest_reservation_iter).zip(vaddr_iter) {
+        let page_cap = Capability::<Page>::wrap_cptr(page_cptr as usize);
+        // let copied_page_cap = Capability::<Page>::wrap_cptr(copy_dest_slot as usize);
+        let (copied_page_cap, _) = page_cap
+            .copy_local(dest_cnode, unsafe { seL4_CapRights_new(0, 1, 0) })
+            .expect("copy user image page cap");
 
         child_page_directory
             .map_page(&copied_page_cap, vaddr)
             .expect("map user image page");
-
-        debug_println!(
-            "  mapped user image page (cptr {:?}) at vaddr {:08x}",
-            copied_page_cap,
-            vaddr
-        );
-
-        vaddr += 0x1000;
-        copy_dest_slot += 1;
     }
+
+    debug_println!("mapped user image pages at vaddr {:08x}\n\n", program_vaddr_end);
 
     child_tcb
         .configure(
