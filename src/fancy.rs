@@ -52,6 +52,9 @@ pub mod CNodeRoles {
     impl CNodeRole for ChildProcess {}
 }
 
+/// There will only ever be one CNode in a process with Role = CSpaceRoot. The
+/// cptrs any regular Capability are /also/ offsets into that cnode, because of
+/// how we're configuring each CNode's guard.
 #[derive(Debug)]
 pub struct CNode<FreeSlots: Unsigned, Role: CNodeRole> {
     radix: u8,
@@ -60,14 +63,6 @@ pub struct CNode<FreeSlots: Unsigned, Role: CNodeRole> {
     _free_slots: PhantomData<FreeSlots>,
     _role: PhantomData<Role>,
 }
-
-// impl<Radix: Unsigned, FreeSlots: Unsigned, Role: CNodeRole> CapType
-//     for CNode<Radix, FreeSlots, Role>
-// {
-//     fn sel4_type_id() -> usize {
-//         api_object_seL4_CapTableObject as usize
-//     }
-// }
 
 #[derive(Debug)]
 struct CNodeSlot {
@@ -174,8 +169,9 @@ pub fn root_cnode(bootinfo: &'static seL4_BootInfo) -> CNode<U1024, CNodeRoles::
 }
 
 impl<CT: CapType> Capability<CT> {
-    pub fn copy_local<FreeSlots: Unsigned>(
+    pub fn copy_local<SourceFreeSlots: Unsigned, FreeSlots: Unsigned>(
         &self,
+        src_cnode: &CNode<SourceFreeSlots, CNodeRoles::CSpaceRoot>,
         dest_cnode: CNode<FreeSlots, CNodeRoles::CSpaceRoot>,
         rights: seL4_CapRights_t,
     ) -> Result<
@@ -196,8 +192,9 @@ impl<CT: CapType> Capability<CT> {
                 dest_slot.cptr as u32,   // _service
                 dest_slot.offset as u32, // index
                 CONFIG_WORD_SIZE as u8,  // depth
-                // TODO this is hardcoded to the root task cnode
-                2,                      // src_root
+                // Since src_cnode is restricted to CSpaceRoot, the cptr must
+                // actually be the slot index
+                src_cnode.cptr as u32,                      // src_root
                 self.cptr as u32,       // src_index
                 CONFIG_WORD_SIZE as u8, // src_depth
                 rights,                 // rights
@@ -753,6 +750,11 @@ impl Capability<PageTable> {
             _cap_type: PhantomData,
         }
     }
+
+    pub fn unmap(&mut self) {
+        let err = unsafe {seL4_ARM_PageTable_Unmap(self.cptr as u32) };
+        assert!(err == 0);
+    }
 }
 
 #[derive(Debug)]
@@ -772,5 +774,10 @@ impl Capability<Page> {
             cptr: cptr,
             _cap_type: PhantomData,
         }
+    }
+
+    pub fn unmap(&mut self) {
+        let err = unsafe { seL4_ARM_Page_Unmap(self.cptr as u32) };
+        assert!(err == 0);
     }
 }

@@ -37,6 +37,11 @@ macro_rules! debug_println {
     ($fmt:expr, $($arg:tt)*) => (debug_print!(concat!($fmt, "\n"), $($arg)*));
 }
 
-pub fn run() {
-    debug_println!("\nhello from a feL4 app!\n");
+
+// 'extern' to force C calling conventions
+pub extern fn run(num: u32) {
+    debug_println!("");
+    debug_println!("*** Hello from a feL4 process!");
+    debug_println!("*** The argument is: {}", num);
+    debug_println!("");
 }

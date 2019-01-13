@@ -185,11 +185,23 @@ use iron_pegasus::fancy::{
     PageDirectory, PageTable, ThreadControlBlock, Untyped,
 };
 use iron_pegasus::micro_alloc::{self, GetUntyped};
-use typenum::{Unsigned, U12, U19, U20, U256, U8};
+use typenum::{Unsigned, U1, U12, U19, U20, U256, U8};
+
+fn yield_forever() {
+    unsafe {
+        loop {
+            seL4_Yield();
+        }
+    }
+}
 
 fn main() {
     let bootinfo = unsafe { &*BOOTINFO };
     let root_cnode = fancy::root_cnode(&bootinfo);
+
+    let mut root_page_directory =
+        Capability::<PageDirectory>::wrap_cptr(seL4_CapInitThreadVSpace as usize);
+
     let mut allocator =
         micro_alloc::Allocator::bootstrap(&bootinfo).expect("Couldn't set up bootstrap allocator");
 
@@ -255,30 +267,44 @@ fn main() {
         .assign(&mut child_page_directory)
         .expect("asid pool assign");
 
-    let (child_page_table, root_cnode): (Capability<PageTable>, _) =
-        t5.retype_local(root_cnode).expect("retype page table");
-
+    // Set up a single 4k page for the child's stack
     let stack_base = 0x10000000;
 
+    let (mut child_page_table, root_cnode): (Capability<PageTable>, _) =
+        t5.retype_local(root_cnode).expect("retype page table");
+
+    let (mut child_stack_page, root_cnode): (Capability<Page>, _) = t6
+        .retype_local(root_cnode)
+        .expect("retype child stack page");
+
+    // map the child stack into local memory so we can set it up
+    root_page_directory
+        .map_page_table(&child_page_table, stack_base)
+        .expect("map page table for setup");
+
+    root_page_directory
+        .map_page(&child_stack_page, stack_base)
+        .expect("map child stack page for setup");
+
+    let child_stack_data: &mut [usize] =
+        unsafe { core::slice::from_raw_parts_mut(stack_base as *mut usize, 1024) };
+    // Muck around with the stack here:
+    // child_stack_data[1023] = (yield_forever as *const fn() -> ()) as usize;
+
+    // unmap stack from the local addr space
+    child_stack_page.unmap();
+    child_page_table.unmap();
+
+    // map the stack into the child's vspace
     child_page_directory
         .map_page_table(&child_page_table, stack_base)
         .expect("map page table");
 
     debug_println!("mapped page table {:?}\n\n", child_page_table);
 
-    let (child_stack_page, root_cnode): (Capability<Page>, _) = t6
-        .retype_local(root_cnode)
-        .expect("retype child stack page");
-
     child_page_directory
         .map_page(&child_stack_page, stack_base)
         .expect("map child stack page");
-
-    debug_println!(
-        "mapped child stack page {:?} at 0x{:08x}\n\n",
-        child_stack_page,
-        stack_base
-    );
 
     // map in the user image
 
@@ -320,9 +346,11 @@ fn main() {
     // This is, in theory, described on page 44 of the manual.
     for ((page_cptr, dest_cnode), vaddr) in frame_iter.zip(dest_reservation_iter).zip(vaddr_iter) {
         let page_cap = Capability::<Page>::wrap_cptr(page_cptr as usize);
-        // let copied_page_cap = Capability::<Page>::wrap_cptr(copy_dest_slot as usize);
+
         let (copied_page_cap, _) = page_cap
-            .copy_local(dest_cnode, unsafe { seL4_CapRights_new(0, 1, 0) })
+            .copy_local(&root_cnode, dest_cnode, unsafe {
+                seL4_CapRights_new(0, 1, 0)
+            })
             .expect("copy user image page cap");
 
         child_page_directory
@@ -330,7 +358,10 @@ fn main() {
             .expect("map user image page");
     }
 
-    debug_println!("mapped user image pages at vaddr {:08x}\n\n", program_vaddr_end);
+    debug_println!(
+        "mapped user image pages at vaddr {:08x}\n\n",
+        program_vaddr_end
+    );
 
     child_tcb
         .configure(
@@ -343,7 +374,7 @@ fn main() {
     debug_println!("configured child tcb!\n\n",);
 
     // TODO: this isn't quite right, but it's within the mapped area at least.
-    let stack_top = stack_base + 0xfff;
+    let stack_top = stack_base + 0x1000 - 8; // stack pointer is supposed to be 8-byte aligned on ARM
     let mut regs: seL4_UserContext = unsafe { mem::zeroed() };
     #[cfg(feature = "test")]
     {
@@ -352,24 +383,36 @@ fn main() {
     #[cfg(not(feature = "test"))]
     {
         regs.pc = iron_pegasus::run as seL4_Word;
+        // first arg
+        regs.r0 = 42;
+        // call this after run returns
+        regs.r14 = (yield_forever as *const fn() -> ()) as seL4_Word;
     }
-    regs.sp = stack_top as seL4_Word;
+    regs.sp = stack_top as u32;
 
     debug_println!(
-        "Configured regs: PC=0x{:08x}, SP=0x{:08x}\n\n",
+        "Setting regs: PC=0x{:08x}, SP=0x{:08x}, R0={}, R14=0x{:08x}\n\n",
         regs.pc,
-        regs.sp
+        regs.sp,
+        regs.r0,
+        regs.r14
     );
 
-    let _: u32 = unsafe { seL4_TCB_WriteRegisters(child_tcb.cptr as u32, 0, 0, 2, &mut regs) };
+    let _: u32 = unsafe {
+        seL4_TCB_WriteRegisters(
+            child_tcb.cptr as u32,
+            0,
+            0,
+            // all the regs
+            (size_of::<seL4_UserContext>() / size_of::<seL4_Word>()) as u32,
+            &mut regs,
+        )
+    };
     let _: u32 =
         unsafe { seL4_TCB_SetPriority(child_tcb.cptr as u32, seL4_CapInitThreadTCB.into(), 255) };
     let _: u32 = unsafe { seL4_TCB_Resume(child_tcb.cptr as u32) };
-    loop {
-        unsafe {
-            seL4_Yield();
-        }
-    }
+
+    yield_forever();
 }
 
 global_asm!(
