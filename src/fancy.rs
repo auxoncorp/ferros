@@ -15,12 +15,15 @@ pub enum Error {
     UntypedRetype(u32),
     TCBConfigure(u32),
     MapPageTable(u32),
+    UnmapPageTable(u32),
     ASIDPoolAssign(u32),
     MapPage(u32),
+    UnmapPage(u32),
     CNodeCopy(u32),
 }
 
 pub trait CapType {
+    type CopyOutput: CapType;
     fn sel4_type_id() -> usize;
 }
 
@@ -176,7 +179,7 @@ impl<CT: CapType> Capability<CT> {
         rights: seL4_CapRights_t,
     ) -> Result<
         (
-            Capability<CT>,
+            Capability<CT::CopyOutput>,
             CNode<Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>,
         ),
         Error,
@@ -225,6 +228,7 @@ pub struct Untyped<BitSize: Unsigned> {
 }
 
 impl<BitSize: Unsigned> CapType for Untyped<BitSize> {
+    type CopyOutput = Self;
     fn sel4_type_id() -> usize {
         api_object_seL4_UntypedObject as usize
     }
@@ -554,6 +558,7 @@ impl Capability<Untyped<U12>> {
 pub struct ThreadControlBlock {}
 
 impl CapType for ThreadControlBlock {
+    type CopyOutput = Self;
     fn sel4_type_id() -> usize {
         api_object_seL4_TCBObject as usize
     }
@@ -567,7 +572,7 @@ impl Capability<ThreadControlBlock> {
         // fault_ep: Capability<Endpoint>,
         cspace_root: CNode<FreeSlots, CNodeRoles::ChildProcess>,
         // cspace_root_data: usize, // set the guard bits here
-        vspace_root: Capability<PageDirectory>, // TODO make a marker trait for VSpace?
+        vspace_root: Capability<AssignedPageDirectory>, // TODO make a marker trait for VSpace?
                                                 // vspace_root_data: usize, // always 0
                                                 // buffer: usize,
                                                 // buffer_frame: Capability<Frame>,
@@ -609,6 +614,7 @@ impl Capability<ThreadControlBlock> {
 pub struct Endpoint {}
 
 impl CapType for Endpoint {
+    type CopyOutput = Self;
     fn sel4_type_id() -> usize {
         api_object_seL4_EndpointObject as usize
     }
@@ -621,6 +627,7 @@ impl FixedSizeCap for Endpoint {}
 pub struct ASIDControl {}
 
 impl CapType for ASIDControl {
+    type CopyOutput = Self;
     fn sel4_type_id() -> usize {
         0 // TODO WUT
     }
@@ -643,37 +650,52 @@ impl Capability<ASIDControl> {
 pub struct ASIDPool {}
 
 impl CapType for ASIDPool {
+    type CopyOutput = Self;
     fn sel4_type_id() -> usize {
         0 // TODO WUT
     }
 }
 
 impl Capability<ASIDPool> {
-    pub fn assign(&mut self, vspace: &mut Capability<PageDirectory>) -> Result<(), Error> {
+    pub fn assign(&mut self, vspace: Capability<UnassignedPageDirectory>) -> Result<Capability<AssignedPageDirectory>, Error> {
         let err = unsafe { seL4_ARM_ASIDPool_Assign(self.cptr as u32, vspace.cptr as u32) };
 
         if err != 0 {
-            Err(Error::ASIDPoolAssign(err))
-        } else {
-            Ok(())
+            return Err(Error::ASIDPoolAssign(err));
         }
+
+        Ok(Capability {
+            cptr: vspace.cptr,
+            _cap_type: PhantomData
+        })
     }
 }
 
 #[derive(Debug)]
-pub struct PageDirectory {}
+pub struct AssignedPageDirectory {}
 
-impl CapType for PageDirectory {
+impl CapType for AssignedPageDirectory {
+    type CopyOutput = UnassignedPageDirectory;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_PageDirectoryObject as usize
     }
 }
 
-impl FixedSizeCap for PageDirectory {}
+#[derive(Debug)]
+pub struct UnassignedPageDirectory {}
 
-impl Capability<PageDirectory> {
-    // TODO this should happen in the bootstrap adapter
-    pub fn wrap_cptr(cptr: usize) -> Capability<PageDirectory> {
+impl CapType for UnassignedPageDirectory {
+    type CopyOutput = Self;
+    fn sel4_type_id() -> usize {
+        _object_seL4_ARM_PageDirectoryObject as usize
+    }
+}
+
+impl FixedSizeCap for UnassignedPageDirectory {}
+
+impl Capability<AssignedPageDirectory> {
+    // TODO this should only happen in the bootstrap adapter
+    pub fn wrap_cptr(cptr: usize) -> Capability<AssignedPageDirectory> {
         Capability {
             cptr: cptr,
             _cap_type: PhantomData,
@@ -682,9 +704,9 @@ impl Capability<PageDirectory> {
 
     pub fn map_page_table(
         &mut self,
-        page_table: &Capability<PageTable>,
+        page_table: Capability<UnmappedPageTable>,
         virtual_address: usize,
-    ) -> Result<(), Error> {
+    ) -> Result<Capability<MappedPageTable>, Error> {
         // map the page table
         let err = unsafe {
             seL4_ARM_PageTable_Map(
@@ -699,17 +721,19 @@ impl Capability<PageDirectory> {
         };
 
         if err != 0 {
-            Err(Error::MapPageTable(err))
-        } else {
-            Ok(())
+            return Err(Error::MapPageTable(err));
         }
+        Ok(Capability {
+            cptr: page_table.cptr,
+            _cap_type: PhantomData
+        })
     }
 
     pub fn map_page(
         &mut self,
-        page: &Capability<Page>,
+        page: Capability<UnmappedPage>,
         virtual_address: usize,
-    ) -> Result<(), Error> {
+    ) -> Result<Capability<MappedPage>, Error> {
         let err = unsafe {
             seL4_ARM_Page_Map(
                 page.cptr as u32,
@@ -723,61 +747,89 @@ impl Capability<PageDirectory> {
                     // | seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever,
             )
         };
-
         if err != 0 {
-            Err(Error::MapPage(err))
-        } else {
-            Ok(())
+            return Err(Error::MapPage(err))
         }
+        Ok(Capability {
+            cptr: page.cptr,
+            _cap_type: PhantomData
+        })
     }
 }
 
 #[derive(Debug)]
-pub struct PageTable {}
+pub struct UnmappedPageTable {}
 
-impl CapType for PageTable {
+impl CapType for UnmappedPageTable {
+    type CopyOutput = Self;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_PageTableObject as usize
     }
 }
 
-impl FixedSizeCap for PageTable {}
+impl FixedSizeCap for UnmappedPageTable {}
 
-impl Capability<PageTable> {
-    pub fn wrap_cptr(cptr: usize) -> Capability<PageTable> {
-        Capability {
-            cptr: cptr,
-            _cap_type: PhantomData,
-        }
+#[derive(Debug)]
+pub struct MappedPageTable {}
+
+impl CapType for MappedPageTable {
+    type CopyOutput = UnmappedPageTable;
+    fn sel4_type_id() -> usize {
+        _object_seL4_ARM_PageTableObject as usize
     }
+}
 
-    pub fn unmap(&mut self) {
+impl Capability<MappedPageTable> {
+    pub fn unmap(self) -> Result<Capability<UnmappedPageTable>, Error> {
         let err = unsafe {seL4_ARM_PageTable_Unmap(self.cptr as u32) };
-        assert!(err == 0);
+        if err != 0 {
+            return Err(Error::UnmapPageTable(err));
+        }
+        Ok(Capability {
+            cptr: self.cptr,
+            _cap_type: PhantomData
+        })
     }
 }
 
 #[derive(Debug)]
-pub struct Page {}
+pub struct UnmappedPage {}
 
-impl CapType for Page {
+impl CapType for UnmappedPage {
+    type CopyOutput = Self;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_SmallPageObject as usize
     }
 }
 
-impl FixedSizeCap for Page {}
+impl FixedSizeCap for UnmappedPage {}
 
-impl Capability<Page> {
-    pub fn wrap_cptr(cptr: usize) -> Capability<Page> {
+#[derive(Debug)]
+pub struct MappedPage {}
+
+impl CapType for MappedPage {
+    type CopyOutput = UnmappedPage;
+    fn sel4_type_id() -> usize {
+        _object_seL4_ARM_SmallPageObject as usize
+    }
+}
+
+impl Capability<MappedPage> {
+    pub fn wrap_cptr(cptr: usize) -> Capability<MappedPage> {
         Capability {
             cptr: cptr,
             _cap_type: PhantomData,
         }
     }
 
-    pub fn unmap(&mut self) {
+    pub fn unmap(self) -> Result<Capability<UnmappedPage>, Error>{
         let err = unsafe { seL4_ARM_Page_Unmap(self.cptr as u32) };
-        assert!(err == 0);
+        if err != 0 {
+            return Err(Error::UnmapPage(err));
+        }
+        Ok(Capability {
+            cptr: self.cptr,
+            _cap_type: PhantomData
+        })
     }
 }

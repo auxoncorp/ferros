@@ -181,8 +181,9 @@ static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
 
 use core::mem::size_of;
 use iron_pegasus::fancy::{
-    self, wrap_untyped, ASIDControl, ASIDPool, CNode, Capability, ChildCapability, Endpoint, Page,
-    PageDirectory, PageTable, ThreadControlBlock, Untyped,
+    self, wrap_untyped, ASIDControl, ASIDPool, CNode, Capability, ChildCapability, Endpoint,
+    AssignedPageDirectory, UnassignedPageDirectory, UnmappedPageTable, MappedPageTable,
+    ThreadControlBlock, Untyped, UnmappedPage, MappedPage,
 };
 use iron_pegasus::micro_alloc::{self, GetUntyped};
 use typenum::{Unsigned, U1, U12, U19, U20, U256, U8};
@@ -200,7 +201,7 @@ fn main() {
     let root_cnode = fancy::root_cnode(&bootinfo);
 
     let mut root_page_directory =
-        Capability::<PageDirectory>::wrap_cptr(seL4_CapInitThreadVSpace as usize);
+        Capability::<AssignedPageDirectory>::wrap_cptr(seL4_CapInitThreadVSpace as usize);
 
     let mut allocator =
         micro_alloc::Allocator::bootstrap(&bootinfo).expect("Couldn't set up bootstrap allocator");
@@ -259,31 +260,31 @@ fn main() {
         .retype_asid_pool(asid_control, root_cnode)
         .expect("retype asid pool");
 
-    let (mut child_page_directory, root_cnode): (Capability<PageDirectory>, _) =
+    let (child_page_directory, root_cnode): (Capability<UnassignedPageDirectory>, _) =
         s3.retype_local(root_cnode).expect("retype page directory");
     // Capability::<PageDirectory>::wrap_cptr(seL4_CapInitThreadVSpace as usize);
 
-    asid_pool
-        .assign(&mut child_page_directory)
+    let mut child_page_directory = asid_pool
+        .assign(child_page_directory)
         .expect("asid pool assign");
 
     // Set up a single 4k page for the child's stack
     let stack_base = 0x10000000;
 
-    let (mut child_page_table, root_cnode): (Capability<PageTable>, _) =
+    let (child_page_table, root_cnode): (Capability<UnmappedPageTable>, _) =
         t5.retype_local(root_cnode).expect("retype page table");
 
-    let (mut child_stack_page, root_cnode): (Capability<Page>, _) = t6
+    let (child_stack_page, root_cnode): (Capability<UnmappedPage>, _) = t6
         .retype_local(root_cnode)
         .expect("retype child stack page");
 
     // map the child stack into local memory so we can set it up
-    root_page_directory
-        .map_page_table(&child_page_table, stack_base)
+    let child_page_table = root_page_directory
+        .map_page_table(child_page_table, stack_base)
         .expect("map page table for setup");
 
-    root_page_directory
-        .map_page(&child_stack_page, stack_base)
+    let child_stack_page = root_page_directory
+        .map_page(child_stack_page, stack_base)
         .expect("map child stack page for setup");
 
     let child_stack_data: &mut [usize] =
@@ -292,18 +293,20 @@ fn main() {
     // child_stack_data[1023] = (yield_forever as *const fn() -> ()) as usize;
 
     // unmap stack from the local addr space
-    child_stack_page.unmap();
-    child_page_table.unmap();
+    let child_stack_page = child_stack_page.unmap()
+        .expect("unmap child stack page from local addr space");
+    let child_page_table = child_page_table.unmap()
+        .expect("unmap child page table from local addr space");
 
     // map the stack into the child's vspace
-    child_page_directory
-        .map_page_table(&child_page_table, stack_base)
+    let child_page_table = child_page_directory
+        .map_page_table(child_page_table, stack_base)
         .expect("map page table");
 
     debug_println!("mapped page table {:?}\n\n", child_page_table);
 
     child_page_directory
-        .map_page(&child_stack_page, stack_base)
+        .map_page(child_stack_page, stack_base)
         .expect("map child stack page");
 
     // map in the user image
@@ -330,11 +333,11 @@ fn main() {
     let program_vaddr_start = 0x00010000;
     let program_vaddr_end = program_vaddr_start + 0x00060000;
 
-    let (frame_page_table, root_cnode): (Capability<PageTable>, _) =
+    let (frame_page_table, root_cnode): (Capability<UnmappedPageTable>, _) =
         t7.retype_local(root_cnode).expect("alloc frame page table");
 
-    child_page_directory
-        .map_page_table(&frame_page_table, program_vaddr_start)
+    let frame_page_table = child_page_directory
+        .map_page_table(frame_page_table, program_vaddr_start)
         .expect("map frame page table");
 
     debug_println!("mapped page table at 0x{:08x}\n\n", program_vaddr_start);
@@ -345,7 +348,7 @@ fn main() {
 
     // This is, in theory, described on page 44 of the manual.
     for ((page_cptr, dest_cnode), vaddr) in frame_iter.zip(dest_reservation_iter).zip(vaddr_iter) {
-        let page_cap = Capability::<Page>::wrap_cptr(page_cptr as usize);
+        let page_cap = Capability::<MappedPage>::wrap_cptr(page_cptr as usize);
 
         let (copied_page_cap, _) = page_cap
             .copy_local(&root_cnode, dest_cnode, unsafe {
@@ -353,8 +356,8 @@ fn main() {
             })
             .expect("copy user image page cap");
 
-        child_page_directory
-            .map_page(&copied_page_cap, vaddr)
+        let copied_page_cap = child_page_directory
+            .map_page(copied_page_cap, vaddr)
             .expect("map user image page");
     }
 
