@@ -8,8 +8,8 @@ use typenum::Unsigned;
 
 use sel4_sys::{seL4_BootInfo, seL4_UntypedDesc};
 
-pub const MIN_UNTYPED_SIZE: u8 = 4;
-pub const MAX_UNTYPED_SIZE: u8 = 32;
+pub const MIN_UNTYPED_SIZE_BITS: u8 = 4;
+pub const MAX_UNTYPED_SIZE_BITS: u8 = 32;
 
 // TODO - pull from configs
 pub const MAX_INIT_UNTYPED_ITEMS: usize = 256;
@@ -30,7 +30,7 @@ impl UntypedItem {
     pub fn new(cptr: usize, desc: &'static seL4_UntypedDesc) -> Result<UntypedItem, Error> {
         if cptr == 0 {
             Err(Error::InvalidBootInfoCapability)
-        } else if desc.sizeBits < MIN_UNTYPED_SIZE || desc.sizeBits > MAX_UNTYPED_SIZE {
+        } else if desc.sizeBits < MIN_UNTYPED_SIZE_BITS || desc.sizeBits > MAX_UNTYPED_SIZE_BITS {
             Err(Error::UntypedSizeOutOfRange)
         } else {
             Ok(UntypedItem {
@@ -48,26 +48,19 @@ pub struct Allocator {
 
 impl Allocator {
     pub fn bootstrap(bootinfo: &'static seL4_BootInfo) -> Result<Allocator, Error> {
-        let untyped_item_iter = (0..(bootinfo.untyped.end - bootinfo.untyped.start)).map(|i| {
-            UntypedItem::new(
+        let mut items = ArrayVec::new();
+        for i in 0..(bootinfo.untyped.end - bootinfo.untyped.start) {
+            match UntypedItem::new(
                 (bootinfo.untyped.start + i) as usize,              // cptr
                 &bootinfo.untypedList[i as usize],
-            )
-        });
-
-        if let Some(Some(e)) = untyped_item_iter
-            .clone()
-            .map(|i| match i {
-                Ok(_) => None,
-                Err(e) => Some(e),
-            })
-            .find(|o| o.is_some())
-        {
-            return Err(e);
-        }
+            ) {
+                Ok(item) => items.push(item),
+                Err(e) => return Err(e),
+            }
+        };
 
         Ok(Allocator {
-            items: untyped_item_iter.map(|i| i.unwrap()).collect(),
+            items,
         })
     }
 }
@@ -80,10 +73,14 @@ impl GetUntyped for Allocator {
     fn get_untyped<BitSize: Unsigned>(&mut self) -> Option<Capability<Untyped<BitSize>>> {
         // This is very inefficient. But it should only be called a small
         // handful of times on startup.
-        for bit_size in BitSize::to_u8()..=MAX_UNTYPED_SIZE {
+        for bit_size in BitSize::to_u8()..=MAX_UNTYPED_SIZE_BITS {
             for item in &mut self.items {
-                if item.desc.sizeBits == bit_size {
-                    return wrap_untyped(item.cptr, item.desc);
+                if item.is_free && item.desc.sizeBits == bit_size {
+                    let u = wrap_untyped(item.cptr, item.desc);
+                    if u.is_some() {
+                        item.is_free = false;
+                    }
+                    return u;
                 }
             }
         }
