@@ -40,10 +40,20 @@ macro_rules! debug_println {
 }
 
 
+
+pub struct Params {
+    pub nums: [usize;140]
+}
+
+use core::ptr;
 // 'extern' to force C calling conventions
-pub extern fn run(num: u32) {
+pub extern fn run(params: &Params) {
+    // let params = unsafe { params.as_ref() }.expect("null params");
     debug_println!("");
     debug_println!("*** Hello from a feL4 process!");
-    debug_println!("*** The argument is: {}", num);
+    for i in params.nums.iter() {
+        debug_println!("  {:08x}", i);
+    }
+
     debug_println!("");
 }

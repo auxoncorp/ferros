@@ -187,6 +187,7 @@ use iron_pegasus::fancy::{
 };
 use iron_pegasus::micro_alloc::{self, GetUntyped};
 use typenum::{Unsigned, U1, U12, U19, U20, U256, U8};
+use core::ptr;
 
 fn yield_forever() {
     unsafe {
@@ -270,6 +271,7 @@ fn main() {
 
     // Set up a single 4k page for the child's stack
     let stack_base = 0x10000000;
+    let stack_top = stack_base + 0x1000;
 
     let (child_page_table, root_cnode): (Capability<UnmappedPageTable>, _) =
         t5.retype_local(root_cnode).expect("retype page table");
@@ -287,12 +289,23 @@ fn main() {
         .map_page(child_stack_page, stack_base)
         .expect("map child stack page for setup");
 
-    let child_stack_data: &mut [usize] =
-        unsafe { core::slice::from_raw_parts_mut(stack_base as *mut usize, 1024) };
-    // Muck around with the stack here:
-    // child_stack_data[1023] = (yield_forever as *const fn() -> ()) as usize;
+    // put the parameter struct on the stack
+    let mut nums = [0xaaaaaaaa; 140];
+    nums[0] = 0xbbbbbbbb;
+    nums[139] = 0xcccccccc;
+    let params = iron_pegasus::Params { nums };
 
-    // unmap stack from the local addr space
+    let params_target_addr = (stack_top - size_of::<iron_pegasus::Params>());
+
+    unsafe {
+        ptr::copy_nonoverlapping(
+            &params as *const iron_pegasus::Params,
+            params_target_addr as *mut iron_pegasus::Params,
+            1
+        )
+    }
+
+
     let child_stack_page = child_stack_page.unmap()
         .expect("unmap child stack page from local addr space");
     let child_page_table = child_page_table.unmap()
@@ -377,7 +390,7 @@ fn main() {
     debug_println!("configured child tcb!\n\n",);
 
     // TODO: this isn't quite right, but it's within the mapped area at least.
-    let stack_top = stack_base + 0x1000 - 8; // stack pointer is supposed to be 8-byte aligned on ARM
+    let sp = stack_top - size_of::<iron_pegasus::Params>(); //TODO stack pointer is supposed to be 8-byte aligned on ARM
     let mut regs: seL4_UserContext = unsafe { mem::zeroed() };
     #[cfg(feature = "test")]
     {
@@ -387,14 +400,14 @@ fn main() {
     {
         regs.pc = iron_pegasus::run as seL4_Word;
         // first arg
-        regs.r0 = 42;
+        regs.r0 = params_target_addr as u32; /*+ something*/;
         // call this after run returns
         regs.r14 = (yield_forever as *const fn() -> ()) as seL4_Word;
     }
-    regs.sp = stack_top as u32;
+    regs.sp = sp as u32;
 
     debug_println!(
-        "Setting regs: PC=0x{:08x}, SP=0x{:08x}, R0={}, R14=0x{:08x}\n\n",
+        "Setting regs: PC=0x{:08x}, SP=0x{:08x}, R0={:08x}, R14=0x{:08x}\n\n",
         regs.pc,
         regs.sp,
         regs.r0,
