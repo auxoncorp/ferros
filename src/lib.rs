@@ -16,6 +16,8 @@ pub mod micro_alloc;
 pub mod fancy;
 mod pow;
 
+mod twinkle_types;
+
 #[cfg(all(feature = "test"))]
 extern crate proptest;
 

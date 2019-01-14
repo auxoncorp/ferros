@@ -36,6 +36,17 @@ pub struct Capability<CT: CapType> {
     _cap_type: PhantomData<CT>,
 }
 
+impl<CT: CapType> Capability<CT> {
+    // TODO most of this should only happen in the bootstrap adapter
+    pub fn wrap_cptr(cptr: usize) -> Capability<CT> {
+        Capability {
+            cptr: cptr,
+            _cap_type: PhantomData
+        }
+    }
+}
+
+
 #[derive(Debug)]
 pub struct ChildCapability<CT: CapType> {
     child_cptr: usize,
@@ -634,16 +645,6 @@ impl CapType for ASIDControl {
     }
 }
 
-impl Capability<ASIDControl> {
-    // TODO this should happen in the bootstrap adapter
-    pub fn wrap_cptr(cptr: usize) -> Capability<ASIDControl> {
-        Capability {
-            cptr: cptr,
-            _cap_type: PhantomData,
-        }
-    }
-}
-
 // asid pool
 // TODO: track capacity with the types
 // TODO: track in the pagedirectory type whether it has been assigned (mapped), and for pagetable too
@@ -695,14 +696,6 @@ impl CapType for UnassignedPageDirectory {
 impl FixedSizeCap for UnassignedPageDirectory {}
 
 impl Capability<AssignedPageDirectory> {
-    // TODO this should only happen in the bootstrap adapter
-    pub fn wrap_cptr(cptr: usize) -> Capability<AssignedPageDirectory> {
-        Capability {
-            cptr: cptr,
-            _cap_type: PhantomData,
-        }
-    }
-
     pub fn map_page_table(
         &mut self,
         page_table: Capability<UnmappedPageTable>,
@@ -816,13 +809,6 @@ impl CapType for MappedPage {
 }
 
 impl Capability<MappedPage> {
-    pub fn wrap_cptr(cptr: usize) -> Capability<MappedPage> {
-        Capability {
-            cptr: cptr,
-            _cap_type: PhantomData,
-        }
-    }
-
     pub fn unmap(self) -> Result<Capability<UnmappedPage>, Error>{
         let err = unsafe { seL4_ARM_Page_Unmap(self.cptr as u32) };
         if err != 0 {
