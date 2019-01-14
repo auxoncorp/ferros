@@ -22,7 +22,7 @@ pub enum Error {
     CNodeCopy(u32),
 }
 
-pub trait CapType {
+pub trait CapType: private::SealedCapType {
     type CopyOutput: CapType;
     fn sel4_type_id() -> usize;
 }
@@ -839,4 +839,17 @@ mod private {
     pub trait SealedRole {}
     impl SealedRole for super::CNodeRoles::CSpaceRoot {}
     impl SealedRole for super::CNodeRoles::ChildProcess {}
+
+    pub trait SealedCapType {}
+    impl <BitSize: typenum::Unsigned> SealedCapType for super::Untyped<BitSize> {}
+    impl SealedCapType for super::ThreadControlBlock {}
+    impl SealedCapType for super::Endpoint {}
+    impl SealedCapType for super::ASIDControl {}
+    impl SealedCapType for super::ASIDPool {}
+    impl SealedCapType for super::AssignedPageDirectory {}
+    impl SealedCapType for super::UnassignedPageDirectory {}
+    impl SealedCapType for super::UnmappedPageTable {}
+    impl SealedCapType for super::MappedPageTable {}
+    impl SealedCapType for super::UnmappedPage {}
+    impl SealedCapType for super::MappedPage {}
 }
