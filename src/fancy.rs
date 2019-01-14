@@ -42,7 +42,8 @@ pub struct ChildCapability<CT: CapType> {
     _cap_type: PhantomData<CT>,
 }
 
-pub trait CNodeRole {}
+pub trait CNodeRole: private::SealedRole {}
+
 pub mod CNodeRoles {
     use super::CNodeRole;
 
@@ -832,4 +833,10 @@ impl Capability<MappedPage> {
             _cap_type: PhantomData
         })
     }
+}
+
+mod private {
+    pub trait SealedRole {}
+    impl SealedRole for super::CNodeRoles::CSpaceRoot {}
+    impl SealedRole for super::CNodeRoles::ChildProcess {}
 }
