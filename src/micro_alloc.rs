@@ -2,7 +2,7 @@
 //! This one doesn't split anything; it just hands out the smallest untyped item
 //! that's big enough for the request.
 
-use crate::fancy::{wrap_untyped, Capability, Untyped};
+use crate::fancy::{wrap_untyped, Cap, CNodeRole, role, Untyped};
 use arrayvec::ArrayVec;
 use typenum::Unsigned;
 
@@ -66,11 +66,11 @@ impl Allocator {
 }
 
 pub trait GetUntyped {
-    fn get_untyped<BitSize: Unsigned>(&mut self) -> Option<Capability<Untyped<BitSize>>>;
+    fn get_untyped<BitSize: Unsigned>(&mut self) -> Option<Cap<Untyped<BitSize>, role::Local>>;
 }
 
 impl GetUntyped for Allocator {
-    fn get_untyped<BitSize: Unsigned>(&mut self) -> Option<Capability<Untyped<BitSize>>> {
+    fn get_untyped<BitSize: Unsigned>(&mut self) -> Option<Cap<Untyped<BitSize>, role::Local>> {
         // This is very inefficient. But it should only be called a small
         // handful of times on startup.
         for bit_size in BitSize::to_u8()..=MAX_UNTYPED_SIZE_BITS {

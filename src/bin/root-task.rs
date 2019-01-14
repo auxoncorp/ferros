@@ -181,7 +181,7 @@ static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
 
 use core::mem::size_of;
 use iron_pegasus::fancy::{
-    self, wrap_untyped, ASIDControl, ASIDPool, CNode, Capability, ChildCapability, Endpoint,
+    self, wrap_untyped, ASIDControl, ASIDPool, CNode, Cap, Endpoint,
     AssignedPageDirectory, UnassignedPageDirectory, UnmappedPageTable, MappedPageTable,
     ThreadControlBlock, Untyped, UnmappedPage, MappedPage,
 };
@@ -202,7 +202,7 @@ fn main() {
     let root_cnode = fancy::root_cnode(&bootinfo);
 
     let mut root_page_directory =
-        Capability::<AssignedPageDirectory>::wrap_cptr(seL4_CapInitThreadVSpace as usize);
+        Cap::<AssignedPageDirectory, _>::wrap_cptr(seL4_CapInitThreadVSpace as usize);
 
     let mut allocator =
         micro_alloc::Allocator::bootstrap(&bootinfo).expect("Couldn't set up bootstrap allocator");
@@ -237,7 +237,7 @@ fn main() {
     );
 
     // TODO: Need to duplicate this endpoint into the child cnode
-    let (fault_endpoint, root_cnode): (Capability<Endpoint>, _) = t2
+    let (fault_endpoint, root_cnode): (Cap<Endpoint, _>, _) = t2
         .retype_local(root_cnode)
         .expect("Couldn't retype fault endpoint");
     debug_println!(
@@ -246,7 +246,7 @@ fn main() {
         root_cnode
     );
 
-    let (mut child_tcb, root_cnode): (Capability<ThreadControlBlock>, _) = t3
+    let (mut child_tcb, root_cnode): (Cap<ThreadControlBlock, _>, _) = t3
         .retype_local(root_cnode)
         .expect("couldn't retyped to tcb");
     debug_println!(
@@ -255,13 +255,13 @@ fn main() {
         root_cnode
     );
 
-    let asid_control = Capability::<ASIDControl>::wrap_cptr(seL4_CapASIDControl as usize);
+    let asid_control = Cap::<ASIDControl, _>::wrap_cptr(seL4_CapASIDControl as usize);
 
-    let (mut asid_pool, root_cnode): (Capability<ASIDPool>, _) = t4
+    let (mut asid_pool, root_cnode): (Cap<ASIDPool, _>, _) = t4
         .retype_asid_pool(asid_control, root_cnode)
         .expect("retype asid pool");
 
-    let (child_page_directory, root_cnode): (Capability<UnassignedPageDirectory>, _) =
+    let (child_page_directory, root_cnode): (Cap<UnassignedPageDirectory, _>, _) =
         s3.retype_local(root_cnode).expect("retype page directory");
     // Capability::<PageDirectory>::wrap_cptr(seL4_CapInitThreadVSpace as usize);
 
@@ -273,10 +273,10 @@ fn main() {
     let stack_base = 0x10000000;
     let stack_top = stack_base + 0x1000;
 
-    let (child_page_table, root_cnode): (Capability<UnmappedPageTable>, _) =
+    let (child_page_table, root_cnode): (Cap<UnmappedPageTable, _>, _) =
         t5.retype_local(root_cnode).expect("retype page table");
 
-    let (child_stack_page, root_cnode): (Capability<UnmappedPage>, _) = t6
+    let (child_stack_page, root_cnode): (Cap<UnmappedPage, _>, _) = t6
         .retype_local(root_cnode)
         .expect("retype child stack page");
 
@@ -346,7 +346,7 @@ fn main() {
     let program_vaddr_start = 0x00010000;
     let program_vaddr_end = program_vaddr_start + 0x00060000;
 
-    let (frame_page_table, root_cnode): (Capability<UnmappedPageTable>, _) =
+    let (frame_page_table, root_cnode): (Cap<UnmappedPageTable, _>, _) =
         t7.retype_local(root_cnode).expect("alloc frame page table");
 
     let frame_page_table = child_page_directory
@@ -361,7 +361,7 @@ fn main() {
 
     // This is, in theory, described on page 44 of the manual.
     for ((page_cptr, dest_cnode), vaddr) in frame_iter.zip(dest_reservation_iter).zip(vaddr_iter) {
-        let page_cap = Capability::<MappedPage>::wrap_cptr(page_cptr as usize);
+        let page_cap = Cap::<MappedPage, _>::wrap_cptr(page_cptr as usize);
 
         let (copied_page_cap, _) = page_cap
             .copy_local(&root_cnode, dest_cnode, unsafe {

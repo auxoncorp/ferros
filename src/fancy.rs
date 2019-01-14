@@ -31,44 +31,38 @@ pub trait CapType: private::SealedCapType {
 pub trait FixedSizeCap {}
 
 #[derive(Debug)]
-pub struct Capability<CT: CapType> {
+pub struct Cap<CT: CapType, Role: CNodeRole> {
     pub cptr: usize,
     _cap_type: PhantomData<CT>,
+    _role: PhantomData<Role>,
 }
 
-impl<CT: CapType> Capability<CT> {
+impl<CT: CapType, Role: CNodeRole> Cap<CT, Role> {
     // TODO most of this should only happen in the bootstrap adapter
-    pub fn wrap_cptr(cptr: usize) -> Capability<CT> {
-        Capability {
+    pub fn wrap_cptr(cptr: usize) -> Cap<CT, Role> {
+        Cap {
             cptr: cptr,
-            _cap_type: PhantomData
+            _cap_type: PhantomData,
+            _role: PhantomData,
         }
     }
 }
 
-
-#[derive(Debug)]
-pub struct ChildCapability<CT: CapType> {
-    child_cptr: usize,
-    _cap_type: PhantomData<CT>,
-}
-
 pub trait CNodeRole: private::SealedRole {}
 
-pub mod CNodeRoles {
+pub mod role {
     use super::CNodeRole;
 
     #[derive(Debug)]
-    pub struct CSpaceRoot {}
-    impl CNodeRole for CSpaceRoot {}
-
+    pub struct Local {}
+    impl CNodeRole for Local {}
     #[derive(Debug)]
-    pub struct ChildProcess {}
-    impl CNodeRole for ChildProcess {}
+    pub struct Child {}
+    impl CNodeRole for Child {}
 }
 
-/// There will only ever be one CNode in a process with Role = CSpaceRoot. The
-/// cptrs any regular Capability are /also/ offsets into that cnode, because of
+/// There will only ever be one CNode in a process with Role = Root. The
+/// cptrs any regular Cap are /also/ offsets into that cnode, because of
 /// how we're configuring each CNode's guard.
 #[derive(Debug)]
 pub struct CNode<FreeSlots: Unsigned, Role: CNodeRole> {
@@ -173,7 +167,7 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> CNode<FreeSlots, Role> {
 // Answer: The radix is 19, and there are 12 initial caps. But there are also a bunch
 // of random things in the bootinfo.
 // TODO: ideally, this should only be callable once in the process. Is that possible?
-pub fn root_cnode(bootinfo: &'static seL4_BootInfo) -> CNode<U1024, CNodeRoles::CSpaceRoot> {
+pub fn root_cnode(bootinfo: &'static seL4_BootInfo) -> CNode<U1024, role::Local> {
     CNode {
         radix: 19,
         next_free_slot: 1000, // TODO: look at the bootinfo to determine the real value
@@ -183,16 +177,16 @@ pub fn root_cnode(bootinfo: &'static seL4_BootInfo) -> CNode<U1024, CNodeRoles::
     }
 }
 
-impl<CT: CapType> Capability<CT> {
+impl<CT: CapType> Cap<CT, role::Local> {
     pub fn copy_local<SourceFreeSlots: Unsigned, FreeSlots: Unsigned>(
         &self,
-        src_cnode: &CNode<SourceFreeSlots, CNodeRoles::CSpaceRoot>,
-        dest_cnode: CNode<FreeSlots, CNodeRoles::CSpaceRoot>,
+        src_cnode: &CNode<SourceFreeSlots, role::Local>,
+        dest_cnode: CNode<FreeSlots, role::Local>,
         rights: seL4_CapRights_t,
     ) -> Result<
         (
-            Capability<CT::CopyOutput>,
-            CNode<Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>,
+            Cap<CT::CopyOutput, role::Local>,
+            CNode<Sub1<FreeSlots>, role::Local>,
         ),
         Error,
     >
@@ -207,7 +201,7 @@ impl<CT: CapType> Capability<CT> {
                 dest_slot.cptr as u32,   // _service
                 dest_slot.offset as u32, // index
                 CONFIG_WORD_SIZE as u8,  // depth
-                // Since src_cnode is restricted to CSpaceRoot, the cptr must
+                // Since src_cnode is restricted to Root, the cptr must
                 // actually be the slot index
                 src_cnode.cptr as u32,                      // src_root
                 self.cptr as u32,       // src_index
@@ -220,9 +214,10 @@ impl<CT: CapType> Capability<CT> {
             Err(Error::CNodeCopy(err))
         } else {
             Ok((
-                Capability {
+                Cap {
                     cptr: dest_slot.offset,
                     _cap_type: PhantomData,
+                    _role: PhantomData,
                 },
                 dest_cnode,
             ))
@@ -249,26 +244,27 @@ impl<BitSize: Unsigned> CapType for Untyped<BitSize> {
 pub fn wrap_untyped<BitSize: Unsigned>(
     cptr: usize,
     untyped_desc: &seL4_UntypedDesc,
-) -> Option<Capability<Untyped<BitSize>>> {
+) -> Option<Cap<Untyped<BitSize>, role::Local>> {
     if untyped_desc.sizeBits == BitSize::to_u8() {
-        Some(Capability {
+        Some(Cap {
             cptr,
             _cap_type: PhantomData,
+            _role: PhantomData,
         })
     } else {
         None
     }
 }
 
-impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
+impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
     pub fn split<FreeSlots: Unsigned>(
         self,
-        dest_cnode: CNode<FreeSlots, CNodeRoles::CSpaceRoot>,
+        dest_cnode: CNode<FreeSlots, role::Local>,
     ) -> Result<
         (
-            Capability<Untyped<Sub1<BitSize>>>,
-            Capability<Untyped<Sub1<BitSize>>>,
-            CNode<Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>,
+            Cap<Untyped<Sub1<BitSize>>, role::Local>,
+            Cap<Untyped<Sub1<BitSize>>, role::Local>,
+            CNode<Sub1<FreeSlots>, role::Local>,
         ),
         Error,
     >
@@ -298,13 +294,15 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
         }
 
         Ok((
-            Capability {
+            Cap {
                 cptr: self.cptr,
                 _cap_type: PhantomData,
+                _role: PhantomData,
             },
-            Capability {
+            Cap {
                 cptr: dest_slot.offset,
                 _cap_type: PhantomData,
+                _role: PhantomData,
             },
             dest_cnode,
         ))
@@ -312,14 +310,14 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
 
     pub fn quarter<FreeSlots: Unsigned>(
         self,
-        dest_cnode: CNode<FreeSlots, CNodeRoles::CSpaceRoot>,
+        dest_cnode: CNode<FreeSlots, role::Local>,
     ) -> Result<
         (
-            Capability<Untyped<Diff<BitSize, U2>>>,
-            Capability<Untyped<Diff<BitSize, U2>>>,
-            Capability<Untyped<Diff<BitSize, U2>>>,
-            Capability<Untyped<Diff<BitSize, U2>>>,
-            CNode<Sub1<Sub1<Sub1<FreeSlots>>>, CNodeRoles::CSpaceRoot>,
+            Cap<Untyped<Diff<BitSize, U2>>, role::Local>,
+            Cap<Untyped<Diff<BitSize, U2>>, role::Local>,
+            Cap<Untyped<Diff<BitSize, U2>>, role::Local>,
+            Cap<Untyped<Diff<BitSize, U2>>, role::Local>,
+            CNode<Sub1<Sub1<Sub1<FreeSlots>>>, role::Local>,
         ),
         Error,
     >
@@ -361,21 +359,25 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
         }
 
         Ok((
-            Capability {
+            Cap {
                 cptr: self.cptr,
                 _cap_type: PhantomData,
+                _role: PhantomData,
             },
-            Capability {
+            Cap {
                 cptr: dest_slot1.offset,
                 _cap_type: PhantomData,
+                _role: PhantomData,
             },
-            Capability {
+            Cap {
                 cptr: dest_slot2.offset,
                 _cap_type: PhantomData,
+                _role: PhantomData,
             },
-            Capability {
+            Cap {
                 cptr: dest_slot3.offset,
                 _cap_type: PhantomData,
+                _role: PhantomData,
             },
             dest_cnode,
         ))
@@ -385,11 +387,11 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
     // this untyped is big enough
     pub fn retype_local<FreeSlots: Unsigned, TargetCapType: CapType>(
         self,
-        dest_cnode: CNode<FreeSlots, CNodeRoles::CSpaceRoot>,
+        dest_cnode: CNode<FreeSlots, role::Local>,
     ) -> Result<
         (
-            Capability<TargetCapType>,
-            CNode<Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>,
+            Cap<TargetCapType, role::Local>,
+            CNode<Sub1<FreeSlots>, role::Local>,
         ),
         Error,
     >
@@ -418,9 +420,10 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
         }
 
         Ok((
-            Capability {
+            Cap {
                 cptr: dest_slot.offset,
                 _cap_type: PhantomData,
+                _role: PhantomData,
             },
             dest_cnode,
         ))
@@ -430,11 +433,11 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
     // answer: it needs 4 more bits, this value is seL4_SlotBits.
     pub fn retype_local_cnode<FreeSlots: Unsigned, ChildRadix: Unsigned>(
         self,
-        dest_cnode: CNode<FreeSlots, CNodeRoles::CSpaceRoot>,
+        dest_cnode: CNode<FreeSlots, role::Local>,
     ) -> Result<
         (
-            CNode<Pow<ChildRadix>, CNodeRoles::ChildProcess>,
-            CNode<Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>,
+            CNode<Pow<ChildRadix>, role::Child>,
+            CNode<Sub1<FreeSlots>, role::Local>,
         ),
         Error,
     >
@@ -477,11 +480,11 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
 
     pub fn retype_child<FreeSlots: Unsigned, TargetCapType: CapType>(
         self,
-        dest_cnode: CNode<FreeSlots, CNodeRoles::ChildProcess>,
+        dest_cnode: CNode<FreeSlots, role::Child>,
     ) -> Result<
         (
-            ChildCapability<TargetCapType>,
-            CNode<Sub1<FreeSlots>, CNodeRoles::ChildProcess>,
+            Cap<TargetCapType, role::Child>,
+            CNode<Sub1<FreeSlots>, role::Child>,
         ),
         Error,
     >
@@ -510,9 +513,10 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
         }
 
         Ok((
-            ChildCapability {
-                child_cptr: dest_slot.offset,
+            Cap {
+                cptr: dest_slot.offset,
                 _cap_type: PhantomData,
+                _role: PhantomData,
             },
             dest_cnode,
         ))
@@ -520,16 +524,16 @@ impl<BitSize: Unsigned> Capability<Untyped<BitSize>> {
 }
 
 // The ASID pool needs an untyped of exactly 4k
-impl Capability<Untyped<U12>> {
+impl Cap<Untyped<U12>, role::Local> {
     // TODO put retype local into a trait so we can dispatch via the target cap type
     pub fn retype_asid_pool<FreeSlots: Unsigned>(
         self,
-        asid_control: Capability<ASIDControl>,
-        dest_cnode: CNode<FreeSlots, CNodeRoles::CSpaceRoot>,
+        asid_control: Cap<ASIDControl, role::Local>,
+        dest_cnode: CNode<FreeSlots, role::Local>,
     ) -> Result<
         (
-            Capability<ASIDPool>,
-            CNode<Sub1<FreeSlots>, CNodeRoles::CSpaceRoot>,
+            Cap<ASIDPool, role::Local>,
+            CNode<Sub1<FreeSlots>, role::Local>,
         ),
         Error,
     >
@@ -554,9 +558,10 @@ impl Capability<Untyped<U12>> {
         }
 
         Ok((
-            Capability {
+            Cap {
                 cptr: dest_slot.offset,
                 _cap_type: PhantomData,
+                _role: PhantomData,
             },
             dest_cnode,
         ))
@@ -578,16 +583,16 @@ impl CapType for ThreadControlBlock {
 
 impl FixedSizeCap for ThreadControlBlock {}
 
-impl Capability<ThreadControlBlock> {
+impl Cap<ThreadControlBlock, role::Local> {
     pub fn configure<FreeSlots: Unsigned>(
         &mut self,
-        // fault_ep: Capability<Endpoint>,
-        cspace_root: CNode<FreeSlots, CNodeRoles::ChildProcess>,
+        // fault_ep: Cap<Endpoint>,
+        cspace_root: CNode<FreeSlots, role::Child>,
         // cspace_root_data: usize, // set the guard bits here
-        vspace_root: Capability<AssignedPageDirectory>, // TODO make a marker trait for VSpace?
-                                                // vspace_root_data: usize, // always 0
-                                                // buffer: usize,
-                                                // buffer_frame: Capability<Frame>,
+        vspace_root: Cap<AssignedPageDirectory, role::Local>, // TODO make a marker trait for VSpace?
+        // vspace_root_data: usize, // always 0
+        // buffer: usize,
+        // buffer_frame: Cap<Frame>,
     ) -> Result<(), Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
         // used by the radix.
@@ -658,17 +663,19 @@ impl CapType for ASIDPool {
     }
 }
 
-impl Capability<ASIDPool> {
-    pub fn assign(&mut self, vspace: Capability<UnassignedPageDirectory>) -> Result<Capability<AssignedPageDirectory>, Error> {
+impl Cap<ASIDPool, role::Local> {
+    pub fn assign(&mut self, vspace: Cap<UnassignedPageDirectory, role::Local>)
+        -> Result<Cap<AssignedPageDirectory, role::Local>, Error> {
         let err = unsafe { seL4_ARM_ASIDPool_Assign(self.cptr as u32, vspace.cptr as u32) };
 
         if err != 0 {
             return Err(Error::ASIDPoolAssign(err));
         }
 
-        Ok(Capability {
+        Ok(Cap {
             cptr: vspace.cptr,
-            _cap_type: PhantomData
+            _cap_type: PhantomData,
+            _role: PhantomData,
         })
     }
 }
@@ -695,12 +702,12 @@ impl CapType for UnassignedPageDirectory {
 
 impl FixedSizeCap for UnassignedPageDirectory {}
 
-impl Capability<AssignedPageDirectory> {
+impl Cap<AssignedPageDirectory, role::Local> {
     pub fn map_page_table(
         &mut self,
-        page_table: Capability<UnmappedPageTable>,
+        page_table: Cap<UnmappedPageTable, role::Local>,
         virtual_address: usize,
-    ) -> Result<Capability<MappedPageTable>, Error> {
+    ) -> Result<Cap<MappedPageTable, role::Local>, Error> {
         // map the page table
         let err = unsafe {
             seL4_ARM_PageTable_Map(
@@ -717,17 +724,18 @@ impl Capability<AssignedPageDirectory> {
         if err != 0 {
             return Err(Error::MapPageTable(err));
         }
-        Ok(Capability {
+        Ok(Cap {
             cptr: page_table.cptr,
-            _cap_type: PhantomData
+            _cap_type: PhantomData,
+            _role: PhantomData
         })
     }
 
     pub fn map_page(
         &mut self,
-        page: Capability<UnmappedPage>,
+        page: Cap<UnmappedPage, role::Local>,
         virtual_address: usize,
-    ) -> Result<Capability<MappedPage>, Error> {
+    ) -> Result<Cap<MappedPage, role::Local>, Error> {
         let err = unsafe {
             seL4_ARM_Page_Map(
                 page.cptr as u32,
@@ -744,9 +752,10 @@ impl Capability<AssignedPageDirectory> {
         if err != 0 {
             return Err(Error::MapPage(err))
         }
-        Ok(Capability {
+        Ok(Cap {
             cptr: page.cptr,
-            _cap_type: PhantomData
+            _cap_type: PhantomData,
+            _role: PhantomData,
         })
     }
 }
@@ -773,15 +782,16 @@ impl CapType for MappedPageTable {
     }
 }
 
-impl Capability<MappedPageTable> {
-    pub fn unmap(self) -> Result<Capability<UnmappedPageTable>, Error> {
+impl Cap<MappedPageTable, role::Local> {
+    pub fn unmap(self) -> Result<Cap<UnmappedPageTable, role::Local>, Error> {
         let err = unsafe {seL4_ARM_PageTable_Unmap(self.cptr as u32) };
         if err != 0 {
             return Err(Error::UnmapPageTable(err));
         }
-        Ok(Capability {
+        Ok(Cap {
             cptr: self.cptr,
-            _cap_type: PhantomData
+            _cap_type: PhantomData,
+            _role: PhantomData,
         })
     }
 }
@@ -808,23 +818,24 @@ impl CapType for MappedPage {
     }
 }
 
-impl Capability<MappedPage> {
-    pub fn unmap(self) -> Result<Capability<UnmappedPage>, Error>{
+impl Cap<MappedPage, role::Local> {
+    pub fn unmap(self) -> Result<Cap<UnmappedPage, role::Local>, Error>{
         let err = unsafe { seL4_ARM_Page_Unmap(self.cptr as u32) };
         if err != 0 {
             return Err(Error::UnmapPage(err));
         }
-        Ok(Capability {
+        Ok(Cap {
             cptr: self.cptr,
-            _cap_type: PhantomData
+            _cap_type: PhantomData,
+            _role: PhantomData,
         })
     }
 }
 
 mod private {
     pub trait SealedRole {}
-    impl SealedRole for super::CNodeRoles::CSpaceRoot {}
-    impl SealedRole for super::CNodeRoles::ChildProcess {}
+    impl SealedRole for super::role::Local {}
+    impl SealedRole for super::role::Child {}
 
     pub trait SealedCapType {}
     impl <BitSize: typenum::Unsigned> SealedCapType for super::Untyped<BitSize> {}

@@ -1,7 +1,7 @@
 // in the type, store a flag for each bit size to indicate whether we have an
 // untyped of that size.
 
-use crate::fancy::{CNode, CNodeRole, CNodeRoles, Capability, Untyped};
+use crate::fancy::{CNode, CNodeRole, Cap, Untyped, role};
 use crate::pow::{Pow, _Pow};
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
@@ -20,7 +20,7 @@ struct Allocator<Flags: Unsigned> {
 }
 
 fn new_allocator<InitialBitSize: Unsigned>(
-    ut: Capability<Untyped<InitialBitSize>>,
+    ut: Cap<Untyped<InitialBitSize>, role::Local>,
 ) -> Allocator<Pow<InitialBitSize>>
 where
     InitialBitSize: _Pow,
@@ -80,7 +80,7 @@ impl<Flags: Unsigned> Allocator<Flags> {
         mut self,
         dest_cnode: CNode<FreeSlots, Role>,
     ) -> (
-        Capability<Untyped<Bits>>,
+        Cap<Untyped<Bits>, role::Local>,
         Allocator<TakeSlot_Flags<Flags, Bits>>,
         CNode<Diff<FreeSlots, TakeSlot_NewUntypedCount<Flags, Bits>>, Role>,
     )
@@ -99,7 +99,7 @@ impl<Flags: Unsigned> Allocator<Flags> {
                 //unimplemented!()
 
                 (
-                    Capability::<Untyped<Bits>>::wrap_cptr(cptr),
+                    Cap::<Untyped<Bits>, role::Local>::wrap_cptr(cptr),
                     Allocator {
                         pool: self.pool,
                         _flags: PhantomData,
@@ -154,12 +154,12 @@ fn allocator_compile_test() {
     type Bin0110000 = UInt<UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B0>, B1>, B1>, B0>, B0>, B0>, B0>;
 
     // The allocator starts with a 6-bit untyped
-    let ut: Capability<Untyped<U6>> = unimplemented!();
+    let ut: Cap<Untyped<U6>, role::Local> = unimplemented!();
     let allocator: Allocator<Bin1000000> = new_allocator(ut);
-    let cnode: CNode<U10, CNodeRoles::CSpaceRoot> = unimplemented!();
+    let cnode: CNode<U10, role::Local> = unimplemented!();
 
     // after allocating a 4-bit untyped, there should be 1 4-bit and 1 5-bit left
-    let (a, allocator, cnode): (Capability<Untyped<U4>>, _, _) = allocator.alloc(cnode);
+    let (a, allocator, cnode): (Cap<Untyped<U4>, role::Local>, _, _) = allocator.alloc(cnode);
     let allocator: Allocator<Bin0110000> = allocator;
 
     // the allocation required two splits, so it consumed 4 cnode slots
