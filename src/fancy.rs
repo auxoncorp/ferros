@@ -832,6 +832,35 @@ impl Cap<MappedPage, role::Local> {
     }
 }
 
+trait ProcessParameter: Sized {
+    type Local;
+    type Child;
+}
+
+fn spawn<T: ProcessParameter>(function_descriptor: fn (&T::Local) -> (), real_data: T::Child) {
+    // TODO - all the things
+}
+
+mod example {
+    use super::*;
+
+    struct Param<R: CNodeRole> {
+        a: Cap<Endpoint, R>,
+        b: Cap<Endpoint, R>,
+    }
+
+    fn run(p: &Param<role::Local>) {
+        // actual driver code
+    }
+
+    impl <R: CNodeRole> ProcessParameter for Param<R> {
+        type Local = Param<role::Local>;
+        type Child = Param<role::Child>;
+    }
+}
+
+
+
 mod private {
     pub trait SealedRole {}
     impl SealedRole for super::role::Local {}
