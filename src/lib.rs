@@ -18,7 +18,8 @@ extern crate proptest;
 pub mod fel4_test;
 
 // These will eventually be factored out into the userland lib
-mod fancy;
+mod userland;
+// mod fancy;
 mod micro_alloc;
 mod pow;
 mod twinkle_types;
@@ -42,10 +43,11 @@ macro_rules! debug_println {
 
 use sel4_sys::*;
 
-use crate::fancy::{
-    role, ASIDControl, ASIDPool, AssignedPageDirectory, Cap, MappedPage, ThreadControlBlock,
-};
 use crate::micro_alloc::GetUntyped;
+use crate::userland::{
+    role, root_cnode, spawn, ASIDControl, ASIDPool, AssignedPageDirectory, Cap, MappedPage,
+    ThreadControlBlock,
+};
 
 use typenum::{U12, U20};
 
@@ -62,7 +64,7 @@ pub fn main(bootinfo: &'static seL4_BootInfo) {
         micro_alloc::Allocator::bootstrap(&bootinfo).expect("Couldn't set up bootstrap allocator");
 
     // wrap bootinfo caps
-    let root_cnode = fancy::root_cnode(&bootinfo);
+    let root_cnode = root_cnode(&bootinfo);
     let mut root_page_directory =
         Cap::<AssignedPageDirectory, _>::wrap_cptr(seL4_CapInitThreadVSpace as usize);
     let root_tcb = Cap::<ThreadControlBlock, _>::wrap_cptr(seL4_CapInitThreadTCB as usize);
@@ -101,7 +103,7 @@ pub fn main(bootinfo: &'static seL4_BootInfo) {
     nums[139] = 0xcccccccc;
     let params = test_proc::Params { nums };
 
-    let root_cnode = fancy::spawn(
+    let root_cnode = spawn(
         test_proc::main,
         params,
         child_cnode,

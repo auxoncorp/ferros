@@ -1,4 +1,4 @@
-use crate::fancy;
+use crate::userland;
 
 #[cfg(feature = "KernelPrinting")]
 use sel4_sys::DebugOutHandle;
@@ -19,7 +19,7 @@ pub struct Params {
     pub nums: [usize; 140],
 }
 
-impl fancy::RetypeForSetup for Params {
+impl userland::RetypeForSetup for Params {
     type Output = Params;
 }
 

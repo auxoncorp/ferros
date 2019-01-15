@@ -1,8 +1,8 @@
 // in the type, store a flag for each bit size to indicate whether we have an
 // untyped of that size.
 
-use crate::fancy::{role, CNode, CNodeRole, Cap, Untyped};
 use crate::pow::{Pow, _Pow};
+use crate::userland::{role, CNode, CNodeRole, Cap, Untyped};
 use core::marker::PhantomData;
 use core::mem::transmute;
 use core::ops::{Add, Sub};
