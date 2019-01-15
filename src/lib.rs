@@ -17,29 +17,16 @@ extern crate proptest;
 #[cfg(feature = "test")]
 pub mod fel4_test;
 
-// These will eventually be factored out into the userland lib
 mod userland;
-// mod fancy;
+
+#[macro_use]
+mod debug;
+
 mod micro_alloc;
 mod pow;
 mod twinkle_types;
 
 mod test_proc;
-
-#[cfg(feature = "KernelPrinting")]
-use sel4_sys::DebugOutHandle;
-
-macro_rules! debug_print {
-    ($($arg:tt)*) => ({
-        use core::fmt::Write;
-        DebugOutHandle.write_fmt(format_args!($($arg)*)).unwrap();
-    });
-}
-
-macro_rules! debug_println {
-    ($fmt:expr) => (debug_print!(concat!($fmt, "\n")));
-    ($fmt:expr, $($arg:tt)*) => (debug_print!(concat!($fmt, "\n"), $($arg)*));
-}
 
 use sel4_sys::*;
 
