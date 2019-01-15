@@ -2,7 +2,7 @@
 //! This one doesn't split anything; it just hands out the smallest untyped item
 //! that's big enough for the request.
 
-use crate::fancy::{wrap_untyped, Cap, CNodeRole, role, Untyped};
+use crate::fancy::{role, wrap_untyped, Cap, Untyped};
 use arrayvec::ArrayVec;
 use typenum::Unsigned;
 
@@ -51,17 +51,15 @@ impl Allocator {
         let mut items = ArrayVec::new();
         for i in 0..(bootinfo.untyped.end - bootinfo.untyped.start) {
             match UntypedItem::new(
-                (bootinfo.untyped.start + i) as usize,              // cptr
+                (bootinfo.untyped.start + i) as usize, // cptr
                 &bootinfo.untypedList[i as usize],
             ) {
                 Ok(item) => items.push(item),
                 Err(e) => return Err(e),
             }
-        };
+        }
 
-        Ok(Allocator {
-            items,
-        })
+        Ok(Allocator { items })
     }
 }
 

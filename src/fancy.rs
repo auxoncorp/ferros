@@ -1,13 +1,10 @@
 use core::marker::PhantomData;
-use core::mem::{self, size_of, transmute};
-use core::ops::{Add, Sub};
+use core::mem::{self, size_of};
+use core::ops::Sub;
 use core::ptr;
 use sel4_sys::*;
-use typenum::operator_aliases::{Add1, Diff, Shleft, Sub1};
-use typenum::{
-    Bit, Exp, IsGreaterOrEqual, UInt, UTerm, Unsigned, B0, B1, U0, U1, U10, U1024, U12, U128, U14,
-    U16, U18, U19, U2, U24, U256, U3, U32, U4, U5, U6, U8,
-};
+use typenum::operator_aliases::{Diff, Sub1};
+use typenum::{Bit, Unsigned, B1, U1, U1024, U12, U128, U16, U2, U256, U3};
 
 use crate::pow::{Pow, _Pow};
 
@@ -203,15 +200,15 @@ impl<CT: CapType> Cap<CT, role::Local> {
 
         let err = unsafe {
             seL4_CNode_Copy(
-                dest_slot.cptr,   // _service
-                dest_slot.offset, // index
-                seL4_WordBits as u8,  // depth
+                dest_slot.cptr,      // _service
+                dest_slot.offset,    // index
+                seL4_WordBits as u8, // depth
                 // Since src_cnode is restricted to Root, the cptr must
                 // actually be the slot index
-                src_cnode.cptr,  // src_root
-                self.cptr,       // src_index
+                src_cnode.cptr,      // src_root
+                self.cptr,           // src_index
                 seL4_WordBits as u8, // src_depth
-                rights,                 // rights
+                rights,              // rights
             )
         };
 
@@ -286,12 +283,12 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
             seL4_Untyped_Retype(
                 self.cptr,                          // _service
                 Untyped::<BitSize>::sel4_type_id(), // type
-                (BitSize::to_usize() - 1),                   // size_bits
+                (BitSize::to_usize() - 1),          // size_bits
                 dest_slot.cptr,                     // root
-                0,                                         // index
-                0,                                         // depth
+                0,                                  // index
+                0,                                  // depth
                 dest_slot.offset,                   // offset
-                1,                                         // num_objects
+                1,                                  // num_objects
             )
         };
         if err != 0 {
@@ -351,12 +348,12 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
             seL4_Untyped_Retype(
                 self.cptr,                          // _service
                 Untyped::<BitSize>::sel4_type_id(), // type
-                (BitSize::to_usize() - 2),                   // size_bits
+                (BitSize::to_usize() - 2),          // size_bits
                 dest_slot1.cptr,                    // root
-                0,                                         // index
-                0,                                         // depth
+                0,                                  // index
+                0,                                  // depth
                 dest_slot1.offset,                  // offset
-                3,                                         // num_objects
+                3,                                  // num_objects
             )
         };
         if err != 0 {
@@ -411,12 +408,12 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
             seL4_Untyped_Retype(
                 self.cptr,                     // _service
                 TargetCapType::sel4_type_id(), // type
-                0,                                    // size_bits
+                0,                             // size_bits
                 dest_slot.cptr,                // root
-                0,                                    // index
-                0,                                    // depth
+                0,                             // index
+                0,                             // depth
                 dest_slot.offset,              // offset
-                1,                                    // num_objects
+                1,                             // num_objects
             )
         };
 
@@ -456,14 +453,14 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
 
         let err = unsafe {
             seL4_Untyped_Retype(
-                self.cptr,               // _service
+                self.cptr,                               // _service
                 api_object_seL4_CapTableObject as usize, // type
-                ChildRadix::to_usize(),           // size_bits
-                dest_slot.cptr,          // root
-                0,                              // index
-                0,                              // depth
-                dest_slot.offset,        // offset
-                1,                              // num_objects
+                ChildRadix::to_usize(),                  // size_bits
+                dest_slot.cptr,                          // root
+                0,                                       // index
+                0,                                       // depth
+                dest_slot.offset,                        // offset
+                1,                                       // num_objects
             )
         };
 
@@ -504,12 +501,12 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
             seL4_Untyped_Retype(
                 self.cptr,                     // _service
                 TargetCapType::sel4_type_id(), // type
-                0,                                    // size_bits
+                0,                             // size_bits
                 dest_slot.cptr,                // root
-                0,                                    // index
-                0,                                    // depth
+                0,                             // index
+                0,                             // depth
                 dest_slot.offset,              // offset
-                1,                                    // num_objects
+                1,                             // num_objects
             )
         };
 
@@ -550,10 +547,10 @@ impl Cap<Untyped<U12>, role::Local> {
 
         let err = unsafe {
             seL4_ARM_ASIDControl_MakePool(
-                asid_control.cptr,       // _service
-                self.cptr,               // untyped
-                dest_slot.cptr,          // root
-                dest_slot.offset,        // index
+                asid_control.cptr,              // _service
+                self.cptr,                      // untyped
+                dest_slot.cptr,                 // root
+                dest_slot.offset,               // index
                 (8 * size_of::<usize>()) as u8, // depth
             )
         };
@@ -603,7 +600,7 @@ impl Cap<ThreadControlBlock, role::Local> {
         // used by the radix.
         let cspace_root_data = unsafe {
             seL4_CNode_CapData_new(
-                0,                                           // guard
+                0,                                          // guard
                 seL4_WordBits - cspace_root.radix as usize, // guard size in bits
             )
         }
@@ -861,7 +858,7 @@ pub fn spawn<
     StackSize: Unsigned,
 >(
     // process-related
-    function_descriptor: extern fn(&T) -> (),
+    function_descriptor: extern "C" fn(&T) -> (),
     process_parameter: SetupVer<T>,
     child_cnode: CNode<RootCNodeFreeSlots, role::Child>,
     priority: u8,
@@ -988,8 +985,7 @@ where
         return Err(Error::TCBWriteRegisters(err));
     }
 
-    let err =
-        unsafe { seL4_TCB_SetPriority(tcb.cptr, local_tcb.cptr, priority as usize) };
+    let err = unsafe { seL4_TCB_SetPriority(tcb.cptr, local_tcb.cptr, priority as usize) };
 
     if err != 0 {
         return Err(Error::TCBSetPriority(err));

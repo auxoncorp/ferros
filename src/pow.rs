@@ -1,7 +1,7 @@
 //! 2^n for typenum
-use core::ops::{Add, Sub};
-use typenum::operator_aliases::{Diff, Shleft, Sub1};
-use typenum::{U1, U2, B0, B1, Unsigned, Bit, UInt, UTerm};
+use core::ops::Sub;
+use typenum::operator_aliases::Diff;
+use typenum::{Bit, UInt, UTerm, Unsigned, B0, B1, U1, U2};
 
 pub trait _Pow {
     type Output;
@@ -25,7 +25,7 @@ impl _Pow for UInt<UTerm, B0> {
 impl<U: Unsigned, BA: Bit, BB: Bit> _Pow for UInt<UInt<U, BB>, BA>
 where
     Self: Sub<U1>,
-Diff<Self, U1>: _Pow,
+    Diff<Self, U1>: _Pow,
 {
     type Output = UInt<<Diff<Self, U1> as _Pow>::Output, B0>;
 }
