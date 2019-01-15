@@ -203,14 +203,14 @@ impl<CT: CapType> Cap<CT, role::Local> {
 
         let err = unsafe {
             seL4_CNode_Copy(
-                dest_slot.cptr as u32,   // _service
-                dest_slot.offset as u32, // index
-                CONFIG_WORD_SIZE as u8,  // depth
+                dest_slot.cptr,   // _service
+                dest_slot.offset, // index
+                seL4_WordBits as u8,  // depth
                 // Since src_cnode is restricted to Root, the cptr must
                 // actually be the slot index
-                src_cnode.cptr as u32,  // src_root
-                self.cptr as u32,       // src_index
-                CONFIG_WORD_SIZE as u8, // src_depth
+                src_cnode.cptr,  // src_root
+                self.cptr,       // src_index
+                seL4_WordBits as u8, // src_depth
                 rights,                 // rights
             )
         };
@@ -284,13 +284,13 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
 
         let err = unsafe {
             seL4_Untyped_Retype(
-                self.cptr as u32,                          // _service
-                Untyped::<BitSize>::sel4_type_id() as u32, // type
-                (BitSize::to_u32() - 1),                   // size_bits
-                dest_slot.cptr as u32,                     // root
+                self.cptr,                          // _service
+                Untyped::<BitSize>::sel4_type_id(), // type
+                (BitSize::to_usize() - 1),                   // size_bits
+                dest_slot.cptr,                     // root
                 0,                                         // index
                 0,                                         // depth
-                dest_slot.offset as u32,                   // offset
+                dest_slot.offset,                   // offset
                 1,                                         // num_objects
             )
         };
@@ -349,13 +349,13 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
 
         let err = unsafe {
             seL4_Untyped_Retype(
-                self.cptr as u32,                          // _service
-                Untyped::<BitSize>::sel4_type_id() as u32, // type
-                (BitSize::to_u32() - 2),                   // size_bits
-                dest_slot1.cptr as u32,                    // root
+                self.cptr,                          // _service
+                Untyped::<BitSize>::sel4_type_id(), // type
+                (BitSize::to_usize() - 2),                   // size_bits
+                dest_slot1.cptr,                    // root
                 0,                                         // index
                 0,                                         // depth
-                dest_slot1.offset as u32,                  // offset
+                dest_slot1.offset,                  // offset
                 3,                                         // num_objects
             )
         };
@@ -409,13 +409,13 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
 
         let err = unsafe {
             seL4_Untyped_Retype(
-                self.cptr as u32,                     // _service
-                TargetCapType::sel4_type_id() as u32, // type
+                self.cptr,                     // _service
+                TargetCapType::sel4_type_id(), // type
                 0,                                    // size_bits
-                dest_slot.cptr as u32,                // root
+                dest_slot.cptr,                // root
                 0,                                    // index
                 0,                                    // depth
-                dest_slot.offset as u32,              // offset
+                dest_slot.offset,              // offset
                 1,                                    // num_objects
             )
         };
@@ -456,13 +456,13 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
 
         let err = unsafe {
             seL4_Untyped_Retype(
-                self.cptr as u32,               // _service
-                api_object_seL4_CapTableObject, // type
-                ChildRadix::to_u32(),           // size_bits
-                dest_slot.cptr as u32,          // root
+                self.cptr,               // _service
+                api_object_seL4_CapTableObject as usize, // type
+                ChildRadix::to_usize(),           // size_bits
+                dest_slot.cptr,          // root
                 0,                              // index
                 0,                              // depth
-                dest_slot.offset as u32,        // offset
+                dest_slot.offset,        // offset
                 1,                              // num_objects
             )
         };
@@ -502,13 +502,13 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
 
         let err = unsafe {
             seL4_Untyped_Retype(
-                self.cptr as u32,                     // _service
-                TargetCapType::sel4_type_id() as u32, // type
+                self.cptr,                     // _service
+                TargetCapType::sel4_type_id(), // type
                 0,                                    // size_bits
-                dest_slot.cptr as u32,                // root
+                dest_slot.cptr,                // root
                 0,                                    // index
                 0,                                    // depth
-                dest_slot.offset as u32,              // offset
+                dest_slot.offset,              // offset
                 1,                                    // num_objects
             )
         };
@@ -550,10 +550,10 @@ impl Cap<Untyped<U12>, role::Local> {
 
         let err = unsafe {
             seL4_ARM_ASIDControl_MakePool(
-                asid_control.cptr as u32,       // _service
-                self.cptr as u32,               // untyped
-                dest_slot.cptr as u32,          // root
-                dest_slot.offset as u32,        // index
+                asid_control.cptr,       // _service
+                self.cptr,               // untyped
+                dest_slot.cptr,          // root
+                dest_slot.offset,        // index
                 (8 * size_of::<usize>()) as u8, // depth
             )
         };
@@ -604,19 +604,19 @@ impl Cap<ThreadControlBlock, role::Local> {
         let cspace_root_data = unsafe {
             seL4_CNode_CapData_new(
                 0,                                           // guard
-                CONFIG_WORD_SIZE - cspace_root.radix as u32, // guard size in bits
+                seL4_WordBits - cspace_root.radix as usize, // guard size in bits
             )
         }
         .words[0];
 
         let tcb_err = unsafe {
             seL4_TCB_Configure(
-                self.cptr as u32,
-                seL4_CapNull.into(), // fault_ep.cptr as u32,
-                cspace_root.cptr as u32,
+                self.cptr,
+                seL4_CapNull as usize, // fault_ep.cptr,
+                cspace_root.cptr,
                 cspace_root_data,
-                vspace_root.cptr as u32,
-                seL4_NilData.into(),
+                vspace_root.cptr,
+                seL4_NilData as usize,
                 0,
                 0,
             )
@@ -673,7 +673,7 @@ impl Cap<ASIDPool, role::Local> {
         &mut self,
         vspace: Cap<UnassignedPageDirectory, role::Local>,
     ) -> Result<Cap<AssignedPageDirectory, role::Local>, Error> {
-        let err = unsafe { seL4_ARM_ASIDPool_Assign(self.cptr as u32, vspace.cptr as u32) };
+        let err = unsafe { seL4_ARM_ASIDPool_Assign(self.cptr, vspace.cptr) };
 
         if err != 0 {
             return Err(Error::ASIDPoolAssign(err));
@@ -718,9 +718,9 @@ impl Cap<AssignedPageDirectory, role::Local> {
         // map the page table
         let err = unsafe {
             seL4_ARM_PageTable_Map(
-                page_table.cptr as u32,
-                self.cptr as u32,
-                virtual_address as u32,
+                page_table.cptr,
+                self.cptr,
+                virtual_address,
                 // TODO: JON! What do we write here? The default (according to
                 // sel4_ appears to be pageCachable | parityEnabled)
                 seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
@@ -745,9 +745,9 @@ impl Cap<AssignedPageDirectory, role::Local> {
     ) -> Result<Cap<MappedPage, role::Local>, Error> {
         let err = unsafe {
             seL4_ARM_Page_Map(
-                page.cptr as u32,
-                self.cptr as u32,
-                virtual_address as u32,
+                page.cptr,
+                self.cptr,
+                virtual_address,
                 seL4_CapRights_new(0, 1, 1), // read/write
                 // TODO: JON! What do we write here? The default (according to
                 // sel4_ appears to be pageCachable | parityEnabled)
@@ -791,7 +791,7 @@ impl CapType for MappedPageTable {
 
 impl Cap<MappedPageTable, role::Local> {
     pub fn unmap(self) -> Result<Cap<UnmappedPageTable, role::Local>, Error> {
-        let err = unsafe { seL4_ARM_PageTable_Unmap(self.cptr as u32) };
+        let err = unsafe { seL4_ARM_PageTable_Unmap(self.cptr) };
         if err != 0 {
             return Err(Error::UnmapPageTable(err));
         }
@@ -827,7 +827,7 @@ impl CapType for MappedPage {
 
 impl Cap<MappedPage, role::Local> {
     pub fn unmap(self) -> Result<Cap<UnmappedPage, role::Local>, Error> {
-        let err = unsafe { seL4_ARM_Page_Unmap(self.cptr as u32) };
+        let err = unsafe { seL4_ARM_Page_Unmap(self.cptr) };
         if err != 0 {
             return Err(Error::UnmapPage(err));
         }
@@ -969,17 +969,17 @@ where
     // TODO: stack pointer is supposed to be 8-byte aligned on ARM
     let mut regs: seL4_UserContext = unsafe { mem::zeroed() };
     regs.pc = function_descriptor as seL4_Word;
-    regs.sp = sp as u32;
-    regs.r0 = param_target_addr as u32;
+    regs.sp = sp;
+    regs.r0 = param_target_addr;
     regs.r14 = (yield_forever as *const fn() -> ()) as seL4_Word;
 
     let err = unsafe {
         seL4_TCB_WriteRegisters(
-            tcb.cptr as u32,
+            tcb.cptr,
             0,
             0,
             // all the regs
-            (size_of::<seL4_UserContext>() / size_of::<seL4_Word>()) as u32,
+            (size_of::<seL4_UserContext>() / size_of::<seL4_Word>()),
             &mut regs,
         )
     };
@@ -989,13 +989,13 @@ where
     }
 
     let err =
-        unsafe { seL4_TCB_SetPriority(tcb.cptr as u32, local_tcb.cptr as u32, priority as u32) };
+        unsafe { seL4_TCB_SetPriority(tcb.cptr, local_tcb.cptr, priority as usize) };
 
     if err != 0 {
         return Err(Error::TCBSetPriority(err));
     }
 
-    let err = unsafe { seL4_TCB_Resume(tcb.cptr as u32) };
+    let err = unsafe { seL4_TCB_Resume(tcb.cptr) };
 
     if err != 0 {
         return Err(Error::TCBResume(err));
