@@ -110,6 +110,7 @@ impl<Flags: Unsigned> Allocator<Flags> {
     }
 }
 
+#[allow(unused)]
 fn take_slot_compile_test() {
     type Bin000 = UInt<UInt<UInt<UTerm, B0>, B0>, B0>;
     type Bin001 = UInt<UInt<UInt<UTerm, B0>, B0>, B1>;
@@ -146,6 +147,7 @@ fn take_slot_compile_test() {
     let e_new_untyuped_count: TakeSlot_NewUntypedCount<Bin100, U1> = e_new_untyped_count_res;
 }
 
+#[allow(unused)]
 fn allocator_compile_test() {
     type Bin1000000 = UInt<UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B1>, B0>, B0>, B0>, B0>, B0>, B0>;
     type Bin0110000 = UInt<UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B0>, B1>, B1>, B0>, B0>, B0>, B0>;

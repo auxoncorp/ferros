@@ -83,7 +83,7 @@ pub fn main(bootinfo: &'static seL4_BootInfo) {
     let (ut12, asid_pool_ut, stack_ut, _, root_cnode) = ut14.quarter(root_cnode).expect("quarter");
     let (ut10, _, _, _, root_cnode) = ut12.quarter(root_cnode).expect("quarter");
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode).expect("quarter");
-    let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode).expect("quarter");
+    let (_ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode).expect("quarter");
 
     // asid control
     let asid_control = Cap::<ASIDControl, _>::wrap_cptr(seL4_CapASIDControl as usize);
@@ -103,7 +103,7 @@ pub fn main(bootinfo: &'static seL4_BootInfo) {
     nums[139] = 0xcccccccc;
     let params = test_proc::Params { nums };
 
-    let root_cnode = spawn(
+    let _root_cnode = spawn(
         test_proc::main,
         params,
         child_cnode,

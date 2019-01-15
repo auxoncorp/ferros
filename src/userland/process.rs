@@ -143,8 +143,8 @@ where
     let stack_page_table = stack_page_table.unmap()?;
 
     // map the stack to the target address space
-    let stack_page_table = page_dir.map_page_table(stack_page_table, stack_base)?;
-    let stack_page = page_dir.map_page(stack_page, stack_base)?;
+    let _stack_page_table = page_dir.map_page_table(stack_page_table, stack_base)?;
+    let _stack_page = page_dir.map_page(stack_page, stack_base)?;
 
     // map in the user image
     let program_vaddr_start = 0x00010000;
@@ -154,7 +154,7 @@ where
     // image size from the build linker, somehow.
     let (code_page_table, cnode): (Cap<UnmappedPageTable, _>, _) =
         code_page_table_ut.retype_local(cnode)?;
-    let code_page_table = page_dir.map_page_table(code_page_table, program_vaddr_start)?;
+    let _code_page_table = page_dir.map_page_table(code_page_table, program_vaddr_start)?;
 
     // TODO: the number of pages we reserve here needs to be checked against the
     // size of the binary.
@@ -175,7 +175,7 @@ where
         let _mapped_page_cap = page_dir.map_page(copied_page_cap, vaddr)?;
     }
 
-    let (mut tcb, cnode): (Cap<ThreadControlBlock, _>, _) = tcb_ut.retype_local(cnode)?;
+    let (mut tcb, _cnode): (Cap<ThreadControlBlock, _>, _) = tcb_ut.retype_local(cnode)?;
     tcb.configure(child_cnode, page_dir)?;
 
     // TODO: stack pointer is supposed to be 8-byte aligned on ARM
