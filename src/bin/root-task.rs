@@ -6,80 +6,88 @@
 #![feature(global_asm)]
 #![feature(panic_info_message)]
 
-
+#[cfg(feature = "alloc")]
+extern crate alloc;
+extern crate iron_pegasus;
+#[cfg(all(feature = "test", feature = "alloc"))]
+extern crate proptest;
 extern crate sel4_sys;
 #[cfg(feature = "alloc")]
 extern crate wee_alloc;
-#[cfg(feature = "alloc")]
-extern crate alloc;
-#[cfg(all(feature = "test", feature = "alloc"))]
-extern crate proptest;
-extern crate lyft_fel4_ados;
 
 use core::alloc::Layout;
 use core::intrinsics;
-use core::panic::PanicInfo;
 use core::mem;
+use core::panic::PanicInfo;
 use sel4_sys::*;
 
 #[cfg(feature = "alloc")]
 #[global_allocator]
 static ALLOCATOR: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+macro_rules! debug_print {
+    ($($arg:tt)*) => ({
+        use core::fmt::Write;
+        DebugOutHandle.write_fmt(format_args!($($arg)*)).unwrap();
+    });
+}
+
+macro_rules! debug_println {
+    ($fmt:expr) => (debug_print!(concat!($fmt, "\n")));
+    ($fmt:expr, $($arg:tt)*) => (debug_print!(concat!($fmt, "\n"), $($arg)*));
+}
+
 // include the seL4 kernel configurations
 #[allow(dead_code)]
 #[allow(non_upper_case_globals)]
 pub mod sel4_config {
-    pub const KernelDebugBuild:bool = true;
-    pub const KernelTimerTickMS:&'static str = "2";
-    pub const KernelArmExportPMUUser:bool = false;
-    pub const BuildWithCommonSimulationSettings:bool = true;
-    pub const HardwareDebugAPI:bool = false;
-    pub const KernelDebugDisableL2Cache:bool = false;
-    pub const LibSel4FunctionAttributes:&'static str = "public";
-    pub const KernelMaxNumNodes:&'static str = "1";
-    pub const KernelFPUMaxRestoresSinceSwitch:&'static str = "64";
-    pub const KernelStackBits:&'static str = "12";
-    pub const KernelBenchmarks:&'static str = "none";
-    pub const KernelColourPrinting:bool = true;
-    pub const ElfloaderMode:&'static str = "secure supervisor";
-    pub const KernelNumPriorities:&'static str = "256";
-    pub const LinkPageSize:&'static str = "4096";
-    pub const KernelVerificationBuild:bool = false;
-    pub const LibSel4DebugFunctionInstrumentation:&'static str = "none";
-    pub const UserLinkerGCSections:bool = false;
-    pub const KernelIPCBufferLocation:&'static str = "threadID_register";
-    pub const KernelRootCNodeSizeBits:&'static str = "19";
-    pub const KernelFWholeProgram:bool = false;
-    pub const ElfloaderErrata764369:bool = true;
-    pub const KernelMaxNumBootinfoUntypedCaps:&'static str = "230";
-    pub const KernelARMPlatform:&'static str = "sabre";
-    pub const KernelPrinting:bool = true;
-    pub const KernelDebugDisableBranchPrediction:bool = false;
-    pub const KernelUserStackTraceLength:&'static str = "16";
-    pub const KernelAArch32FPUEnableContextSwitch:bool = true;
-    pub const KernelArmEnableA9Prefetcher:bool = false;
-    pub const KernelArch:&'static str = "arm";
-    pub const ElfloaderImage:&'static str = "elf";
-    pub const KernelRetypeFanOutLimit:&'static str = "256";
-    pub const LibSel4DebugAllocBufferEntries:&'static str = "0";
-    pub const KernelTimeSlice:&'static str = "5";
-    pub const KernelFastpath:bool = true;
-    pub const KernelArmSel4Arch:&'static str = "aarch32";
-    pub const KernelResetChunkBits:&'static str = "8";
-    pub const KernelNumDomains:&'static str = "1";
-    pub const KernelMaxNumWorkUnitsPerPreemption:&'static str = "100";
-    pub const KernelOptimisation:&'static str = "-O2";
+    pub const KernelDebugBuild: bool = true;
+    pub const KernelTimerTickMS: &'static str = "2";
+    pub const KernelArmExportPMUUser: bool = false;
+    pub const BuildWithCommonSimulationSettings: bool = true;
+    pub const HardwareDebugAPI: bool = false;
+    pub const KernelDebugDisableL2Cache: bool = false;
+    pub const LibSel4FunctionAttributes: &'static str = "public";
+    pub const KernelMaxNumNodes: &'static str = "1";
+    pub const KernelFPUMaxRestoresSinceSwitch: &'static str = "64";
+    pub const KernelStackBits: &'static str = "12";
+    pub const KernelBenchmarks: &'static str = "none";
+    pub const KernelColourPrinting: bool = true;
+    pub const ElfloaderMode: &'static str = "secure supervisor";
+    pub const KernelNumPriorities: &'static str = "256";
+    pub const LinkPageSize: &'static str = "4096";
+    pub const KernelVerificationBuild: bool = false;
+    pub const LibSel4DebugFunctionInstrumentation: &'static str = "none";
+    pub const UserLinkerGCSections: bool = false;
+    pub const KernelIPCBufferLocation: &'static str = "threadID_register";
+    pub const KernelRootCNodeSizeBits: &'static str = "19";
+    pub const KernelFWholeProgram: bool = false;
+    pub const ElfloaderErrata764369: bool = true;
+    pub const KernelMaxNumBootinfoUntypedCaps: &'static str = "230";
+    pub const KernelARMPlatform: &'static str = "sabre";
+    pub const KernelPrinting: bool = true;
+    pub const KernelDebugDisableBranchPrediction: bool = false;
+    pub const KernelUserStackTraceLength: &'static str = "16";
+    pub const KernelAArch32FPUEnableContextSwitch: bool = true;
+    pub const KernelArmEnableA9Prefetcher: bool = false;
+    pub const KernelArch: &'static str = "arm";
+    pub const ElfloaderImage: &'static str = "elf";
+    pub const KernelRetypeFanOutLimit: &'static str = "256";
+    pub const LibSel4DebugAllocBufferEntries: &'static str = "0";
+    pub const KernelTimeSlice: &'static str = "5";
+    pub const KernelFastpath: bool = true;
+    pub const KernelArmSel4Arch: &'static str = "aarch32";
+    pub const KernelResetChunkBits: &'static str = "8";
+    pub const KernelNumDomains: &'static str = "1";
+    pub const KernelMaxNumWorkUnitsPerPreemption: &'static str = "100";
+    pub const KernelOptimisation: &'static str = "-O2";
 }
-
 
 pub static mut BOOTINFO: *mut seL4_BootInfo = (0 as *mut seL4_BootInfo);
 static mut RUN_ONCE: bool = false;
 
 #[no_mangle]
-pub unsafe extern "C" fn __sel4_start_init_boot_info(
-    bootinfo: *mut seL4_BootInfo,
-) {
+pub unsafe extern "C" fn __sel4_start_init_boot_info(bootinfo: *mut seL4_BootInfo) {
     if !RUN_ONCE {
         BOOTINFO = bootinfo;
         RUN_ONCE = true;
@@ -122,10 +130,7 @@ fn panic(info: &PanicInfo) -> ! {
                 loc.line()
             );
         } else {
-            let _ = write!(
-                sel4_sys::DebugOutHandle,
-                "panic: "
-            );
+            let _ = write!(sel4_sys::DebugOutHandle, "panic: ");
         }
 
         if let Some(fmt) = info.message() {
@@ -168,86 +173,94 @@ pub extern "C" fn oom(_layout: Layout) -> ! {
             "----- aborting from out-of-memory -----\n"
         );
     }
-    unsafe {
-        core::intrinsics::abort()
-    }
-}
-
-fn get_untyped(info: &seL4_BootInfo, size_bytes: usize) -> Option<seL4_CPtr> {
-    let mut idx = 0;
-    for i in info.untyped.start..info.untyped.end {
-        if (1 << info.untypedList[idx].sizeBits) >= size_bytes {
-            return Some(i);
-        }
-        idx += 1;
-    }
-    None
+    unsafe { core::intrinsics::abort() }
 }
 
 const CHILD_STACK_SIZE: usize = 4096;
-static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] =
-    &[0; CHILD_STACK_SIZE];
+static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
 
-        
-fn main() {
-    let bootinfo = unsafe { &*BOOTINFO };
-    let cspace_cap = seL4_CapInitThreadCNode;
-    let pd_cap = seL4_CapInitThreadVSpace;
-    let tcb_cap = bootinfo.empty.start;
-    let untyped = get_untyped(bootinfo, 1 << seL4_TCBBits).unwrap();
-    let retype_err: seL4_Error = unsafe {
-        seL4_Untyped_Retype(
-            untyped,
-            api_object_seL4_TCBObject.into(),
-            seL4_TCBBits.into(),
-            cspace_cap.into(),
-            cspace_cap.into(),
-            seL4_WordBits.into(),
-            tcb_cap,
-            1,
-        )
-    };
+use core::mem::size_of;
+use core::ptr;
+use iron_pegasus::fancy::{
+    self, wrap_untyped, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, Endpoint,
+    MappedPage, MappedPageTable, ThreadControlBlock, UnassignedPageDirectory, UnmappedPage,
+    UnmappedPageTable, Untyped, role
+};
+use iron_pegasus::micro_alloc::{self, GetUntyped};
+use typenum::{Unsigned, U1, U12, U19, U20, U256, U8};
 
-    assert!(retype_err == 0, "Failed to retype untyped memory");
-
-    let tcb_err: seL4_Error = unsafe {
-        seL4_TCB_Configure(
-            tcb_cap,
-            seL4_CapNull.into(),
-            cspace_cap.into(),
-            seL4_NilData.into(),
-            pd_cap.into(),
-            seL4_NilData.into(),
-            0,
-            0,
-        )
-    };
-
-    assert!(tcb_err == 0, "Failed to configure TCB");
-
-    let stack_base = unsafe { CHILD_STACK as usize };
-    let stack_top = stack_base + CHILD_STACK_SIZE;
-    let mut regs: seL4_UserContext = unsafe { mem::zeroed() };
-    #[cfg(feature = "test")]
-    { regs.pc = lyft_fel4_ados::fel4_test::run as seL4_Word; }
-    #[cfg(not(feature = "test"))]
-    { regs.pc = lyft_fel4_ados::run as seL4_Word; }
-    regs.sp = stack_top as seL4_Word;
-
-    let _: u32 =
-        unsafe { seL4_TCB_WriteRegisters(tcb_cap, 0, 0, 2, &mut regs) };
-    let _: u32 = unsafe {
-        seL4_TCB_SetPriority(tcb_cap, seL4_CapInitThreadTCB.into(), 255)
-    };
-    let _: u32 = unsafe { seL4_TCB_Resume(tcb_cap) };
-    loop {
-        unsafe {
+fn yield_forever() {
+    unsafe {
+        loop {
             seL4_Yield();
         }
     }
 }
-        
-global_asm!(r###"/* Copyright (c) 2015 The Robigalia Project Developers
+
+fn main() {
+    let bootinfo = unsafe { &*BOOTINFO };
+    let mut allocator =
+        micro_alloc::Allocator::bootstrap(&bootinfo).expect("Couldn't set up bootstrap allocator");
+
+    // wrap bootinfo caps
+    let root_cnode = fancy::root_cnode(&bootinfo);
+    let mut root_page_directory =
+        Cap::<AssignedPageDirectory, _>::wrap_cptr(seL4_CapInitThreadVSpace as usize);
+    let root_tcb = Cap::<ThreadControlBlock, _>::wrap_cptr(seL4_CapInitThreadTCB as usize);
+    let user_image_pages_iter = (bootinfo.userImageFrames.start..bootinfo.userImageFrames.end)
+        .map(|cptr| Cap::<MappedPage, role::Local>::wrap_cptr(cptr as usize));
+
+    // find an untyped of size 20 bits (1 meg)
+    let ut20 = allocator
+        .get_untyped::<U20>()
+        .expect("Couldn't find initial untyped");
+
+    let (ut18, _, _, _, root_cnode) = ut20.quarter(root_cnode).expect("quarter");
+    let (ut16, child_cnode_ut, child_proc_ut, _, root_cnode) = ut18.quarter(root_cnode).expect("quarter");
+    let (ut14, _, _, _, root_cnode) = ut16.quarter(root_cnode).expect("quarter");
+    let (ut12, asid_pool_ut, stack_ut, _, root_cnode) = ut14.quarter(root_cnode).expect("quarter");
+    let (ut10, _, _, _, root_cnode) = ut12.quarter(root_cnode).expect("quarter");
+    let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode).expect("quarter");
+    let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode).expect("quarter");
+
+    // asid control
+    let asid_control = Cap::<ASIDControl, _>::wrap_cptr(seL4_CapASIDControl as usize);
+
+    // asid pool
+    let (mut asid_pool, root_cnode): (Cap<ASIDPool, _>, _) = asid_pool_ut
+        .retype_asid_pool(asid_control, root_cnode)
+        .expect("retype asid pool");
+
+    // child cnode
+    let (child_cnode, root_cnode) = child_cnode_ut
+        .retype_local_cnode::<_, U12>(root_cnode)
+        .expect("Couldn't retype to child proc cnode");
+
+    let mut nums = [0xaaaaaaaa; 140];
+    nums[0] = 0xbbbbbbbb;
+    nums[139] = 0xcccccccc;
+    let params = iron_pegasus::Params { nums };
+
+    let root_cnode = fancy::spawn(
+        iron_pegasus::run,
+        params,
+        child_cnode,
+        255, // priority
+        stack_ut,
+        child_proc_ut,
+        &mut asid_pool,
+        &mut root_page_directory,
+        user_image_pages_iter,
+        root_tcb,
+        root_cnode,
+    )
+    .expect("spawn process");
+
+    yield_forever();
+}
+
+global_asm!(
+    r###"/* Copyright (c) 2015 The Robigalia Project Developers
  * Licensed under the Apache License, Version 2.0
  * <LICENSE-APACHE or
  * http://www.apache.org/licenses/LICENSE-2.0> or the MIT
@@ -281,5 +294,5 @@ _sel4_start:
 _stack_bottom:
     .space  65536
 _stack_top:
-"###);
-
+"###
+);

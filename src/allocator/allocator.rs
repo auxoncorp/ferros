@@ -1,92 +1,103 @@
 use super::{
-    Allocator, CapRange, Error, UntypedItem, MAX_UNTYPED_ITEMS, MAX_UNTYPED_SIZE, MIN_UNTYPED_SIZE,
+    Allocator, CapRange, Error, InitUntypedItem, UntypedItem, MAX_INIT_UNTYPED_ITEMS,
+    MAX_UNTYPED_SIZE, MIN_UNTYPED_SIZE,
 };
-use core::mem;
 use sel4_sys::{
-    api_object_seL4_UntypedObject, seL4_CPtr, seL4_CapInitThreadCNode, seL4_Untyped_Retype,
-    seL4_Word,
+    api_object_seL4_UntypedObject, seL4_BootInfo, seL4_CPtr, seL4_CapInitThreadCNode,
+    seL4_Untyped_Retype, seL4_Word, seL4_WordBits,
 };
+
+use arrayvec::ArrayVec;
+use core::iter::FromIterator;
 
 impl Allocator {
-    /// TODO - don't need to zero, just do a normal construct
-    pub fn new() -> Allocator {
-        let alloc: Allocator = unsafe { mem::zeroed() };
-
-        alloc
-    }
-
-    /// Initialise an allocator object at 'allocator'.
+    /// Initialise an allocator object.
     ///
     /// The struct 'Allocator' is memory where we should construct the
     /// allocator. All state will be kept in this struct, allowing multiple
     /// independent allocators to co-exist.
-    /// 'root_cnode', 'root_cnode_depth', 'first_slot' and 'num_slots' specify\
+    /// 'root_cnode', 'root_cnode_depth', 'first_slot' and 'num_slots' specify
     /// a CNode containing a contiguous range of free cap slots that we will
     /// use for our allocations.
     ///
-    /// 'items' and 'num_items' specify untyped memory items that we will
+    /// 'items' specifies untyped memory items that we will
     /// allocate from.
-    pub fn create(
-        &mut self,
+    pub fn new<I>(
         root_cnode: seL4_CPtr,
         root_cnode_depth: usize,
         root_cnode_offset: usize,
         first_slot: usize,
         num_slots: usize,
-        items: &[UntypedItem],
-    ) {
-        assert!(items.len() < MAX_UNTYPED_ITEMS);
+        untyped_items_iter: I,
+    ) -> Result<Allocator, Error>
+    where
+        I: Iterator<Item = UntypedItem>,
+    {
+        let mut init_items_iter = untyped_items_iter.map(|i| InitUntypedItem {
+            item: i.clone(),
+            is_free: true,
+        });
 
         // Setup CNode information
-        self.root_cnode = root_cnode;
-        self.root_cnode_depth = root_cnode_depth as _;
-        self.root_cnode_offset = root_cnode_offset as _;
-        self.cslots.first = first_slot;
-        self.cslots.count = num_slots;
-        self.num_slots_used = 0;
-        self.num_init_untyped_items = 0;
+        let a = Allocator {
+            page_directory: 0,
+            page_table: 0,
+            last_allocated: 0,
 
-        // Setup all of our pools as empty
-        for i in MIN_UNTYPED_SIZE..=MAX_UNTYPED_SIZE {
-            self.untyped_items[i - MIN_UNTYPED_SIZE].first = 0;
-            self.untyped_items[i - MIN_UNTYPED_SIZE].count = 0;
-        }
+            root_cnode: root_cnode,
+            root_cnode_depth: root_cnode_depth as _,
+            root_cnode_offset: root_cnode_offset as _,
 
-        // Copy untyped items
-        for i in 0..items.len() {
-            self.add_root_untyped_item(
-                items[i].cap,
-                items[i].size_bits,
-                items[i].paddr,
-                items[i].is_device,
-            );
+            cslots: CapRange {
+                first: first_slot,
+                count: num_slots,
+            },
+
+            num_slots_used: 0,
+            init_untyped_items: ArrayVec::from_iter(&mut init_items_iter),
+
+            untyped_items: [CapRange { first: 0, count: 0 };
+                (MAX_UNTYPED_SIZE - MIN_UNTYPED_SIZE) + 1],
+        };
+
+        // Check that all of the untyped items were consumed. If they were not,
+        // then more than MAX_INIT_UNTYPED_ITEMS were supplied.
+        match init_items_iter.next() {
+            None => Ok(a),
+            Some(_) => Err(Error::ResourceExhausted),
         }
     }
 
-    /// Permanently add additional untyped memory to the allocator.
-    ///
-    /// The allocator will permanently hold on to this memory
-    /// and continue using it until `destroy()` is called,
-    /// even if the allocator is reset.
-    pub fn add_root_untyped_item(
-        &mut self,
-        cap: seL4_CPtr,
-        size_bits: usize,
-        paddr: seL4_Word,
-        is_device: bool,
-    ) {
-        assert!(cap != 0);
-        assert!(size_bits >= MIN_UNTYPED_SIZE);
-        assert!(size_bits <= MAX_UNTYPED_SIZE);
-        assert!(self.num_init_untyped_items < MAX_UNTYPED_ITEMS);
+    /// Create an object allocator managing the root CNode's free slots.
+    pub fn bootstrap(bootinfo: &'static seL4_BootInfo) -> Result<Allocator, Error> {
+        let untyped_item_iter = (0..(bootinfo.untyped.end - bootinfo.untyped.start)).map(|i| {
+            UntypedItem::new(
+                bootinfo.untyped.start + i,                     // cap
+                bootinfo.untypedList[i as usize].sizeBits as _, // size_bits
+                bootinfo.untypedList[i as usize].paddr,         // paddr
+                bootinfo.untypedList[i as usize].isDevice != 0, // is_device
+            )
+        });
 
-        let next_item = self.num_init_untyped_items;
-        self.init_untyped_items[next_item].item.cap = cap;
-        self.init_untyped_items[next_item].item.size_bits = size_bits;
-        self.init_untyped_items[next_item].item.paddr = paddr;
-        self.init_untyped_items[next_item].item.is_device = is_device;
-        self.init_untyped_items[next_item].is_free = true;
-        self.num_init_untyped_items += 1;
+        if let Some(Some(e)) = untyped_item_iter
+            .clone()
+            .map(|i| match i {
+                Ok(_) => None,
+                Err(e) => Some(e),
+            })
+            .find(|o| o.is_some())
+        {
+            return Err(e);
+        }
+
+        Self::new(
+            seL4_CapInitThreadCNode,
+            seL4_WordBits as _,
+            0,
+            bootinfo.empty.start as _,
+            (bootinfo.empty.end - bootinfo.empty.start) as _,
+            untyped_item_iter.map(|i| i.unwrap()),
+        )
     }
 
     /// Allocate an empty cslot.
@@ -127,13 +138,9 @@ impl Allocator {
         item_size: usize,
         num_items: usize,
     ) -> Result<CapRange, Error> {
-        let mut result = CapRange { first: 0, count: 0 };
-
         // Determine the maximum number of items we have space in our CNode for
         let max_objects = self.cslots.count - self.num_slots_used;
         if num_items > max_objects {
-            result.count = 0;
-            result.first = 0;
             return Err(Error::ResourceExhausted);
         }
 
@@ -154,9 +161,10 @@ impl Allocator {
             return Err(Error::Other);
         }
 
-        // Save the allocation
-        result.count = num_items;
-        result.first = self.cslots.first + self.num_slots_used + self.root_cnode_offset as usize;
+        let result = CapRange {
+            first: self.cslots.first + self.num_slots_used + self.root_cnode_offset as usize,
+            count: num_items,
+        };
 
         // Record these slots as used
         self.num_slots_used += num_items;
@@ -187,14 +195,12 @@ impl Allocator {
         }
 
         // Do we have something of the correct size in initial memory regions?
-        for i in 0..self.num_init_untyped_items {
-            if self.init_untyped_items[i].is_free
-                && (self.init_untyped_items[i].item.size_bits >= size_bits)
-            {
+        for init_item in &mut self.init_untyped_items {
+            if init_item.is_free && (init_item.item.size_bits >= size_bits) {
                 let mut consume = false;
 
                 if let Some(paddr) = paddr {
-                    if self.init_untyped_items[i].item.paddr == paddr {
+                    if init_item.item.paddr == paddr {
                         consume = true;
                     }
                 } else {
@@ -202,14 +208,14 @@ impl Allocator {
                 }
 
                 if !can_use_dev {
-                    if self.init_untyped_items[i].item.is_device {
+                    if init_item.item.is_device {
                         consume = false;
                     }
                 }
 
                 if consume {
-                    self.init_untyped_items[i].is_free = false;
-                    return Ok(self.init_untyped_items[i].item.cap);
+                    init_item.is_free = false;
+                    return Ok(init_item.item.cap);
                 }
             }
         }

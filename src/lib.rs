@@ -1,5 +1,4 @@
 #![no_std]
-
 #![cfg_attr(feature = "alloc", feature(alloc))]
 
 #[cfg(all(feature = "alloc"))]
@@ -8,8 +7,16 @@ extern crate alloc;
 
 extern crate sel4_sys;
 
+extern crate arrayvec;
 
-mod allocator;
+#[macro_use]
+extern crate typenum;
+
+pub mod micro_alloc;
+pub mod fancy;
+mod pow;
+
+mod twinkle_types;
 
 #[cfg(all(feature = "test"))]
 extern crate proptest;
@@ -32,6 +39,26 @@ macro_rules! debug_println {
     ($fmt:expr, $($arg:tt)*) => (debug_print!(concat!($fmt, "\n"), $($arg)*));
 }
 
-pub fn run() {
-    debug_println!("\nhello from a feL4 app!\n");
+
+use crate::fancy::{RetypeForSetup};
+
+pub struct Params {
+    pub nums: [usize;140]
+}
+
+impl fancy::RetypeForSetup for Params {
+    type Output = Params;
+}
+
+
+// 'extern' to force C calling conventions
+pub extern fn run(params: &Params) {
+    // let params = unsafe { params.as_ref() }.expect("null params");
+    debug_println!("");
+    debug_println!("*** Hello from a feL4 process!");
+    for i in params.nums.iter() {
+        debug_println!("  {:08x}", i);
+    }
+
+    debug_println!("");
 }
