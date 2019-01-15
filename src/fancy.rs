@@ -1,13 +1,10 @@
 use core::marker::PhantomData;
-use core::mem::{self, size_of, transmute};
-use core::ops::{Add, Sub};
+use core::mem::{self, size_of};
+use core::ops::Sub;
 use core::ptr;
 use sel4_sys::*;
-use typenum::operator_aliases::{Add1, Diff, Shleft, Sub1};
-use typenum::{
-    Bit, Exp, IsGreaterOrEqual, UInt, UTerm, Unsigned, B0, B1, U0, U1, U10, U1024, U12, U128, U14,
-    U16, U18, U19, U2, U24, U256, U3, U32, U4, U5, U6, U8,
-};
+use typenum::operator_aliases::{Diff, Sub1};
+use typenum::{Bit, Unsigned, B1, U1, U1024, U12, U128, U16, U2, U256, U3};
 
 use crate::pow::{Pow, _Pow};
 

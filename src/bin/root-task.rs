@@ -17,7 +17,6 @@ extern crate wee_alloc;
 
 use core::alloc::Layout;
 use core::intrinsics;
-use core::mem;
 use core::panic::PanicInfo;
 use sel4_sys::*;
 

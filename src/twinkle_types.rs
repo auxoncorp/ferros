@@ -6,11 +6,8 @@ use crate::pow::{Pow, _Pow};
 use core::marker::PhantomData;
 use core::mem::transmute;
 use core::ops::{Add, Sub};
-use typenum::operator_aliases::{Add1, Diff, Shleft, Sub1, Sum};
-use typenum::uint::{GetBit, GetBitOut, SetBit, SetBitOut};
-use typenum::{
-    Bit, UInt, UTerm, Unsigned, B0, B1, U0, U1, U10, U11, U12, U2, U256, U3, U4, U5, U6, U7, U8, U9,
-};
+use typenum::operator_aliases::{Diff, Sub1, Sum};
+use typenum::{Bit, UInt, UTerm, Unsigned, B0, B1, U0, U1, U10, U2, U4, U6};
 
 const POOL_SIZE: usize = 32;
 

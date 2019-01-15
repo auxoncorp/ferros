@@ -1,6 +1,6 @@
 //! 2^n for typenum
-use core::ops::{Add, Sub};
-use typenum::operator_aliases::{Diff, Shleft, Sub1};
+use core::ops::Sub;
+use typenum::operator_aliases::Diff;
 use typenum::{Bit, UInt, UTerm, Unsigned, B0, B1, U1, U2};
 
 pub trait _Pow {

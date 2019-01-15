@@ -40,19 +40,14 @@ macro_rules! debug_println {
     ($fmt:expr, $($arg:tt)*) => (debug_print!(concat!($fmt, "\n"), $($arg)*));
 }
 
-use core::mem::size_of;
-use core::ptr;
-
 use sel4_sys::*;
 
 use crate::fancy::{
-    role, wrap_untyped, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, Endpoint,
-    MappedPage, MappedPageTable, ThreadControlBlock, UnassignedPageDirectory, UnmappedPage,
-    UnmappedPageTable, Untyped,
+    role, ASIDControl, ASIDPool, AssignedPageDirectory, Cap, MappedPage, ThreadControlBlock,
 };
 use crate::micro_alloc::GetUntyped;
 
-use typenum::{Unsigned, U1, U12, U19, U20, U256, U8};
+use typenum::{U12, U20};
 
 fn yield_forever() {
     unsafe {
