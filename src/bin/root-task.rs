@@ -180,14 +180,14 @@ const CHILD_STACK_SIZE: usize = 4096;
 static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
 
 use core::mem::size_of;
+use core::ptr;
 use iron_pegasus::fancy::{
-    self, wrap_untyped, ASIDControl, ASIDPool, CNode, Cap, Endpoint,
-    AssignedPageDirectory, UnassignedPageDirectory, UnmappedPageTable, MappedPageTable,
-    ThreadControlBlock, Untyped, UnmappedPage, MappedPage,
+    self, wrap_untyped, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, Endpoint,
+    MappedPage, MappedPageTable, ThreadControlBlock, UnassignedPageDirectory, UnmappedPage,
+    UnmappedPageTable, Untyped, role
 };
 use iron_pegasus::micro_alloc::{self, GetUntyped};
 use typenum::{Unsigned, U1, U12, U19, U20, U256, U8};
-use core::ptr;
 
 fn yield_forever() {
     unsafe {
@@ -199,234 +199,62 @@ fn yield_forever() {
 
 fn main() {
     let bootinfo = unsafe { &*BOOTINFO };
-    let root_cnode = fancy::root_cnode(&bootinfo);
-
-    let mut root_page_directory =
-        Cap::<AssignedPageDirectory, _>::wrap_cptr(seL4_CapInitThreadVSpace as usize);
-
     let mut allocator =
         micro_alloc::Allocator::bootstrap(&bootinfo).expect("Couldn't set up bootstrap allocator");
 
-    debug_println!("Made root cnode: {:?}\n\n", root_cnode);
+    // wrap bootinfo caps
+    let root_cnode = fancy::root_cnode(&bootinfo);
+    let mut root_page_directory =
+        Cap::<AssignedPageDirectory, _>::wrap_cptr(seL4_CapInitThreadVSpace as usize);
+    let root_tcb = Cap::<ThreadControlBlock, _>::wrap_cptr(seL4_CapInitThreadTCB as usize);
+    let user_image_pages_iter = (bootinfo.userImageFrames.start..bootinfo.userImageFrames.end)
+        .map(|cptr| Cap::<MappedPage, role::Local>::wrap_cptr(cptr as usize));
 
     // find an untyped of size 20 bits (1 meg)
-    let one_meg = allocator
+    let ut20 = allocator
         .get_untyped::<U20>()
         .expect("Couldn't find initial untyped");
 
-    // q: 18 bits
-    let (q1, q2, q3, q4, root_cnode) = one_meg.quarter(root_cnode).expect("first quartering");
+    let (ut18, _, _, _, root_cnode) = ut20.quarter(root_cnode).expect("quarter");
+    let (ut16, child_cnode_ut, child_proc_ut, _, root_cnode) = ut18.quarter(root_cnode).expect("quarter");
+    let (ut14, _, _, _, root_cnode) = ut16.quarter(root_cnode).expect("quarter");
+    let (ut12, asid_pool_ut, stack_ut, _, root_cnode) = ut14.quarter(root_cnode).expect("quarter");
+    let (ut10, _, _, _, root_cnode) = ut12.quarter(root_cnode).expect("quarter");
+    let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode).expect("quarter");
+    let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode).expect("quarter");
 
-    // r: 16 bits
-    let (r1, r2, r3, r4, root_cnode) = q1.quarter(root_cnode).expect("second quartering");
-
-    // s: 14 bits
-    let (s1, s2, s3, s4, root_cnode) = r1.quarter(root_cnode).expect("fourth quartering");
-
-    // t: 12 bits
-    let (t1, t2, t3, t4, root_cnode) = s1.quarter(root_cnode).expect("fifth quartering");
-    let (t5, t6, t7, t8, root_cnode) = s2.quarter(root_cnode).expect("sixth quartering");
-
-    let (child_cnode, root_cnode) = r2
-        .retype_local_cnode::<_, U12>(root_cnode)
-        .expect("Couldn't retype to child proc cnode");
-    debug_println!(
-        "retyped child proc cnode {:?} {:?}\n\n",
-        child_cnode,
-        root_cnode
-    );
-
-    // TODO: Need to duplicate this endpoint into the child cnode
-    let (fault_endpoint, root_cnode): (Cap<Endpoint, _>, _) = t2
-        .retype_local(root_cnode)
-        .expect("Couldn't retype fault endpoint");
-    debug_println!(
-        "retyped child proc endpoint {:?} {:?}\n\n",
-        fault_endpoint,
-        root_cnode
-    );
-
-    let (mut child_tcb, root_cnode): (Cap<ThreadControlBlock, _>, _) = t3
-        .retype_local(root_cnode)
-        .expect("couldn't retyped to tcb");
-    debug_println!(
-        "retyped as thread control block {:?} {:?}\n\n",
-        child_tcb,
-        root_cnode
-    );
-
+    // asid control
     let asid_control = Cap::<ASIDControl, _>::wrap_cptr(seL4_CapASIDControl as usize);
 
-    let (mut asid_pool, root_cnode): (Cap<ASIDPool, _>, _) = t4
+    // asid pool
+    let (mut asid_pool, root_cnode): (Cap<ASIDPool, _>, _) = asid_pool_ut
         .retype_asid_pool(asid_control, root_cnode)
         .expect("retype asid pool");
 
-    let (child_page_directory, root_cnode): (Cap<UnassignedPageDirectory, _>, _) =
-        s3.retype_local(root_cnode).expect("retype page directory");
-    // Capability::<PageDirectory>::wrap_cptr(seL4_CapInitThreadVSpace as usize);
+    // child cnode
+    let (child_cnode, root_cnode) = child_cnode_ut
+        .retype_local_cnode::<_, U12>(root_cnode)
+        .expect("Couldn't retype to child proc cnode");
 
-    let mut child_page_directory = asid_pool
-        .assign(child_page_directory)
-        .expect("asid pool assign");
-
-    // Set up a single 4k page for the child's stack
-    let stack_base = 0x10000000;
-    let stack_top = stack_base + 0x1000;
-
-    let (child_page_table, root_cnode): (Cap<UnmappedPageTable, _>, _) =
-        t5.retype_local(root_cnode).expect("retype page table");
-
-    let (child_stack_page, root_cnode): (Cap<UnmappedPage, _>, _) = t6
-        .retype_local(root_cnode)
-        .expect("retype child stack page");
-
-    // map the child stack into local memory so we can set it up
-    let child_page_table = root_page_directory
-        .map_page_table(child_page_table, stack_base)
-        .expect("map page table for setup");
-
-    let child_stack_page = root_page_directory
-        .map_page(child_stack_page, stack_base)
-        .expect("map child stack page for setup");
-
-    // put the parameter struct on the stack
     let mut nums = [0xaaaaaaaa; 140];
     nums[0] = 0xbbbbbbbb;
     nums[139] = 0xcccccccc;
     let params = iron_pegasus::Params { nums };
 
-    let params_target_addr = (stack_top - size_of::<iron_pegasus::Params>());
-
-    unsafe {
-        ptr::copy_nonoverlapping(
-            &params as *const iron_pegasus::Params,
-            params_target_addr as *mut iron_pegasus::Params,
-            1
-        )
-    }
-
-
-    let child_stack_page = child_stack_page.unmap()
-        .expect("unmap child stack page from local addr space");
-    let child_page_table = child_page_table.unmap()
-        .expect("unmap child page table from local addr space");
-
-    // map the stack into the child's vspace
-    let child_page_table = child_page_directory
-        .map_page_table(child_page_table, stack_base)
-        .expect("map page table");
-
-    debug_println!("mapped page table {:?}\n\n", child_page_table);
-
-    child_page_directory
-        .map_page(child_stack_page, stack_base)
-        .expect("map child stack page");
-
-    // map in the user image
-
-    // arm-none-eabi-readelf -a target/armv7-sel4-fel4/debug/root-task told me this:
-    //
-    // [Nr] Name              Type            Addr     Off    Size   ES Flg Lk Inf Al
-    // [ 8] .text             PROGBITS        00010300 000300 01c21c 00  AX  0   0  8
-    //
-    // looks like the .text section is where the code is. We need some way to
-    // get access to its address here in userland, but for now I'll hardcode it.
-
-    // the paging structures are sized like this:
-    // page directory: address bits 20 - 31
-    // page table:     address bits 12 - 19
-
-    //     28   24   20   16   12    8    4    0
-    // 0b1111 1111 1111 1111 1111 1111 1111 1111
-    //   --directory--- --table-- ----page-----
-
-    // TODO: This is the page-aligned address where the program data starts. I
-    // found this out from readelf. We need some basis for these numbers, and a
-    // way to get them automatically.
-    let program_vaddr_start = 0x00010000;
-    let program_vaddr_end = program_vaddr_start + 0x00060000;
-
-    let (frame_page_table, root_cnode): (Cap<UnmappedPageTable, _>, _) =
-        t7.retype_local(root_cnode).expect("alloc frame page table");
-
-    let frame_page_table = child_page_directory
-        .map_page_table(frame_page_table, program_vaddr_start)
-        .expect("map frame page table");
-
-    debug_println!("mapped page table at 0x{:08x}\n\n", program_vaddr_start);
-
-    let (dest_reservation_iter, root_cnode) = root_cnode.reservation_iter::<U256>();
-    let frame_iter = (bootinfo.userImageFrames.start..bootinfo.userImageFrames.end);
-    let vaddr_iter = (program_vaddr_start..program_vaddr_end).step_by(0x1000);
-
-    // This is, in theory, described on page 44 of the manual.
-    for ((page_cptr, dest_cnode), vaddr) in frame_iter.zip(dest_reservation_iter).zip(vaddr_iter) {
-        let page_cap = Cap::<MappedPage, _>::wrap_cptr(page_cptr as usize);
-
-        let (copied_page_cap, _) = page_cap
-            .copy_local(&root_cnode, dest_cnode, unsafe {
-                seL4_CapRights_new(0, 1, 0)
-            })
-            .expect("copy user image page cap");
-
-        let copied_page_cap = child_page_directory
-            .map_page(copied_page_cap, vaddr)
-            .expect("map user image page");
-    }
-
-    debug_println!(
-        "mapped user image pages at vaddr {:08x}\n\n",
-        program_vaddr_end
-    );
-
-    child_tcb
-        .configure(
-            // fault_endpoint,
-            child_cnode,
-            child_page_directory,
-        )
-        .expect("Couldn't configure child tcb");
-
-    debug_println!("configured child tcb!\n\n",);
-
-    // TODO: this isn't quite right, but it's within the mapped area at least.
-    let sp = stack_top - size_of::<iron_pegasus::Params>(); //TODO stack pointer is supposed to be 8-byte aligned on ARM
-    let mut regs: seL4_UserContext = unsafe { mem::zeroed() };
-    #[cfg(feature = "test")]
-    {
-        regs.pc = iron_pegasus::fel4_test::run as seL4_Word;
-    }
-    #[cfg(not(feature = "test"))]
-    {
-        regs.pc = iron_pegasus::run as seL4_Word;
-        // first arg
-        regs.r0 = params_target_addr as u32; /*+ something*/;
-        // call this after run returns
-        regs.r14 = (yield_forever as *const fn() -> ()) as seL4_Word;
-    }
-    regs.sp = sp as u32;
-
-    debug_println!(
-        "Setting regs: PC=0x{:08x}, SP=0x{:08x}, R0={:08x}, R14=0x{:08x}\n\n",
-        regs.pc,
-        regs.sp,
-        regs.r0,
-        regs.r14
-    );
-
-    let _: u32 = unsafe {
-        seL4_TCB_WriteRegisters(
-            child_tcb.cptr as u32,
-            0,
-            0,
-            // all the regs
-            (size_of::<seL4_UserContext>() / size_of::<seL4_Word>()) as u32,
-            &mut regs,
-        )
-    };
-    let _: u32 =
-        unsafe { seL4_TCB_SetPriority(child_tcb.cptr as u32, seL4_CapInitThreadTCB.into(), 255) };
-    let _: u32 = unsafe { seL4_TCB_Resume(child_tcb.cptr as u32) };
+    let root_cnode = fancy::spawn(
+        iron_pegasus::run,
+        params,
+        child_cnode,
+        255, // priority
+        stack_ut,
+        child_proc_ut,
+        &mut asid_pool,
+        &mut root_page_directory,
+        user_image_pages_iter,
+        root_tcb,
+        root_cnode,
+    )
+    .expect("spawn process");
 
     yield_forever();
 }

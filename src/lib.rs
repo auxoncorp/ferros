@@ -40,12 +40,17 @@ macro_rules! debug_println {
 }
 
 
+use crate::fancy::{RetypeForSetup};
 
 pub struct Params {
     pub nums: [usize;140]
 }
 
-use core::ptr;
+impl fancy::RetypeForSetup for Params {
+    type Output = Params;
+}
+
+
 // 'extern' to force C calling conventions
 pub extern fn run(params: &Params) {
     // let params = unsafe { params.as_ref() }.expect("null params");
