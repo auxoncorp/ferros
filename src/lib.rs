@@ -5,11 +5,9 @@
 #[macro_use]
 extern crate alloc;
 
-#[macro_use]
-extern crate typenum;
-
 extern crate arrayvec;
 extern crate sel4_sys;
+extern crate typenum;
 
 #[cfg(all(feature = "test"))]
 extern crate proptest;
@@ -17,25 +15,22 @@ extern crate proptest;
 #[cfg(feature = "test")]
 pub mod fel4_test;
 
-mod userland;
-
 #[macro_use]
 mod debug;
 
 mod micro_alloc;
 mod pow;
 mod twinkle_types;
+mod userland;
 
 mod test_proc;
-
-use sel4_sys::*;
 
 use crate::micro_alloc::GetUntyped;
 use crate::userland::{
     role, root_cnode, spawn, ASIDControl, ASIDPool, AssignedPageDirectory, Cap, MappedPage,
     ThreadControlBlock,
 };
-
+use sel4_sys::*;
 use typenum::{U12, U20};
 
 fn yield_forever() {
