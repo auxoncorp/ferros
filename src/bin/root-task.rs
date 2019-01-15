@@ -25,18 +25,6 @@ use sel4_sys::*;
 #[global_allocator]
 static ALLOCATOR: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-macro_rules! debug_print {
-    ($($arg:tt)*) => ({
-        use core::fmt::Write;
-        DebugOutHandle.write_fmt(format_args!($($arg)*)).unwrap();
-    });
-}
-
-macro_rules! debug_println {
-    ($fmt:expr) => (debug_print!(concat!($fmt, "\n")));
-    ($fmt:expr, $($arg:tt)*) => (debug_print!(concat!($fmt, "\n"), $($arg)*));
-}
-
 // include the seL4 kernel configurations
 #[allow(dead_code)]
 #[allow(non_upper_case_globals)]
@@ -176,87 +164,9 @@ pub extern "C" fn oom(_layout: Layout) -> ! {
     unsafe { core::intrinsics::abort() }
 }
 
-const CHILD_STACK_SIZE: usize = 4096;
-static mut CHILD_STACK: *const [u64; CHILD_STACK_SIZE] = &[0; CHILD_STACK_SIZE];
-
-use core::mem::size_of;
-use core::ptr;
-use iron_pegasus::fancy::{
-    self, wrap_untyped, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, Endpoint,
-    MappedPage, MappedPageTable, ThreadControlBlock, UnassignedPageDirectory, UnmappedPage,
-    UnmappedPageTable, Untyped, role
-};
-use iron_pegasus::micro_alloc::{self, GetUntyped};
-use typenum::{Unsigned, U1, U12, U19, U20, U256, U8};
-
-fn yield_forever() {
-    unsafe {
-        loop {
-            seL4_Yield();
-        }
-    }
-}
-
 fn main() {
     let bootinfo = unsafe { &*BOOTINFO };
-    let mut allocator =
-        micro_alloc::Allocator::bootstrap(&bootinfo).expect("Couldn't set up bootstrap allocator");
-
-    // wrap bootinfo caps
-    let root_cnode = fancy::root_cnode(&bootinfo);
-    let mut root_page_directory =
-        Cap::<AssignedPageDirectory, _>::wrap_cptr(seL4_CapInitThreadVSpace as usize);
-    let root_tcb = Cap::<ThreadControlBlock, _>::wrap_cptr(seL4_CapInitThreadTCB as usize);
-    let user_image_pages_iter = (bootinfo.userImageFrames.start..bootinfo.userImageFrames.end)
-        .map(|cptr| Cap::<MappedPage, role::Local>::wrap_cptr(cptr as usize));
-
-    // find an untyped of size 20 bits (1 meg)
-    let ut20 = allocator
-        .get_untyped::<U20>()
-        .expect("Couldn't find initial untyped");
-
-    let (ut18, _, _, _, root_cnode) = ut20.quarter(root_cnode).expect("quarter");
-    let (ut16, child_cnode_ut, child_proc_ut, _, root_cnode) = ut18.quarter(root_cnode).expect("quarter");
-    let (ut14, _, _, _, root_cnode) = ut16.quarter(root_cnode).expect("quarter");
-    let (ut12, asid_pool_ut, stack_ut, _, root_cnode) = ut14.quarter(root_cnode).expect("quarter");
-    let (ut10, _, _, _, root_cnode) = ut12.quarter(root_cnode).expect("quarter");
-    let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode).expect("quarter");
-    let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode).expect("quarter");
-
-    // asid control
-    let asid_control = Cap::<ASIDControl, _>::wrap_cptr(seL4_CapASIDControl as usize);
-
-    // asid pool
-    let (mut asid_pool, root_cnode): (Cap<ASIDPool, _>, _) = asid_pool_ut
-        .retype_asid_pool(asid_control, root_cnode)
-        .expect("retype asid pool");
-
-    // child cnode
-    let (child_cnode, root_cnode) = child_cnode_ut
-        .retype_local_cnode::<_, U12>(root_cnode)
-        .expect("Couldn't retype to child proc cnode");
-
-    let mut nums = [0xaaaaaaaa; 140];
-    nums[0] = 0xbbbbbbbb;
-    nums[139] = 0xcccccccc;
-    let params = iron_pegasus::Params { nums };
-
-    let root_cnode = fancy::spawn(
-        iron_pegasus::run,
-        params,
-        child_cnode,
-        255, // priority
-        stack_ut,
-        child_proc_ut,
-        &mut asid_pool,
-        &mut root_page_directory,
-        user_image_pages_iter,
-        root_tcb,
-        root_cnode,
-    )
-    .expect("spawn process");
-
-    yield_forever();
+    iron_pegasus::main(bootinfo);
 }
 
 global_asm!(
