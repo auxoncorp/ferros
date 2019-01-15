@@ -46,7 +46,7 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
             seL4_Untyped_Retype(
                 self.cptr,                          // _service
                 Untyped::<BitSize>::sel4_type_id(), // type
-                (BitSize::to_usize() - 1),          // size_bits
+                BitSize::to_usize() - 1,            // size_bits
                 dest_slot.cptr,                     // root
                 0,                                  // index
                 0,                                  // depth
@@ -111,7 +111,7 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
             seL4_Untyped_Retype(
                 self.cptr,                          // _service
                 Untyped::<BitSize>::sel4_type_id(), // type
-                (BitSize::to_usize() - 2),          // size_bits
+                BitSize::to_usize() - 2,            // size_bits
                 dest_slot1.cptr,                    // root
                 0,                                  // index
                 0,                                  // depth

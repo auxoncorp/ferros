@@ -36,7 +36,10 @@ trait _TakeSlot<Index> {
     type NewUntypedCount;
 }
 
+#[allow(non_camel_case_types)]
 type TakeSlot_Flags<Flags, Index> = <Flags as _TakeSlot<Index>>::OutputFlags;
+
+#[allow(non_camel_case_types)]
 type TakeSlot_NewUntypedCount<Flags, Index> = <Flags as _TakeSlot<Index>>::NewUntypedCount;
 
 // index is non-zero, and there are flags left: recur with index-1, the other flags

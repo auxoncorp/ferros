@@ -125,7 +125,7 @@ where
     let stack_page = local_page_directory.map_page(stack_page, stack_base)?;
 
     // put the parameter struct on the stack
-    let param_target_addr = (stack_top - size_of::<T>());
+    let param_target_addr = stack_top - size_of::<T>();
     assert!(param_target_addr >= stack_base);
 
     unsafe {
@@ -191,7 +191,7 @@ where
             0,
             0,
             // all the regs
-            (size_of::<seL4_UserContext>() / size_of::<seL4_Word>()),
+            size_of::<seL4_UserContext>() / size_of::<seL4_Word>(),
             &mut regs,
         )
     };
