@@ -5,11 +5,9 @@
 #[macro_use]
 extern crate alloc;
 
-#[macro_use]
-extern crate typenum;
-
 extern crate arrayvec;
 extern crate sel4_sys;
+extern crate typenum;
 
 #[cfg(all(feature = "test"))]
 extern crate proptest;
@@ -17,36 +15,22 @@ extern crate proptest;
 #[cfg(feature = "test")]
 pub mod fel4_test;
 
-// These will eventually be factored out into the userland lib
-mod fancy;
+#[macro_use]
+mod debug;
+
 mod micro_alloc;
 mod pow;
 mod twinkle_types;
+mod userland;
 
 mod test_proc;
 
-#[cfg(feature = "KernelPrinting")]
-use sel4_sys::DebugOutHandle;
-
-macro_rules! debug_print {
-    ($($arg:tt)*) => ({
-        use core::fmt::Write;
-        DebugOutHandle.write_fmt(format_args!($($arg)*)).unwrap();
-    });
-}
-
-macro_rules! debug_println {
-    ($fmt:expr) => (debug_print!(concat!($fmt, "\n")));
-    ($fmt:expr, $($arg:tt)*) => (debug_print!(concat!($fmt, "\n"), $($arg)*));
-}
-
-use sel4_sys::*;
-
-use crate::fancy::{
-    role, ASIDControl, ASIDPool, AssignedPageDirectory, Cap, MappedPage, ThreadControlBlock,
-};
 use crate::micro_alloc::GetUntyped;
-
+use crate::userland::{
+    role, root_cnode, spawn, ASIDControl, ASIDPool, AssignedPageDirectory, Cap, MappedPage,
+    ThreadControlBlock,
+};
+use sel4_sys::*;
 use typenum::{U12, U20};
 
 fn yield_forever() {
@@ -62,7 +46,7 @@ pub fn main(bootinfo: &'static seL4_BootInfo) {
         micro_alloc::Allocator::bootstrap(&bootinfo).expect("Couldn't set up bootstrap allocator");
 
     // wrap bootinfo caps
-    let root_cnode = fancy::root_cnode(&bootinfo);
+    let root_cnode = root_cnode(&bootinfo);
     let mut root_page_directory =
         Cap::<AssignedPageDirectory, _>::wrap_cptr(seL4_CapInitThreadVSpace as usize);
     let root_tcb = Cap::<ThreadControlBlock, _>::wrap_cptr(seL4_CapInitThreadTCB as usize);
@@ -81,7 +65,7 @@ pub fn main(bootinfo: &'static seL4_BootInfo) {
     let (ut12, asid_pool_ut, stack_ut, _, root_cnode) = ut14.quarter(root_cnode).expect("quarter");
     let (ut10, _, _, _, root_cnode) = ut12.quarter(root_cnode).expect("quarter");
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode).expect("quarter");
-    let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode).expect("quarter");
+    let (_ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode).expect("quarter");
 
     // asid control
     let asid_control = Cap::<ASIDControl, _>::wrap_cptr(seL4_CapASIDControl as usize);
@@ -101,7 +85,7 @@ pub fn main(bootinfo: &'static seL4_BootInfo) {
     nums[139] = 0xcccccccc;
     let params = test_proc::Params { nums };
 
-    let root_cnode = fancy::spawn(
+    let _root_cnode = spawn(
         test_proc::main,
         params,
         child_cnode,

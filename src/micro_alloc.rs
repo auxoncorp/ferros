@@ -2,7 +2,7 @@
 //! This one doesn't split anything; it just hands out the smallest untyped item
 //! that's big enough for the request.
 
-use crate::fancy::{role, wrap_untyped, Cap, Untyped};
+use crate::userland::{role, wrap_untyped, Cap, Untyped};
 use arrayvec::ArrayVec;
 use typenum::Unsigned;
 

@@ -1,8 +1,8 @@
 // in the type, store a flag for each bit size to indicate whether we have an
 // untyped of that size.
 
-use crate::fancy::{role, CNode, CNodeRole, Cap, Untyped};
 use crate::pow::{Pow, _Pow};
+use crate::userland::{role, CNode, CNodeRole, Cap, Untyped};
 use core::marker::PhantomData;
 use core::mem::transmute;
 use core::ops::{Add, Sub};
@@ -36,7 +36,10 @@ trait _TakeSlot<Index> {
     type NewUntypedCount;
 }
 
+#[allow(non_camel_case_types)]
 type TakeSlot_Flags<Flags, Index> = <Flags as _TakeSlot<Index>>::OutputFlags;
+
+#[allow(non_camel_case_types)]
 type TakeSlot_NewUntypedCount<Flags, Index> = <Flags as _TakeSlot<Index>>::NewUntypedCount;
 
 // index is non-zero, and there are flags left: recur with index-1, the other flags
@@ -110,6 +113,7 @@ impl<Flags: Unsigned> Allocator<Flags> {
     }
 }
 
+#[allow(unused)]
 fn take_slot_compile_test() {
     type Bin000 = UInt<UInt<UInt<UTerm, B0>, B0>, B0>;
     type Bin001 = UInt<UInt<UInt<UTerm, B0>, B0>, B1>;
@@ -146,6 +150,7 @@ fn take_slot_compile_test() {
     let e_new_untyuped_count: TakeSlot_NewUntypedCount<Bin100, U1> = e_new_untyped_count_res;
 }
 
+#[allow(unused)]
 fn allocator_compile_test() {
     type Bin1000000 = UInt<UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B1>, B0>, B0>, B0>, B0>, B0>, B0>;
     type Bin0110000 = UInt<UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B0>, B1>, B1>, B0>, B0>, B0>, B0>;
