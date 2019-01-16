@@ -7,12 +7,11 @@
 #![cfg_attr(feature = "alloc", feature(global_allocator))]
 #![feature(panic_info_message)]
 
-
+#[cfg(feature = "alloc")]
+extern crate alloc;
 extern crate sel4_sys;
 #[cfg(feature = "alloc")]
 extern crate wee_alloc;
-#[cfg(feature = "alloc")]
-extern crate alloc;
 #[cfg(all(feature = "test", feature = "alloc"))]
 #[macro_use]
 extern crate proptest;
@@ -20,8 +19,8 @@ extern crate iron_pegasus;
 
 use core::alloc::Layout;
 use core::intrinsics;
-use core::panic::PanicInfo;
 use core::mem;
+use core::panic::PanicInfo;
 use sel4_sys::*;
 
 #[cfg(feature = "alloc")]
@@ -32,56 +31,53 @@ static ALLOCATOR: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 #[allow(dead_code)]
 #[allow(non_upper_case_globals)]
 pub mod sel4_config {
-    pub const BuildWithCommonSimulationSettings:bool = true;
-    pub const ElfloaderErrata764369:bool = true;
-    pub const ElfloaderImage:&'static str = "elf";
-    pub const ElfloaderMode:&'static str = "secure supervisor";
-    pub const HardwareDebugAPI:bool = false;
-    pub const KernelAArch32FPUEnableContextSwitch:bool = true;
-    pub const KernelARMPlatform:&'static str = "sabre";
-    pub const KernelArch:&'static str = "arm";
-    pub const KernelArmEnableA9Prefetcher:bool = false;
-    pub const KernelArmExportPMUUser:bool = false;
-    pub const KernelArmSel4Arch:&'static str = "aarch32";
-    pub const KernelBenchmarks:&'static str = "none";
-    pub const KernelColourPrinting:bool = true;
-    pub const KernelDebugBuild:bool = true;
-    pub const KernelDebugDisableBranchPrediction:bool = false;
-    pub const KernelDebugDisableL2Cache:bool = false;
-    pub const KernelFPUMaxRestoresSinceSwitch:&'static str = "64";
-    pub const KernelFWholeProgram:bool = false;
-    pub const KernelFastpath:bool = true;
-    pub const KernelIPCBufferLocation:&'static str = "threadID_register";
-    pub const KernelMaxNumBootinfoUntypedCaps:&'static str = "230";
-    pub const KernelMaxNumNodes:&'static str = "1";
-    pub const KernelMaxNumWorkUnitsPerPreemption:&'static str = "100";
-    pub const KernelNumDomains:&'static str = "1";
-    pub const KernelNumPriorities:&'static str = "256";
-    pub const KernelOptimisation:&'static str = "-O2";
-    pub const KernelPrinting:bool = true;
-    pub const KernelResetChunkBits:&'static str = "8";
-    pub const KernelRetypeFanOutLimit:&'static str = "256";
-    pub const KernelRootCNodeSizeBits:&'static str = "19";
-    pub const KernelStackBits:&'static str = "12";
-    pub const KernelTimeSlice:&'static str = "5";
-    pub const KernelTimerTickMS:&'static str = "2";
-    pub const KernelUserStackTraceLength:&'static str = "16";
-    pub const KernelVerificationBuild:bool = false;
-    pub const LibSel4DebugAllocBufferEntries:&'static str = "0";
-    pub const LibSel4DebugFunctionInstrumentation:&'static str = "none";
-    pub const LibSel4FunctionAttributes:&'static str = "public";
-    pub const LinkPageSize:&'static str = "4096";
-    pub const UserLinkerGCSections:bool = false;
+    pub const BuildWithCommonSimulationSettings: bool = true;
+    pub const ElfloaderErrata764369: bool = true;
+    pub const ElfloaderImage: &'static str = "elf";
+    pub const ElfloaderMode: &'static str = "secure supervisor";
+    pub const HardwareDebugAPI: bool = false;
+    pub const KernelAArch32FPUEnableContextSwitch: bool = true;
+    pub const KernelARMPlatform: &'static str = "sabre";
+    pub const KernelArch: &'static str = "arm";
+    pub const KernelArmEnableA9Prefetcher: bool = false;
+    pub const KernelArmExportPMUUser: bool = false;
+    pub const KernelArmSel4Arch: &'static str = "aarch32";
+    pub const KernelBenchmarks: &'static str = "none";
+    pub const KernelColourPrinting: bool = true;
+    pub const KernelDebugBuild: bool = true;
+    pub const KernelDebugDisableBranchPrediction: bool = false;
+    pub const KernelDebugDisableL2Cache: bool = false;
+    pub const KernelFPUMaxRestoresSinceSwitch: &'static str = "64";
+    pub const KernelFWholeProgram: bool = false;
+    pub const KernelFastpath: bool = true;
+    pub const KernelIPCBufferLocation: &'static str = "threadID_register";
+    pub const KernelMaxNumBootinfoUntypedCaps: &'static str = "230";
+    pub const KernelMaxNumNodes: &'static str = "1";
+    pub const KernelMaxNumWorkUnitsPerPreemption: &'static str = "100";
+    pub const KernelNumDomains: &'static str = "1";
+    pub const KernelNumPriorities: &'static str = "256";
+    pub const KernelOptimisation: &'static str = "-O2";
+    pub const KernelPrinting: bool = true;
+    pub const KernelResetChunkBits: &'static str = "8";
+    pub const KernelRetypeFanOutLimit: &'static str = "256";
+    pub const KernelRootCNodeSizeBits: &'static str = "19";
+    pub const KernelStackBits: &'static str = "12";
+    pub const KernelTimeSlice: &'static str = "5";
+    pub const KernelTimerTickMS: &'static str = "2";
+    pub const KernelUserStackTraceLength: &'static str = "16";
+    pub const KernelVerificationBuild: bool = false;
+    pub const LibSel4DebugAllocBufferEntries: &'static str = "0";
+    pub const LibSel4DebugFunctionInstrumentation: &'static str = "none";
+    pub const LibSel4FunctionAttributes: &'static str = "public";
+    pub const LinkPageSize: &'static str = "4096";
+    pub const UserLinkerGCSections: bool = false;
 }
-
 
 pub static mut BOOTINFO: *mut seL4_BootInfo = (0 as *mut seL4_BootInfo);
 static mut RUN_ONCE: bool = false;
 
 #[no_mangle]
-pub unsafe extern "C" fn __sel4_start_init_boot_info(
-    bootinfo: *mut seL4_BootInfo,
-) {
+pub unsafe extern "C" fn __sel4_start_init_boot_info(bootinfo: *mut seL4_BootInfo) {
     if !RUN_ONCE {
         BOOTINFO = bootinfo;
         RUN_ONCE = true;
@@ -126,10 +122,7 @@ fn panic(info: &PanicInfo) -> ! {
                 loc.line()
             );
         } else {
-            let _ = write!(
-                sel4_sys::DebugOutHandle,
-                "panic: "
-            );
+            let _ = write!(sel4_sys::DebugOutHandle, "panic: ");
         }
 
         if let Some(fmt) = info.message() {
@@ -156,9 +149,7 @@ pub fn eh_personality() {
             "----- aborting from eh_personality -----\n"
         );
     }
-    unsafe {
-        core::intrinsics::abort();
-    }
+    unsafe { core::intrinsics::abort() }
 }
 
 #[lang = "oom"]
@@ -172,20 +163,22 @@ pub extern "C" fn oom(_layout: Layout) -> ! {
             "----- aborting from out-of-memory -----\n"
         );
     }
-    unsafe {
-        core::intrinsics::abort()
-    }
+    unsafe { core::intrinsics::abort() }
 }
 
 fn main() {
     let boot_info = unsafe { &*BOOTINFO };
     #[cfg(feature = "test")]
-    { iron_pegasus::fel4_test::run(boot_info); }
+    {
+        iron_pegasus::fel4_test::run(boot_info);
+    }
     #[cfg(not(feature = "test"))]
-    { iron_pegasus::run(boot_info); }
+    {
+        iron_pegasus::run(boot_info);
+    }
 }
-        
-global_asm!(r###"/* Copyright (c) 2015 The Robigalia Project Developers
+global_asm!(
+    r###"/* Copyright (c) 2015 The Robigalia Project Developers
  * Licensed under the Apache License, Version 2.0
  * <LICENSE-APACHE or
  * http://www.apache.org/licenses/LICENSE-2.0> or the MIT
@@ -219,5 +212,5 @@ _sel4_start:
 _stack_bottom:
     .space  65536
 _stack_top:
-"###);
-
+"###
+);

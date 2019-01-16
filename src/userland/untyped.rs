@@ -1,7 +1,7 @@
-use crate::pow::{Pow, _Pow};
-use crate::userland::{role, CNode, Cap, CapType, Error, FixedSizeCap, Untyped};
 use core::marker::PhantomData;
 use core::ops::Sub;
+use crate::pow::{Pow, _Pow};
+use crate::userland::{role, CNode, Cap, CapType, Error, FixedSizeCap, Untyped};
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U2, U3};

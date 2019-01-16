@@ -1,10 +1,10 @@
+use core::marker::PhantomData;
+use core::mem::size_of;
+use core::ops::Sub;
 use crate::userland::{
     role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, Error, UnassignedPageDirectory,
     Untyped,
 };
-use core::marker::PhantomData;
-use core::mem::size_of;
-use core::ops::Sub;
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
 use typenum::{Unsigned, B1, U12};
