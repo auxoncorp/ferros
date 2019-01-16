@@ -29,6 +29,7 @@ macro_rules! debug_println {
     ($fmt:expr, $($arg:tt)*) => (debug_print!(concat!($fmt, "\n"), $($arg)*));
 }
 
+#[cfg(test_case = "root_task_runs")]
 pub fn run(_boot_info: &sel4_sys::seL4_BootInfo) {
-    debug_println!("\nhello from a feL4 app!\n");
+    debug_println!("\nhello from the root task!\n");
 }

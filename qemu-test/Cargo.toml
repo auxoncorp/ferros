@@ -5,3 +5,5 @@ authors = ["Russell Mull <russell@auxon.io>"]
 edition = "2018"
 
 [dependencies]
+rexpect = "0.3.0"
+regex = "1"
