@@ -1,0 +1,7 @@
+[package]
+name = "qemu-test"
+version = "0.1.0"
+authors = ["Russell Mull <russell@auxon.io>"]
+edition = "2018"
+
+[dependencies]

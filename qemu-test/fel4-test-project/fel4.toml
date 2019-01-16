@@ -1,0 +1,167 @@
+[fel4]
+artifact-path = "artifacts"
+target-specs-path = "target_specs"
+target = "armv7-sel4-fel4"
+platform = "sabre"
+
+[x86_64-sel4-fel4]
+BuildWithCommonSimulationSettings = true
+KernelOptimisation = "-O2"
+KernelVerificationBuild = false
+KernelBenchmarks = "none"
+KernelFastpath = true
+LibSel4FunctionAttributes = "public"
+KernelNumDomains = 1
+HardwareDebugAPI = false
+KernelFWholeProgram = false
+KernelResetChunkBits = 8
+LibSel4DebugAllocBufferEntries = 0
+LibSel4DebugFunctionInstrumentation = "none"
+KernelNumPriorities = 256
+KernelStackBits = 12
+KernelTimeSlice = 5
+KernelTimerTickMS = 2
+# the following keys are specific to x86_64-sel4-fel4 targets
+KernelArch = "x86"
+KernelX86Sel4Arch = "x86_64"
+KernelMaxNumNodes = 1
+KernelRetypeFanOutLimit = 256
+KernelRootCNodeSizeBits = 19
+KernelMaxNumBootinfoUntypedCaps = 230
+KernelSupportPCID = false
+KernelCacheLnSz = 64
+KernelDebugDisablePrefetchers = false
+KernelExportPMCUser = false
+KernelFPU = "FXSAVE"
+KernelFPUMaxRestoresSinceSwitch = 64
+KernelFSGSBase = "msr"
+KernelHugePage = true
+KernelIOMMU = false
+KernelIRQController = "IOAPIC"
+KernelIRQReporting = true
+KernelLAPICMode = "XAPIC"
+KernelMaxNumIOAPIC = 1
+KernelMaxNumWorkUnitsPerPreemption= 100
+KernelMultiboot1Header = true
+KernelMultiboot2Header = true
+KernelMultibootGFXMode = "none"
+KernelSkimWindow = true
+KernelSyscall = "syscall"
+KernelVTX = false
+KernelX86DangerousMSR = false
+KernelX86IBPBOnContextSwitch = false
+KernelX86IBRSMode = "ibrs_none"
+KernelX86RSBOnContextSwitch = false
+KernelXSaveSize = 576
+LinkPageSize = 4096
+UserLinkerGCSections = false
+
+[x86_64-sel4-fel4.pc99]
+KernelX86MicroArch = "nehalem"
+LibPlatSupportX86ConsoleDevice = "com1"
+
+[x86_64-sel4-fel4.debug]
+KernelDebugBuild = true
+KernelPrinting = true
+KernelColourPrinting = true
+KernelUserStackTraceLength = 16
+
+[x86_64-sel4-fel4.release]
+KernelDebugBuild = false
+KernelPrinting = false
+
+[armv7-sel4-fel4]
+BuildWithCommonSimulationSettings = true
+KernelOptimisation = "-O2"
+KernelVerificationBuild = false
+KernelBenchmarks = "none"
+KernelFastpath = true
+LibSel4FunctionAttributes = "public"
+KernelNumDomains = 1
+HardwareDebugAPI = false
+KernelFWholeProgram = false
+KernelResetChunkBits = 8
+LibSel4DebugAllocBufferEntries = 0
+LibSel4DebugFunctionInstrumentation = "none"
+KernelNumPriorities = 256
+KernelStackBits = 12
+KernelTimeSlice = 5
+KernelTimerTickMS = 2
+# the following keys are specific to armv7-sel4-fel4 targets
+KernelArch = "arm"
+KernelArmSel4Arch = "aarch32"
+KernelMaxNumNodes = 1
+KernelRetypeFanOutLimit = 256
+KernelRootCNodeSizeBits = 19
+KernelMaxNumBootinfoUntypedCaps = 230
+KernelAArch32FPUEnableContextSwitch = true
+KernelDebugDisableBranchPrediction = false
+KernelFPUMaxRestoresSinceSwitch = 64
+KernelIPCBufferLocation = "threadID_register"
+KernelMaxNumWorkUnitsPerPreemption = 100
+LinkPageSize = 4096
+UserLinkerGCSections = false
+
+[armv7-sel4-fel4.debug]
+KernelDebugBuild = true
+KernelPrinting = true
+KernelColourPrinting = true
+KernelUserStackTraceLength = 16
+
+[armv7-sel4-fel4.release]
+KernelDebugBuild = false
+KernelPrinting = false
+
+[armv7-sel4-fel4.sabre]
+KernelARMPlatform = "sabre"
+ElfloaderImage = "elf"
+ElfloaderMode = "secure supervisor"
+ElfloaderErrata764369 = true
+KernelArmEnableA9Prefetcher = false
+KernelArmExportPMUUser = false
+KernelDebugDisableL2Cache = false
+
+[aarch64-sel4-fel4]
+BuildWithCommonSimulationSettings = true
+KernelOptimisation = "-O2"
+KernelVerificationBuild = false
+KernelBenchmarks = "none"
+KernelFastpath = true
+LibSel4FunctionAttributes = "public"
+KernelNumDomains = 1
+HardwareDebugAPI = false
+KernelFWholeProgram = false
+KernelResetChunkBits = 8
+LibSel4DebugAllocBufferEntries = 0
+LibSel4DebugFunctionInstrumentation = "none"
+KernelNumPriorities = 256
+KernelStackBits = 12
+KernelTimeSlice = 5
+KernelTimerTickMS = 2
+# the following keys are specific to aarch64-sel4-fel4 targets
+KernelArch = "arm"
+KernelArmSel4Arch = "aarch64"
+KernelMaxNumNodes = 1
+KernelRetypeFanOutLimit = 256
+KernelRootCNodeSizeBits = 19
+KernelMaxNumBootinfoUntypedCaps = 230
+KernelDebugDisableBranchPrediction = false
+KernelFPUMaxRestoresSinceSwitch = 64
+KernelIPCBufferLocation = "threadID_register"
+KernelMaxNumWorkUnitsPerPreemption = 100
+LinkPageSize = 4096
+UserLinkerGCSections = false
+
+[aarch64-sel4-fel4.debug]
+KernelDebugBuild = true
+KernelPrinting = true
+KernelColourPrinting = true
+KernelUserStackTraceLength = 16
+
+[aarch64-sel4-fel4.release]
+KernelDebugBuild = false
+KernelPrinting = false
+
+[aarch64-sel4-fel4.tx1]
+KernelARMPlatform = "tx1"
+ElfloaderImage = "binary"
