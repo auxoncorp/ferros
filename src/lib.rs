@@ -41,7 +41,7 @@ fn yield_forever() {
     }
 }
 
-pub fn main(bootinfo: &'static seL4_BootInfo) {
+pub fn run(bootinfo: &'static seL4_BootInfo) {
     let mut allocator =
         micro_alloc::Allocator::bootstrap(&bootinfo).expect("Couldn't set up bootstrap allocator");
 

@@ -20,7 +20,7 @@ macro_rules! debug_println {
 }
 
 #[cfg(feature = "KernelPrinting")]
-pub fn run() {
+pub fn run(_boot: &'static seL4_BootInfo) {
     debug_println!("\n\nrunning example tests");
     let mut runner = TestRunner::default();
     let mut num_passed = 0;
