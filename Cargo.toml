@@ -8,7 +8,7 @@ edition = "2018"
 # NOTE: We use a git dependency directly since the git submodules
 # don't currently work when pulled down from crates.io
 # libsel4-sys = "0.5"
-libsel4-sys = { git = "ssh://git@github.com/auxoncorp/libsel4-sys.git", branch = "config_genericness" }
+libsel4-sys = { git = "ssh://git@github.com/auxoncorp/libsel4-sys.git", branch = "master" }
 typenum = "1.10.0"
 
 [dependencies.arrayvec]
