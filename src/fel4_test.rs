@@ -20,7 +20,7 @@ macro_rules! debug_println {
 }
 
 #[cfg(feature = "KernelPrinting")]
-pub fn run() {
+pub fn run(_boot: &'static seL4_BootInfo) {
     debug_println!("\n\nrunning example tests");
     let mut runner = TestRunner::default();
     let mut num_passed = 0;
@@ -35,7 +35,7 @@ pub fn run() {
             test_cap_rights_predictability(&mut runner),
         ),
     ]
-    .iter()
+        .iter()
     {
         if *found_success {
             num_passed += 1;
@@ -134,7 +134,10 @@ fn print_test_result<T: fmt::Debug>(
     }
 }
 
-#[cfg(all(feature = "KernelDebugBuild", not(feature = "KernelPrinting")))]
+#[cfg(all(
+    feature = "KernelDebugBuild",
+    not(feature = "KernelPrinting")
+))]
 pub fn run() {
     halt();
 }

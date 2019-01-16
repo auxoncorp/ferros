@@ -1,11 +1,11 @@
 // in the type, store a flag for each bit size to indicate whether we have an
 // untyped of that size.
 
-use crate::pow::{Pow, _Pow};
-use crate::userland::{role, CNode, CNodeRole, Cap, Untyped};
 use core::marker::PhantomData;
 use core::mem::transmute;
 use core::ops::{Add, Sub};
+use crate::pow::{Pow, _Pow};
+use crate::userland::{role, CNode, CNodeRole, Cap, Untyped};
 use typenum::operator_aliases::{Diff, Sub1, Sum};
 use typenum::{Bit, UInt, UTerm, Unsigned, B0, B1, U0, U1, U10, U2, U4, U6};
 

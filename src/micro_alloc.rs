@@ -2,8 +2,8 @@
 //! This one doesn't split anything; it just hands out the smallest untyped item
 //! that's big enough for the request.
 
-use crate::userland::{role, wrap_untyped, Cap, Untyped};
 use arrayvec::ArrayVec;
+use crate::userland::{role, wrap_untyped, Cap, Untyped};
 use typenum::Unsigned;
 
 use sel4_sys::{seL4_BootInfo, seL4_UntypedDesc};

@@ -1,6 +1,6 @@
-use crate::userland::{role, CNode, CNodeRole, Error};
 use core::marker::PhantomData;
 use core::ops::Sub;
+use crate::userland::{role, CNode, CNodeRole, Error};
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
 use typenum::{Unsigned, B1};

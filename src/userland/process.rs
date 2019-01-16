@@ -1,10 +1,10 @@
+use core::mem::{self, size_of};
+use core::ops::Sub;
+use core::ptr;
 use crate::userland::{
     role, ASIDPool, AssignedPageDirectory, CNode, Cap, Endpoint, Error, MappedPage,
     ThreadControlBlock, UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, Untyped,
 };
-use core::mem::{self, size_of};
-use core::ops::Sub;
-use core::ptr;
 use sel4_sys::*;
 use typenum::operator_aliases::Diff;
 use typenum::{Unsigned, U128, U16, U256};

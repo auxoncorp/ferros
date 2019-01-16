@@ -4,19 +4,22 @@
 #![cfg_attr(feature = "alloc", feature(alloc))]
 #![feature(lang_items, core_intrinsics)]
 #![feature(global_asm)]
+#![cfg_attr(feature = "alloc", feature(global_allocator))]
 #![feature(panic_info_message)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
-extern crate iron_pegasus;
-#[cfg(all(feature = "test", feature = "alloc"))]
-extern crate proptest;
 extern crate sel4_sys;
 #[cfg(feature = "alloc")]
 extern crate wee_alloc;
+#[cfg(all(feature = "test", feature = "alloc"))]
+#[macro_use]
+extern crate proptest;
+extern crate iron_pegasus;
 
 use core::alloc::Layout;
 use core::intrinsics;
+use core::mem;
 use core::panic::PanicInfo;
 use sel4_sys::*;
 
@@ -28,46 +31,46 @@ static ALLOCATOR: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 #[allow(dead_code)]
 #[allow(non_upper_case_globals)]
 pub mod sel4_config {
-    pub const KernelDebugBuild: bool = true;
-    pub const KernelTimerTickMS: &'static str = "2";
-    pub const KernelArmExportPMUUser: bool = false;
     pub const BuildWithCommonSimulationSettings: bool = true;
+    pub const ElfloaderErrata764369: bool = true;
+    pub const ElfloaderImage: &'static str = "elf";
+    pub const ElfloaderMode: &'static str = "secure supervisor";
     pub const HardwareDebugAPI: bool = false;
-    pub const KernelDebugDisableL2Cache: bool = false;
-    pub const LibSel4FunctionAttributes: &'static str = "public";
-    pub const KernelMaxNumNodes: &'static str = "1";
-    pub const KernelFPUMaxRestoresSinceSwitch: &'static str = "64";
-    pub const KernelStackBits: &'static str = "12";
+    pub const KernelAArch32FPUEnableContextSwitch: bool = true;
+    pub const KernelARMPlatform: &'static str = "sabre";
+    pub const KernelArch: &'static str = "arm";
+    pub const KernelArmEnableA9Prefetcher: bool = false;
+    pub const KernelArmExportPMUUser: bool = false;
+    pub const KernelArmSel4Arch: &'static str = "aarch32";
     pub const KernelBenchmarks: &'static str = "none";
     pub const KernelColourPrinting: bool = true;
-    pub const ElfloaderMode: &'static str = "secure supervisor";
-    pub const KernelNumPriorities: &'static str = "256";
-    pub const LinkPageSize: &'static str = "4096";
-    pub const KernelVerificationBuild: bool = false;
-    pub const LibSel4DebugFunctionInstrumentation: &'static str = "none";
-    pub const UserLinkerGCSections: bool = false;
-    pub const KernelIPCBufferLocation: &'static str = "threadID_register";
-    pub const KernelRootCNodeSizeBits: &'static str = "19";
-    pub const KernelFWholeProgram: bool = false;
-    pub const ElfloaderErrata764369: bool = true;
-    pub const KernelMaxNumBootinfoUntypedCaps: &'static str = "230";
-    pub const KernelARMPlatform: &'static str = "sabre";
-    pub const KernelPrinting: bool = true;
+    pub const KernelDebugBuild: bool = true;
     pub const KernelDebugDisableBranchPrediction: bool = false;
-    pub const KernelUserStackTraceLength: &'static str = "16";
-    pub const KernelAArch32FPUEnableContextSwitch: bool = true;
-    pub const KernelArmEnableA9Prefetcher: bool = false;
-    pub const KernelArch: &'static str = "arm";
-    pub const ElfloaderImage: &'static str = "elf";
-    pub const KernelRetypeFanOutLimit: &'static str = "256";
-    pub const LibSel4DebugAllocBufferEntries: &'static str = "0";
-    pub const KernelTimeSlice: &'static str = "5";
+    pub const KernelDebugDisableL2Cache: bool = false;
+    pub const KernelFPUMaxRestoresSinceSwitch: &'static str = "64";
+    pub const KernelFWholeProgram: bool = false;
     pub const KernelFastpath: bool = true;
-    pub const KernelArmSel4Arch: &'static str = "aarch32";
-    pub const KernelResetChunkBits: &'static str = "8";
-    pub const KernelNumDomains: &'static str = "1";
+    pub const KernelIPCBufferLocation: &'static str = "threadID_register";
+    pub const KernelMaxNumBootinfoUntypedCaps: &'static str = "230";
+    pub const KernelMaxNumNodes: &'static str = "1";
     pub const KernelMaxNumWorkUnitsPerPreemption: &'static str = "100";
+    pub const KernelNumDomains: &'static str = "1";
+    pub const KernelNumPriorities: &'static str = "256";
     pub const KernelOptimisation: &'static str = "-O2";
+    pub const KernelPrinting: bool = true;
+    pub const KernelResetChunkBits: &'static str = "8";
+    pub const KernelRetypeFanOutLimit: &'static str = "256";
+    pub const KernelRootCNodeSizeBits: &'static str = "19";
+    pub const KernelStackBits: &'static str = "12";
+    pub const KernelTimeSlice: &'static str = "5";
+    pub const KernelTimerTickMS: &'static str = "2";
+    pub const KernelUserStackTraceLength: &'static str = "16";
+    pub const KernelVerificationBuild: bool = false;
+    pub const LibSel4DebugAllocBufferEntries: &'static str = "0";
+    pub const LibSel4DebugFunctionInstrumentation: &'static str = "none";
+    pub const LibSel4FunctionAttributes: &'static str = "public";
+    pub const LinkPageSize: &'static str = "4096";
+    pub const UserLinkerGCSections: bool = false;
 }
 
 pub static mut BOOTINFO: *mut seL4_BootInfo = (0 as *mut seL4_BootInfo);
@@ -94,6 +97,7 @@ impl Termination for () {
 }
 
 #[lang = "start"]
+#[no_mangle]
 fn lang_start<T: Termination + 'static>(
     main: fn() -> T,
     _argc: isize,
@@ -104,6 +108,7 @@ fn lang_start<T: Termination + 'static>(
 }
 
 #[panic_handler]
+#[no_mangle]
 fn panic(info: &PanicInfo) -> ! {
     #[cfg(feature = "KernelPrinting")]
     {
@@ -144,9 +149,7 @@ pub fn eh_personality() {
             "----- aborting from eh_personality -----\n"
         );
     }
-    unsafe {
-        core::intrinsics::abort();
-    }
+    unsafe { core::intrinsics::abort() }
 }
 
 #[lang = "oom"]
@@ -164,10 +167,16 @@ pub extern "C" fn oom(_layout: Layout) -> ! {
 }
 
 fn main() {
-    let bootinfo = unsafe { &*BOOTINFO };
-    iron_pegasus::main(bootinfo);
+    let boot_info = unsafe { &*BOOTINFO };
+    #[cfg(feature = "test")]
+    {
+        iron_pegasus::fel4_test::run(boot_info);
+    }
+    #[cfg(not(feature = "test"))]
+    {
+        iron_pegasus::run(boot_info);
+    }
 }
-
 global_asm!(
     r###"/* Copyright (c) 2015 The Robigalia Project Developers
  * Licensed under the Apache License, Version 2.0

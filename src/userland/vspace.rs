@@ -1,8 +1,8 @@
+use core::marker::PhantomData;
 use crate::userland::{
     role, AssignedPageDirectory, Cap, Error, MappedPage, MappedPageTable, UnmappedPage,
     UnmappedPageTable,
 };
-use core::marker::PhantomData;
 use sel4_sys::*;
 
 // vspace related capability operations
