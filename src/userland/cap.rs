@@ -67,7 +67,7 @@ where
 {
     // TODO most of this should only happen in the bootstrap adapter
     // TODO - Make even more private!
-    pub(crate) fn wrap_cptr(cptr: usize) -> Cap<CT, Role> {
+    pub fn wrap_cptr(cptr: usize) -> Cap<CT, Role> {
         Cap {
             cptr: cptr,
             cap_data: PhantomCap::phantom_instance(),

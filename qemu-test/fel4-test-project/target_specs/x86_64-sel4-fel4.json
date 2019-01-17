@@ -1,0 +1,25 @@
+{
+    "data-layout": "e-m:e-i64:64-f80:128-n8:16:32:64-S128",
+    "llvm-target": "x86_64-elf",
+    "target-endian": "little",
+    "target-pointer-width": "64",
+    "target-c-int-width": "32",
+    "os": "sel4",
+    "env": "fel4",
+    "arch": "x86_64",
+    "linker-is-gnu": true,
+    "executables": true,
+    "no-compiler-rt": false,
+    "relocation-model": "pic",
+    "position-independent-executables": false,
+    "dynamic_linking": false,
+    "has-elf-tls": true,
+    "panic-strategy": "abort",
+    "cpu": "westmere",
+    "no-default-libraries": true,
+    "linker-flavor": "gcc",
+    "pre-link-args": {
+        "gcc": ["-m64", "-ffreestanding", "-nodefaultlibs", "-nostdlib"]
+    },
+    "default-codegen-units": 1
+}

@@ -1,36 +1,28 @@
 #![no_std]
-#![cfg_attr(feature = "alloc", feature(alloc))]
 
-#[cfg(all(feature = "alloc"))]
-#[macro_use]
-extern crate alloc;
-
-extern crate arrayvec;
+extern crate iron_pegasus;
 extern crate sel4_sys;
 extern crate typenum;
 
-#[cfg(all(feature = "test"))]
-extern crate proptest;
+use sel4_sys::*;
 
-#[cfg(feature = "test")]
-pub mod fel4_test;
+macro_rules! debug_print {
+    ($($arg:tt)*) => ({
+        use core::fmt::Write;
+        DebugOutHandle.write_fmt(format_args!($($arg)*)).unwrap();
+    });
+}
 
-#[macro_use]
-mod debug;
+macro_rules! debug_println {
+    ($fmt:expr) => (debug_print!(concat!($fmt, "\n")));
+    ($fmt:expr, $($arg:tt)*) => (debug_print!(concat!($fmt, "\n"), $($arg)*));
+}
 
-pub mod micro_alloc;
-mod pow;
-mod twinkle_types;
-pub mod userland;
-
-mod test_proc;
-
-use crate::micro_alloc::GetUntyped;
-use crate::userland::{
+use iron_pegasus::micro_alloc::{self, GetUntyped};
+use iron_pegasus::userland::{
     role, root_cnode, spawn, ASIDControl, ASIDPool, AssignedPageDirectory, Cap, MappedPage,
     ThreadControlBlock,
 };
-use sel4_sys::*;
 use typenum::{U12, U20};
 
 fn yield_forever() {
@@ -42,6 +34,11 @@ fn yield_forever() {
 }
 
 pub fn run(bootinfo: &'static seL4_BootInfo) {
+    #[cfg(test_case = "root_task_runs")]
+    {
+        debug_println!("\nhello from the root task!\n");
+    }
+
     let mut allocator =
         micro_alloc::Allocator::bootstrap(&bootinfo).expect("Couldn't set up bootstrap allocator");
 
@@ -80,13 +77,10 @@ pub fn run(bootinfo: &'static seL4_BootInfo) {
         .retype_local_cnode::<_, U12>(root_cnode)
         .expect("Couldn't retype to child proc cnode");
 
-    let mut nums = [0xaaaaaaaa; 140];
-    nums[0] = 0xbbbbbbbb;
-    nums[139] = 0xcccccccc;
-    let params = test_proc::Params { nums };
+    let params = ProcParams { value: 42 };
 
     let _root_cnode = spawn(
-        test_proc::main,
+        proc_main,
         params,
         child_cnode,
         255, // priority
@@ -101,4 +95,44 @@ pub fn run(bootinfo: &'static seL4_BootInfo) {
     .expect("spawn process");
 
     yield_forever();
+}
+
+pub struct ProcParams {
+    pub value: usize,
+}
+
+impl iron_pegasus::userland::RetypeForSetup for ProcParams {
+    type Output = ProcParams;
+}
+
+#[cfg(test_case = "root_task_runs")]
+pub extern "C" fn proc_main(_params: &ProcParams) {}
+
+#[cfg(test_case = "process_runs")]
+pub extern "C" fn proc_main(params: &ProcParams) {
+    debug_println!("\nThe value inside the process is {}\n", params.value);
+}
+
+#[cfg(test_case = "memory_read_protection")]
+pub extern "C" fn proc_main(_params: &ProcParams) {
+    debug_println!("\nAttempting to cause a segmentation fault...\n");
+
+    unsafe {
+        let x: *const usize = 0x88888888usize as _;
+        debug_println!("Value from arbitrary memory is: {}", *x);
+    }
+
+    debug_println!("This is after the segfaulting code, and should not be printed.");
+}
+
+#[cfg(test_case = "memory_write_protection")]
+pub extern "C" fn proc_main(_params: &ProcParams) {
+    debug_println!("\nAttempting to write to the code segment...\n");
+
+    unsafe {
+        let x: *mut usize = proc_main as _;
+        *x = 42;
+    }
+
+    debug_println!("This is after the segfaulting code, and should not be printed.");
 }
