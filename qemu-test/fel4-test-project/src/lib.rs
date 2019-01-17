@@ -79,15 +79,6 @@ pub fn run(bootinfo: &'static seL4_BootInfo) {
 
     let params = ProcParams { value: 42 };
 
-    #[cfg(test_case = "process_runs")]
-    let proc_main = process_runs;
-
-    #[cfg(test_case = "memory_read_protection")]
-    let proc_main = memory_read_protection;
-
-    #[cfg(test_case = "memory_write_protection")]
-    let proc_main = memory_write_protection;
-
     let _root_cnode = spawn(
         proc_main,
         params,
@@ -114,11 +105,16 @@ impl iron_pegasus::userland::RetypeForSetup for ProcParams {
     type Output = ProcParams;
 }
 
-pub extern "C" fn process_runs(params: &ProcParams) {
+#[cfg(test_case = "root_task_runs")]
+pub extern "C" fn proc_main(_params: &ProcParams) {}
+
+#[cfg(test_case = "process_runs")]
+pub extern "C" fn proc_main(params: &ProcParams) {
     debug_println!("\nThe value inside the process is {}\n", params.value);
 }
 
-pub extern "C" fn memory_read_protection(params: &ProcParams) {
+#[cfg(test_case = "memory_read_protection")]
+pub extern "C" fn proc_main(_params: &ProcParams) {
     debug_println!("\nAttempting to cause a segmentation fault...\n");
 
     unsafe {
@@ -129,7 +125,8 @@ pub extern "C" fn memory_read_protection(params: &ProcParams) {
     debug_println!("This is after the segfaulting code, and should not be printed.");
 }
 
-pub extern "C" fn memory_write_protection(params: &ProcParams) {
+#[cfg(test_case = "memory_write_protection")]
+pub extern "C" fn proc_main(_params: &ProcParams) {
     debug_println!("\nAttempting to write to the code segment...\n");
 
     unsafe {
