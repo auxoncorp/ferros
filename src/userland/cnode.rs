@@ -16,8 +16,8 @@ pub struct CNode<FreeSlots: Unsigned, Role: CNodeRole> {
     pub(super) _role: PhantomData<Role>,
 }
 
-pub type LocalCNode<FreeSlots: Unsigned> = CNode<FreeSlots, role::Local>;
-pub type ChildCNode<FreeSlots: Unsigned> = CNode<FreeSlots, role::Child>;
+pub type LocalCNode<FreeSlots> = CNode<FreeSlots, role::Local>;
+pub type ChildCNode<FreeSlots> = CNode<FreeSlots, role::Child>;
 
 #[derive(Debug)]
 pub(super) struct CNodeSlot {
@@ -32,7 +32,6 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<CNode<FreeSlots, Role>> {
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
     {
-        // TODO - does this method need to change when for CNode<FreeSlots, role::Child> ??
         (
             Cap {
                 cptr: self.cptr,
