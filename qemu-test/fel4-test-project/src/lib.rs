@@ -79,6 +79,15 @@ pub fn run(bootinfo: &'static seL4_BootInfo) {
 
     let params = ProcParams { value: 42 };
 
+    #[cfg(test_case = "process_runs")]
+    let proc_main = process_runs;
+
+    #[cfg(test_case = "memory_read_protection")]
+    let proc_main = memory_read_protection;
+
+    #[cfg(test_case = "memory_write_protection")]
+    let proc_main = memory_write_protection;
+
     let _root_cnode = spawn(
         proc_main,
         params,
@@ -105,34 +114,28 @@ impl iron_pegasus::userland::RetypeForSetup for ProcParams {
     type Output = ProcParams;
 }
 
-// 'extern' to force C calling conventions
-pub extern "C" fn proc_main(params: &ProcParams) {
-    #[cfg(test_case = "process_runs")]
-    {
-        debug_println!("\nThe value inside the process is {}\n", params.value);
+pub extern "C" fn process_runs(params: &ProcParams) {
+    debug_println!("\nThe value inside the process is {}\n", params.value);
+}
+
+pub extern "C" fn memory_read_protection(params: &ProcParams) {
+    debug_println!("\nAttempting to cause a segmentation fault...\n");
+
+    unsafe {
+        let x: *const usize = 0x88888888usize as _;
+        debug_println!("Value from arbitrary memory is: {}", *x);
     }
 
-    #[cfg(test_case = "memory_read_protection")]
-    {
-        debug_println!("\nAttempting to cause a segmentation fault...\n");
+    debug_println!("This is after the segfaulting code, and should not be printed.");
+}
 
-        unsafe {
-            let x: *const usize = 0x88888888usize as _;
-            debug_println!("Value from arbitrary memory is: {}", *x);
-        }
+pub extern "C" fn memory_write_protection(params: &ProcParams) {
+    debug_println!("\nAttempting to write to the code segment...\n");
 
-        debug_println!("This is after the segfaulting code, and should not be printed.");
+    unsafe {
+        let x: *mut usize = proc_main as _;
+        *x = 42;
     }
 
-    #[cfg(test_case = "memory_write_protection")]
-    {
-        debug_println!("\nAttempting to write to the code segment...\n");
-
-        unsafe {
-            let x: *mut usize = proc_main as _;
-            *x = 42;
-        }
-
-        debug_println!("This is after the segfaulting code, and should not be printed.");
-    }
+    debug_println!("This is after the segfaulting code, and should not be printed.");
 }
