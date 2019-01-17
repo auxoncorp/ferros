@@ -2,8 +2,8 @@ use core::marker::PhantomData;
 use core::mem::size_of;
 use core::ops::Sub;
 use crate::userland::{
-    role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, Error, UnassignedPageDirectory,
-    Untyped,
+    role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, Error, PhantomCap,
+    UnassignedPageDirectory, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
@@ -46,7 +46,7 @@ impl Cap<Untyped<U12>, role::Local> {
         Ok((
             Cap {
                 cptr: dest_slot.offset,
-                _cap_type: PhantomData,
+                _cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             dest_cnode,
@@ -67,7 +67,7 @@ impl Cap<ASIDPool, role::Local> {
 
         Ok(Cap {
             cptr: vspace.cptr,
-            _cap_type: PhantomData,
+            _cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         })
     }

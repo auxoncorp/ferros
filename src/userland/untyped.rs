@@ -1,11 +1,12 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
 use crate::pow::{Pow, _Pow};
-use crate::userland::{role, CNode, Cap, CapType, DirectRetype, Error, Untyped};
+use crate::userland::{role, CNode, Cap, CapType, DirectRetype, Error, PhantomCap, Untyped};
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U2, U3};
 
+// TODO - constrain this function to internal use only; probably just in the micro_alloc
 pub fn wrap_untyped<BitSize: Unsigned>(
     cptr: usize,
     untyped_desc: &seL4_UntypedDesc,
@@ -13,7 +14,7 @@ pub fn wrap_untyped<BitSize: Unsigned>(
     if untyped_desc.sizeBits == BitSize::to_u8() {
         Some(Cap {
             cptr,
-            _cap_type: PhantomData,
+            _cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         })
     } else {
@@ -44,14 +45,14 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
 
         let err = unsafe {
             seL4_Untyped_Retype(
-                self.cptr,                          // _service
+                self.cptr,                              // _service
                 api_object_seL4_UntypedObject as usize, // type
-                BitSize::to_usize() - 1,            // size_bits
-                dest_slot.cptr,                     // root
-                0,                                  // index
-                0,                                  // depth
-                dest_slot.offset,                   // offset
-                1,                                  // num_objects
+                BitSize::to_usize() - 1,                // size_bits
+                dest_slot.cptr,                         // root
+                0,                                      // index
+                0,                                      // depth
+                dest_slot.offset,                       // offset
+                1,                                      // num_objects
             )
         };
         if err != 0 {
@@ -61,12 +62,12 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
         Ok((
             Cap {
                 cptr: self.cptr,
-                _cap_type: PhantomData,
+                _cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             Cap {
                 cptr: dest_slot.offset,
-                _cap_type: PhantomData,
+                _cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             dest_cnode,
@@ -109,14 +110,14 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
 
         let err = unsafe {
             seL4_Untyped_Retype(
-                self.cptr,                          // _service
+                self.cptr,                              // _service
                 api_object_seL4_UntypedObject as usize, // type
-                BitSize::to_usize() - 2,            // size_bits
-                dest_slot1.cptr,                    // root
-                0,                                  // index
-                0,                                  // depth
-                dest_slot1.offset,                  // offset
-                3,                                  // num_objects
+                BitSize::to_usize() - 2,                // size_bits
+                dest_slot1.cptr,                        // root
+                0,                                      // index
+                0,                                      // depth
+                dest_slot1.offset,                      // offset
+                3,                                      // num_objects
             )
         };
         if err != 0 {
@@ -126,22 +127,22 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
         Ok((
             Cap {
                 cptr: self.cptr,
-                _cap_type: PhantomData,
+                _cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             Cap {
                 cptr: dest_slot1.offset,
-                _cap_type: PhantomData,
+                _cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             Cap {
                 cptr: dest_slot2.offset,
-                _cap_type: PhantomData,
+                _cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             Cap {
                 cptr: dest_slot3.offset,
-                _cap_type: PhantomData,
+                _cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             dest_cnode,
@@ -164,6 +165,7 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
         TargetCapType: DirectRetype,
+        TargetCapType: PhantomCap,
     {
         let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
 
@@ -187,7 +189,7 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
         Ok((
             Cap {
                 cptr: dest_slot.offset,
-                _cap_type: PhantomData,
+                _cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             dest_cnode,
@@ -257,6 +259,7 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
         TargetCapType: DirectRetype,
+        TargetCapType: PhantomCap,
     {
         let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
 
@@ -280,7 +283,7 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
         Ok((
             Cap {
                 cptr: dest_slot.offset,
-                _cap_type: PhantomData,
+                _cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             dest_cnode,

@@ -21,7 +21,8 @@ pub mod role {
     impl CNodeRole for Child {}
 }
 
-/// Marker trait to indicate that this type of capability can be generated directly
+/// Marker trait for CapType implementing structs to indicate that
+/// this type of capability can be generated directly
 /// from retyping an Untyped
 pub trait DirectRetype {
     // TODO - find out where the actual size of the fixed-size objects are specified in seL4-land
@@ -32,27 +33,40 @@ pub trait DirectRetype {
     fn sel4_type_id() -> usize;
 }
 
-/// Marker trait to indicate that this type of capability can be
+/// Marker trait for CapType implementing structs to indicate that
+/// instances of this type of capability can be copied and aliased safely
+/// when done through the use of this API
 pub trait CopyAliasable {
     type CopyOutput: CapType;
+}
+
+/// Internal marker trait for capability types that can can
+/// have meaningful instances created for them purely from
+/// their type signatures.
+/// TODO - the structures that implement this should be zero-sized,
+/// and we ought to enforce that constraint at compile time.
+pub trait PhantomCap: Sized {
+    fn phantom_instance() -> Self;
 }
 
 #[derive(Debug)]
 pub struct Cap<CT: CapType, Role: CNodeRole> {
     pub cptr: usize,
-    pub(super) _cap_type: PhantomData<CT>,
+    pub(super) _cap_data: CT,
     pub(super) _role: PhantomData<Role>,
 }
 
-pub trait CapType: private::SealedCapType {
-}
+pub trait CapType: private::SealedCapType {}
 
-impl<CT: CapType, Role: CNodeRole> Cap<CT, Role> {
+impl<CT: CapType, Role: CNodeRole> Cap<CT, Role>
+where
+    CT: PhantomCap,
+{
     // TODO most of this should only happen in the bootstrap adapter
     pub fn wrap_cptr(cptr: usize) -> Cap<CT, Role> {
         Cap {
             cptr: cptr,
-            _cap_type: PhantomData,
+            _cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         }
     }
@@ -63,18 +77,26 @@ pub struct Untyped<BitSize: Unsigned> {
     _bit_size: PhantomData<BitSize>,
 }
 
-impl<BitSize: Unsigned> CapType for Untyped<BitSize> {
-    // TODO - CLEANUP
-//    fn sel4_type_id() -> usize {
-//        api_object_seL4_UntypedObject as usize
-//    }
-}
+impl<BitSize: Unsigned> CapType for Untyped<BitSize> {}
 
+impl<BitSize: Unsigned> PhantomCap for Untyped<BitSize> {
+    fn phantom_instance() -> Self {
+        Untyped::<BitSize> {
+            _bit_size: PhantomData::<BitSize>,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct ThreadControlBlock {}
 
 impl CapType for ThreadControlBlock {}
+
+impl PhantomCap for ThreadControlBlock {
+    fn phantom_instance() -> Self {
+        Self {}
+    }
+}
 
 impl DirectRetype for ThreadControlBlock {
     fn sel4_type_id() -> usize {
@@ -91,6 +113,12 @@ pub struct ASIDControl {}
 
 impl CapType for ASIDControl {}
 
+impl PhantomCap for ASIDControl {
+    fn phantom_instance() -> Self {
+        Self {}
+    }
+}
+
 // asid pool
 // TODO: track capacity with the types
 // TODO: track in the pagedirectory type whether it has been assigned (mapped), and for pagetable too
@@ -98,6 +126,12 @@ impl CapType for ASIDControl {}
 pub struct ASIDPool {}
 
 impl CapType for ASIDPool {}
+
+impl PhantomCap for ASIDPool {
+    fn phantom_instance() -> Self {
+        Self {}
+    }
+}
 
 impl CopyAliasable for ASIDPool {
     type CopyOutput = Self;
@@ -107,6 +141,12 @@ impl CopyAliasable for ASIDPool {
 pub struct Endpoint {}
 
 impl CapType for Endpoint {}
+
+impl PhantomCap for Endpoint {
+    fn phantom_instance() -> Self {
+        Self {}
+    }
+}
 
 impl CopyAliasable for Endpoint {
     type CopyOutput = Self;
@@ -123,6 +163,12 @@ pub struct AssignedPageDirectory {}
 
 impl CapType for AssignedPageDirectory {}
 
+impl PhantomCap for AssignedPageDirectory {
+    fn phantom_instance() -> Self {
+        Self {}
+    }
+}
+
 impl CopyAliasable for AssignedPageDirectory {
     type CopyOutput = UnassignedPageDirectory;
 }
@@ -130,7 +176,12 @@ impl CopyAliasable for AssignedPageDirectory {
 #[derive(Debug)]
 pub struct UnassignedPageDirectory {}
 
-impl CapType for UnassignedPageDirectory {
+impl CapType for UnassignedPageDirectory {}
+
+impl PhantomCap for UnassignedPageDirectory {
+    fn phantom_instance() -> Self {
+        Self {}
+    }
 }
 
 impl CopyAliasable for UnassignedPageDirectory {
@@ -148,6 +199,12 @@ pub struct UnmappedPageTable {}
 
 impl CapType for UnmappedPageTable {}
 
+impl PhantomCap for UnmappedPageTable {
+    fn phantom_instance() -> Self {
+        Self {}
+    }
+}
+
 impl CopyAliasable for UnmappedPageTable {
     type CopyOutput = Self;
 }
@@ -163,6 +220,12 @@ pub struct MappedPageTable {}
 
 impl CapType for MappedPageTable {}
 
+impl PhantomCap for MappedPageTable {
+    fn phantom_instance() -> Self {
+        Self {}
+    }
+}
+
 impl CopyAliasable for MappedPageTable {
     type CopyOutput = UnmappedPageTable;
 }
@@ -171,6 +234,12 @@ impl CopyAliasable for MappedPageTable {
 pub struct UnmappedPage {}
 
 impl CapType for UnmappedPage {}
+
+impl PhantomCap for UnmappedPage {
+    fn phantom_instance() -> Self {
+        Self {}
+    }
+}
 
 impl DirectRetype for UnmappedPage {
     fn sel4_type_id() -> usize {
@@ -186,6 +255,12 @@ impl CopyAliasable for UnmappedPage {
 pub struct MappedPage {}
 
 impl CapType for MappedPage {}
+
+impl PhantomCap for MappedPage {
+    fn phantom_instance() -> Self {
+        Self {}
+    }
+}
 
 impl CopyAliasable for MappedPage {
     type CopyOutput = UnmappedPage;
@@ -227,6 +302,8 @@ impl<CT: CapType> Cap<CT, role::Local> {
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
         CT: CopyAliasable,
+        CT: PhantomCap,
+        <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
         let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
 
@@ -250,7 +327,7 @@ impl<CT: CapType> Cap<CT, role::Local> {
             Ok((
                 Cap {
                     cptr: dest_slot.offset,
-                    _cap_type: PhantomData,
+                    _cap_data: PhantomCap::phantom_instance(),
                     _role: PhantomData,
                 },
                 dest_cnode,

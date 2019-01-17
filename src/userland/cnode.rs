@@ -1,9 +1,9 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
+use crate::userland::{role, CNodeRole};
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U1, U1024};
-use crate::userland::{role, CNodeRole};
 
 /// There will only ever be one CNode in a process with Role = Root. The
 /// cptrs any regular Cap are /also/ offsets into that cnode, because of
