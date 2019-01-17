@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 use core::mem::size_of;
 use core::ops::Sub;
 use crate::userland::{
-    role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, Error, PhantomCap,
+    role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, Error, LocalCap, PhantomCap,
     UnassignedPageDirectory, Untyped,
 };
 use sel4_sys::*;
@@ -10,16 +10,15 @@ use typenum::operator_aliases::Sub1;
 use typenum::{Unsigned, B1, U12};
 
 // The ASID pool needs an untyped of exactly 4k
-impl Cap<Untyped<U12>, role::Local> {
-    // TODO put retype local into a trait so we can dispatch via the target cap type
+impl LocalCap<Untyped<U12>> {
     pub fn retype_asid_pool<FreeSlots: Unsigned>(
         self,
-        asid_control: Cap<ASIDControl, role::Local>,
-        dest_cnode: CNode<FreeSlots, role::Local>,
+        asid_control: LocalCap<ASIDControl>,
+        dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
     ) -> Result<
         (
-            Cap<ASIDPool, role::Local>,
-            CNode<Sub1<FreeSlots>, role::Local>,
+            LocalCap<ASIDPool>,
+            LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
         ),
         Error,
     >

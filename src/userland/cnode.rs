@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
-use crate::userland::{role, CNodeRole};
+use crate::userland::{role, CNodeRole, Cap, LocalCap};
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U1, U1024};
@@ -12,10 +12,12 @@ use typenum::{Unsigned, B1, U1, U1024};
 pub struct CNode<FreeSlots: Unsigned, Role: CNodeRole> {
     pub(super) radix: u8,
     pub(super) next_free_slot: usize,
-    pub(super) cptr: usize,
     pub(super) _free_slots: PhantomData<FreeSlots>,
     pub(super) _role: PhantomData<Role>,
 }
+
+pub type LocalCNode<FreeSlots: Unsigned> = CNode<FreeSlots, role::Local>;
+pub type ChildCNode<FreeSlots: Unsigned> = CNode<FreeSlots, role::Child>;
 
 #[derive(Debug)]
 pub(super) struct CNodeSlot {
@@ -23,84 +25,106 @@ pub(super) struct CNodeSlot {
     pub(super) offset: usize,
 }
 
-impl<FreeSlots: Unsigned, Role: CNodeRole> CNode<FreeSlots, Role> {
+impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<CNode<FreeSlots, Role>> {
     // TODO: reverse these args to be consistent with everything else
-    pub(super) fn consume_slot(self) -> (CNode<Sub1<FreeSlots>, Role>, CNodeSlot)
+    pub(super) fn consume_slot(self) -> (LocalCap<CNode<Sub1<FreeSlots>, Role>>, CNodeSlot)
     where
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
     {
+        // TODO - does this method need to change when for CNode<FreeSlots, role::Child> ??
         (
-            // TODO: use mem::transmute
-            CNode {
-                radix: self.radix,
-                next_free_slot: self.next_free_slot + 1,
+            Cap {
                 cptr: self.cptr,
-                _free_slots: PhantomData,
                 _role: PhantomData,
+                _cap_data: CNode {
+                    radix: self._cap_data.radix,
+                    next_free_slot: self._cap_data.next_free_slot + 1,
+                    _free_slots: PhantomData,
+                    _role: PhantomData,
+                },
             },
             CNodeSlot {
                 cptr: self.cptr,
-                offset: self.next_free_slot,
+                offset: self._cap_data.next_free_slot,
             },
         )
     }
 
-    // Reserve Count slots. Return another node with the same cptr, but the
-    // requested capacity.
-    pub fn reserve_region<Count: Unsigned>(
-        self,
-    ) -> (CNode<Count, Role>, CNode<Diff<FreeSlots, Count>, Role>)
-    where
-        FreeSlots: Sub<Count>,
-        Diff<FreeSlots, Count>: Unsigned,
-    {
-        (
-            CNode {
-                radix: self.radix,
-                next_free_slot: self.next_free_slot,
-                cptr: self.cptr,
-                _free_slots: PhantomData,
-                _role: PhantomData,
-            },
-            // TODO: use mem::transmute
-            CNode {
-                radix: self.radix,
-                next_free_slot: self.next_free_slot + Count::to_usize(),
-                cptr: self.cptr,
-                _free_slots: PhantomData,
-                _role: PhantomData,
-            },
-        )
-    }
-
-    pub fn reservation_iter<Count: Unsigned>(
+    /// Reserve Count slots. Return another node with the same cptr, but the
+    /// requested capacity.
+    /// TODO - Make this function private-only until we implement a safe way
+    /// to expose aliased CNode objects.
+    pub(super) fn reserve_region<Count: Unsigned>(
         self,
     ) -> (
-        impl Iterator<Item = CNode<U1, Role>>,
-        CNode<Diff<FreeSlots, Count>, Role>,
+        LocalCap<CNode<Count, Role>>,
+        LocalCap<CNode<Diff<FreeSlots, Count>, Role>>,
     )
     where
         FreeSlots: Sub<Count>,
         Diff<FreeSlots, Count>: Unsigned,
     {
-        let iter_radix = self.radix;
+        (
+            Cap {
+                cptr: self.cptr,
+                _role: PhantomData,
+                _cap_data: CNode {
+                    radix: self._cap_data.radix,
+                    next_free_slot: self._cap_data.next_free_slot,
+                    _free_slots: PhantomData,
+                    _role: PhantomData,
+                },
+            },
+            Cap {
+                cptr: self.cptr,
+                _role: PhantomData,
+                _cap_data: CNode {
+                    radix: self._cap_data.radix,
+                    next_free_slot: self._cap_data.next_free_slot + Count::to_usize(),
+                    _free_slots: PhantomData,
+                    _role: PhantomData,
+                },
+            },
+        )
+    }
+
+    /// TODO - Make this function private-only until we implement a safe way
+    /// to expose aliased CNode objects.
+    pub(super) fn reservation_iter<Count: Unsigned>(
+        self,
+    ) -> (
+        impl Iterator<Item = LocalCap<CNode<U1, Role>>>,
+        LocalCap<CNode<Diff<FreeSlots, Count>, Role>>,
+    )
+    where
+        FreeSlots: Sub<Count>,
+        Diff<FreeSlots, Count>: Unsigned,
+    {
+        let iter_radix = self._cap_data.radix;
         let iter_cptr = self.cptr;
         (
-            (self.next_free_slot..self.next_free_slot + Count::to_usize()).map(move |slot| CNode {
-                radix: iter_radix,
-                next_free_slot: slot,
-                cptr: iter_cptr,
-                _free_slots: PhantomData,
-                _role: PhantomData,
-            }),
-            // TODO: use mem::transmute
-            CNode {
-                radix: self.radix,
-                next_free_slot: self.next_free_slot + Count::to_usize(),
+            (self._cap_data.next_free_slot..self._cap_data.next_free_slot + Count::to_usize()).map(
+                move |slot| Cap {
+                    cptr: iter_cptr,
+                    _role: PhantomData,
+                    _cap_data: CNode {
+                        radix: iter_radix,
+                        next_free_slot: slot,
+                        _free_slots: PhantomData,
+                        _role: PhantomData,
+                    },
+                },
+            ),
+            Cap {
                 cptr: self.cptr,
-                _free_slots: PhantomData,
                 _role: PhantomData,
+                _cap_data: CNode {
+                    radix: self._cap_data.radix,
+                    next_free_slot: self._cap_data.next_free_slot + Count::to_usize(),
+                    _free_slots: PhantomData,
+                    _role: PhantomData,
+                },
             },
         )
     }
@@ -111,12 +135,15 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> CNode<FreeSlots, Role> {
 // Answer: The radix is 19, and there are 12 initial caps. But there are also a bunch
 // of random things in the bootinfo.
 // TODO: ideally, this should only be callable once in the process. Is that possible?
-pub fn root_cnode(bootinfo: &'static seL4_BootInfo) -> CNode<U1024, role::Local> {
-    CNode {
-        radix: 19,
-        next_free_slot: 1000, // TODO: look at the bootinfo to determine the real value
+pub fn root_cnode(bootinfo: &'static seL4_BootInfo) -> LocalCap<CNode<U1024, role::Local>> {
+    Cap {
         cptr: seL4_CapInitThreadCNode as usize,
-        _free_slots: PhantomData,
         _role: PhantomData,
+        _cap_data: CNode {
+            radix: 19,
+            next_free_slot: 1000, // TODO: look at the bootinfo to determine the real value
+            _free_slots: PhantomData,
+            _role: PhantomData,
+        },
     }
 }

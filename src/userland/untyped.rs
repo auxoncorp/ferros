@@ -1,12 +1,15 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
 use crate::pow::{Pow, _Pow};
-use crate::userland::{role, CNode, Cap, CapType, DirectRetype, Error, PhantomCap, Untyped};
+use crate::userland::{
+    role, CNode, Cap, CapType, DirectRetype, Error, LocalCap, PhantomCap, Untyped,
+};
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U2, U3};
 
-// TODO - constrain this function to internal use only; probably just in the micro_alloc
+// TODO - constrain this function to internal use only
+// Currently used in micro_alloc, which is outside of this semi-sub-crate
 pub fn wrap_untyped<BitSize: Unsigned>(
     cptr: usize,
     untyped_desc: &seL4_UntypedDesc,
@@ -22,15 +25,15 @@ pub fn wrap_untyped<BitSize: Unsigned>(
     }
 }
 
-impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
+impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
     pub fn split<FreeSlots: Unsigned>(
         self,
-        dest_cnode: CNode<FreeSlots, role::Local>,
+        dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
     ) -> Result<
         (
-            Cap<Untyped<Sub1<BitSize>>, role::Local>,
-            Cap<Untyped<Sub1<BitSize>>, role::Local>,
-            CNode<Sub1<FreeSlots>, role::Local>,
+            LocalCap<Untyped<Sub1<BitSize>>>,
+            LocalCap<Untyped<Sub1<BitSize>>>,
+            LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
         ),
         Error,
     >
@@ -76,14 +79,14 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
 
     pub fn quarter<FreeSlots: Unsigned>(
         self,
-        dest_cnode: CNode<FreeSlots, role::Local>,
+        dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
     ) -> Result<
         (
-            Cap<Untyped<Diff<BitSize, U2>>, role::Local>,
-            Cap<Untyped<Diff<BitSize, U2>>, role::Local>,
-            Cap<Untyped<Diff<BitSize, U2>>, role::Local>,
-            Cap<Untyped<Diff<BitSize, U2>>, role::Local>,
-            CNode<Sub1<Sub1<Sub1<FreeSlots>>>, role::Local>,
+            LocalCap<Untyped<Diff<BitSize, U2>>>,
+            LocalCap<Untyped<Diff<BitSize, U2>>>,
+            LocalCap<Untyped<Diff<BitSize, U2>>>,
+            LocalCap<Untyped<Diff<BitSize, U2>>>,
+            LocalCap<CNode<Sub1<Sub1<Sub1<FreeSlots>>>, role::Local>>,
         ),
         Error,
     >
@@ -153,11 +156,11 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
     // this untyped is big enough
     pub fn retype_local<FreeSlots: Unsigned, TargetCapType: CapType>(
         self,
-        dest_cnode: CNode<FreeSlots, role::Local>,
+        dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
     ) -> Result<
         (
-            Cap<TargetCapType, role::Local>,
-            CNode<Sub1<FreeSlots>, role::Local>,
+            LocalCap<TargetCapType>,
+            LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
         ),
         Error,
     >
@@ -200,11 +203,11 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
     // answer: it needs 4 more bits, this value is seL4_SlotBits.
     pub fn retype_local_cnode<FreeSlots: Unsigned, ChildRadix: Unsigned>(
         self,
-        dest_cnode: CNode<FreeSlots, role::Local>,
+        dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
     ) -> Result<
         (
-            CNode<Pow<ChildRadix>, role::Child>,
-            CNode<Sub1<FreeSlots>, role::Local>,
+            LocalCap<CNode<Pow<ChildRadix>, role::Child>>,
+            LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
         ),
         Error,
     >
@@ -229,17 +232,23 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
             )
         };
 
+        // TODO - We may have to do a mutation dance here to set the guard
+        // on our fresh CNode capability
+
         if err != 0 {
             return Err(Error::UntypedRetype(err));
         }
 
         Ok((
-            CNode {
-                radix: ChildRadix::to_u8(),
-                next_free_slot: 0,
+            Cap {
                 cptr: dest_slot.offset,
-                _free_slots: PhantomData,
                 _role: PhantomData,
+                _cap_data: CNode {
+                    radix: ChildRadix::to_u8(),
+                    next_free_slot: 0,
+                    _free_slots: PhantomData,
+                    _role: PhantomData,
+                },
             },
             dest_cnode,
         ))
@@ -247,11 +256,11 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
 
     pub fn retype_child<FreeSlots: Unsigned, TargetCapType: CapType>(
         self,
-        dest_cnode: CNode<FreeSlots, role::Child>,
+        dest_cnode: LocalCap<CNode<FreeSlots, role::Child>>,
     ) -> Result<
         (
             Cap<TargetCapType, role::Child>,
-            CNode<Sub1<FreeSlots>, role::Child>,
+            LocalCap<CNode<Sub1<FreeSlots>, role::Child>>,
         ),
         Error,
     >

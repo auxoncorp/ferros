@@ -58,12 +58,16 @@ pub struct Cap<CT: CapType, Role: CNodeRole> {
 
 pub trait CapType: private::SealedCapType {}
 
+pub type LocalCap<T> = Cap<T, role::Local>;
+pub type ChildCap<T> = Cap<T, role::Child>;
+
 impl<CT: CapType, Role: CNodeRole> Cap<CT, Role>
 where
     CT: PhantomCap,
 {
     // TODO most of this should only happen in the bootstrap adapter
-    pub fn wrap_cptr(cptr: usize) -> Cap<CT, Role> {
+    // TODO - Make even more private!
+    pub(crate) fn wrap_cptr(cptr: usize) -> Cap<CT, Role> {
         Cap {
             cptr: cptr,
             _cap_data: PhantomCap::phantom_instance(),
@@ -266,6 +270,8 @@ impl CopyAliasable for MappedPage {
     type CopyOutput = UnmappedPage;
 }
 
+impl<FreeSlots: typenum::Unsigned, Role: CNodeRole> CapType for CNode<FreeSlots, Role> {}
+
 mod private {
     pub trait SealedRole {}
     impl SealedRole for super::role::Local {}
@@ -273,6 +279,10 @@ mod private {
 
     pub trait SealedCapType {}
     impl<BitSize: typenum::Unsigned> SealedCapType for super::Untyped<BitSize> {}
+    impl<FreeSlots: typenum::Unsigned, Role: super::CNodeRole> SealedCapType
+        for super::CNode<FreeSlots, Role>
+    {
+    }
     impl SealedCapType for super::ThreadControlBlock {}
     impl SealedCapType for super::Endpoint {}
     impl SealedCapType for super::ASIDControl {}
@@ -288,13 +298,13 @@ mod private {
 impl<CT: CapType> Cap<CT, role::Local> {
     pub fn copy_local<SourceFreeSlots: Unsigned, FreeSlots: Unsigned>(
         &self,
-        src_cnode: &CNode<SourceFreeSlots, role::Local>,
-        dest_cnode: CNode<FreeSlots, role::Local>,
+        src_cnode: &LocalCap<CNode<SourceFreeSlots, role::Local>>,
+        dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
         rights: seL4_CapRights_t,
     ) -> Result<
         (
-            Cap<CT::CopyOutput, role::Local>,
-            CNode<Sub1<FreeSlots>, role::Local>,
+            LocalCap<CT::CopyOutput>,
+            LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
         ),
         Error,
     >

@@ -2,7 +2,7 @@ use core::mem::{self, size_of};
 use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
-    role, ASIDPool, AssignedPageDirectory, CNode, Cap, Endpoint, Error, MappedPage,
+    role, ASIDPool, AssignedPageDirectory, CNode, Cap, Endpoint, Error, LocalCap, MappedPage,
     ThreadControlBlock, UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, Untyped,
 };
 use sel4_sys::*;
@@ -13,19 +13,19 @@ impl Cap<ThreadControlBlock, role::Local> {
     pub fn configure<FreeSlots: Unsigned>(
         &mut self,
         // fault_ep: Cap<Endpoint>,
-        cspace_root: CNode<FreeSlots, role::Child>,
+        cspace_root: LocalCap<CNode<FreeSlots, role::Child>>,
         // cspace_root_data: usize, // set the guard bits here
-        vspace_root: Cap<AssignedPageDirectory, role::Local>, // TODO make a marker trait for VSpace?
-                                                              // vspace_root_data: usize, // always 0
-                                                              // buffer: usize,
-                                                              // buffer_frame: Cap<Frame>,
+        vspace_root: LocalCap<AssignedPageDirectory>, // TODO make a marker trait for VSpace?
+                                                      // vspace_root_data: usize, // always 0
+                                                      // buffer: usize,
+                                                      // buffer_frame: Cap<Frame>,
     ) -> Result<(), Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
         // used by the radix.
         let cspace_root_data = unsafe {
             seL4_CNode_CapData_new(
-                0,                                          // guard
-                seL4_WordBits - cspace_root.radix as usize, // guard size in bits
+                0,                                                    // guard
+                seL4_WordBits - cspace_root._cap_data.radix as usize, // guard size in bits
             )
         }
         .words[0];
@@ -69,24 +69,24 @@ pub fn spawn<
     T: RetypeForSetup,
     FreeSlots: Unsigned,
     RootCNodeFreeSlots: Unsigned,
-    UserImagePagesIter: Iterator<Item = Cap<MappedPage, role::Local>>,
+    UserImagePagesIter: Iterator<Item = LocalCap<MappedPage>>,
     StackSize: Unsigned,
 >(
     // process-related
     function_descriptor: extern "C" fn(&T) -> (),
     process_parameter: SetupVer<T>,
-    child_cnode: CNode<RootCNodeFreeSlots, role::Child>,
+    child_cnode: LocalCap<CNode<RootCNodeFreeSlots, role::Child>>,
     priority: u8,
-    stack_ut: Cap<Untyped<StackSize>, role::Local>,
+    stack_ut: LocalCap<Untyped<StackSize>>,
 
     // context-related
-    ut16: Cap<Untyped<U16>, role::Local>,
-    asid_pool: &mut Cap<ASIDPool, role::Local>,
-    local_page_directory: &mut Cap<AssignedPageDirectory, role::Local>,
+    ut16: LocalCap<Untyped<U16>>,
+    asid_pool: &mut LocalCap<ASIDPool>,
+    local_page_directory: &mut LocalCap<AssignedPageDirectory>,
     user_image_pages_iter: UserImagePagesIter,
-    local_tcb: Cap<ThreadControlBlock, role::Local>,
-    local_cnode: CNode<FreeSlots, role::Local>,
-) -> Result<CNode<Diff<FreeSlots, U256>, role::Local>, Error>
+    local_tcb: LocalCap<ThreadControlBlock>,
+    local_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
+) -> Result<LocalCap<CNode<Diff<FreeSlots, U256>, role::Local>>, Error>
 where
     FreeSlots: Sub<U256>,
     Diff<FreeSlots, U256>: Unsigned,
