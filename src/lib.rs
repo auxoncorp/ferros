@@ -18,10 +18,10 @@ pub mod fel4_test;
 #[macro_use]
 mod debug;
 
-mod micro_alloc;
+pub mod micro_alloc;
 mod pow;
 mod twinkle_types;
-mod userland;
+pub mod userland;
 
 mod test_proc;
 
