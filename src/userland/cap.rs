@@ -218,4 +218,50 @@ impl<CT: CapType> Cap<CT, role::Local> {
             ))
         }
     }
+
+    pub fn copy_child<SourceFreeSlots: Unsigned, FreeSlots: Unsigned>(
+        &self,
+        src_cnode: &CNode<SourceFreeSlots, role::Local>,
+        dest_cnode: CNode<FreeSlots, role::Child>,
+        rights: seL4_CapRights_t,
+    ) -> Result<
+        (
+            Cap<CT::CopyOutput, role::Child>,
+            CNode<Sub1<FreeSlots>, role::Child>,
+        ),
+        Error,
+    >
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
+    {
+        let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
+
+        let err = unsafe {
+            seL4_CNode_Copy(
+                dest_slot.cptr,      // _service
+                dest_slot.offset,    // index
+                seL4_WordBits as u8, // depth
+                // Since src_cnode is restricted to Root, the cptr must
+                // actually be the slot index
+                src_cnode.cptr,      // src_root
+                self.cptr,           // src_index
+                seL4_WordBits as u8, // src_depth
+                rights,              // rights
+            )
+        };
+
+        if err != 0 {
+            Err(Error::CNodeCopy(err))
+        } else {
+            Ok((
+                Cap {
+                    cptr: dest_slot.offset,
+                    _cap_type: PhantomData,
+                    _role: PhantomData,
+                },
+                dest_cnode,
+            ))
+        }
+    }
 }

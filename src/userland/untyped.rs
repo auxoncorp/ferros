@@ -1,7 +1,7 @@
-use core::marker::PhantomData;
-use core::ops::Sub;
 use crate::pow::{Pow, _Pow};
 use crate::userland::{role, CNode, Cap, CapType, Error, FixedSizeCap, Untyped};
+use core::marker::PhantomData;
+use core::ops::Sub;
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U2, U3};
@@ -202,17 +202,20 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
     ) -> Result<
         (
             CNode<Pow<ChildRadix>, role::Child>,
-            CNode<Sub1<FreeSlots>, role::Local>,
+            CNode<Diff<FreeSlots, U2>, role::Local>,
         ),
         Error,
     >
     where
-        FreeSlots: Sub<B1>,
-        Sub1<FreeSlots>: Unsigned,
+        FreeSlots: Sub<U2>,
+        Diff<FreeSlots, U2>: Unsigned,
         ChildRadix: _Pow,
         Pow<ChildRadix>: Unsigned,
     {
-        let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
+        let (cnode, dest_cnode) = dest_cnode.reserve_region::<U2>();
+
+        let (cnode, dest_slot) = cnode.consume_slot();
+        let (cnode, dest_slot2) = cnode.consume_slot();
 
         let err = unsafe {
             seL4_Untyped_Retype(
@@ -231,11 +234,36 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
             return Err(Error::UntypedRetype(err));
         }
 
+        // Mutate the cnode into a second slot, so we can set the guard
+        let guard_data = unsafe {
+            seL4_CNode_CapData_new(
+                0,                                               // guard
+                seL4_WordBits - ChildRadix::to_usize() as usize, // guard size in bits
+            )
+        }
+        .words[0];
+
+        let err = unsafe {
+            seL4_CNode_Mutate(
+                dest_slot2.cptr, // _service: seL4_CNode,
+                dest_slot2.offset, // dest_index: seL4_Word,
+                32, // dest_depth: seL4_Uint8,
+                dest_slot.cptr, // src_root: seL4_CNode,
+                dest_slot.offset, // src_index: seL4_Word,
+                32, // src_depth: seL4_Uint8,
+                guard_data // badge: seL4_Word,
+            )
+        };
+
+        if err != 0 {
+            return Err(Error::CNodeMutate(err));
+        }
+
         Ok((
             CNode {
                 radix: ChildRadix::to_u8(),
                 next_free_slot: 0,
-                cptr: dest_slot.offset,
+                cptr: dest_slot2.offset,
                 _free_slots: PhantomData,
                 _role: PhantomData,
             },

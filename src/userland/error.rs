@@ -11,4 +11,5 @@ pub enum Error {
     TCBWriteRegisters(u32),
     TCBSetPriority(u32),
     TCBResume(u32),
+    CNodeMutate(u32)
 }

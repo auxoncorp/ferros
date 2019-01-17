@@ -1,18 +1,18 @@
-use core::mem::{self, size_of};
-use core::ops::Sub;
-use core::ptr;
 use crate::userland::{
     role, ASIDPool, AssignedPageDirectory, CNode, Cap, Endpoint, Error, MappedPage,
     ThreadControlBlock, UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, Untyped,
 };
+use core::mem::{self, size_of};
+use core::ops::Sub;
+use core::ptr;
 use sel4_sys::*;
-use typenum::operator_aliases::Diff;
-use typenum::{Unsigned, U128, U16, U256};
+use typenum::operator_aliases::{Diff, Sub1};
+use typenum::{Unsigned, U128, U16, U256, B1};
 
 impl Cap<ThreadControlBlock, role::Local> {
     pub fn configure<FreeSlots: Unsigned>(
         &mut self,
-        // fault_ep: Cap<Endpoint>,
+        fault_ep: Cap<Endpoint, role::Child>,
         cspace_root: CNode<FreeSlots, role::Child>,
         // cspace_root_data: usize, // set the guard bits here
         vspace_root: Cap<AssignedPageDirectory, role::Local>, // TODO make a marker trait for VSpace?
@@ -33,7 +33,7 @@ impl Cap<ThreadControlBlock, role::Local> {
         let tcb_err = unsafe {
             seL4_TCB_Configure(
                 self.cptr,
-                seL4_CapNull as usize, // fault_ep.cptr,
+                fault_ep.cptr,
                 cspace_root.cptr,
                 cspace_root_data,
                 vspace_root.cptr,
@@ -85,11 +85,15 @@ pub fn spawn<
     local_page_directory: &mut Cap<AssignedPageDirectory, role::Local>,
     user_image_pages_iter: UserImagePagesIter,
     local_tcb: Cap<ThreadControlBlock, role::Local>,
+    fault_ep: &Cap<Endpoint, role::Local>,
     local_cnode: CNode<FreeSlots, role::Local>,
 ) -> Result<CNode<Diff<FreeSlots, U256>, role::Local>, Error>
 where
     FreeSlots: Sub<U256>,
     Diff<FreeSlots, U256>: Unsigned,
+
+    RootCNodeFreeSlots: Sub<B1>,
+    Sub1<RootCNodeFreeSlots>: Unsigned
 {
     // TODO can we somehow make this a static assertion? both of these should be const
     assert!(size_of::<SetupVer<T>>() == size_of::<T>());
@@ -104,8 +108,14 @@ where
     let (ut6, _, _, _, cnode) = ut8.quarter(cnode)?;
     let (fault_endpoint_ut, _, _, _, cnode) = ut6.quarter(cnode)?;
 
+
+    debug_println!("before");
+    let (child_fault_ep, child_cnode) = fault_ep.copy_child(&local_cnode, child_cnode, unsafe {
+        seL4_CapRights_new(1, 1, 1)
+    })?;
+
+    debug_println!("after");
     // TODO: Need to duplicate this endpoint into the child cnode
-    let (fault_endpoint, cnode): (Cap<Endpoint, _>, _) = fault_endpoint_ut.retype_local(cnode)?;
 
     // Set up a single 4k page for the child's stack
     // TODO: Variable stack size
@@ -176,7 +186,7 @@ where
     }
 
     let (mut tcb, _cnode): (Cap<ThreadControlBlock, _>, _) = tcb_ut.retype_local(cnode)?;
-    tcb.configure(child_cnode, page_dir)?;
+    tcb.configure(child_fault_ep, child_cnode, page_dir)?;
 
     // TODO: stack pointer is supposed to be 8-byte aligned on ARM
     let mut regs: seL4_UserContext = unsafe { mem::zeroed() };
