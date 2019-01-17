@@ -19,7 +19,6 @@ extern crate iron_pegasus;
 
 use core::alloc::Layout;
 use core::intrinsics;
-use core::mem;
 use core::panic::PanicInfo;
 use sel4_sys::*;
 
@@ -97,7 +96,6 @@ impl Termination for () {
 }
 
 #[lang = "start"]
-#[no_mangle]
 fn lang_start<T: Termination + 'static>(
     main: fn() -> T,
     _argc: isize,

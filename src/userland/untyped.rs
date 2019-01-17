@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
 use crate::pow::{Pow, _Pow};
-use crate::userland::{role, CNode, Cap, CapType, Error, FixedSizeCap, Untyped};
+use crate::userland::{role, CNode, Cap, CapType, DirectRetype, Error, Untyped};
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U2, U3};
@@ -45,7 +45,7 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
         let err = unsafe {
             seL4_Untyped_Retype(
                 self.cptr,                          // _service
-                Untyped::<BitSize>::sel4_type_id(), // type
+                api_object_seL4_UntypedObject as usize, // type
                 BitSize::to_usize() - 1,            // size_bits
                 dest_slot.cptr,                     // root
                 0,                                  // index
@@ -110,7 +110,7 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
         let err = unsafe {
             seL4_Untyped_Retype(
                 self.cptr,                          // _service
-                Untyped::<BitSize>::sel4_type_id(), // type
+                api_object_seL4_UntypedObject as usize, // type
                 BitSize::to_usize() - 2,            // size_bits
                 dest_slot1.cptr,                    // root
                 0,                                  // index
@@ -163,7 +163,7 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
     where
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
-        TargetCapType: FixedSizeCap,
+        TargetCapType: DirectRetype,
     {
         let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
 
@@ -256,7 +256,7 @@ impl<BitSize: Unsigned> Cap<Untyped<BitSize>, role::Local> {
     where
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
-        TargetCapType: FixedSizeCap,
+        TargetCapType: DirectRetype,
     {
         let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
 

@@ -5,8 +5,21 @@ use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
 use typenum::{Unsigned, B1};
 
-// TODO: this is more specifically "fixed size and also not a funny vspace thing"
-pub trait FixedSizeCap {}
+/// Marker trait to indicate that this type of capability can be generated directly
+/// from retyping an Untyped
+pub trait DirectRetype {
+    // TODO - find out where the actual size of the fixed-size objects are specified in seL4-land
+    // and pipe them through to the implementations of this trait as an associated type parameter,
+    // selected either through `cfg` attributes or reference to `build.rs` generated code that inspects
+    // feature flags passed by cargo-fel4.
+    //type SizeBits: Unsigned;
+    fn sel4_type_id() -> usize;
+}
+
+/// Marker trait to indicate that this type of capability can be
+pub trait CopyAliasable {
+    type CopyOutput: CapType;
+}
 
 #[derive(Debug)]
 pub struct Cap<CT: CapType, Role: CNodeRole> {
@@ -16,8 +29,6 @@ pub struct Cap<CT: CapType, Role: CNodeRole> {
 }
 
 pub trait CapType: private::SealedCapType {
-    type CopyOutput: CapType;
-    fn sel4_type_id() -> usize;
 }
 
 impl<CT: CapType, Role: CNodeRole> Cap<CT, Role> {
@@ -37,34 +48,32 @@ pub struct Untyped<BitSize: Unsigned> {
 }
 
 impl<BitSize: Unsigned> CapType for Untyped<BitSize> {
-    type CopyOutput = Self;
-    fn sel4_type_id() -> usize {
-        api_object_seL4_UntypedObject as usize
-    }
+    // TODO - CLEANUP
+//    fn sel4_type_id() -> usize {
+//        api_object_seL4_UntypedObject as usize
+//    }
 }
+
 
 #[derive(Debug)]
 pub struct ThreadControlBlock {}
 
-impl CapType for ThreadControlBlock {
-    type CopyOutput = Self;
+impl CapType for ThreadControlBlock {}
+
+impl DirectRetype for ThreadControlBlock {
     fn sel4_type_id() -> usize {
         api_object_seL4_TCBObject as usize
     }
 }
 
-impl FixedSizeCap for ThreadControlBlock {}
+impl CopyAliasable for ThreadControlBlock {
+    type CopyOutput = Self;
+}
 
-// asid control
 #[derive(Debug)]
 pub struct ASIDControl {}
 
-impl CapType for ASIDControl {
-    type CopyOutput = Self;
-    fn sel4_type_id() -> usize {
-        0 // TODO WUT
-    }
-}
+impl CapType for ASIDControl {}
 
 // asid pool
 // TODO: track capacity with the types
@@ -72,89 +81,98 @@ impl CapType for ASIDControl {
 #[derive(Debug)]
 pub struct ASIDPool {}
 
-impl CapType for ASIDPool {
+impl CapType for ASIDPool {}
+
+impl CopyAliasable for ASIDPool {
     type CopyOutput = Self;
-    fn sel4_type_id() -> usize {
-        0 // TODO put type_id in a 'retypable' trait?
-    }
 }
 
 #[derive(Debug)]
 pub struct Endpoint {}
 
-impl CapType for Endpoint {
+impl CapType for Endpoint {}
+
+impl CopyAliasable for Endpoint {
     type CopyOutput = Self;
+}
+
+impl DirectRetype for Endpoint {
     fn sel4_type_id() -> usize {
         api_object_seL4_EndpointObject as usize
     }
 }
 
-impl FixedSizeCap for Endpoint {}
-
 #[derive(Debug)]
 pub struct AssignedPageDirectory {}
 
-impl CapType for AssignedPageDirectory {
+impl CapType for AssignedPageDirectory {}
+
+impl CopyAliasable for AssignedPageDirectory {
     type CopyOutput = UnassignedPageDirectory;
-    fn sel4_type_id() -> usize {
-        _object_seL4_ARM_PageDirectoryObject as usize
-    }
 }
 
 #[derive(Debug)]
 pub struct UnassignedPageDirectory {}
 
 impl CapType for UnassignedPageDirectory {
+}
+
+impl CopyAliasable for UnassignedPageDirectory {
     type CopyOutput = Self;
+}
+
+impl DirectRetype for UnassignedPageDirectory {
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_PageDirectoryObject as usize
     }
 }
 
-impl FixedSizeCap for UnassignedPageDirectory {}
-
 #[derive(Debug)]
 pub struct UnmappedPageTable {}
 
-impl CapType for UnmappedPageTable {
+impl CapType for UnmappedPageTable {}
+
+impl CopyAliasable for UnmappedPageTable {
     type CopyOutput = Self;
+}
+
+impl DirectRetype for UnmappedPageTable {
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_PageTableObject as usize
     }
 }
 
-impl FixedSizeCap for UnmappedPageTable {}
-
 #[derive(Debug)]
 pub struct MappedPageTable {}
 
-impl CapType for MappedPageTable {
+impl CapType for MappedPageTable {}
+
+impl CopyAliasable for MappedPageTable {
     type CopyOutput = UnmappedPageTable;
-    fn sel4_type_id() -> usize {
-        _object_seL4_ARM_PageTableObject as usize
-    }
 }
 
 #[derive(Debug)]
 pub struct UnmappedPage {}
 
-impl CapType for UnmappedPage {
-    type CopyOutput = Self;
+impl CapType for UnmappedPage {}
+
+impl DirectRetype for UnmappedPage {
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_SmallPageObject as usize
     }
 }
 
-impl FixedSizeCap for UnmappedPage {}
+impl CopyAliasable for UnmappedPage {
+    type CopyOutput = Self;
+}
 
 #[derive(Debug)]
 pub struct MappedPage {}
 
-impl CapType for MappedPage {
+impl CapType for MappedPage {}
+
+impl CopyAliasable for MappedPage {
     type CopyOutput = UnmappedPage;
-    fn sel4_type_id() -> usize {
-        _object_seL4_ARM_SmallPageObject as usize
-    }
 }
 
 mod private {
@@ -188,6 +206,7 @@ impl<CT: CapType> Cap<CT, role::Local> {
     where
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
+        CT: CopyAliasable,
     {
         let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
 
