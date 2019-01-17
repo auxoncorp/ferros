@@ -1,9 +1,25 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
-use crate::userland::{role, CNode, CNodeRole, Error};
+use crate::userland::{CNode, Error};
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
 use typenum::{Unsigned, B1};
+
+/// Type-level enum indicating the relative location / Capability Pointer addressing
+/// scheme that should be used for the objects parameterized by it.
+pub trait CNodeRole: private::SealedRole {}
+
+pub mod role {
+    use super::CNodeRole;
+
+    #[derive(Debug)]
+    pub struct Local {}
+    impl CNodeRole for Local {}
+
+    #[derive(Debug)]
+    pub struct Child {}
+    impl CNodeRole for Child {}
+}
 
 /// Marker trait to indicate that this type of capability can be generated directly
 /// from retyping an Untyped
@@ -176,6 +192,10 @@ impl CopyAliasable for MappedPage {
 }
 
 mod private {
+    pub trait SealedRole {}
+    impl SealedRole for super::role::Local {}
+    impl SealedRole for super::role::Child {}
+
     pub trait SealedCapType {}
     impl<BitSize: typenum::Unsigned> SealedCapType for super::Untyped<BitSize> {}
     impl SealedCapType for super::ThreadControlBlock {}

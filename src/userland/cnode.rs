@@ -3,26 +3,7 @@ use core::ops::Sub;
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U1, U1024};
-
-pub trait CNodeRole: private::SealedRole {}
-
-pub mod role {
-    use super::CNodeRole;
-
-    #[derive(Debug)]
-    pub struct Local {}
-    impl CNodeRole for Local {}
-
-    #[derive(Debug)]
-    pub struct Child {}
-    impl CNodeRole for Child {}
-}
-
-mod private {
-    pub trait SealedRole {}
-    impl SealedRole for super::role::Local {}
-    impl SealedRole for super::role::Child {}
-}
+use crate::userland::{role, CNodeRole};
 
 /// There will only ever be one CNode in a process with Role = Root. The
 /// cptrs any regular Cap are /also/ offsets into that cnode, because of
