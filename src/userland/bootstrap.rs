@@ -45,7 +45,7 @@ impl LocalCap<Untyped<U12>> {
         Ok((
             Cap {
                 cptr: dest_slot.offset,
-                _cap_data: PhantomCap::phantom_instance(),
+                cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             dest_cnode,
@@ -66,7 +66,7 @@ impl Cap<ASIDPool, role::Local> {
 
         Ok(Cap {
             cptr: vspace.cptr,
-            _cap_data: PhantomCap::phantom_instance(),
+            cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         })
     }

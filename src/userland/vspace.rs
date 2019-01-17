@@ -30,7 +30,7 @@ impl Cap<AssignedPageDirectory, role::Local> {
         }
         Ok(Cap {
             cptr: page_table.cptr,
-            _cap_data: PhantomCap::phantom_instance(),
+            cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         })
     }
@@ -58,7 +58,7 @@ impl Cap<AssignedPageDirectory, role::Local> {
         }
         Ok(Cap {
             cptr: page.cptr,
-            _cap_data: PhantomCap::phantom_instance(),
+            cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         })
     }
@@ -72,7 +72,7 @@ impl Cap<MappedPageTable, role::Local> {
         }
         Ok(Cap {
             cptr: self.cptr,
-            _cap_data: PhantomCap::phantom_instance(),
+            cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         })
     }
@@ -86,7 +86,7 @@ impl Cap<MappedPage, role::Local> {
         }
         Ok(Cap {
             cptr: self.cptr,
-            _cap_data: PhantomCap::phantom_instance(),
+            cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         })
     }

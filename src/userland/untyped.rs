@@ -17,7 +17,7 @@ pub fn wrap_untyped<BitSize: Unsigned>(
     if untyped_desc.sizeBits == BitSize::to_u8() {
         Some(Cap {
             cptr,
-            _cap_data: PhantomCap::phantom_instance(),
+            cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         })
     } else {
@@ -65,12 +65,12 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
         Ok((
             Cap {
                 cptr: self.cptr,
-                _cap_data: PhantomCap::phantom_instance(),
+                cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             Cap {
                 cptr: dest_slot.offset,
-                _cap_data: PhantomCap::phantom_instance(),
+                cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             dest_cnode,
@@ -130,22 +130,22 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
         Ok((
             Cap {
                 cptr: self.cptr,
-                _cap_data: PhantomCap::phantom_instance(),
+                cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             Cap {
                 cptr: dest_slot1.offset,
-                _cap_data: PhantomCap::phantom_instance(),
+                cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             Cap {
                 cptr: dest_slot2.offset,
-                _cap_data: PhantomCap::phantom_instance(),
+                cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             Cap {
                 cptr: dest_slot3.offset,
-                _cap_data: PhantomCap::phantom_instance(),
+                cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             dest_cnode,
@@ -192,7 +192,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
         Ok((
             Cap {
                 cptr: dest_slot.offset,
-                _cap_data: PhantomCap::phantom_instance(),
+                cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             dest_cnode,
@@ -243,7 +243,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
             Cap {
                 cptr: dest_slot.offset,
                 _role: PhantomData,
-                _cap_data: CNode {
+                cap_data: CNode {
                     radix: ChildRadix::to_u8(),
                     next_free_slot: 0,
                     _free_slots: PhantomData,
@@ -292,7 +292,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
         Ok((
             Cap {
                 cptr: dest_slot.offset,
-                _cap_data: PhantomCap::phantom_instance(),
+                cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             dest_cnode,

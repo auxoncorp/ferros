@@ -37,16 +37,16 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<CNode<FreeSlots, Role>> {
             Cap {
                 cptr: self.cptr,
                 _role: PhantomData,
-                _cap_data: CNode {
-                    radix: self._cap_data.radix,
-                    next_free_slot: self._cap_data.next_free_slot + 1,
+                cap_data: CNode {
+                    radix: self.cap_data.radix,
+                    next_free_slot: self.cap_data.next_free_slot + 1,
                     _free_slots: PhantomData,
                     _role: PhantomData,
                 },
             },
             CNodeSlot {
                 cptr: self.cptr,
-                offset: self._cap_data.next_free_slot,
+                offset: self.cap_data.next_free_slot,
             },
         )
     }
@@ -69,9 +69,9 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<CNode<FreeSlots, Role>> {
             Cap {
                 cptr: self.cptr,
                 _role: PhantomData,
-                _cap_data: CNode {
-                    radix: self._cap_data.radix,
-                    next_free_slot: self._cap_data.next_free_slot,
+                cap_data: CNode {
+                    radix: self.cap_data.radix,
+                    next_free_slot: self.cap_data.next_free_slot,
                     _free_slots: PhantomData,
                     _role: PhantomData,
                 },
@@ -79,9 +79,9 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<CNode<FreeSlots, Role>> {
             Cap {
                 cptr: self.cptr,
                 _role: PhantomData,
-                _cap_data: CNode {
-                    radix: self._cap_data.radix,
-                    next_free_slot: self._cap_data.next_free_slot + Count::to_usize(),
+                cap_data: CNode {
+                    radix: self.cap_data.radix,
+                    next_free_slot: self.cap_data.next_free_slot + Count::to_usize(),
                     _free_slots: PhantomData,
                     _role: PhantomData,
                 },
@@ -101,14 +101,14 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<CNode<FreeSlots, Role>> {
         FreeSlots: Sub<Count>,
         Diff<FreeSlots, Count>: Unsigned,
     {
-        let iter_radix = self._cap_data.radix;
+        let iter_radix = self.cap_data.radix;
         let iter_cptr = self.cptr;
         (
-            (self._cap_data.next_free_slot..self._cap_data.next_free_slot + Count::to_usize()).map(
+            (self.cap_data.next_free_slot..self.cap_data.next_free_slot + Count::to_usize()).map(
                 move |slot| Cap {
                     cptr: iter_cptr,
                     _role: PhantomData,
-                    _cap_data: CNode {
+                    cap_data: CNode {
                         radix: iter_radix,
                         next_free_slot: slot,
                         _free_slots: PhantomData,
@@ -119,9 +119,9 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<CNode<FreeSlots, Role>> {
             Cap {
                 cptr: self.cptr,
                 _role: PhantomData,
-                _cap_data: CNode {
-                    radix: self._cap_data.radix,
-                    next_free_slot: self._cap_data.next_free_slot + Count::to_usize(),
+                cap_data: CNode {
+                    radix: self.cap_data.radix,
+                    next_free_slot: self.cap_data.next_free_slot + Count::to_usize(),
                     _free_slots: PhantomData,
                     _role: PhantomData,
                 },
@@ -139,7 +139,7 @@ pub fn root_cnode(bootinfo: &'static seL4_BootInfo) -> LocalCap<CNode<U1024, rol
     Cap {
         cptr: seL4_CapInitThreadCNode as usize,
         _role: PhantomData,
-        _cap_data: CNode {
+        cap_data: CNode {
             radix: 19,
             next_free_slot: 1000, // TODO: look at the bootinfo to determine the real value
             _free_slots: PhantomData,

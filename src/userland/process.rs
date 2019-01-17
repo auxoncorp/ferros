@@ -24,8 +24,8 @@ impl Cap<ThreadControlBlock, role::Local> {
         // used by the radix.
         let cspace_root_data = unsafe {
             seL4_CNode_CapData_new(
-                0,                                                    // guard
-                seL4_WordBits - cspace_root._cap_data.radix as usize, // guard size in bits
+                0,                                                   // guard
+                seL4_WordBits - cspace_root.cap_data.radix as usize, // guard size in bits
             )
         }
         .words[0];

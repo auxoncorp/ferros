@@ -52,7 +52,7 @@ pub trait PhantomCap: Sized {
 #[derive(Debug)]
 pub struct Cap<CT: CapType, Role: CNodeRole> {
     pub cptr: usize,
-    pub(super) _cap_data: CT,
+    pub(super) cap_data: CT,
     pub(super) _role: PhantomData<Role>,
 }
 
@@ -70,7 +70,7 @@ where
     pub(crate) fn wrap_cptr(cptr: usize) -> Cap<CT, Role> {
         Cap {
             cptr: cptr,
-            _cap_data: PhantomCap::phantom_instance(),
+            cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         }
     }
@@ -337,7 +337,7 @@ impl<CT: CapType> Cap<CT, role::Local> {
             Ok((
                 Cap {
                     cptr: dest_slot.offset,
-                    _cap_data: PhantomCap::phantom_instance(),
+                    cap_data: PhantomCap::phantom_instance(),
                     _role: PhantomData,
                 },
                 dest_cnode,
