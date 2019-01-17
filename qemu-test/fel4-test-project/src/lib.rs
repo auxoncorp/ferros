@@ -111,4 +111,28 @@ pub extern "C" fn proc_main(params: &ProcParams) {
     {
         debug_println!("\nThe value inside the process is {}\n", params.value);
     }
+
+    #[cfg(test_case = "memory_read_protection")]
+    {
+        debug_println!("\nAttempting to cause a segmentation fault...\n");
+
+        unsafe {
+            let x: *const usize = 0x88888888usize as _;
+            debug_println!("Value from arbitrary memory is: {}", *x);
+        }
+
+        debug_println!("This is after the segfaulting code, and should not be printed.");
+    }
+
+    #[cfg(test_case = "memory_write_protection")]
+    {
+        debug_println!("\nAttempting to write to the code segment...\n");
+
+        unsafe {
+            let x: *mut usize = proc_main as _;
+            *x = 42;
+        }
+
+        debug_println!("This is after the segfaulting code, and should not be printed.");
+    }
 }

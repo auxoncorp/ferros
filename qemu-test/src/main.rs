@@ -83,4 +83,24 @@ mod tests {
             );
         }
     }
+
+    sequential_test! {
+        fn memory_read_protection() {
+            run_qemu_test(
+                "memory_read_protection",
+                Regex::new(".*vm fault on data.*").unwrap(),
+                Regex::new(".*Root task should never return from main.*").unwrap(),
+            );
+        }
+    }
+
+    sequential_test! {
+        fn memory_write_protection() {
+            run_qemu_test(
+                "memory_write_protection",
+                Regex::new(".*vm fault on data.*").unwrap(),
+                Regex::new(".*Root task should never return from main.*").unwrap(),
+            );
+        }
+    }
 }
