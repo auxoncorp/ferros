@@ -6,6 +6,7 @@ fn main() {}
 use lazy_static::lazy_static;
 use regex::Regex;
 use rexpect::session::spawn_command;
+use rexpect::process::signal::Signal;
 use std::process::Command;
 use std::sync::Mutex;
 
@@ -51,10 +52,12 @@ fn run_qemu_test(name: &str, pass_line: Regex, fail_line: Regex) {
             .expect("couldn't read line from simulate process");
 
         if pass_line.is_match(&line) {
+            sim.process.kill(Signal::SIGKILL).unwrap();
             break;
         }
 
         if fail_line.is_match(&line) {
+            sim.process.kill(Signal::SIGKILL).unwrap();
             panic!("Output line matched failure pattern: {}", line);
         }
     }
