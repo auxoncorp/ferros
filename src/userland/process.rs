@@ -165,7 +165,7 @@ where
         .zip(dest_reservation_iter)
         .zip(vaddr_iter)
     {
-        let (copied_page_cap, _) = page_cap.copy_local(
+        let (copied_page_cap, _) = page_cap.copy(
             &local_cnode,
             slot_cnode,
             // TODO encapsulate caprights

@@ -309,15 +309,15 @@ mod private {
 }
 
 impl<CT: CapType> Cap<CT, role::Local> {
-    pub fn copy_local<SourceFreeSlots: Unsigned, FreeSlots: Unsigned>(
+    pub fn copy<SourceFreeSlots: Unsigned, FreeSlots: Unsigned, DestRole: CNodeRole>(
         &self,
         src_cnode: &LocalCap<CNode<SourceFreeSlots, role::Local>>,
-        dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
+        dest_cnode: LocalCap<CNode<FreeSlots, DestRole>>,
         rights: seL4_CapRights_t,
     ) -> Result<
         (
-            LocalCap<CT::CopyOutput>,
-            LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
+            Cap<CT::CopyOutput, DestRole>,
+            LocalCap<CNode<Sub1<FreeSlots>, DestRole>>,
         ),
         Error,
     >
