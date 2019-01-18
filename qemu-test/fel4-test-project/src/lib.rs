@@ -19,10 +19,7 @@ macro_rules! debug_println {
 }
 
 use iron_pegasus::micro_alloc::{self, GetUntyped};
-use iron_pegasus::userland::{
-    role, root_cnode, spawn, ASIDControl, ASIDPool, AssignedPageDirectory, Cap, MappedPage,
-    ThreadControlBlock,
-};
+use iron_pegasus::userland::{root_cnode, spawn, BootInfo};
 use typenum::{U12, U20};
 
 fn yield_forever() {
@@ -33,22 +30,17 @@ fn yield_forever() {
     }
 }
 
-pub fn run(bootinfo: &'static seL4_BootInfo) {
+pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     #[cfg(test_case = "root_task_runs")]
     {
         debug_println!("\nhello from the root task!\n");
     }
 
-    let mut allocator =
-        micro_alloc::Allocator::bootstrap(&bootinfo).expect("Couldn't set up bootstrap allocator");
+    let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)
+        .expect("Couldn't set up bootstrap allocator");
 
     // wrap bootinfo caps
-    let root_cnode = root_cnode(&bootinfo);
-    let mut root_page_directory =
-        Cap::<AssignedPageDirectory, _>::wrap_cptr(seL4_CapInitThreadVSpace as usize);
-    let root_tcb = Cap::<ThreadControlBlock, _>::wrap_cptr(seL4_CapInitThreadTCB as usize);
-    let user_image_pages_iter = (bootinfo.userImageFrames.start..bootinfo.userImageFrames.end)
-        .map(|cptr| Cap::<MappedPage, role::Local>::wrap_cptr(cptr as usize));
+    let root_cnode = root_cnode(&raw_boot_info);
 
     // find an untyped of size 20 bits (1 meg)
     let ut20 = allocator
@@ -64,13 +56,8 @@ pub fn run(bootinfo: &'static seL4_BootInfo) {
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode).expect("quarter");
     let (_ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode).expect("quarter");
 
-    // asid control
-    let asid_control = Cap::<ASIDControl, _>::wrap_cptr(seL4_CapASIDControl as usize);
-
-    // asid pool
-    let (mut asid_pool, root_cnode): (Cap<ASIDPool, _>, _) = asid_pool_ut
-        .retype_asid_pool(asid_control, root_cnode)
-        .expect("retype asid pool");
+    // wrap the rest of the critical boot info
+    let (mut boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
 
     // child cnode
     let (child_cnode, root_cnode) = child_cnode_ut
@@ -85,10 +72,7 @@ pub fn run(bootinfo: &'static seL4_BootInfo) {
         child_cnode,
         255, // priority
         child_proc_ut,
-        &mut asid_pool,
-        &mut root_page_directory,
-        user_image_pages_iter,
-        &root_tcb,
+        &mut boot_info,
         root_cnode,
     )
     .expect("spawn process");

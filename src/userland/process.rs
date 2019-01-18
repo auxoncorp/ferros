@@ -2,7 +2,7 @@ use core::mem::{self, size_of};
 use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
-    role, ASIDPool, AssignedPageDirectory, CNode, Cap, Endpoint, Error, LocalCap, MappedPage,
+    role, AssignedPageDirectory, BootInfo, CNode, Cap, Endpoint, Error, LocalCap, MappedPage,
     ThreadControlBlock, UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, Untyped,
 };
 use sel4_sys::*;
@@ -65,12 +65,7 @@ pub trait RetypeForSetup: Sized {
 
 type SetupVer<X> = <X as RetypeForSetup>::Output;
 
-pub fn spawn<
-    T: RetypeForSetup,
-    FreeSlots: Unsigned,
-    RootCNodeFreeSlots: Unsigned,
-    UserImagePagesIter: Iterator<Item = LocalCap<MappedPage>>,
->(
+pub fn spawn<T: RetypeForSetup, FreeSlots: Unsigned, RootCNodeFreeSlots: Unsigned>(
     // process-related
     function_descriptor: extern "C" fn(*const T) -> (),
     process_parameter: SetupVer<T>,
@@ -79,10 +74,7 @@ pub fn spawn<
 
     // context-related
     ut16: LocalCap<Untyped<U16>>,
-    asid_pool: &mut LocalCap<ASIDPool>,
-    local_page_directory: &mut LocalCap<AssignedPageDirectory>,
-    user_image_pages_iter: UserImagePagesIter,
-    local_tcb: &LocalCap<ThreadControlBlock>,
+    boot_info: &mut BootInfo,
     local_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
 ) -> Result<LocalCap<CNode<Diff<FreeSlots, U256>, role::Local>>, Error>
 where
@@ -119,7 +111,7 @@ where
 
     let (page_dir, cnode): (Cap<UnassignedPageDirectory, _>, _) =
         page_dir_ut.retype_local(cnode)?;
-    let mut page_dir = asid_pool.assign(page_dir)?;
+    let mut page_dir = boot_info.asid_pool.assign(page_dir)?;
 
     // set up ipc buffer
     let (ipc_buffer_page_table, cnode): (Cap<UnmappedPageTable, _>, _) =
@@ -135,8 +127,10 @@ where
     let (stack_page, cnode): (Cap<UnmappedPage, _>, _) = stack_page_ut.retype_local(cnode)?;
 
     // map the child stack into local memory so we can set it up
-    let stack_page_table = local_page_directory.map_page_table(stack_page_table, stack_base)?;
-    let stack_page = local_page_directory.map_page(stack_page, stack_base)?;
+    let stack_page_table = boot_info
+        .page_directory
+        .map_page_table(stack_page_table, stack_base)?;
+    let stack_page = boot_info.page_directory.map_page(stack_page, stack_base)?;
 
     // put the parameter struct on the stack
     let param_target_addr = stack_top - size_of::<T>();
@@ -175,7 +169,8 @@ where
     let (dest_reservation_iter, cnode) = cnode.reservation_iter::<U128>();
     let vaddr_iter = (program_vaddr_start..program_vaddr_end).step_by(0x1000);
 
-    for ((page_cap, slot_cnode), vaddr) in user_image_pages_iter
+    for ((page_cap, slot_cnode), vaddr) in boot_info
+        .user_image_pages_iter()
         .zip(dest_reservation_iter)
         .zip(vaddr_iter)
     {
@@ -214,7 +209,7 @@ where
         return Err(Error::TCBWriteRegisters(err));
     }
 
-    let err = unsafe { seL4_TCB_SetPriority(tcb.cptr, local_tcb.cptr, priority as usize) };
+    let err = unsafe { seL4_TCB_SetPriority(tcb.cptr, boot_info.tcb.cptr, priority as usize) };
 
     if err != 0 {
         return Err(Error::TCBSetPriority(err));

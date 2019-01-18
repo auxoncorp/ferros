@@ -26,10 +26,7 @@ pub mod userland;
 mod test_proc;
 
 use crate::micro_alloc::GetUntyped;
-use crate::userland::{
-    role, root_cnode, spawn, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, LocalCap,
-    MappedPage, ThreadControlBlock,
-};
+use crate::userland::{role, root_cnode, spawn, BootInfo, CNode, LocalCap};
 use sel4_sys::*;
 use typenum::{U12, U20, U4096};
 
@@ -41,20 +38,13 @@ fn yield_forever() {
     }
 }
 
-pub fn run(bootinfo: &'static seL4_BootInfo) {
-    let mut allocator =
-        micro_alloc::Allocator::bootstrap(&bootinfo).expect("Couldn't set up bootstrap allocator");
+pub fn run(raw_boot_info: &'static seL4_BootInfo) {
+    // wrap all untyped memory
+    let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)
+        .expect("Couldn't set up bootstrap allocator");
 
-    // wrap bootinfo caps
-    let root_cnode = root_cnode(&bootinfo);
-    let mut root_page_directory =
-        Cap::<AssignedPageDirectory, _>::wrap_cptr(seL4_CapInitThreadVSpace as usize);
-    let root_tcb = Cap::<ThreadControlBlock, _>::wrap_cptr(seL4_CapInitThreadTCB as usize);
-    // TODO - wrap the creation of this iterator, probably giving it a proper name
-    let user_image_pages_iter_a = (bootinfo.userImageFrames.start..bootinfo.userImageFrames.end)
-        .map(|cptr| Cap::<MappedPage, role::Local>::wrap_cptr(cptr as usize));
-    let user_image_pages_iter_b = (bootinfo.userImageFrames.start..bootinfo.userImageFrames.end)
-        .map(|cptr| Cap::<MappedPage, role::Local>::wrap_cptr(cptr as usize));
+    // wrap root CNode for safe usage
+    let root_cnode = root_cnode(&raw_boot_info);
 
     // find an untyped of size 20 bits (1 meg)
     let ut20 = allocator
@@ -72,13 +62,8 @@ pub fn run(bootinfo: &'static seL4_BootInfo) {
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode).expect("quarter");
     let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode).expect("quarter");
 
-    // asid control
-    let asid_control = Cap::<ASIDControl, _>::wrap_cptr(seL4_CapASIDControl as usize);
-
-    // asid pool
-    let (mut asid_pool, root_cnode): (Cap<ASIDPool, _>, _) = asid_pool_ut
-        .retype_asid_pool(asid_control, root_cnode)
-        .expect("retype asid pool");
+    // wrap the rest of the critical boot info
+    let (mut boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
 
     let root_cnode = {
         // child process demonstrating passing stack-starting data
@@ -98,10 +83,7 @@ pub fn run(bootinfo: &'static seL4_BootInfo) {
             child_cnode,
             255, // priority
             child_proc_ut,
-            &mut asid_pool,
-            &mut root_page_directory,
-            user_image_pages_iter_a,
-            &root_tcb,
+            &mut boot_info,
             root_cnode,
         )
         .expect("spawn process")
@@ -136,10 +118,7 @@ pub fn run(bootinfo: &'static seL4_BootInfo) {
             child_cnode_b_local,
             255, // priority
             child_proc_ut_b,
-            &mut asid_pool,
-            &mut root_page_directory,
-            user_image_pages_iter_b,
-            &root_tcb,
+            &mut boot_info,
             root_cnode,
         )
         .expect("spawn process 2")
