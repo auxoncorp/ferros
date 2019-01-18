@@ -1,9 +1,9 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
-use crate::userland::{role, CNodeRole, Cap, LocalCap};
+use crate::userland::{role, CNodeRole, Cap, ChildCap, Error, LocalCap};
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U1, U1024};
+use typenum::{Unsigned, B1, U0, U1, U1024};
 
 /// There will only ever be one CNode in a process with Role = Root. The
 /// cptrs any regular Cap are /also/ offsets into that cnode, because of
@@ -126,6 +126,67 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<CNode<FreeSlots, Role>> {
                 },
             },
         )
+    }
+}
+
+impl<FreeSlots: Unsigned> LocalCap<CNode<FreeSlots, role::Child>> {
+    // The first returned cap goes in the child process params struct. The
+    // second one goes in the TCB when starting the child process.
+    pub fn generate_self_reference<ParentFreeSlots: Unsigned>(
+        self,
+        parent_cnode: &LocalCap<CNode<ParentFreeSlots, role::Local>>,
+    ) -> Result<
+        (
+            ChildCap<CNode<Sub1<FreeSlots>, role::Child>>,
+            LocalCap<CNode<U0, role::Child>>,
+        ),
+        Error,
+    >
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
+    {
+        let (local_self, dest_slot) = self.consume_slot();
+
+        let err = unsafe {
+            seL4_CNode_Copy(
+                dest_slot.cptr,              // _service
+                dest_slot.offset,            // index
+                seL4_WordBits as u8,         // depth
+                parent_cnode.cptr,           // src_root
+                local_self.cptr,             // src_index
+                seL4_WordBits as u8,         // src_depth
+                seL4_CapRights_new(0, 1, 1), // rights
+            )
+        };
+
+        if err != 0 {
+            Err(Error::CNodeCopy(err))
+        } else {
+            Ok((
+                Cap {
+                    cptr: dest_slot.offset,
+                    _role: PhantomData,
+                    cap_data: CNode {
+                        radix: local_self.cap_data.radix,
+                        next_free_slot: local_self.cap_data.next_free_slot + 1,
+                        _free_slots: PhantomData,
+                        _role: PhantomData,
+                    },
+                },
+                // Take this apart and put it back together to get it to the right type
+                Cap {
+                    cptr: local_self.cptr,
+                    _role: PhantomData,
+                    cap_data: CNode {
+                        radix: local_self.cap_data.radix,
+                        next_free_slot: core::usize::MAX,
+                        _free_slots: PhantomData,
+                        _role: PhantomData,
+                    },
+                },
+            ))
+        }
     }
 }
 

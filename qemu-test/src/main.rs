@@ -5,8 +5,8 @@ fn main() {}
 
 use lazy_static::lazy_static;
 use regex::Regex;
-use rexpect::session::spawn_command;
 use rexpect::process::signal::Signal;
+use rexpect::session::spawn_command;
 use std::process::Command;
 use std::sync::Mutex;
 
@@ -27,7 +27,6 @@ macro_rules! sequential_test {
 
 fn run_qemu_test(name: &str, pass_line: Regex, fail_line: Regex) {
     println!("running 'TEST_CASE={} cargo fel4 build", name);
-
 
     let result = Command::new("cargo")
         .arg("fel4")
