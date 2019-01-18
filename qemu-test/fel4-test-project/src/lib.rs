@@ -59,7 +59,7 @@ pub fn run(bootinfo: &'static seL4_BootInfo) {
     let (ut16, child_cnode_ut, child_proc_ut, _, root_cnode) =
         ut18.quarter(root_cnode).expect("quarter");
     let (ut14, _, _, _, root_cnode) = ut16.quarter(root_cnode).expect("quarter");
-    let (ut12, asid_pool_ut, stack_ut, _, root_cnode) = ut14.quarter(root_cnode).expect("quarter");
+    let (ut12, asid_pool_ut, _, _, root_cnode) = ut14.quarter(root_cnode).expect("quarter");
     let (ut10, _, _, _, root_cnode) = ut12.quarter(root_cnode).expect("quarter");
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode).expect("quarter");
     let (_ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode).expect("quarter");
@@ -84,12 +84,11 @@ pub fn run(bootinfo: &'static seL4_BootInfo) {
         params,
         child_cnode,
         255, // priority
-        stack_ut,
         child_proc_ut,
         &mut asid_pool,
         &mut root_page_directory,
         user_image_pages_iter,
-        root_tcb,
+        &root_tcb,
         root_cnode,
     )
     .expect("spawn process");
@@ -106,15 +105,17 @@ impl iron_pegasus::userland::RetypeForSetup for ProcParams {
 }
 
 #[cfg(test_case = "root_task_runs")]
-pub extern "C" fn proc_main(_params: &ProcParams) {}
+pub extern "C" fn proc_main(_params: *const ProcParams) {}
 
 #[cfg(test_case = "process_runs")]
-pub extern "C" fn proc_main(params: &ProcParams) {
-    debug_println!("\nThe value inside the process is {}\n", params.value);
+pub extern "C" fn proc_main(params: *const ProcParams) {
+    debug_println!("\nThe value inside the process is {}\n", unsafe {
+        (&*params).value
+    });
 }
 
 #[cfg(test_case = "memory_read_protection")]
-pub extern "C" fn proc_main(_params: &ProcParams) {
+pub extern "C" fn proc_main(_params: *const ProcParams) {
     debug_println!("\nAttempting to cause a segmentation fault...\n");
 
     unsafe {
@@ -126,7 +127,7 @@ pub extern "C" fn proc_main(_params: &ProcParams) {
 }
 
 #[cfg(test_case = "memory_write_protection")]
-pub extern "C" fn proc_main(_params: &ProcParams) {
+pub extern "C" fn proc_main(_params: *const ProcParams) {
     debug_println!("\nAttempting to write to the code segment...\n");
 
     unsafe {

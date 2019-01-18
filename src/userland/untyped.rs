@@ -207,36 +207,62 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
     ) -> Result<
         (
             LocalCap<CNode<Pow<ChildRadix>, role::Child>>,
-            LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
+            LocalCap<CNode<Diff<FreeSlots, U2>, role::Local>>,
         ),
         Error,
     >
     where
-        FreeSlots: Sub<B1>,
-        Sub1<FreeSlots>: Unsigned,
+        FreeSlots: Sub<U2>,
+        Diff<FreeSlots, U2>: Unsigned,
         ChildRadix: _Pow,
         Pow<ChildRadix>: Unsigned,
     {
-        let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
+        let (reserved_slots, output_dest_cnode) = dest_cnode.reserve_region::<U2>();
+        let (reserved_slots, scratch_slot) = reserved_slots.consume_slot();
+        let (_reserved_slots, dest_slot) = reserved_slots.consume_slot();
 
-        let err = unsafe {
-            seL4_Untyped_Retype(
+        unsafe {
+            // Retype to fill the scratch slot with a fresh CNode
+            let err = seL4_Untyped_Retype(
                 self.cptr,                               // _service
                 api_object_seL4_CapTableObject as usize, // type
                 ChildRadix::to_usize(),                  // size_bits
-                dest_slot.cptr,                          // root
+                scratch_slot.cptr,                       // root
                 0,                                       // index
                 0,                                       // depth
-                dest_slot.offset,                        // offset
+                scratch_slot.offset,                     // offset
                 1,                                       // num_objects
+            );
+
+            if err != 0 {
+                return Err(Error::CNodeMutate(err));
+            }
+
+            // In order to set the guard (for the sake of our C-pointer simplification scheme),
+            // mutate the CNode in the scratch slot, which copies the CNode into a second slot
+            let guard_data = seL4_CNode_CapData_new(
+                0,                                               // guard
+                seL4_WordBits - ChildRadix::to_usize() as usize, // guard size in bits
             )
-        };
+            .words[0];
 
-        // TODO - We may have to do a mutation dance here to set the guard
-        // on our fresh CNode capability
+            let err = seL4_CNode_Mutate(
+                dest_slot.cptr,        // _service: seL4_CNode,
+                dest_slot.offset,      // dest_index: seL4_Word,
+                seL4_WordBits as u8,    // dest_depth: seL4_Uint8,
+                scratch_slot.cptr,         // src_root: seL4_CNode,
+                scratch_slot.offset,       // src_index: seL4_Word,
+                seL4_WordBits as u8,    // src_depth: seL4_Uint8,
+                guard_data              // badge: seL4_Word,
+            );
 
-        if err != 0 {
-            return Err(Error::UntypedRetype(err));
+            // TODO - If we wanted to make more efficient use of our available slots at the cost
+            // of complexity, we could swap the two created CNodes, then delete the one with
+            // the incorrect guard (the one originally occupying the scratch slot).
+
+            if err != 0 {
+                return Err(Error::UntypedRetype(err));
+            }
         }
 
         Ok((
@@ -250,7 +276,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
                     _role: PhantomData,
                 },
             },
-            dest_cnode,
+            output_dest_cnode,
         ))
     }
 

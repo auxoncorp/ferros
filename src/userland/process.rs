@@ -16,9 +16,9 @@ impl Cap<ThreadControlBlock, role::Local> {
         cspace_root: LocalCap<CNode<FreeSlots, role::Child>>,
         // cspace_root_data: usize, // set the guard bits here
         vspace_root: LocalCap<AssignedPageDirectory>, // TODO make a marker trait for VSpace?
-                                                      // vspace_root_data: usize, // always 0
-                                                      // buffer: usize,
-                                                      // buffer_frame: Cap<Frame>,
+        // vspace_root_data: usize, // always 0
+        ipc_buffer_addr: usize,
+        ipc_buffer: LocalCap<MappedPage>,
     ) -> Result<(), Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
         // used by the radix.
@@ -38,8 +38,8 @@ impl Cap<ThreadControlBlock, role::Local> {
                 cspace_root_data,
                 vspace_root.cptr,
                 seL4_NilData as usize,
-                0,
-                0,
+                ipc_buffer_addr, // buffer address
+                ipc_buffer.cptr, // bufferFrame capability
             )
         };
 
@@ -59,7 +59,7 @@ fn yield_forever() {
     }
 }
 
-pub trait RetypeForSetup {
+pub trait RetypeForSetup: Sized {
     type Output;
 }
 
@@ -70,21 +70,19 @@ pub fn spawn<
     FreeSlots: Unsigned,
     RootCNodeFreeSlots: Unsigned,
     UserImagePagesIter: Iterator<Item = LocalCap<MappedPage>>,
-    StackSize: Unsigned,
 >(
     // process-related
-    function_descriptor: extern "C" fn(&T) -> (),
+    function_descriptor: extern "C" fn(*const T) -> (),
     process_parameter: SetupVer<T>,
     child_cnode: LocalCap<CNode<RootCNodeFreeSlots, role::Child>>,
     priority: u8,
-    stack_ut: LocalCap<Untyped<StackSize>>,
 
     // context-related
     ut16: LocalCap<Untyped<U16>>,
     asid_pool: &mut LocalCap<ASIDPool>,
     local_page_directory: &mut LocalCap<AssignedPageDirectory>,
     user_image_pages_iter: UserImagePagesIter,
-    local_tcb: LocalCap<ThreadControlBlock>,
+    local_tcb: &LocalCap<ThreadControlBlock>,
     local_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
 ) -> Result<LocalCap<CNode<Diff<FreeSlots, U256>, role::Local>>, Error>
 where
@@ -97,9 +95,16 @@ where
     // this significantly cleans up the type constraints above
     let (cnode, local_cnode) = local_cnode.reserve_region::<U256>();
 
-    let (ut14, page_dir_ut, _, _, cnode) = ut16.quarter(cnode)?;
+    let (ut14, page_dir_ut, ut14b, _, cnode) = ut16.quarter(cnode)?;
+
+    // 12 bits
     let (ut12, stack_page_ut, _, _, cnode) = ut14.quarter(cnode)?;
+    let (ut12b, ipc_buffer_ut, _, _, cnode) = ut14b.quarter(cnode)?;
+
+    // 10 bits
     let (ut10, stack_page_table_ut, code_page_table_ut, tcb_ut, cnode) = ut12.quarter(cnode)?;
+    let (ipc_buffer_page_table_ut, _, _, _, cnode) = ut12b.quarter(cnode)?;
+
     let (ut8, _, _, _, cnode) = ut10.quarter(cnode)?;
     let (ut6, _, _, _, cnode) = ut8.quarter(cnode)?;
     let (fault_endpoint_ut, _, _, _, cnode) = ut6.quarter(cnode)?;
@@ -107,15 +112,24 @@ where
     // TODO: Need to duplicate this endpoint into the child cnode
     let (fault_endpoint, cnode): (Cap<Endpoint, _>, _) = fault_endpoint_ut.retype_local(cnode)?;
 
-    // Set up a single 4k page for the child's stack
-    // TODO: Variable stack size
+    // Process address space layout
     let stack_base = 0x10000000;
     let stack_top = stack_base + 0x1000;
+    let ipc_buffer_addr = stack_base - 0x2000; // this must be 512-byte aligned, per the seL4 manual
 
     let (page_dir, cnode): (Cap<UnassignedPageDirectory, _>, _) =
         page_dir_ut.retype_local(cnode)?;
     let mut page_dir = asid_pool.assign(page_dir)?;
 
+    // set up ipc buffer
+    let (ipc_buffer_page_table, cnode): (Cap<UnmappedPageTable, _>, _) =
+        ipc_buffer_page_table_ut.retype_local(cnode)?;
+    let (ipc_buffer_page, cnode): (Cap<UnmappedPage, _>, _) = ipc_buffer_ut.retype_local(cnode)?;
+
+    let _ipc_buffer_page_table = page_dir.map_page_table(ipc_buffer_page_table, ipc_buffer_addr)?;
+    let ipc_buffer_page = page_dir.map_page(ipc_buffer_page, ipc_buffer_addr)?;
+
+    // Set up a single page for the child's stack (4k)
     let (stack_page_table, cnode): (Cap<UnmappedPageTable, _>, _) =
         stack_page_table_ut.retype_local(cnode)?;
     let (stack_page, cnode): (Cap<UnmappedPage, _>, _) = stack_page_ut.retype_local(cnode)?;
@@ -165,7 +179,7 @@ where
         .zip(dest_reservation_iter)
         .zip(vaddr_iter)
     {
-        let (copied_page_cap, _) = page_cap.copy_local(
+        let (copied_page_cap, _) = page_cap.copy(
             &local_cnode,
             slot_cnode,
             // TODO encapsulate caprights
@@ -176,7 +190,7 @@ where
     }
 
     let (mut tcb, _cnode): (Cap<ThreadControlBlock, _>, _) = tcb_ut.retype_local(cnode)?;
-    tcb.configure(child_cnode, page_dir)?;
+    tcb.configure(child_cnode, page_dir, ipc_buffer_addr, ipc_buffer_page)?;
 
     // TODO: stack pointer is supposed to be 8-byte aligned on ARM
     let mut regs: seL4_UserContext = unsafe { mem::zeroed() };

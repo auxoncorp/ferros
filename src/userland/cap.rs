@@ -40,7 +40,7 @@ pub trait CopyAliasable {
     type CopyOutput: CapType;
 }
 
-/// Internal marker trait for capability types that can can
+/// Internal marker trait for CapType implementing structs that can
 /// have meaningful instances created for them purely from
 /// their type signatures.
 /// TODO - the structures that implement this should be zero-sized,
@@ -48,6 +48,16 @@ pub trait CopyAliasable {
 pub trait PhantomCap: Sized {
     fn phantom_instance() -> Self;
 }
+
+/// Marker trait for CapType implementing structs that can
+/// be moved from one location to another.
+/// TODO - Review all of the CapType structs and apply where necessary
+pub trait Movable {}
+
+/// Marker trait for CapType implementing structs that can
+/// be deleted.
+/// TODO - Review all of the CapType structs and apply where necessary
+pub trait Delible {}
 
 #[derive(Debug)]
 pub struct Cap<CT: CapType, Role: CNodeRole> {
@@ -90,6 +100,9 @@ impl<BitSize: Unsigned> PhantomCap for Untyped<BitSize> {
         }
     }
 }
+
+impl<BitSize: Unsigned> Movable for Untyped<BitSize> {}
+impl<BitSize: Unsigned> Delible for Untyped<BitSize> {}
 
 #[derive(Debug)]
 pub struct ThreadControlBlock {}
@@ -296,15 +309,15 @@ mod private {
 }
 
 impl<CT: CapType> Cap<CT, role::Local> {
-    pub fn copy_local<SourceFreeSlots: Unsigned, FreeSlots: Unsigned>(
+    pub fn copy<SourceFreeSlots: Unsigned, FreeSlots: Unsigned, DestRole: CNodeRole>(
         &self,
         src_cnode: &LocalCap<CNode<SourceFreeSlots, role::Local>>,
-        dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
+        dest_cnode: LocalCap<CNode<FreeSlots, DestRole>>,
         rights: seL4_CapRights_t,
     ) -> Result<
         (
-            LocalCap<CT::CopyOutput>,
-            LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
+            Cap<CT::CopyOutput, DestRole>,
+            LocalCap<CNode<Sub1<FreeSlots>, DestRole>>,
         ),
         Error,
     >
@@ -342,6 +355,74 @@ impl<CT: CapType> Cap<CT, role::Local> {
                 },
                 dest_cnode,
             ))
+        }
+    }
+
+    /// Migrate a capability from one CNode to another.
+    pub fn move_to_cnode<SourceFreeSlots: Unsigned, FreeSlots: Unsigned, DestRole: CNodeRole>(
+        self,
+        src_cnode: &LocalCap<CNode<SourceFreeSlots, role::Local>>,
+        dest_cnode: LocalCap<CNode<FreeSlots, DestRole>>,
+    ) -> Result<
+        (
+            Cap<CT, DestRole>,
+            LocalCap<CNode<Sub1<FreeSlots>, DestRole>>,
+        ),
+        Error,
+    >
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
+        CT: Movable,
+    {
+        let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
+
+        let err = unsafe {
+            seL4_CNode_Move(
+                dest_slot.cptr,      // _service
+                dest_slot.offset,    // index
+                seL4_WordBits as u8, // depth
+                // Since src_cnode is restricted to Root, the cptr must
+                // actually be the slot index
+                src_cnode.cptr,      // src_root
+                self.cptr,           // src_index
+                seL4_WordBits as u8, // src_depth
+            )
+        };
+
+        if err != 0 {
+            Err(Error::CNodeMove(err))
+        } else {
+            Ok((
+                Cap {
+                    cptr: dest_slot.offset,
+                    cap_data: self.cap_data,
+                    _role: PhantomData,
+                },
+                dest_cnode,
+            ))
+        }
+    }
+
+    /// Delete a capability
+    pub fn delete<FreeSlots: Unsigned>(
+        self,
+        parent_cnode: &LocalCap<CNode<FreeSlots, role::Local>>,
+    ) -> Result<(), Error>
+    where
+        CT: Delible,
+    {
+        let err = unsafe {
+            seL4_CNode_Delete(
+                parent_cnode.cptr,   // _service
+                self.cptr,           // index
+                seL4_WordBits as u8, // depth
+            )
+        };
+        if err != 0 {
+            Err(Error::CNodeDelete(err))
+        } else {
+            Ok(())
         }
     }
 }
