@@ -28,13 +28,16 @@ macro_rules! sequential_test {
 fn run_qemu_test(name: &str, pass_line: Regex, fail_line: Regex) {
     println!("running 'TEST_CASE={} cargo fel4 build", name);
 
-    Command::new("cargo")
+
+    let result = Command::new("cargo")
         .arg("fel4")
         .arg("build")
         .current_dir("fel4-test-project")
         .env("TEST_CASE", name)
         .output()
         .expect("Couldn't build test project");
+
+    assert!(result.status.success());
 
     println!("running 'cargo fel4 simulate");
 

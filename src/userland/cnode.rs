@@ -134,7 +134,7 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<CNode<FreeSlots, Role>> {
 // Answer: The radix is 19, and there are 12 initial caps. But there are also a bunch
 // of random things in the bootinfo.
 // TODO: ideally, this should only be callable once in the process. Is that possible?
-pub fn root_cnode(bootinfo: &'static seL4_BootInfo) -> LocalCap<CNode<U1024, role::Local>> {
+pub fn root_cnode(_bootinfo: &'static seL4_BootInfo) -> LocalCap<CNode<U1024, role::Local>> {
     Cap {
         cptr: seL4_CapInitThreadCNode as usize,
         _role: PhantomData,
