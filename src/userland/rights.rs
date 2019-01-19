@@ -18,7 +18,6 @@ impl From<CapRights> for seL4_CapRights_t {
     }
 }
 
-
 pub trait Rights {
     fn as_caprights() -> CapRights;
 }

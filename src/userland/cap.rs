@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
-use crate::userland::{CNode, Error, CapRights};
+use crate::userland::{CNode, CapRights, Error};
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
 use typenum::{Unsigned, B1};

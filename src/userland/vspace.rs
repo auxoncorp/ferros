@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 use crate::userland::{
-    role, AssignedPageDirectory, Cap, Error, MappedPage, MappedPageTable, PhantomCap, UnmappedPage,
-    UnmappedPageTable, CapRights
+    role, AssignedPageDirectory, Cap, CapRights, Error, MappedPage, MappedPageTable, PhantomCap,
+    UnmappedPage, UnmappedPageTable,
 };
 use sel4_sys::*;
 

@@ -3,9 +3,8 @@ use core::mem::{self, size_of};
 use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
-    role, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights, Error, LocalCap,
-    MappedPage, ThreadControlBlock, UnassignedPageDirectory, UnmappedPage, UnmappedPageTable,
-    Untyped,
+    role, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights, Error, LocalCap, MappedPage,
+    ThreadControlBlock, UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Diff;
