@@ -3,8 +3,9 @@ use core::mem::{self, size_of};
 use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
-    role, AssignedPageDirectory, BootInfo, CNode, Cap, Endpoint, Error, LocalCap, MappedPage,
-    ThreadControlBlock, UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, Untyped,
+    role, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights, Endpoint, Error, LocalCap,
+    MappedPage, ThreadControlBlock, UnassignedPageDirectory, UnmappedPage, UnmappedPageTable,
+    Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Diff;
@@ -173,8 +174,7 @@ where
         let (copied_page_cap, _) = page_cap.copy(
             &local_cnode,
             slot_cnode,
-            // TODO encapsulate caprights
-            unsafe { seL4_CapRights_new(0, 1, 0) },
+            CapRights::W,
         )?;
 
         let _mapped_page_cap = page_dir.map_page(copied_page_cap, vaddr)?;
