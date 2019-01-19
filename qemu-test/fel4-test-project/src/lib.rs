@@ -176,15 +176,14 @@ impl RetypeForSetup for CapManagementParams<role::Local> {
 
 // 'extern' to force C calling conventions
 #[cfg(test_case = "child_process_cap_management")]
-pub extern "C" fn proc_main(params: *const CapManagementParams<role::Local>) {
-    let p = unsafe { params.read() };
+pub extern "C" fn proc_main(params: CapManagementParams<role::Local>) {
     debug_println!("");
     debug_println!("--- Hello from the cap_management_run feL4 process!");
 
     debug_println!("Let's split an untyped inside child process");
-    let (ut_kid_a, ut_kid_b, cnode) = p
+    let (ut_kid_a, ut_kid_b, cnode) = params
         .data_source
-        .split(p.my_cnode)
+        .split(params.my_cnode)
         .expect("child process split untyped");
     debug_println!("We got past the split in a child process\n");
 
@@ -209,12 +208,11 @@ impl RetypeForSetup for OverRegisterSizeParams {
 }
 
 #[cfg(test_case = "over_register_size_params")]
-pub extern "C" fn proc_main(params: *const OverRegisterSizeParams) {
-    let p = unsafe { &*params };
+pub extern "C" fn proc_main(params: OverRegisterSizeParams) {
     debug_println!(
         "The child process saw a first value of {:08x}, a mid value of {:08x}, and a last value of {:08x}",
-        p.nums[0],
-        p.nums[70],
-        p.nums[139]
+        params.nums[0],
+        params.nums[70],
+        params.nums[139]
     );
 }
