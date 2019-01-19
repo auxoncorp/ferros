@@ -39,14 +39,13 @@ pub extern "C" fn cap_management_run(params: *const CapManagementParams<role::Lo
     let p = unsafe { params.read() };
     debug_println!("");
     debug_println!("--- Hello from the cap_management_run feL4 process!");
-    debug_println!("--- The number is {}", &p.num);
 
     debug_println!("Let's split an untyped inside child process");
     let (ut_kid_a, ut_kid_b, cnode) = p
         .data_source
         .split(p.my_cnode)
         .expect("child process split untyped");
-    debug_println!("Hey, we got past the split in a child process\n");
+    debug_println!("We got past the split in a child process\n");
 
     debug_println!("Let's make an Endpoint");
     let (_endpoint, cnode): (LocalCap<Endpoint>, _) = ut_kid_a
@@ -57,4 +56,5 @@ pub extern "C" fn cap_management_run(params: *const CapManagementParams<role::Lo
     debug_println!("And now for a delete in a child process");
     ut_kid_b.delete(&cnode).expect("child process delete a cap");
     debug_println!("Hey, we deleted a cap in a child process");
+    debug_println!("Split, retyped, and deleted caps in a child process");
 }

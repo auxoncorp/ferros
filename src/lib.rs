@@ -19,7 +19,7 @@ pub mod fel4_test;
 mod debug;
 
 pub mod micro_alloc;
-mod pow;
+pub mod pow;
 mod twinkle_types;
 pub mod userland;
 

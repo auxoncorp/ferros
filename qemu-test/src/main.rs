@@ -25,18 +25,44 @@ macro_rules! sequential_test {
     };
 }
 
-fn run_qemu_test(name: &str, pass_line: Regex, fail_line: Regex) {
+fn run_qemu_test(
+    name: &str,
+    pass_line: Regex,
+    fail_line: Regex,
+    supplemental_feature_flags: Option<Vec<(&'static str, &'static str)>>,
+) {
+    let rust_identifier_regex: Regex =
+        Regex::new("(^[a-zA-Z][a-zA-Z0-9_]*$)|(^_[a-zA-Z0-9_]+$)").unwrap();
+    let is_rust_id = |s| rust_identifier_regex.is_match(s);
+    if !is_rust_id(name) {
+        panic!(
+            "Invalid test case name {}. Test case name must be a valid rust identifier",
+            name
+        );
+    }
     println!("running 'TEST_CASE={} cargo fel4 build", name);
 
-    let result = Command::new("cargo")
+    let mut build_command = Command::new("cargo");
+    (&mut build_command)
         .arg("fel4")
         .arg("build")
         .current_dir("fel4-test-project")
-        .env("TEST_CASE", name)
-        .output()
-        .expect("Couldn't build test project");
+        .env("TEST_CASE", name);
+    if let Some(flags) = supplemental_feature_flags {
+        let merged_pairs: Vec<_> = flags
+            .into_iter()
+            .map(|(k, v)| {
+                if !is_rust_id(k) || !is_rust_id(v) {
+                    panic!("Invalid extra test feature flag passed: ({}, {}). Extra flags must be valid rust identifiers", k, v)
+                }
+                format!("{}=\"{}\"", k, v)
+            })
+            .collect();
+        (&mut build_command).env("TEST_EXTRA_FLAG_PAIRS", merged_pairs.join(","));
+    }
+    let build_result = build_command.output().expect("Couldn't build test project");
 
-    assert!(result.status.success());
+    assert!(build_result.status.success());
 
     println!("running 'cargo fel4 simulate");
 
@@ -75,6 +101,7 @@ mod tests {
                 "root_task_runs",
                 Regex::new(".*hello from the root task.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
+                Some(vec![("min_params", "true")]),
             );
         }
     }
@@ -85,6 +112,7 @@ mod tests {
                 "process_runs",
                 Regex::new(".*The value inside the process is 42.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
+                Some(vec![("min_params", "true")]),
             );
         }
     }
@@ -95,6 +123,7 @@ mod tests {
                 "memory_read_protection",
                 Regex::new(".*vm fault on data.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
+                Some(vec![("min_params", "true")]),
             );
         }
     }
@@ -105,6 +134,18 @@ mod tests {
                 "memory_write_protection",
                 Regex::new(".*vm fault on data.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
+                Some(vec![("min_params", "true")]),
+            );
+        }
+    }
+
+    sequential_test! {
+        fn child_process_cap_management() {
+            run_qemu_test(
+                "child_process_cap_management",
+                Regex::new(".*Split, retyped, and deleted caps in a child process.*").unwrap(),
+                Regex::new(".*Root task should never return from main.*").unwrap(),
+                None,
             );
         }
     }
