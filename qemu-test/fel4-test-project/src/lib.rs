@@ -96,6 +96,17 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
             },
         )
     };
+    #[cfg(test_case = "over_register_size_params")]
+    let (child_cnode, root_cnode, params) = {
+        let (child_cnode, root_cnode) = child_cnode_ut
+            .retype_local_cnode::<_, U12>(root_cnode)
+            .expect("Couldn't retype to child proc cnode");
+
+        let mut nums = [0xaaaaaaaa; 140];
+        nums[0] = 0xbbbbbbbb;
+        nums[139] = 0xcccccccc;
+        (child_cnode, root_cnode, OverRegisterSizeParams { nums })
+    };
 
     let _root_cnode = spawn(
         proc_main,
@@ -187,4 +198,23 @@ pub extern "C" fn proc_main(params: *const CapManagementParams<role::Local>) {
     ut_kid_b.delete(&cnode).expect("child process delete a cap");
     debug_println!("Hey, we deleted a cap in a child process");
     debug_println!("Split, retyped, and deleted caps in a child process");
+}
+
+pub struct OverRegisterSizeParams {
+    pub nums: [usize; 140],
+}
+
+impl RetypeForSetup for OverRegisterSizeParams {
+    type Output = OverRegisterSizeParams;
+}
+
+#[cfg(test_case = "over_register_size_params")]
+pub extern "C" fn proc_main(params: *const OverRegisterSizeParams) {
+    let p = unsafe { &*params };
+    debug_println!(
+        "The child process saw a first value of {:08x}, a mid value of {:08x}, and a last value of {:08x}",
+        p.nums[0],
+        p.nums[70],
+        p.nums[139]
+    );
 }

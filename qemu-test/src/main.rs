@@ -149,4 +149,16 @@ mod tests {
             );
         }
     }
+
+    sequential_test! {
+        fn over_register_size_params() {
+            run_qemu_test(
+                "over_register_size_params",
+
+                Regex::new(".*The child process saw a first value of bbbbbbbb, a mid value of aaaaaaaa, and a last value of cccccccc.*").unwrap(),
+                Regex::new(".*Root task should never return from main.*").unwrap(),
+                None,
+            );
+        }
+    }
 }
