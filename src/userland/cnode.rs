@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
-use crate::userland::{role, CNodeRole, Cap, ChildCap, Error, LocalCap};
+use crate::userland::{role, CNodeRole, Cap, ChildCap, Error, LocalCap, CapRights};
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U0, U1};
@@ -156,7 +156,7 @@ impl<FreeSlots: Unsigned> LocalCap<CNode<FreeSlots, role::Child>> {
                 parent_cnode.cptr,           // src_root
                 local_self.cptr,             // src_index
                 seL4_WordBits as u8,         // src_depth
-                seL4_CapRights_new(0, 1, 1), // rights
+                CapRights::RW.into(),        //  rights
             )
         };
 
