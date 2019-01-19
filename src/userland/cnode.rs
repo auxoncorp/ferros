@@ -3,7 +3,7 @@ use core::ops::Sub;
 use crate::userland::{role, CNodeRole, Cap, ChildCap, Error, LocalCap};
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U0, U1, U1024};
+use typenum::{Unsigned, B1, U0, U1};
 
 /// There will only ever be one CNode in a process with Role = Root. The
 /// cptrs any regular Cap are /also/ offsets into that cnode, because of
@@ -187,23 +187,5 @@ impl<FreeSlots: Unsigned> LocalCap<CNode<FreeSlots, role::Child>> {
                 },
             ))
         }
-    }
-}
-
-// TODO: how many slots are there really? We should be able to know this at build
-// time.
-// Answer: The radix is 19, and there are 12 initial caps. But there are also a bunch
-// of random things in the bootinfo.
-// TODO: ideally, this should only be callable once in the process. Is that possible?
-pub fn root_cnode(_bootinfo: &'static seL4_BootInfo) -> LocalCap<CNode<U1024, role::Local>> {
-    Cap {
-        cptr: seL4_CapInitThreadCNode as usize,
-        _role: PhantomData,
-        cap_data: CNode {
-            radix: 19,
-            next_free_slot: 1000, // TODO: look at the bootinfo to determine the real value
-            _free_slots: PhantomData,
-            _role: PhantomData,
-        },
     }
 }
