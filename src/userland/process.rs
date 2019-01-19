@@ -171,11 +171,7 @@ where
         .zip(dest_reservation_iter)
         .zip(vaddr_iter)
     {
-        let (copied_page_cap, _) = page_cap.copy(
-            &local_cnode,
-            slot_cnode,
-            CapRights::W,
-        )?;
+        let (copied_page_cap, _) = page_cap.copy(&local_cnode, slot_cnode, CapRights::W)?;
 
         let _mapped_page_cap = page_dir.map_page(copied_page_cap, vaddr)?;
     }
@@ -243,79 +239,77 @@ unsafe fn setup_initial_stack_and_regs(
     let param_size_on_stack =
         cmp::max(0, padded_param_size as isize - (4 * word_size) as isize) as usize;
 
-    unsafe {
-        let mut regs: seL4_UserContext = mem::zeroed();
-        regs.sp = stack_top as usize;
+    let mut regs: seL4_UserContext = mem::zeroed();
+    regs.sp = stack_top as usize;
 
-        // The cursor pointer to traverse the parameter data word one word at a
-        // time
-        let mut p = param;
+    // The cursor pointer to traverse the parameter data word one word at a
+    // time
+    let mut p = param;
 
-        // This is the pointer to the start of the tail.
-        let tail = (p as *const u8).add(param_size).sub(tail_size);
+    // This is the pointer to the start of the tail.
+    let tail = (p as *const u8).add(param_size).sub(tail_size);
 
-        // Compute the tail word ahead of time, for easy use below.
-        let mut tail_word = 0usize;
-        if tail_size >= 1 {
-            tail_word |= *tail.add(0) as usize;
-        }
-
-        if tail_size >= 2 {
-            tail_word |= (*tail.add(1) as usize) << 8;
-        }
-
-        if tail_size >= 3 {
-            tail_word |= (*tail.add(2) as usize) << 16;
-        }
-
-        // Fill up r0 - r3 with the first 4 words.
-
-        if p < tail as *const usize {
-            // If we've got a whole word worth of data, put the whole thing in
-            // the register.
-            regs.r0 = *p;
-            p = p.add(1);
-        } else {
-            // If not, store the pre-computed tail word here and be done.
-            regs.r0 = tail_word;
-            return regs;
-        }
-
-        if p < tail as *const usize {
-            regs.r1 = *p;
-            p = p.add(1);
-        } else {
-            regs.r1 = tail_word;
-            return regs;
-        }
-
-        if p < tail as *const usize {
-            regs.r2 = *p;
-            p = p.add(1);
-        } else {
-            regs.r2 = tail_word;
-            return regs;
-        }
-
-        if p < tail as *const usize {
-            regs.r3 = *p;
-            p = p.add(1);
-        } else {
-            regs.r3 = tail_word;
-            return regs;
-        }
-
-        // The rest of the data goes on the stack.
-        if param_size_on_stack > 0 {
-            let sp = (stack_top as *mut u8).sub(param_size_on_stack);
-            ptr::copy_nonoverlapping(p as *const u8, sp, param_size_on_stack);
-
-            // TODO: stack pointer is supposed to be 8-byte aligned on ARM 32
-            regs.sp = sp as usize;
-        }
-
-        regs
+    // Compute the tail word ahead of time, for easy use below.
+    let mut tail_word = 0usize;
+    if tail_size >= 1 {
+        tail_word |= *tail.add(0) as usize;
     }
+
+    if tail_size >= 2 {
+        tail_word |= (*tail.add(1) as usize) << 8;
+    }
+
+    if tail_size >= 3 {
+        tail_word |= (*tail.add(2) as usize) << 16;
+    }
+
+    // Fill up r0 - r3 with the first 4 words.
+
+    if p < tail as *const usize {
+        // If we've got a whole word worth of data, put the whole thing in
+        // the register.
+        regs.r0 = *p;
+        p = p.add(1);
+    } else {
+        // If not, store the pre-computed tail word here and be done.
+        regs.r0 = tail_word;
+        return regs;
+    }
+
+    if p < tail as *const usize {
+        regs.r1 = *p;
+        p = p.add(1);
+    } else {
+        regs.r1 = tail_word;
+        return regs;
+    }
+
+    if p < tail as *const usize {
+        regs.r2 = *p;
+        p = p.add(1);
+    } else {
+        regs.r2 = tail_word;
+        return regs;
+    }
+
+    if p < tail as *const usize {
+        regs.r3 = *p;
+        p = p.add(1);
+    } else {
+        regs.r3 = tail_word;
+        return regs;
+    }
+
+    // The rest of the data goes on the stack.
+    if param_size_on_stack > 0 {
+        let sp = (stack_top as *mut u8).sub(param_size_on_stack);
+        ptr::copy_nonoverlapping(p as *const u8, sp, param_size_on_stack);
+
+        // TODO: stack pointer is supposed to be 8-byte aligned on ARM 32
+        regs.sp = sp as usize;
+    }
+
+    regs
 }
 
 #[cfg(feature = "test")]
