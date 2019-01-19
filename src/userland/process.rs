@@ -368,7 +368,7 @@ pub mod test {
     }
 
     #[cfg(feature = "test")]
-    #[rustfmt_skip]
+    #[rustfmt::skip]
     pub fn test_stack_setup() -> Result<(), TestError<()>> {
         test_stack_setup_case(42u8,
                               42, 0, 0, 0, 0, 0)?;
