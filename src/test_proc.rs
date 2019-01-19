@@ -12,8 +12,7 @@ impl userland::RetypeForSetup for OverRegisterSizeParams {
 }
 
 // 'extern' to force C calling conventions
-pub extern "C" fn param_size_run(params: *const OverRegisterSizeParams) {
-    let p = unsafe { &*params };
+pub extern "C" fn param_size_run(p: OverRegisterSizeParams) {
     debug_println!("");
     debug_println!("*** Hello from the param_size_run feL4 process!");
     for i in p.nums.iter() {
@@ -35,8 +34,7 @@ impl userland::RetypeForSetup for CapManagementParams<role::Local> {
 }
 
 // 'extern' to force C calling conventions
-pub extern "C" fn cap_management_run(params: *const CapManagementParams<role::Local>) {
-    let p = unsafe { params.read() };
+pub extern "C" fn cap_management_run(p: CapManagementParams<role::Local>) {
     debug_println!("");
     debug_println!("--- Hello from the cap_management_run feL4 process!");
 

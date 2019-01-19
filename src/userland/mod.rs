@@ -3,7 +3,7 @@ mod cap;
 mod cnode;
 mod error;
 mod ipc;
-mod process;
+pub(crate) mod process;
 mod untyped;
 mod vspace;
 
