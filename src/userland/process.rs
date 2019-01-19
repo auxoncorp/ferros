@@ -3,7 +3,7 @@ use core::mem::{self, size_of};
 use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
-    role, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights, Endpoint, Error, LocalCap,
+    role, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights, Error, LocalCap,
     MappedPage, ThreadControlBlock, UnassignedPageDirectory, UnmappedPage, UnmappedPageTable,
     Untyped,
 };
@@ -102,10 +102,7 @@ where
 
     let (ut8, _, _, _, cnode) = ut10.quarter(cnode)?;
     let (ut6, _, _, _, cnode) = ut8.quarter(cnode)?;
-    let (fault_endpoint_ut, _, _, _, cnode) = ut6.quarter(cnode)?;
-
-    // TODO: Need to duplicate this endpoint into the child cnode
-    let (fault_endpoint, cnode): (Cap<Endpoint, _>, _) = fault_endpoint_ut.retype_local(cnode)?;
+    let (_, _, _, _, cnode) = ut6.quarter(cnode)?;
 
     // Process address space layout
     let stack_base = 0x10000000;
