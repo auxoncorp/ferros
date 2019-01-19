@@ -1,58 +1,69 @@
 use crate::pow::Pow;
-use crate::userland::{self, role, CNode, CNodeRole, Cap, Endpoint, LocalCap, Untyped};
+use crate::userland::{
+    self, role, CNode, CNodeRole, Caller, Cap, Endpoint, LocalCap, Responder, RetypeForSetup,
+    Untyped,
+};
 use typenum::operator_aliases::Diff;
 use typenum::{U12, U2, U6};
 
-pub struct OverRegisterSizeParams {
-    pub nums: [usize; 140],
-}
-
-impl userland::RetypeForSetup for OverRegisterSizeParams {
-    type Output = OverRegisterSizeParams;
-}
-
-// 'extern' to force C calling conventions
-pub extern "C" fn param_size_run(p: OverRegisterSizeParams) {
-    debug_println!("");
-    debug_println!("*** Hello from the param_size_run feL4 process!");
-    for i in p.nums.iter() {
-        debug_println!("  {:08x}", i);
-    }
-
-    debug_println!("");
+#[derive(Debug)]
+pub struct AdditionRequest {
+    a: u32,
+    b: u32,
 }
 
 #[derive(Debug)]
-pub struct CapManagementParams<Role: CNodeRole> {
-    pub num: usize,
+pub struct AdditionResponse {
+    sum: u32,
+}
+
+#[derive(Debug)]
+pub struct CallerParams<Role: CNodeRole> {
     pub my_cnode: Cap<CNode<Diff<Pow<U12>, U2>, Role>, Role>,
-    pub data_source: Cap<Untyped<U6>, Role>,
+    pub caller: Caller<AdditionRequest, AdditionResponse, Role>,
 }
 
-impl userland::RetypeForSetup for CapManagementParams<role::Local> {
-    type Output = CapManagementParams<role::Child>;
+impl userland::RetypeForSetup for CallerParams<role::Local> {
+    type Output = CallerParams<role::Child>;
 }
 
-// 'extern' to force C calling conventions
-pub extern "C" fn cap_management_run(p: CapManagementParams<role::Local>) {
-    debug_println!("");
-    debug_println!("--- Hello from the cap_management_run feL4 process!");
+#[derive(Debug)]
+pub struct ResponderParams<Role: CNodeRole> {
+    pub my_cnode: Cap<CNode<Diff<Pow<U12>, U2>, Role>, Role>,
+    pub responder: Responder<AdditionRequest, AdditionResponse, Role>,
+}
 
-    debug_println!("Let's split an untyped inside child process");
-    let (ut_kid_a, ut_kid_b, cnode) = p
-        .data_source
-        .split(p.my_cnode)
-        .expect("child process split untyped");
-    debug_println!("We got past the split in a child process\n");
+impl userland::RetypeForSetup for ResponderParams<role::Local> {
+    type Output = ResponderParams<role::Child>;
+}
 
-    debug_println!("Let's make an Endpoint");
-    let (_endpoint, cnode): (LocalCap<Endpoint>, _) = ut_kid_a
-        .retype_local(cnode)
-        .expect("Retype local in a child process failure");
-    debug_println!("Successfully built an Endpoint\n");
+pub extern "C" fn addition_requester(p: CallerParams<role::Local>) {
+    debug_println!("Inside addition_requester");
+    let mut current_sum: u32 = 1;
+    let mut caller = p.caller;
+    let mut addition_request = AdditionRequest {
+        a: current_sum,
+        b: current_sum,
+    };
+    while current_sum < 100 {
+        addition_request.a = current_sum;
+        addition_request.b = current_sum;
+        match caller.blocking_call(&addition_request) {
+            Ok(rsp) => current_sum = rsp.sum,
+            Err(e) => {
+                debug_println!("addition request call failed: {:?}", e);
+                panic!("Addition requester panic'd")
+            }
+        }
+    }
+    debug_println!("addition_requester completed its task");
+}
 
-    debug_println!("And now for a delete in a child process");
-    ut_kid_b.delete(&cnode).expect("child process delete a cap");
-    debug_println!("Hey, we deleted a cap in a child process");
-    debug_println!("Split, retyped, and deleted caps in a child process");
+pub extern "C" fn addition_responder(p: ResponderParams<role::Local>) {
+    debug_println!("Inside addition_responder");
+    p.responder.reply_recv(move |req| {
+        AdditionResponse {
+            sum: req.a + req.b
+        }
+    }).expect("Could not set up a reply_recv");
 }
