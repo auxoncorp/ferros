@@ -89,17 +89,17 @@ impl iron_pegasus::userland::RetypeForSetup for ProcParams {
 }
 
 #[cfg(test_case = "root_task_runs")]
-pub extern "C" fn proc_main(_params: *const ProcParams) {}
+pub extern "C" fn proc_main(_params: ProcParams) {}
 
 #[cfg(test_case = "process_runs")]
-pub extern "C" fn proc_main(params: *const ProcParams) {
+pub extern "C" fn proc_main(params: ProcParams) {
     debug_println!("\nThe value inside the process is {}\n", unsafe {
-        (&*params).value
+        params.value
     });
 }
 
 #[cfg(test_case = "memory_read_protection")]
-pub extern "C" fn proc_main(_params: *const ProcParams) {
+pub extern "C" fn proc_main(_params: ProcParams) {
     debug_println!("\nAttempting to cause a segmentation fault...\n");
 
     unsafe {
@@ -111,7 +111,7 @@ pub extern "C" fn proc_main(_params: *const ProcParams) {
 }
 
 #[cfg(test_case = "memory_write_protection")]
-pub extern "C" fn proc_main(_params: *const ProcParams) {
+pub extern "C" fn proc_main(_params: ProcParams) {
     debug_println!("\nAttempting to write to the code segment...\n");
 
     unsafe {

@@ -2,7 +2,7 @@ mod bootstrap;
 mod cap;
 mod cnode;
 mod error;
-mod process;
+pub(crate) mod process;
 mod untyped;
 mod vspace;
 

@@ -1,5 +1,6 @@
 #![no_std]
 #![cfg_attr(feature = "alloc", feature(alloc))]
+#![feature(custom_attribute)]
 
 #[cfg(all(feature = "alloc"))]
 #[macro_use]
