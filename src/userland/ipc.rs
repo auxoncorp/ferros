@@ -46,12 +46,12 @@ where
         .retype_local(local_cnode)
         .expect("could not create local endpoint in call_channel");
     // TODO - revisit CapRights selection
-    let (child_endpoint_a, child_cnode_a) = local_endpoint
+    let (child_endpoint_caller, child_cnode_caller) = local_endpoint
         .copy(&local_cnode, child_cnode_caller, unsafe {
             seL4_CapRights_new(0, 1, 1)
         })
         .expect("Could not copy to child a");
-    let (child_endpoint_b, child_cnode_b) = local_endpoint
+    let (child_endpoint_responder, child_cnode_responder) = local_endpoint
         .copy(&local_cnode, child_cnode_responder, unsafe {
             seL4_CapRights_new(0, 1, 1)
         })
@@ -59,16 +59,16 @@ where
 
     Ok((
         local_cnode,
-        child_cnode_a,
-        child_cnode_b,
+        child_cnode_caller,
+        child_cnode_responder,
         Caller {
-            endpoint: child_endpoint_a,
+            endpoint: child_endpoint_caller,
             _req: PhantomData,
             _rsp: PhantomData,
             _role: PhantomData,
         },
         Responder {
-            endpoint: child_endpoint_b,
+            endpoint: child_endpoint_responder,
             _req: PhantomData,
             _rsp: PhantomData,
             _role: PhantomData,
