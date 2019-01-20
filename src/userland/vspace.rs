@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 use crate::userland::{
-    role, AssignedPageDirectory, Cap, Error, MappedPage, MappedPageTable, PhantomCap, UnmappedPage,
-    UnmappedPageTable,
+    role, AssignedPageDirectory, Cap, CapRights, Error, MappedPage, MappedPageTable, PhantomCap,
+    UnmappedPage, UnmappedPageTable,
 };
 use sel4_sys::*;
 
@@ -45,7 +45,7 @@ impl Cap<AssignedPageDirectory, role::Local> {
                 page.cptr,
                 self.cptr,
                 virtual_address,
-                seL4_CapRights_new(0, 1, 1), // read/write
+                CapRights::RW.into(), // rights
                 // TODO: JON! What do we write here? The default (according to
                 // sel4_ appears to be pageCachable | parityEnabled)
                 seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
