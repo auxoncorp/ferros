@@ -1,4 +1,5 @@
 use core::cmp;
+use core::marker::PhantomData;
 use core::mem::{self, size_of};
 use core::ops::Sub;
 use core::ptr;
@@ -9,6 +10,10 @@ use crate::userland::{
 use sel4_sys::*;
 use typenum::operator_aliases::Diff;
 use typenum::{Unsigned, U128, U16, U256};
+
+pub struct IPCBufferToken {
+    _secret: PhantomData<()>,
+}
 
 impl Cap<ThreadControlBlock, role::Local> {
     pub fn configure<FreeSlots: Unsigned>(
@@ -68,7 +73,7 @@ type SetupVer<X> = <X as RetypeForSetup>::Output;
 
 pub fn spawn<T: RetypeForSetup, FreeSlots: Unsigned, RootCNodeFreeSlots: Unsigned>(
     // process-related
-    function_descriptor: extern "C" fn(T) -> (),
+    function_descriptor: extern "C" fn((T, IPCBufferToken)) -> (),
     process_parameter: SetupVer<T>,
     child_cnode: LocalCap<CNode<RootCNodeFreeSlots, role::Child>>,
     priority: u8,
@@ -131,10 +136,16 @@ where
         .map_page_table(stack_page_table, stack_base)?;
     let stack_page = boot_info.page_directory.map_page(stack_page, stack_base)?;
 
+    let params_with_token: (SetupVer<T>, IPCBufferToken) = (
+        process_parameter,
+        IPCBufferToken {
+            _secret: PhantomData,
+        },
+    );
     let mut regs = unsafe {
         setup_initial_stack_and_regs(
-            &process_parameter as *const SetupVer<T> as *const usize,
-            size_of::<SetupVer<T>>(),
+            &params_with_token as *const (SetupVer<T>, IPCBufferToken) as *const usize,
+            size_of::<(SetupVer<T>, IPCBufferToken)>(),
             stack_top as *mut usize,
         )
     };

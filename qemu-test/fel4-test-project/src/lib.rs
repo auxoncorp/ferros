@@ -21,8 +21,8 @@ macro_rules! debug_println {
 use iron_pegasus::micro_alloc::{self, GetUntyped};
 use iron_pegasus::pow::Pow;
 use iron_pegasus::userland::{
-    role, root_cnode, spawn, BootInfo, CNode, CNodeRole, Cap, Endpoint, LocalCap, RetypeForSetup,
-    Untyped,
+    role, root_cnode, spawn, BootInfo, CNode, CNodeRole, Cap, Endpoint, IPCBufferToken, LocalCap,
+    RetypeForSetup, Untyped,
 };
 use typenum::operator_aliases::Diff;
 use typenum::{U12, U2, U20, U4096, U6};
@@ -131,17 +131,18 @@ impl RetypeForSetup for ProcParams {
 }
 
 #[cfg(test_case = "root_task_runs")]
-pub extern "C" fn proc_main(_params: ProcParams) {}
+pub extern "C" fn proc_main(_params: (ProcParams, IPCBufferToken)) {}
 
 #[cfg(test_case = "process_runs")]
-pub extern "C" fn proc_main(params: ProcParams) {
+pub extern "C" fn proc_main(p: (ProcParams, IPCBufferToken)) {
+    let (params, _) = p;
     debug_println!("\nThe value inside the process is {}\n", unsafe {
         params.value
     });
 }
 
 #[cfg(test_case = "memory_read_protection")]
-pub extern "C" fn proc_main(_params: ProcParams) {
+pub extern "C" fn proc_main(_params: (ProcParams, IPCBufferToken)) {
     debug_println!("\nAttempting to cause a segmentation fault...\n");
 
     unsafe {
@@ -153,7 +154,7 @@ pub extern "C" fn proc_main(_params: ProcParams) {
 }
 
 #[cfg(test_case = "memory_write_protection")]
-pub extern "C" fn proc_main(_params: ProcParams) {
+pub extern "C" fn proc_main(_params: (ProcParams, IPCBufferToken)) {
     debug_println!("\nAttempting to write to the code segment...\n");
 
     unsafe {
@@ -176,7 +177,8 @@ impl RetypeForSetup for CapManagementParams<role::Local> {
 
 // 'extern' to force C calling conventions
 #[cfg(test_case = "child_process_cap_management")]
-pub extern "C" fn proc_main(params: CapManagementParams<role::Local>) {
+pub extern "C" fn proc_main(p: (CapManagementParams<role::Local>, IPCBufferToken)) {
+    let (params, _) = p;
     debug_println!("");
     debug_println!("--- Hello from the cap_management_run feL4 process!");
 
@@ -208,7 +210,8 @@ impl RetypeForSetup for OverRegisterSizeParams {
 }
 
 #[cfg(test_case = "over_register_size_params")]
-pub extern "C" fn proc_main(params: OverRegisterSizeParams) {
+pub extern "C" fn proc_main(p: (OverRegisterSizeParams, IPCBufferToken)) {
+    let (params, _) = p;
     debug_println!(
         "The child process saw a first value of {:08x}, a mid value of {:08x}, and a last value of {:08x}",
         params.nums[0],
