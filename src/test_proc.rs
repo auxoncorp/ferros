@@ -45,9 +45,16 @@ pub extern "C" fn addition_requester(p: CallerParams<role::Local>) {
     while current_sum < 100 {
         addition_request.a = current_sum;
         addition_request.b = current_sum;
-        debug_println!("Q: What is {} + {}?", addition_request.a, addition_request.b);
+        debug_println!(
+            "Q: What is {} + {}?",
+            addition_request.a,
+            addition_request.b
+        );
         match caller.blocking_call(&addition_request) {
-            Ok(rsp) => current_sum = rsp.sum,
+            Ok((locked_caller, rsp_guard)) => {
+                current_sum = rsp_guard.as_ref().sum;
+                caller = locked_caller.unlock(rsp_guard);
+            }
             Err(e) => {
                 debug_println!("addition request call failed: {:?}", e);
                 panic!("Addition requester panic'd")

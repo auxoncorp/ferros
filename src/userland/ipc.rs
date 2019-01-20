@@ -1,8 +1,7 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
 use crate::userland::{
-    role, CNodeRole, Cap, CapRights, ChildCNode, Endpoint, Error,
-    LocalCNode, LocalCap, Untyped,
+    role, CNodeRole, Cap, CapRights, ChildCNode, Endpoint, Error, LocalCNode, LocalCap, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
@@ -89,8 +88,33 @@ pub struct Caller<Req: Sized, Rsp: Sized, Role: CNodeRole> {
     _role: PhantomData<Role>,
 }
 
+pub struct LockedCaller<Req: Sized, Rsp: Sized> {
+    inner: Caller<Req, Rsp, role::Local>,
+}
+
+impl<Req: Sized, Rsp: Sized> LockedCaller<Req, Rsp> {
+    pub fn unlock(self, _guard: CallerGuard<Req, Rsp>) -> Caller<Req, Rsp, role::Local> {
+        self.inner
+    }
+}
+
+#[derive(Debug)]
+pub struct CallerGuard<'a, Req: Sized, Rsp: Sized> {
+    response: &'a Rsp,
+    _req: PhantomData<Req>,
+}
+
+impl<'a, Req, Rsp> AsRef<Rsp> for CallerGuard<'a, Req, Rsp> {
+    fn as_ref(&self) -> &Rsp {
+        self.response
+    }
+}
+
 impl<Req, Rsp> Caller<Req, Rsp, role::Local> {
-    pub fn blocking_call(&mut self, request: &Req) -> Result<Rsp, IPCError> {
+    pub fn blocking_call<'a>(
+        self,
+        request: &Req,
+    ) -> Result<(LockedCaller<Req, Rsp>, CallerGuard<'a, Req, Rsp>), IPCError> {
         let request_size = core::mem::size_of::<Req>();
         let response_size = core::mem::size_of::<Rsp>();
         let buffer = unsafe {
@@ -127,16 +151,14 @@ impl<Req, Rsp> Caller<Req, Rsp, role::Local> {
         if response_msg_length != response_size {
             return Err(IPCError::ResponseSizeMismatch);
         }
-        // TODO - consider replacing with Option swapping
-        let mut response = unsafe { core::mem::zeroed() };
-        unsafe {
-            core::ptr::copy_nonoverlapping(
-                &buffer.msg as *const [usize] as *const Rsp,
-                &mut response as *mut Rsp,
-                1,
-            );
-        }
-        Ok(response)
+        let response: &'a Rsp = unsafe { &*(&buffer.msg as *const [usize] as *const Rsp) };
+        Ok((
+            LockedCaller { inner: self },
+            CallerGuard {
+                response: response,
+                _req: PhantomData,
+            },
+        ))
     }
 }
 
