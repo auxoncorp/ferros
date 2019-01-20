@@ -57,7 +57,7 @@ where
     // TODO - revisit CapRights selection, we need to clamp this down!
     let (child_endpoint_caller, child_cnode_caller) = local_endpoint
         .copy(&local_cnode, child_cnode_caller, unsafe {
-            seL4_CapRights_new(0, 1, 1)
+            seL4_CapRights_new(1, 1, 1)
         })
         .expect("Could not copy to child a");
     let (child_endpoint_responder, child_cnode_responder) = local_endpoint
