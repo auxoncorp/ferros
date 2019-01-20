@@ -72,9 +72,13 @@ pub extern "C" fn addition_responder(
 ) {
     let (p, ipc_token) = params_and_ipc;
     debug_println!("Inside addition_responder");
+    let initial_state: usize = 0;
     p.responder
-        .reply_recv(ipc_token, move |req| AdditionResponse {
-            sum: req.a + req.b,
+        .reply_recv_with_state(ipc_token, initial_state, move |req, state| {
+            debug_println!("Addition has happened {} times", state);
+
+            (AdditionResponse { sum: req.a + req.b },
+             state + 1)
         })
         .expect("Could not set up a reply_recv");
 }

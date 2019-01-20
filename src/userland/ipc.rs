@@ -211,11 +211,25 @@ pub struct Responder<Req: Sized, Rsp: Sized, Role: CNodeRole> {
     _rsp: PhantomData<Rsp>,
     _role: PhantomData<Role>,
 }
+
 impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
-    // TODO - version accepting for state transfer and mutation
     pub fn reply_recv<F>(self, ipc_buffer_token: IPCBufferToken, f: F) -> Result<Rsp, IPCError>
     where
-        F: Fn(&Req) -> Rsp,
+        F: Fn(&Req) -> (Rsp),
+    {
+        self.reply_recv_with_state(ipc_buffer_token, 0, move |req, state| {
+            (f(req), state)
+        })
+    }
+
+    pub fn reply_recv_with_state<F, State>(
+        self,
+        ipc_buffer_token: IPCBufferToken,
+        initial_state: State,
+        f: F,
+    ) -> Result<Rsp, IPCError>
+    where
+        F: Fn(&Req, State) -> (Rsp, State),
     {
         let request_size = core::mem::size_of::<Req>();
         let response_size = core::mem::size_of::<Rsp>();
@@ -232,6 +246,7 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
         };
 
         let mut response = unsafe { core::mem::zeroed() }; // TODO - replace with Option-swapping
+        let mut state = initial_state;
         loop {
             let msg_length = unsafe {
                 seL4_MessageInfo_ptr_get_length(
@@ -245,7 +260,9 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
                 // to loop forever, most likely leaving the caller perpetually blocked.
                 continue;
             }
-            response = f(request_guard.as_ref());
+            let out = f(request_guard.as_ref(), state);
+            response = out.0;
+            state = out.1;
 
             let (info, ipc_token) = unsafe {
                 let response_msg_info = seL4_MessageInfo_new(
