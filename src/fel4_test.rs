@@ -30,7 +30,6 @@ pub fn run(_boot: &'static seL4_BootInfo) {
             "userland::process::test::test_stack_setup",
             crate::userland::process::test::test_stack_setup(),
         ),
-
         print_test_result(
             "test_message_info_predictability",
             test_message_info_predictability(&mut runner),

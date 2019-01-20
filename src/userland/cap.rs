@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
-use crate::userland::{CNode, Error};
+use crate::userland::{CNode, CapRights, Error};
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
 use typenum::{Unsigned, B1};
@@ -313,7 +313,7 @@ impl<CT: CapType> Cap<CT, role::Local> {
         &self,
         src_cnode: &LocalCap<CNode<SourceFreeSlots, role::Local>>,
         dest_cnode: LocalCap<CNode<FreeSlots, DestRole>>,
-        rights: seL4_CapRights_t,
+        rights: CapRights,
     ) -> Result<
         (
             Cap<CT::CopyOutput, DestRole>,
@@ -340,7 +340,7 @@ impl<CT: CapType> Cap<CT, role::Local> {
                 src_cnode.cptr,      // src_root
                 self.cptr,           // src_index
                 seL4_WordBits as u8, // src_depth
-                rights,              // rights
+                rights.into(),       // rights
             )
         };
 
