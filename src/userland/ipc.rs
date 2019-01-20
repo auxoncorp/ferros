@@ -1,8 +1,8 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
 use crate::userland::{
-    role, CNode, CNodeRole, Cap, CapType, ChildCNode, DirectRetype, Endpoint, Error, LocalCNode,
-    LocalCap, Untyped,
+    role, CNodeRole, Cap, CapRights, ChildCNode, Endpoint, Error,
+    LocalCNode, LocalCap, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
@@ -56,14 +56,10 @@ where
         .expect("could not create local endpoint in call_channel");
     // TODO - revisit CapRights selection, we need to clamp this down!
     let (child_endpoint_caller, child_cnode_caller) = local_endpoint
-        .copy(&local_cnode, child_cnode_caller, unsafe {
-            seL4_CapRights_new(1, 1, 1)
-        })
+        .copy(&local_cnode, child_cnode_caller, CapRights::RWG)
         .expect("Could not copy to child a");
     let (child_endpoint_responder, child_cnode_responder) = local_endpoint
-        .copy(&local_cnode, child_cnode_responder, unsafe {
-            seL4_CapRights_new(0, 1, 1)
-        })
+        .copy(&local_cnode, child_cnode_responder, CapRights::RW)
         .expect("Could not copy to child b");
 
     Ok((
@@ -97,8 +93,8 @@ impl<Req, Rsp> Caller<Req, Rsp, role::Local> {
     pub fn blocking_call(&mut self, request: &Req) -> Result<Rsp, IPCError> {
         let request_size = core::mem::size_of::<Req>();
         let response_size = core::mem::size_of::<Rsp>();
-        let mut buffer = unsafe {
-            let mut buffer: &mut seL4_IPCBuffer = &mut *seL4_GetIPCBuffer();
+        let buffer = unsafe {
+            let buffer: &mut seL4_IPCBuffer = &mut *seL4_GetIPCBuffer();
             let buffer_size = core::mem::size_of_val(&buffer.msg);
             // TODO - Move this to compile-time somehow
             if request_size > buffer_size {
@@ -132,7 +128,7 @@ impl<Req, Rsp> Caller<Req, Rsp, role::Local> {
             return Err(IPCError::ResponseSizeMismatch);
         }
         // TODO - consider replacing with Option swapping
-        let mut response = unsafe {core::mem::zeroed() };
+        let mut response = unsafe { core::mem::zeroed() };
         unsafe {
             core::ptr::copy_nonoverlapping(
                 &buffer.msg as *const [usize] as *const Rsp,
@@ -154,12 +150,13 @@ pub struct Responder<Req: Sized, Rsp: Sized, Role: CNodeRole> {
 impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
     // TODO - version accepting for state transfer and mutation
     pub fn reply_recv<F>(self, f: F) -> Result<Rsp, IPCError>
-    where F: Fn(&Req) -> Rsp
+    where
+        F: Fn(&Req) -> Rsp,
     {
         let request_size = core::mem::size_of::<Req>();
         let response_size = core::mem::size_of::<Rsp>();
-        let mut buffer = unsafe {
-            let mut buffer: &mut seL4_IPCBuffer = &mut *seL4_GetIPCBuffer();
+        let buffer = unsafe {
+            let buffer: &mut seL4_IPCBuffer = &mut *seL4_GetIPCBuffer();
             let buffer_size = core::mem::size_of_val(&buffer.msg);
             // TODO - Move this to compile-time somehow
             if request_size > buffer_size {
@@ -178,10 +175,9 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
                 0 as *const usize as *mut usize, // TODO - consider actually caring about sender
             )
         };
-        debug_println!("Got past initial receive");
 
-        let mut request = unsafe {core::mem::zeroed() }; // TODO - replace with Option-swapping
-        let mut response = unsafe {core::mem::zeroed()}; // TODO - replace with Option-swapping
+        let mut request = unsafe { core::mem::zeroed() }; // TODO - replace with Option-swapping
+        let mut response = unsafe { core::mem::zeroed() }; // TODO - replace with Option-swapping
         loop {
             let msg_length = unsafe {
                 seL4_MessageInfo_ptr_get_length(
@@ -191,7 +187,8 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
             if msg_length != request_size {
                 // TODO - we should be dropping bad data or replying with an error code
                 debug_println!("Request size incoming does not match static size expectation");
-                // TODO - FOR SURE - REALLY DO
+                // Note that `continue`'ing from here will essentially cause this process
+                // to loop forever, most likely leaving the caller perpetually blocked.
                 continue;
             }
             unsafe {
@@ -210,16 +207,16 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
                     0,             // extraCaps,
                     response_size, // length
                 );
-                unsafe {
-                    core::ptr::copy_nonoverlapping(
-                        &response as *const Rsp,
-                        &mut buffer.msg as *mut [usize] as *mut Rsp,
-                        1,
-                    );
-                }
-                debug_println!("About to ReplyRecv");
-                seL4_ReplyRecv(self.endpoint.cptr, response_msg_info,
-                               0 as *const usize as *mut usize) // TODO - do we care about sender?
+                core::ptr::copy_nonoverlapping(
+                    &response as *const Rsp,
+                    &mut buffer.msg as *mut [usize] as *mut Rsp,
+                    1,
+                );
+                seL4_ReplyRecv(
+                    self.endpoint.cptr,
+                    response_msg_info,
+                    0 as *const usize as *mut usize,
+                ) // TODO - do we care about sender?
             };
         }
 

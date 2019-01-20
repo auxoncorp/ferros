@@ -1,10 +1,7 @@
 use crate::pow::Pow;
-use crate::userland::{
-    self, role, CNode, CNodeRole, Caller, Cap, Endpoint, LocalCap, Responder, RetypeForSetup,
-    Untyped,
-};
+use crate::userland::{self, role, CNode, CNodeRole, Caller, Cap, Responder};
 use typenum::operator_aliases::Diff;
-use typenum::{U12, U2, U6};
+use typenum::{U12, U2};
 
 #[derive(Debug)]
 pub struct AdditionRequest {
@@ -48,6 +45,7 @@ pub extern "C" fn addition_requester(p: CallerParams<role::Local>) {
     while current_sum < 100 {
         addition_request.a = current_sum;
         addition_request.b = current_sum;
+        debug_println!("Q: What is {} + {}?", addition_request.a, addition_request.b);
         match caller.blocking_call(&addition_request) {
             Ok(rsp) => current_sum = rsp.sum,
             Err(e) => {
@@ -55,15 +53,14 @@ pub extern "C" fn addition_requester(p: CallerParams<role::Local>) {
                 panic!("Addition requester panic'd")
             }
         }
+        debug_println!("A: {}", current_sum);
     }
     debug_println!("addition_requester completed its task");
 }
 
 pub extern "C" fn addition_responder(p: ResponderParams<role::Local>) {
     debug_println!("Inside addition_responder");
-    p.responder.reply_recv(move |req| {
-        AdditionResponse {
-            sum: req.a + req.b
-        }
-    }).expect("Could not set up a reply_recv");
+    p.responder
+        .reply_recv(move |req| AdditionResponse { sum: req.a + req.b })
+        .expect("Could not set up a reply_recv");
 }
