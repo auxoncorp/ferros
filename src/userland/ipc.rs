@@ -89,17 +89,15 @@ pub struct Caller<Req: Sized, Rsp: Sized, Role: CNodeRole> {
 }
 
 /// Internal convenience for working with IPC Buffer instances
-struct IPCBufferWrapper<'a, Req: Sized, Rsp: Sized> {
+struct IPCBuffer<'a, Req: Sized, Rsp: Sized> {
     buffer: &'a mut seL4_IPCBuffer,
     _req: PhantomData<Req>,
     _rsp: PhantomData<Rsp>,
 }
 
-impl<'a, Req: Sized, Rsp: Sized> IPCBufferWrapper<'a, Req, Rsp> {
-    /// Precondition: The input must *not* be a reference to data
-    /// actually living in the IPC Buffer.
+impl<'a, Req: Sized, Rsp: Sized> IPCBuffer<'a, Req, Rsp> {
     unsafe fn unchecked_copy_into_buffer<T: Sized>(&mut self, data: &T) {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             data as *const T,
             &self.buffer.msg as *const [usize] as *const T as *mut T,
             1,
@@ -115,27 +113,23 @@ impl<'a, Req: Sized, Rsp: Sized> IPCBufferWrapper<'a, Req, Rsp> {
         data
     }
 
-    /// Precondition: The input must *not* be a reference to data
-    /// actually living in the IPC Buffer.
-    pub unsafe fn copy_req_into_buffer(&mut self, request: &Req) {
-        self.unchecked_copy_into_buffer(request)
+    pub fn copy_req_into_buffer(&mut self, request: &Req) {
+        unsafe { self.unchecked_copy_into_buffer(request) }
     }
 
-    pub unsafe fn copy_req_from_buffer(&self) -> Req {
-        self.unchecked_copy_from_buffer()
+    pub fn copy_req_from_buffer(&self) -> Req {
+        unsafe { self.unchecked_copy_from_buffer() }
     }
 
-    /// Precondition: The input must *not* be a reference to data
-    /// actually living in the IPC Buffer.
-    unsafe fn copy_rsp_into_buffer(&mut self, response: &Rsp) {
-        self.unchecked_copy_into_buffer(response)
+    fn copy_rsp_into_buffer(&mut self, response: &Rsp) {
+        unsafe { self.unchecked_copy_into_buffer(response) }
     }
-    unsafe fn copy_rsp_from_buffer(&mut self) -> Rsp {
-        self.unchecked_copy_from_buffer()
+    fn copy_rsp_from_buffer(&mut self) -> Rsp {
+        unsafe { self.unchecked_copy_from_buffer() }
     }
 }
 
-fn get_ipc_buffer<'a, Req, Rsp>() -> Result<IPCBufferWrapper<'a, Req, Rsp>, IPCError> {
+fn get_ipc_buffer<'a, Req, Rsp>() -> Result<IPCBuffer<'a, Req, Rsp>, IPCError> {
     let request_size = core::mem::size_of::<Req>();
     let response_size = core::mem::size_of::<Rsp>();
     let buffer = unsafe {
@@ -150,7 +144,7 @@ fn get_ipc_buffer<'a, Req, Rsp>() -> Result<IPCBufferWrapper<'a, Req, Rsp>, IPCE
         }
         buffer
     };
-    Ok(IPCBufferWrapper {
+    Ok(IPCBuffer {
         buffer,
         _req: PhantomData,
         _rsp: PhantomData,
@@ -158,7 +152,7 @@ fn get_ipc_buffer<'a, Req, Rsp>() -> Result<IPCBufferWrapper<'a, Req, Rsp>, IPCE
 }
 
 impl<Req, Rsp> Caller<Req, Rsp, role::Local> {
-    pub fn blocking_call<'a>(&mut self, request: &Req) -> Result<Rsp, IPCError> {
+    pub fn blocking_call<'a>(&self, request: &Req) -> Result<Rsp, IPCError> {
         let mut ipc_buffer = get_ipc_buffer()?;
         let response_msg_info = unsafe {
             let input_msg_info = seL4_MessageInfo_new(
@@ -179,7 +173,7 @@ impl<Req, Rsp> Caller<Req, Rsp, role::Local> {
             return Err(IPCError::ResponseSizeMismatch);
         }
 
-        Ok(unsafe { ipc_buffer.copy_rsp_from_buffer() })
+        Ok(ipc_buffer.copy_rsp_from_buffer())
     }
 }
 
@@ -233,7 +227,7 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
                 // to loop forever, most likely leaving the caller perpetually blocked.
                 continue;
             }
-            let out = f(unsafe { &ipc_buffer.copy_req_from_buffer() }, state);
+            let out = f(&ipc_buffer.copy_req_from_buffer(), state);
             response = out.0;
             state = out.1;
 

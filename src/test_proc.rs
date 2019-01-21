@@ -37,7 +37,7 @@ impl userland::RetypeForSetup for ResponderParams<role::Local> {
 pub extern "C" fn addition_requester(p: CallerParams<role::Local>) {
     debug_println!("Inside addition_requester");
     let mut current_sum: u32 = 1;
-    let mut caller = p.caller;
+    let caller = p.caller;
     let mut addition_request = AdditionRequest {
         a: current_sum,
         b: current_sum,
