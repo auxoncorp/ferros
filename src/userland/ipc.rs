@@ -59,7 +59,7 @@ where
     let (child_endpoint_responder, child_cnode_responder) = local_endpoint
         .copy(&local_cnode, child_cnode_responder, CapRights::RW)
         .expect("Could not copy to child b");
-    // TODO: Delete local endpoint
+    // TODO: Delete local endpoint?
     Ok((
         child_cnode_caller,
         child_cnode_responder,
@@ -95,10 +95,8 @@ struct IPCBufferWrapper<'a, Req: Sized, Rsp: Sized> {
 }
 
 impl<'a, Req: Sized, Rsp: Sized> IPCBufferWrapper<'a, Req, Rsp> {
-    /// Precondition: The input must *not* be a reference to data
-    /// actually living in the IPC Buffer.
     unsafe fn unchecked_copy_into_buffer<T: Sized>(&mut self, data: &T) {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             data as *const T,
             &self.buffer.msg as *const [usize] as *const T as *mut T,
             1,
@@ -114,23 +112,19 @@ impl<'a, Req: Sized, Rsp: Sized> IPCBufferWrapper<'a, Req, Rsp> {
         data
     }
 
-    /// Precondition: The input must *not* be a reference to data
-    /// actually living in the IPC Buffer.
-    pub unsafe fn copy_req_into_buffer(&mut self, request: &Req) {
-        self.unchecked_copy_into_buffer(request)
+    pub fn copy_req_into_buffer(&mut self, request: &Req) {
+        unsafe { self.unchecked_copy_into_buffer(request) }
     }
 
-    pub unsafe fn copy_req_from_buffer(&self) -> Req {
-        self.unchecked_copy_from_buffer()
+    pub fn copy_req_from_buffer(&self) -> Req {
+        unsafe { self.unchecked_copy_from_buffer() }
     }
 
-    /// Precondition: The input must *not* be a reference to data
-    /// actually living in the IPC Buffer.
-    unsafe fn copy_rsp_into_buffer(&mut self, response: &Rsp) {
-        self.unchecked_copy_into_buffer(response)
+    fn copy_rsp_into_buffer(&mut self, response: &Rsp) {
+        unsafe { self.unchecked_copy_into_buffer(response) }
     }
-    unsafe fn copy_rsp_from_buffer(&mut self) -> Rsp {
-        self.unchecked_copy_from_buffer()
+    fn copy_rsp_from_buffer(&mut self) -> Rsp {
+        unsafe { self.unchecked_copy_from_buffer() }
     }
 }
 
@@ -159,16 +153,16 @@ fn get_ipc_buffer<'a, Req, Rsp>() -> Result<IPCBufferWrapper<'a, Req, Rsp>, IPCE
 fn type_length_message_info<T>() -> seL4_MessageInfo_t {
     unsafe {
         seL4_MessageInfo_new(
-                0, // label,
-                0, // capsUnwrapped,
-                0, // extraCaps,
-                core::mem::size_of::<T>() // length
+            0,                         // label,
+            0,                         // capsUnwrapped,
+            0,                         // extraCaps,
+            core::mem::size_of::<T>(), // length
         )
     }
 }
 
 struct MessageInfo {
-    inner: seL4_MessageInfo_t
+    inner: seL4_MessageInfo_t,
 }
 
 impl MessageInfo {
@@ -183,23 +177,22 @@ impl MessageInfo {
 
 impl From<seL4_MessageInfo_t> for MessageInfo {
     fn from(msg: seL4_MessageInfo_t) -> Self {
-        MessageInfo {
-            inner: msg
-        }
+        MessageInfo { inner: msg }
     }
 }
 
 impl<Req, Rsp> Caller<Req, Rsp, role::Local> {
     pub fn blocking_call<'a>(&mut self, request: &Req) -> Result<Rsp, IPCError> {
         let mut ipc_buffer = get_ipc_buffer()?;
-        let msg_info: MessageInfo  = unsafe {
+        let msg_info: MessageInfo = unsafe {
             ipc_buffer.copy_req_into_buffer(request);
             seL4_Call(self.endpoint.cptr, type_length_message_info::<Req>())
-        }.into();
+        }
+        .into();
         if msg_info.length() != core::mem::size_of::<Rsp>() {
             return Err(IPCError::ResponseSizeMismatch);
         }
-        Ok(unsafe { ipc_buffer.copy_rsp_from_buffer() })
+        Ok(ipc_buffer.copy_rsp_from_buffer())
     }
 }
 
@@ -228,15 +221,15 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
         F: Fn(&Req, State) -> (Rsp, State),
     {
         let request_size = core::mem::size_of::<Req>();
-        let response_size = core::mem::size_of::<Rsp>();
         let mut ipc_buffer = get_ipc_buffer()?;
         // Do a regular receive to seed our initial value
-        let mut msg_info:MessageInfo = unsafe {
+        let mut msg_info: MessageInfo = unsafe {
             seL4_Recv(
                 self.endpoint.cptr,
                 0 as *const usize as *mut usize, // TODO - consider actually caring about sender
             )
-        }.into();
+        }
+        .into();
 
         let mut response = unsafe { core::mem::zeroed() }; // TODO - replace with Option-swapping
         let mut state = initial_state;
@@ -248,7 +241,7 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
                 // to loop forever, most likely leaving the caller perpetually blocked.
                 continue;
             }
-            let out = f(unsafe { &ipc_buffer.copy_req_from_buffer() }, state);
+            let out = f(&ipc_buffer.copy_req_from_buffer(), state);
             response = out.0;
             state = out.1;
 
@@ -259,7 +252,8 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
                     type_length_message_info::<Rsp>(),
                     0 as *const usize as *mut usize, // TODO - do we care about sender?
                 )
-            }.into();
+            }
+            .into();
         }
 
         // TODO - Let's get some better piping/handling of error conditions - panic only so far
@@ -310,8 +304,22 @@ where
     // TODO - how should we incorporate badging as a means of allowing a fault-handling/receiving thread
     // to distinguish between the various sources of faults?
     // seems like there is a M:1 problem here that we need to sort out.
+    // Possible answer -- keep around a handler to a joint sink endpoint,
+    // copy/mutate from that and
 
-    unimplemented!()
+    Ok((
+        child_cnode_fault_source,
+        child_cnode_fault_sink,
+        FaultSource {
+            endpoint: child_endpoint_fault_source,
+            _role: PhantomData,
+        },
+        FaultSink {
+            endpoint: child_endpoint_fault_sink,
+            _role: PhantomData,
+        },
+        local_cnode,
+    ))
 }
 
 pub struct FaultSource<Role: CNodeRole> {
@@ -320,6 +328,6 @@ pub struct FaultSource<Role: CNodeRole> {
 }
 
 pub struct FaultSink<Role: CNodeRole> {
-    endpoint: Cap<Endpoint, Role>,
+    pub(crate) endpoint: Cap<Endpoint, Role>,
     _role: PhantomData<Role>,
 }

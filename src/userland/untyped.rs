@@ -253,7 +253,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
                 scratch_slot.cptr,         // src_root: seL4_CNode,
                 scratch_slot.offset,       // src_index: seL4_Word,
                 seL4_WordBits as u8,    // src_depth: seL4_Uint8,
-                guard_data              // badge: seL4_Word,
+                guard_data              // badge or guard: seL4_Word,
             );
 
             // TODO - If we wanted to make more efficient use of our available slots at the cost
