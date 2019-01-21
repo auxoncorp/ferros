@@ -3,18 +3,19 @@ use core::mem::{self, size_of};
 use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
-    role, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights, Error, LocalCap, MappedPage,
-    ThreadControlBlock, UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, Untyped,
+    role, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights, Endpoint, Error, FaultSource,
+    LocalCap, MappedPage, ThreadControlBlock, UnassignedPageDirectory, UnmappedPage,
+    UnmappedPageTable, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Diff;
 use typenum::{Unsigned, U128, U16, U256};
 
 impl Cap<ThreadControlBlock, role::Local> {
-    pub fn configure<FreeSlots: Unsigned>(
+    fn configure<FreeSlots: Unsigned>(
         &mut self,
-        // fault_ep: Cap<Endpoint>,
         cspace_root: LocalCap<CNode<FreeSlots, role::Child>>,
+        fault_source: Option<FaultSource<role::Child>>,
         // cspace_root_data: usize, // set the guard bits here
         vspace_root: LocalCap<AssignedPageDirectory>, // TODO make a marker trait for VSpace?
         // vspace_root_data: usize, // always 0
@@ -34,7 +35,7 @@ impl Cap<ThreadControlBlock, role::Local> {
         let tcb_err = unsafe {
             seL4_TCB_Configure(
                 self.cptr,
-                seL4_CapNull as usize, // fault_ep.cptr,
+                fault_source.map_or(seL4_CapNull as usize, |source| source.endpoint.cptr), // fault_ep.cptr,
                 cspace_root.cptr,
                 cspace_root_data,
                 vspace_root.cptr,
@@ -173,7 +174,14 @@ where
     }
 
     let (mut tcb, _cnode): (Cap<ThreadControlBlock, _>, _) = tcb_ut.retype_local(cnode)?;
-    tcb.configure(child_cnode, page_dir, ipc_buffer_addr, ipc_buffer_page)?;
+    let fault_source = None; // TODO - pass in through params
+    tcb.configure(
+        child_cnode,
+        fault_source,
+        page_dir,
+        ipc_buffer_addr,
+        ipc_buffer_page,
+    )?;
 
     regs.pc = function_descriptor as seL4_Word;
     regs.r14 = (yield_forever as *const fn() -> ()) as seL4_Word;

@@ -5,6 +5,7 @@ pub enum CapRights {
     W,
     RW,
     RWG,
+    WG,
 }
 
 impl From<CapRights> for seL4_CapRights_t {
@@ -14,11 +15,12 @@ impl From<CapRights> for seL4_CapRights_t {
             CapRights::W => unsafe { seL4_CapRights_new(0, 1, 0) },
             CapRights::RW => unsafe { seL4_CapRights_new(0, 1, 1) },
             CapRights::RWG => unsafe { seL4_CapRights_new(1, 1, 1) },
+            CapRights::WG => unsafe { seL4_CapRights_new(1, 1, 0) },
         }
     }
 }
 
-pub trait Rights {
+pub trait Rights: private::SealedRights {
     fn as_caprights() -> CapRights;
 }
 
@@ -30,6 +32,7 @@ pub mod rights {
     pub struct W {}
     pub struct RW {}
     pub struct RWG {}
+    pub struct WG {}
 
     impl Rights for R {
         fn as_caprights() -> CapRights {
@@ -55,4 +58,18 @@ pub mod rights {
         }
     }
 
+    impl Rights for WG {
+        fn as_caprights() -> CapRights {
+            CapRights::WG
+        }
+    }
+}
+mod private {
+    use super::*;
+    pub trait SealedRights {}
+    impl SealedRights for rights::R {}
+    impl SealedRights for rights::W {}
+    impl SealedRights for rights::RW {}
+    impl SealedRights for rights::RWG {}
+    impl SealedRights for rights::WG {}
 }

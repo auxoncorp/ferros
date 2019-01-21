@@ -53,14 +53,13 @@ where
     let (local_endpoint, local_cnode): (LocalCap<Endpoint>, _) = untyped
         .retype_local(local_cnode)
         .expect("could not create local endpoint in call_channel");
-    // TODO - revisit CapRights selection, we need to clamp this down!
     let (child_endpoint_caller, child_cnode_caller) = local_endpoint
         .copy(&local_cnode, child_cnode_caller, CapRights::RWG)
         .expect("Could not copy to child a");
     let (child_endpoint_responder, child_cnode_responder) = local_endpoint
         .copy(&local_cnode, child_cnode_responder, CapRights::RW)
         .expect("Could not copy to child b");
-
+    // TODO: Delete local endpoint
     Ok((
         child_cnode_caller,
         child_cnode_responder,
@@ -258,4 +257,61 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
         // TODO - Let's get some better piping/handling of error conditions - panic only so far
         // TODO - Consider allowing fn to return Option<Rsp> and if None do Rcv rather than ReplyRecv
     }
+}
+
+/// Only supports establishing two child processes where one process will be watching for faults on the other.
+/// Requires a separate input signature if we want the local/current thread to be the watcher due to
+/// our consuming full instances of the local scratch CNode and the destination CNodes separately in this function.
+pub fn setup_fault_endpoint_pair<
+    ScratchFreeSlots: Unsigned,
+    FaultSourceChildFreeSlots: Unsigned,
+    FaultSinkChildFreeSlots: Unsigned,
+>(
+    local_cnode: LocalCap<LocalCNode<ScratchFreeSlots>>,
+    untyped: LocalCap<Untyped<U4>>,
+    child_cnode_fault_source: LocalCap<ChildCNode<FaultSourceChildFreeSlots>>,
+    child_cnode_fault_sink: LocalCap<ChildCNode<FaultSinkChildFreeSlots>>,
+) -> Result<
+    (
+        LocalCap<ChildCNode<Sub1<FaultSourceChildFreeSlots>>>,
+        LocalCap<ChildCNode<Sub1<FaultSinkChildFreeSlots>>>,
+        FaultSource<role::Child>,
+        FaultSink<role::Child>,
+        LocalCap<LocalCNode<Sub1<ScratchFreeSlots>>>,
+    ),
+    Error,
+>
+where
+    ScratchFreeSlots: Sub<B1>,
+    Diff<ScratchFreeSlots, B1>: Unsigned,
+    FaultSourceChildFreeSlots: Sub<B1>,
+    Sub1<FaultSourceChildFreeSlots>: Unsigned,
+    FaultSinkChildFreeSlots: Sub<B1>,
+    Sub1<FaultSinkChildFreeSlots>: Unsigned,
+{
+    let (local_endpoint, local_cnode): (LocalCap<Endpoint>, _) = untyped
+        .retype_local(local_cnode)
+        .expect("could not create local endpoint in call_channel");
+    let (child_endpoint_fault_source, child_cnode_fault_source) = local_endpoint
+        .copy(&local_cnode, child_cnode_fault_source, CapRights::RWG)
+        .expect("Could not copy to fault source cnode");
+    let (child_endpoint_fault_sink, child_cnode_fault_sink) = local_endpoint
+        .copy(&local_cnode, child_cnode_fault_sink, CapRights::RW)
+        .expect("Could not copy to fault sink cnode");
+
+    // TODO - how should we incorporate badging as a means of allowing a fault-handling/receiving thread
+    // to distinguish between the various sources of faults?
+    // seems like there is a M:1 problem here that we need to sort out.
+
+    unimplemented!()
+}
+
+pub struct FaultSource<Role: CNodeRole> {
+    pub(crate) endpoint: Cap<Endpoint, Role>,
+    _role: PhantomData<Role>,
+}
+
+pub struct FaultSink<Role: CNodeRole> {
+    endpoint: Cap<Endpoint, Role>,
+    _role: PhantomData<Role>,
 }
