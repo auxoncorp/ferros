@@ -59,7 +59,7 @@ where
     let (child_endpoint_responder, child_cnode_responder) = local_endpoint
         .copy(&local_cnode, child_cnode_responder, CapRights::RW)
         .expect("Could not copy to child b");
-    // TODO: Delete local endpoint?
+
     Ok((
         child_cnode_caller,
         child_cnode_responder,
@@ -88,13 +88,13 @@ pub struct Caller<Req: Sized, Rsp: Sized, Role: CNodeRole> {
 }
 
 /// Internal convenience for working with IPC Buffer instances
-struct IPCBufferWrapper<'a, Req: Sized, Rsp: Sized> {
+struct IPCBuffer<'a, Req: Sized, Rsp: Sized> {
     buffer: &'a mut seL4_IPCBuffer,
     _req: PhantomData<Req>,
     _rsp: PhantomData<Rsp>,
 }
 
-impl<'a, Req: Sized, Rsp: Sized> IPCBufferWrapper<'a, Req, Rsp> {
+impl<'a, Req: Sized, Rsp: Sized> IPCBuffer<'a, Req, Rsp> {
     unsafe fn unchecked_copy_into_buffer<T: Sized>(&mut self, data: &T) {
         core::ptr::copy(
             data as *const T,
@@ -128,7 +128,7 @@ impl<'a, Req: Sized, Rsp: Sized> IPCBufferWrapper<'a, Req, Rsp> {
     }
 }
 
-fn get_ipc_buffer<'a, Req, Rsp>() -> Result<IPCBufferWrapper<'a, Req, Rsp>, IPCError> {
+fn get_ipc_buffer<'a, Req, Rsp>() -> Result<IPCBuffer<'a, Req, Rsp>, IPCError> {
     let request_size = core::mem::size_of::<Req>();
     let response_size = core::mem::size_of::<Rsp>();
     let buffer = unsafe {
@@ -143,7 +143,7 @@ fn get_ipc_buffer<'a, Req, Rsp>() -> Result<IPCBufferWrapper<'a, Req, Rsp>, IPCE
         }
         buffer
     };
-    Ok(IPCBufferWrapper {
+    Ok(IPCBuffer {
         buffer,
         _req: PhantomData,
         _rsp: PhantomData,
@@ -182,7 +182,7 @@ impl From<seL4_MessageInfo_t> for MessageInfo {
 }
 
 impl<Req, Rsp> Caller<Req, Rsp, role::Local> {
-    pub fn blocking_call<'a>(&mut self, request: &Req) -> Result<Rsp, IPCError> {
+    pub fn blocking_call<'a>(&self, request: &Req) -> Result<Rsp, IPCError> {
         let mut ipc_buffer = get_ipc_buffer()?;
         let msg_info: MessageInfo = unsafe {
             ipc_buffer.copy_req_into_buffer(request);
