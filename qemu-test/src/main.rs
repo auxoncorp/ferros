@@ -40,7 +40,6 @@ fn run_qemu_test(
             name
         );
     }
-    println!("running 'TEST_CASE={} cargo fel4 build", name);
 
     let mut build_command = Command::new("cargo");
     (&mut build_command)
@@ -48,18 +47,31 @@ fn run_qemu_test(
         .arg("build")
         .current_dir("fel4-test-project")
         .env("TEST_CASE", name);
-    if let Some(flags) = supplemental_feature_flags {
-        let merged_pairs: Vec<_> = flags
-            .into_iter()
-            .map(|(k, v)| {
-                if !is_rust_id(k) || !is_rust_id(v) {
-                    panic!("Invalid extra test feature flag passed: ({}, {}). Extra flags must be valid rust identifiers", k, v)
-                }
-                format!("{}=\"{}\"", k, v)
-            })
-            .collect();
-        (&mut build_command).env("TEST_EXTRA_FLAG_PAIRS", merged_pairs.join(","));
-    }
+    let escaped_flags_summary = {
+        if let Some(flags) = supplemental_feature_flags {
+            let merged_pairs: Vec<_> = flags
+                .iter()
+                .map(|(k, v)| {
+                    if !is_rust_id(k) || !is_rust_id(v) {
+                        panic!("Invalid extra test feature flag passed: ({}, {}). Extra flags must be valid rust identifiers", k, v)
+                    }
+                    format!("{}=\"{}\"", k, v)
+                })
+                .collect();
+            (&mut build_command).env("TEST_EXTRA_FLAG_PAIRS", merged_pairs.join(","));
+            let escaped_pairs: Vec<_> = flags
+                .iter()
+                .map(|(k, v)| format!("{}=\\\"{}\\\"", k, v))
+                .collect();
+            format!("TEST_EXTRA_FLAG_PAIRS={}", escaped_pairs.join(","))
+        } else {
+            "".to_string()
+        }
+    };
+    println!(
+        "running 'TEST_CASE={} {} cargo fel4 build",
+        name, escaped_flags_summary
+    );
     let build_result = build_command.output().expect("Couldn't build test project");
 
     assert!(build_result.status.success());
@@ -101,7 +113,7 @@ mod tests {
                 "root_task_runs",
                 Regex::new(".*hello from the root task.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
-                Some(vec![("min_params", "true")]),
+                Some(vec![("single_process", "true"),("min_params", "true")]),
             );
         }
     }
@@ -112,7 +124,7 @@ mod tests {
                 "process_runs",
                 Regex::new(".*The value inside the process is 42.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
-                Some(vec![("min_params", "true")]),
+                Some(vec![("single_process", "true"),("min_params", "true")]),
             );
         }
     }
@@ -123,7 +135,7 @@ mod tests {
                 "memory_read_protection",
                 Regex::new(".*vm fault on data.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
-                Some(vec![("min_params", "true")]),
+                Some(vec![("single_process", "true"),("min_params", "true")]),
             );
         }
     }
@@ -134,7 +146,7 @@ mod tests {
                 "memory_write_protection",
                 Regex::new(".*vm fault on data.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
-                Some(vec![("min_params", "true")]),
+                Some(vec![("single_process", "true"),("min_params", "true")]),
             );
         }
     }
@@ -145,7 +157,7 @@ mod tests {
                 "child_process_cap_management",
                 Regex::new(".*Split, retyped, and deleted caps in a child process.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
-                None,
+                Some(vec![("single_process", "true")]),
             );
         }
     }
@@ -157,7 +169,19 @@ mod tests {
 
                 Regex::new(".*The child process saw a first value of bbbbbbbb, a mid value of aaaaaaaa, and a last value of cccccccc.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
-                None,
+                Some(vec![("single_process", "true")]),
+            );
+        }
+    }
+
+    sequential_test! {
+        fn call_and_response_loop() {
+            run_qemu_test(
+                "call_and_response_loop",
+
+                Regex::new(".*Call and response addition finished.*").unwrap(),
+                Regex::new(".*Root task should never return from main.*").unwrap(),
+                Some(vec![("dual_process", "true")]),
             );
         }
     }

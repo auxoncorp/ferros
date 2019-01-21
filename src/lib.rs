@@ -66,8 +66,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     let (mut boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
 
     let _root_cnode = {
-        // child process demonstrating that we can wire up
-        // passing capability objects to child processes
         let (caller_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) = ut16a
             .retype_local_cnode::<_, U12>(root_cnode)
             .expect("Couldn't retype to caller_cnode_local");
