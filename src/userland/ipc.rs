@@ -156,28 +156,49 @@ fn get_ipc_buffer<'a, Req, Rsp>() -> Result<IPCBufferWrapper<'a, Req, Rsp>, IPCE
     })
 }
 
-impl<Req, Rsp> Caller<Req, Rsp, role::Local> {
-    pub fn blocking_call<'a>(&mut self, request: &Req) -> Result<Rsp, IPCError> {
-        let mut ipc_buffer = get_ipc_buffer()?;
-        let response_msg_info = unsafe {
-            let input_msg_info = seL4_MessageInfo_new(
+fn type_length_message_info<T>() -> seL4_MessageInfo_t {
+    unsafe {
+        seL4_MessageInfo_new(
                 0, // label,
                 0, // capsUnwrapped,
                 0, // extraCaps,
-                core::mem::size_of::<Req>(),
-            );
-            ipc_buffer.copy_req_into_buffer(request);
-            seL4_Call(self.endpoint.cptr, input_msg_info)
-        };
-        let response_msg_length = unsafe {
+                core::mem::size_of::<T>() // length
+        )
+    }
+}
+
+struct MessageInfo {
+    inner: seL4_MessageInfo_t
+}
+
+impl MessageInfo {
+    fn length(&self) -> usize {
+        unsafe {
             seL4_MessageInfo_ptr_get_length(
-                &response_msg_info as *const seL4_MessageInfo_t as *mut seL4_MessageInfo_t,
+                &self.inner as *const seL4_MessageInfo_t as *mut seL4_MessageInfo_t,
             )
-        };
-        if response_msg_length != core::mem::size_of::<Rsp>() {
+        }
+    }
+}
+
+impl From<seL4_MessageInfo_t> for MessageInfo {
+    fn from(msg: seL4_MessageInfo_t) -> Self {
+        MessageInfo {
+            inner: msg
+        }
+    }
+}
+
+impl<Req, Rsp> Caller<Req, Rsp, role::Local> {
+    pub fn blocking_call<'a>(&mut self, request: &Req) -> Result<Rsp, IPCError> {
+        let mut ipc_buffer = get_ipc_buffer()?;
+        let msg_info: MessageInfo  = unsafe {
+            ipc_buffer.copy_req_into_buffer(request);
+            seL4_Call(self.endpoint.cptr, type_length_message_info::<Req>())
+        }.into();
+        if msg_info.length() != core::mem::size_of::<Rsp>() {
             return Err(IPCError::ResponseSizeMismatch);
         }
-
         Ok(unsafe { ipc_buffer.copy_rsp_from_buffer() })
     }
 }
@@ -210,22 +231,17 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
         let response_size = core::mem::size_of::<Rsp>();
         let mut ipc_buffer = get_ipc_buffer()?;
         // Do a regular receive to seed our initial value
-        let mut msg_info = unsafe {
+        let mut msg_info:MessageInfo = unsafe {
             seL4_Recv(
                 self.endpoint.cptr,
                 0 as *const usize as *mut usize, // TODO - consider actually caring about sender
             )
-        };
+        }.into();
 
         let mut response = unsafe { core::mem::zeroed() }; // TODO - replace with Option-swapping
         let mut state = initial_state;
         loop {
-            let msg_length = unsafe {
-                seL4_MessageInfo_ptr_get_length(
-                    &msg_info as *const seL4_MessageInfo_t as *mut seL4_MessageInfo_t,
-                )
-            };
-            if msg_length != request_size {
+            if msg_info.length() != request_size {
                 // TODO - we should be dropping bad data or replying with an error code
                 debug_println!("Request size incoming does not match static size expectation");
                 // Note that `continue`'ing from here will essentially cause this process
@@ -236,22 +252,14 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
             response = out.0;
             state = out.1;
 
-            let info = unsafe {
-                let response_msg_info = seL4_MessageInfo_new(
-                    0,             // label,
-                    0,             // capsUnwrapped,
-                    0,             // extraCaps,
-                    response_size, // length
-                );
+            msg_info = unsafe {
                 ipc_buffer.copy_rsp_into_buffer(&response);
                 seL4_ReplyRecv(
                     self.endpoint.cptr,
-                    response_msg_info,
+                    type_length_message_info::<Rsp>(),
                     0 as *const usize as *mut usize, // TODO - do we care about sender?
                 )
-            };
-
-            msg_info = info;
+            }.into();
         }
 
         // TODO - Let's get some better piping/handling of error conditions - panic only so far
