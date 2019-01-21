@@ -1,9 +1,7 @@
-use core::convert::{AsMut, AsRef};
 use core::marker::PhantomData;
 use core::ops::Sub;
 use crate::userland::{
-    role, CNodeRole, Cap, CapRights, ChildCNode, Endpoint, Error, IPCBufferToken, LocalCNode,
-    LocalCap, Untyped,
+    role, CNodeRole, Cap, CapRights, ChildCNode, Endpoint, Error, LocalCNode, LocalCap, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
@@ -90,102 +88,86 @@ pub struct Caller<Req: Sized, Rsp: Sized, Role: CNodeRole> {
     _role: PhantomData<Role>,
 }
 
-/// Type-level-locking for a typed view on the IPCBuffer's msg contents
-pub struct IPCBufferGuard<'a, T: Sized> {
-    data: &'a T,
-    ipc_token: IPCBufferToken,
+/// Internal convenience for working with IPC Buffer instances
+struct IPCBufferWrapper<'a, Req: Sized, Rsp: Sized> {
+    buffer: &'a mut seL4_IPCBuffer,
+    _req: PhantomData<Req>,
+    _rsp: PhantomData<Rsp>,
 }
 
-impl<'a, T: Sized> IPCBufferGuard<'a, T> {
-    fn acquire(ipc_buffer_token: IPCBufferToken) -> Option<Self> {
-        // TODO - Move generic size checks to compile-time somehow
-        let t_size = core::mem::size_of::<T>();
-        unsafe {
-            let buffer = &mut *seL4_GetIPCBuffer();
-            let buffer_size = core::mem::size_of_val(&buffer.msg);
-            if t_size <= buffer_size {
-                Some(Self {
-                    data: &*(&buffer.msg as *const [usize] as *const T),
-                    ipc_token: ipc_buffer_token,
-                })
-            } else {
-                None
-            }
+impl<'a, Req: Sized, Rsp: Sized> IPCBufferWrapper<'a, Req, Rsp> {
+    /// Precondition: The input must *not* be a reference to data
+    /// actually living in the IPC Buffer.
+    unsafe fn unchecked_copy_into_buffer<T: Sized>(&mut self, data: &T) {
+        core::ptr::copy_nonoverlapping(
+            data as *const T,
+            &self.buffer.msg as *const [usize] as *const T as *mut T,
+            1,
+        );
+    }
+    unsafe fn unchecked_copy_from_buffer<T: Sized>(&self) -> T {
+        let mut data = core::mem::zeroed();
+        core::ptr::copy_nonoverlapping(
+            &self.buffer.msg as *const [usize] as *const T,
+            &mut data as *mut T,
+            1,
+        );
+        data
+    }
+
+    /// Precondition: The input must *not* be a reference to data
+    /// actually living in the IPC Buffer.
+    pub unsafe fn copy_req_into_buffer(&mut self, request: &Req) {
+        self.unchecked_copy_into_buffer(request)
+    }
+
+    pub unsafe fn copy_req_from_buffer(&self) -> Req {
+        self.unchecked_copy_from_buffer()
+    }
+
+    /// Precondition: The input must *not* be a reference to data
+    /// actually living in the IPC Buffer.
+    unsafe fn copy_rsp_into_buffer(&mut self, response: &Rsp) {
+        self.unchecked_copy_into_buffer(response)
+    }
+    unsafe fn copy_rsp_from_buffer(&mut self) -> Rsp {
+        self.unchecked_copy_from_buffer()
+    }
+}
+
+fn get_ipc_buffer<'a, Req, Rsp>() -> Result<IPCBufferWrapper<'a, Req, Rsp>, IPCError> {
+    let request_size = core::mem::size_of::<Req>();
+    let response_size = core::mem::size_of::<Rsp>();
+    let buffer = unsafe {
+        let buffer: &mut seL4_IPCBuffer = &mut *seL4_GetIPCBuffer();
+        let buffer_size = core::mem::size_of_val(&buffer.msg);
+        // TODO - Move this to compile-time somehow
+        if request_size > buffer_size {
+            return Err(IPCError::RequestSizeTooBig);
         }
-    }
-
-    pub fn release(self) -> IPCBufferToken {
-        self.ipc_token
-    }
-}
-
-impl<'a, T> AsRef<T> for IPCBufferGuard<'a, T> {
-    fn as_ref(&self) -> &T {
-        self.data
-    }
-}
-
-/// Type-level-locking for a mutable typed view on the IPCBuffer's msg contents
-pub struct IPCBufferGuardMut<'a, T: Sized> {
-    data: &'a mut T,
-    ipc_token: IPCBufferToken,
-}
-
-impl<'a, T: Sized> IPCBufferGuardMut<'a, T> {
-    fn acquire(ipc_buffer_token: IPCBufferToken) -> Option<Self> {
-        // TODO - Move generic size checks to compile-time somehow
-        let t_size = core::mem::size_of::<T>();
-        unsafe {
-            let buffer: &mut seL4_IPCBuffer = &mut *seL4_GetIPCBuffer();
-            let buffer_size = core::mem::size_of_val(&buffer.msg);
-            if t_size <= buffer_size {
-                Some(Self {
-                    data: &mut *(&mut buffer.msg as *mut [usize] as *mut T),
-                    ipc_token: ipc_buffer_token,
-                })
-            } else {
-                None
-            }
+        if response_size > buffer_size {
+            return Err(IPCError::ResponseSizeTooBig);
         }
-    }
-
-    pub fn release(self) -> IPCBufferToken {
-        self.ipc_token
-    }
-}
-
-impl<'a, T> AsMut<T> for IPCBufferGuardMut<'a, T> {
-    fn as_mut(&mut self) -> &mut T {
-        self.data
-    }
+        buffer
+    };
+    Ok(IPCBufferWrapper {
+        buffer,
+        _req: PhantomData,
+        _rsp: PhantomData,
+    })
 }
 
 impl<Req, Rsp> Caller<Req, Rsp, role::Local> {
-    pub fn blocking_call<'a>(
-        &mut self,
-        request: &Req,
-        ipc_buffer_token: IPCBufferToken,
-    ) -> Result<(IPCBufferGuard<'a, Rsp>), IPCError> {
-        let request_size = core::mem::size_of::<Req>();
-        let mut write_guard = {
-            if let Some(guard) = IPCBufferGuardMut::acquire(ipc_buffer_token) {
-                guard
-            } else {
-                return Err(IPCError::RequestSizeTooBig);
-            }
-        };
+    pub fn blocking_call<'a>(&mut self, request: &Req) -> Result<Rsp, IPCError> {
+        let mut ipc_buffer = get_ipc_buffer()?;
         let response_msg_info = unsafe {
             let input_msg_info = seL4_MessageInfo_new(
                 0, // label,
                 0, // capsUnwrapped,
                 0, // extraCaps,
-                request_size,
+                core::mem::size_of::<Req>(),
             );
-            core::ptr::copy_nonoverlapping(
-                request as *const Req,
-                write_guard.as_mut() as *mut Req,
-                1,
-            );
+            ipc_buffer.copy_req_into_buffer(request);
             seL4_Call(self.endpoint.cptr, input_msg_info)
         };
         let response_msg_length = unsafe {
@@ -196,11 +178,8 @@ impl<Req, Rsp> Caller<Req, Rsp, role::Local> {
         if response_msg_length != core::mem::size_of::<Rsp>() {
             return Err(IPCError::ResponseSizeMismatch);
         }
-        if let Some(guard) = IPCBufferGuard::acquire(write_guard.release()) {
-            Ok(guard)
-        } else {
-            Err(IPCError::ResponseSizeTooBig)
-        }
+
+        Ok(unsafe { ipc_buffer.copy_rsp_from_buffer() })
     }
 }
 
@@ -213,18 +192,15 @@ pub struct Responder<Req: Sized, Rsp: Sized, Role: CNodeRole> {
 }
 
 impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
-    pub fn reply_recv<F>(self, ipc_buffer_token: IPCBufferToken, f: F) -> Result<Rsp, IPCError>
+    pub fn reply_recv<F>(self, f: F) -> Result<Rsp, IPCError>
     where
         F: Fn(&Req) -> (Rsp),
     {
-        self.reply_recv_with_state(ipc_buffer_token, 0, move |req, state| {
-            (f(req), state)
-        })
+        self.reply_recv_with_state((), move |req, state| (f(req), state))
     }
 
     pub fn reply_recv_with_state<F, State>(
         self,
-        ipc_buffer_token: IPCBufferToken,
         initial_state: State,
         f: F,
     ) -> Result<Rsp, IPCError>
@@ -233,10 +209,7 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
     {
         let request_size = core::mem::size_of::<Req>();
         let response_size = core::mem::size_of::<Rsp>();
-        let mut request_guard = match IPCBufferGuard::acquire(ipc_buffer_token) {
-            Some(g) => g,
-            None => return Err(IPCError::RequestSizeTooBig),
-        };
+        let mut ipc_buffer = get_ipc_buffer()?;
         // Do a regular receive to seed our initial value
         let mut msg_info = unsafe {
             seL4_Recv(
@@ -260,37 +233,26 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
                 // to loop forever, most likely leaving the caller perpetually blocked.
                 continue;
             }
-            let out = f(request_guard.as_ref(), state);
+            let out = f(unsafe { &ipc_buffer.copy_req_from_buffer() }, state);
             response = out.0;
             state = out.1;
 
-            let (info, ipc_token) = unsafe {
+            let info = unsafe {
                 let response_msg_info = seL4_MessageInfo_new(
                     0,             // label,
                     0,             // capsUnwrapped,
                     0,             // extraCaps,
                     response_size, // length
                 );
-                let mut response_guard = match IPCBufferGuardMut::acquire(request_guard.release()) {
-                    Some(g) => g,
-                    None => return Err(IPCError::ResponseSizeTooBig),
-                };
-                core::ptr::copy_nonoverlapping(&response as *const Rsp, response_guard.as_mut(), 1);
-                (
-                    seL4_ReplyRecv(
-                        self.endpoint.cptr,
-                        response_msg_info,
-                        0 as *const usize as *mut usize,
-                    ), // TODO - do we care about sender?
-                    response_guard.release(),
+                ipc_buffer.copy_rsp_into_buffer(&response);
+                seL4_ReplyRecv(
+                    self.endpoint.cptr,
+                    response_msg_info,
+                    0 as *const usize as *mut usize, // TODO - do we care about sender?
                 )
             };
 
             msg_info = info;
-            request_guard = match IPCBufferGuard::acquire(ipc_token) {
-                Some(g) => g,
-                None => return Err(IPCError::RequestSizeTooBig),
-            };
         }
 
         // TODO - Let's get some better piping/handling of error conditions - panic only so far

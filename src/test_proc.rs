@@ -1,6 +1,5 @@
-use core::convert::AsRef;
 use crate::pow::Pow;
-use crate::userland::{self, role, CNode, CNodeRole, Caller, Cap, IPCBufferToken, Responder};
+use crate::userland::{self, role, CNode, CNodeRole, Caller, Cap, Responder};
 use typenum::operator_aliases::Diff;
 use typenum::{U12, U2};
 
@@ -35,8 +34,7 @@ impl userland::RetypeForSetup for ResponderParams<role::Local> {
     type Output = ResponderParams<role::Child>;
 }
 
-pub extern "C" fn addition_requester(params_and_ipc: (CallerParams<role::Local>, IPCBufferToken)) {
-    let (p, mut ipc_token) = params_and_ipc;
+pub extern "C" fn addition_requester(p: CallerParams<role::Local>) {
     debug_println!("Inside addition_requester");
     let mut current_sum: u32 = 1;
     let mut caller = p.caller;
@@ -52,10 +50,9 @@ pub extern "C" fn addition_requester(params_and_ipc: (CallerParams<role::Local>,
             addition_request.a,
             addition_request.b
         );
-        match caller.blocking_call(&addition_request, ipc_token) {
-            Ok(rsp_guard) => {
-                current_sum = rsp_guard.as_ref().sum;
-                ipc_token = rsp_guard.release();
+        match caller.blocking_call(&addition_request) {
+            Ok(rsp) => {
+                current_sum = rsp.sum;
             }
             Err(e) => {
                 debug_println!("addition request call failed: {:?}", e);
@@ -67,18 +64,14 @@ pub extern "C" fn addition_requester(params_and_ipc: (CallerParams<role::Local>,
     debug_println!("addition_requester completed its task");
 }
 
-pub extern "C" fn addition_responder(
-    params_and_ipc: (ResponderParams<role::Local>, IPCBufferToken),
-) {
-    let (p, ipc_token) = params_and_ipc;
+pub extern "C" fn addition_responder(p: ResponderParams<role::Local>) {
     debug_println!("Inside addition_responder");
     let initial_state: usize = 0;
     p.responder
-        .reply_recv_with_state(ipc_token, initial_state, move |req, state| {
+        .reply_recv_with_state(initial_state, move |req, state| {
             debug_println!("Addition has happened {} times", state);
 
-            (AdditionResponse { sum: req.a + req.b },
-             state + 1)
+            (AdditionResponse { sum: req.a + req.b }, state + 1)
         })
         .expect("Could not set up a reply_recv");
 }
