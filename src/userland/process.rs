@@ -61,6 +61,7 @@ fn yield_forever() {
     }
 }
 
+// TODO - consider renaming for clarity
 pub trait RetypeForSetup: Sized {
     type Output;
 }

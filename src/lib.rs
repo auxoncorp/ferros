@@ -27,9 +27,7 @@ mod test_proc;
 
 use core::marker::PhantomData;
 use crate::micro_alloc::GetUntyped;
-use crate::userland::{
-    role, root_cnode, spawn, Badge, BootInfo, CNode, FaultSinkBuilder, LocalCap,
-};
+use crate::userland::{role, root_cnode, spawn, Badge, BootInfo, CNode, FaultSinkSetup, LocalCap};
 use sel4_sys::*;
 use typenum::{U12, U20, U4096};
 
@@ -87,14 +85,14 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
             .expect("Couldn't retype");
 
         let (sink_builder, fault_sink_cnode_local, root_cnode) =
-            FaultSinkBuilder::new(root_cnode, ut4, fault_sink_cnode_local);
+            FaultSinkSetup::new(root_cnode, ut4, fault_sink_cnode_local);
         let (cap_fault_source, cap_fault_source_cnode_local) = sink_builder
             .add_fault_source(&root_cnode, cap_fault_source_cnode_local, Badge::from(123))
             .expect("Could not add fault source");
         let (vm_fault_source, vm_fault_source_cnode_local) = sink_builder
             .add_fault_source(&root_cnode, vm_fault_source_cnode_local, Badge::from(345))
             .expect("Could not add fault source");
-        let fault_sink = sink_builder.build();
+        let fault_sink = sink_builder.sink();
 
         // self-reference must come last because it seals our ability to add more capabilities
         // from the current thread's perspective

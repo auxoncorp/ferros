@@ -434,7 +434,7 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
     }
 }
 
-pub struct FaultSinkBuilder {
+pub struct FaultSinkSetup {
     // Local pointer to the endpoint, kept around for easy copying
     local_endpoint: LocalCap<Endpoint>,
     // Copy of the same endpoint, set up with the correct rights,
@@ -447,7 +447,7 @@ pub struct FaultSinkBuilder {
     sink_cspace_local_cptr: usize,
 }
 
-impl FaultSinkBuilder {
+impl FaultSinkSetup {
     pub fn new<ScratchFreeSlots: Unsigned, FaultSinkChildFreeSlots: Unsigned>(
         local_cnode: LocalCap<LocalCNode<ScratchFreeSlots>>,
         untyped: LocalCap<Untyped<U4>>,
@@ -470,7 +470,7 @@ impl FaultSinkBuilder {
             .copy(&local_cnode, child_cnode_fault_sink, CapRights::RW)
             .expect("Could not copy to fault sink cnode");
         (
-            FaultSinkBuilder {
+            FaultSinkSetup {
                 local_endpoint,
                 sink_child_endpoint,
                 sink_cspace_local_cptr: child_cnode_fault_sink.cptr,
@@ -511,7 +511,7 @@ impl FaultSinkBuilder {
         ))
     }
 
-    pub fn build(self) -> FaultSink<role::Child> {
+    pub fn sink(self) -> FaultSink<role::Child> {
         FaultSink {
             endpoint: self.sink_child_endpoint,
         }
@@ -549,7 +549,7 @@ where
     Sub1<FaultSinkChildFreeSlots>: Unsigned,
 {
     let (builder, child_cnode_fault_sink, local_cnode) =
-        FaultSinkBuilder::new(local_cnode, untyped, child_cnode_fault_sink);
+        FaultSinkSetup::new(local_cnode, untyped, child_cnode_fault_sink);
     let (fault_source, child_cnode_fault_source) = builder.add_fault_source(
         &local_cnode, child_cnode_fault_source, Badge::from(0)
     ).expect("Should be impossible to generate a self-handler since we are consuming independent parameters for both the source and sink child cnodes");
@@ -558,7 +558,7 @@ where
         child_cnode_fault_source,
         child_cnode_fault_sink,
         fault_source,
-        builder.build(),
+        builder.sink(),
         local_cnode,
     ))
 }
