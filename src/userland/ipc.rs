@@ -28,10 +28,8 @@ pub enum FaultManagementError {
     SelfFaultHandlingForbidden,
 }
 
-/// Fastpath call channel -> given some memory capacity (untyped) and two child cnodes,
-/// (a parent cnode??)
+/// Fastpath call channel -> given some memory capacity and two child cnodes,
 /// create an endpoint locally, copy it to both child cnodes (with the appropriate permissions)
-/// delete the local copy?
 /// and produce two objects out, one for calling, one for receiving-and-responding
 pub fn call_channel<
     ScratchFreeSlots: Unsigned,
