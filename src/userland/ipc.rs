@@ -161,23 +161,133 @@ fn type_length_message_info<T>() -> seL4_MessageInfo_t {
     }
 }
 
-struct MessageInfo {
+#[derive(Debug)]
+pub struct MessageInfo {
     inner: seL4_MessageInfo_t,
 }
 
 impl MessageInfo {
-    fn length(&self) -> usize {
+    fn copy_inner(&self) -> seL4_MessageInfo_t {
+        seL4_MessageInfo_t {
+            words: [self.inner.words[0]],
+        }
+    }
+    pub fn label(&self) -> usize {
+        unsafe {
+            seL4_MessageInfo_ptr_get_label(
+                &self.inner as *const seL4_MessageInfo_t as *mut seL4_MessageInfo_t,
+            )
+        }
+    }
+    pub fn length(&self) -> usize {
         unsafe {
             seL4_MessageInfo_ptr_get_length(
                 &self.inner as *const seL4_MessageInfo_t as *mut seL4_MessageInfo_t,
             )
         }
     }
+
+    fn is_vm_fault(&self) -> bool {
+        1i8 == unsafe { seL4_isVMFault_tag(self.copy_inner()) }
+    }
+
+    fn is_unknown_syscall(&self) -> bool {
+        1i8 == unsafe { seL4_isUnknownSyscall_tag(self.copy_inner()) }
+    }
+
+    fn is_user_exception(&self) -> bool {
+        1i8 == unsafe { seL4_isUserException_tag(self.copy_inner()) }
+    }
+
+    fn is_null_fault(&self) -> bool {
+        1i8 == unsafe { seL4_isNullFault_tag(self.copy_inner()) }
+    }
+
+    fn is_cap_fault(&self) -> bool {
+        1i8 == unsafe { seL4_isCapFault_tag(self.copy_inner()) }
+    }
 }
 
 impl From<seL4_MessageInfo_t> for MessageInfo {
     fn from(msg: seL4_MessageInfo_t) -> Self {
         MessageInfo { inner: msg }
+    }
+}
+
+/// TODO - consider dragging more information
+/// out of the fault message in the IPC Buffer
+/// and populating some inner fields
+/// TODO - consider rolling in the sender here, too
+#[derive(Debug)]
+pub enum Fault {
+    VMFault(fault::VMFault),
+    UnknownSyscall(fault::UnknownSyscall),
+    UserException(fault::UserException),
+    NullFault(fault::NullFault),
+    CapFault(fault::CapFault),
+    UnidentifiedFault(fault::UnidentifiedFault),
+}
+
+pub mod fault {
+    #[derive(Debug)]
+    pub struct VMFault {
+        pub sender: usize,
+        pub program_counter: usize,
+        pub address: usize,
+        pub is_instruction_fault: bool,
+        pub fault_status_register: usize,
+    }
+    #[derive(Debug)]
+    pub struct UnknownSyscall {
+        pub sender: usize,
+    }
+    #[derive(Debug)]
+    pub struct UserException {
+        pub sender: usize,
+    }
+    #[derive(Debug)]
+    pub struct NullFault {
+        pub sender: usize,
+    }
+    #[derive(Debug)]
+    pub struct CapFault {
+        pub sender: usize,
+        pub in_receive_phase: bool, // failure occurred during a receive system call
+        pub cap_address: usize,
+        //lookup_failure_type: LookupFailure //TODO - deeper extraction of the exact cap failure type
+    }
+    /// Grab bag for faults that don't fit the regular classification
+    #[derive(Debug)]
+    pub struct UnidentifiedFault {
+        pub sender: usize,
+    }
+}
+
+impl From<(MessageInfo, usize)> for Fault {
+    fn from(info_and_sender: (MessageInfo, usize)) -> Self {
+        let (info, sender) = info_and_sender;
+        let buffer: &mut seL4_IPCBuffer = unsafe { &mut *seL4_GetIPCBuffer() };
+
+        match info {
+            _ if info.is_vm_fault() => Fault::VMFault(fault::VMFault {
+                sender,
+                program_counter: buffer.msg[seL4_VMFault_IP as usize],
+                address: buffer.msg[seL4_VMFault_Addr as usize],
+                is_instruction_fault: 1 == buffer.msg[seL4_VMFault_PrefetchFault as usize],
+                fault_status_register: buffer.msg[seL4_VMFault_FSR as usize],
+            }),
+            _ if info.is_unknown_syscall() => {
+                Fault::UnknownSyscall(fault::UnknownSyscall { sender })
+            }
+            _ if info.is_user_exception() => Fault::UserException(fault::UserException { sender }),
+            _ if info.is_null_fault() => Fault::NullFault(fault::NullFault { sender }),
+            _ if info.is_cap_fault() => Fault::CapFault(fault::CapFault {
+                sender,
+                cap_address: buffer.msg[seL4_CapFault_Addr as usize],
+                in_receive_phase: 1usize == buffer.msg[seL4_CapFault_InRecvPhase as usize],
+            }),
+            _ => Fault::UnidentifiedFault(fault::UnidentifiedFault { sender }),
+        }
     }
 }
 
@@ -322,12 +432,30 @@ where
     ))
 }
 
+/// The side of a fault endpoint that sends fault messages
+#[derive(Debug)]
 pub struct FaultSource<Role: CNodeRole> {
     pub(crate) endpoint: Cap<Endpoint, Role>,
     _role: PhantomData<Role>,
 }
 
+/// The side of a fault endpoint that receives fault messages
+#[derive(Debug)]
 pub struct FaultSink<Role: CNodeRole> {
     pub(crate) endpoint: Cap<Endpoint, Role>,
     _role: PhantomData<Role>,
+}
+
+impl FaultSink<role::Local> {
+    pub fn wait_for_fault(&self) -> Fault {
+        let mut sender: usize = 0;
+        let info = unsafe {
+            seL4_Recv(
+                self.endpoint.cptr,
+                &mut sender as *mut usize, // TODO - consider actually caring about sender
+            )
+        }
+        .into();
+        (info, sender).into()
+    }
 }

@@ -25,8 +25,11 @@ pub mod userland;
 
 mod test_proc;
 
+use core::marker::PhantomData;
 use crate::micro_alloc::GetUntyped;
-use crate::userland::{call_channel, role, root_cnode, spawn, BootInfo, CNode, LocalCap};
+use crate::userland::{
+    role, root_cnode, setup_fault_endpoint_pair, spawn, BootInfo, CNode, LocalCap,
+};
 use sel4_sys::*;
 use typenum::{U12, U20, U4096};
 
@@ -66,52 +69,69 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     let (mut boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
 
     let _root_cnode = {
-        let (caller_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) = ut16a
+        let (fault_source_cnode_local, root_cnode): (
+            LocalCap<CNode<U4096, role::Child>>,
+            _,
+        ) = ut16a
             .retype_local_cnode::<_, U12>(root_cnode)
             .expect("Couldn't retype to caller_cnode_local");
 
-        let (responder_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) = ut16b
+        let (fault_sink_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) = ut16b
             .retype_local_cnode::<_, U12>(root_cnode)
             .expect("Couldn't retype to responder_cnode_local");
 
-        let (caller_cnode_local, responder_cnode_local, caller, responder, root_cnode) =
-            call_channel(root_cnode, ut4, caller_cnode_local, responder_cnode_local)
-                .expect("Could not make fastpath call channel");
+        let (
+            fault_source_cnode_local,
+            fault_sink_cnode_local,
+            fault_source,
+            fault_sink,
+            root_cnode,
+        ) = setup_fault_endpoint_pair(
+            root_cnode,
+            ut4,
+            fault_source_cnode_local,
+            fault_sink_cnode_local,
+        )
+        .expect("Could not make a fault endpoint pair");
 
-        let (caller_cnode_child, caller_cnode_local) = caller_cnode_local
+        // self-reference must come last because it seals our ability to add more capabilities
+        // from the current thread's perspective
+        let (_caller_cnode_child, caller_cnode_local) = fault_source_cnode_local
             .generate_self_reference(&root_cnode)
             .expect("caller self awareness");
-        let (responder_cnode_child, responder_cnode_local) = responder_cnode_local
+        let (_responder_cnode_child, responder_cnode_local) = fault_sink_cnode_local
             .generate_self_reference(&root_cnode)
             .expect("responder self awareness");
 
-        let caller_params = test_proc::CallerParams::<role::Child> {
-            my_cnode: caller_cnode_child,
-            caller,
-        };
+        let caller_params = test_proc::MischiefMakerParams { _role: PhantomData };
 
-        let responder_params = test_proc::ResponderParams::<role::Child> {
-            my_cnode: responder_cnode_child,
-            responder,
-        };
+        let responder_params = test_proc::MischiefDetectorParams::<role::Child> { fault_sink };
 
         let root_cnode = spawn(
-            test_proc::addition_requester,
-            caller_params,
-            caller_cnode_local,
+            test_proc::fault_sink_proc,
+            responder_params,
+            responder_cnode_local,
             255, // priority
-            ut16c,
+            Some(fault_source),
+            ut16d,
             &mut boot_info,
             root_cnode,
         )
         .expect("spawn process 2");
 
+        unsafe {
+            seL4_Yield(); // TODO - Replace this crappy yield with actually using an appropriate mechanism for awaiting startup
+            seL4_Yield(); // TODO - Replace this crappy yield with actually using an appropriate mechanism for awaiting startup
+            seL4_Yield(); // TODO - Replace this crappy yield with actually using an appropriate mechanism for awaiting startup
+        }
+
         let root_cnode = spawn(
-            test_proc::addition_responder,
-            responder_params,
-            responder_cnode_local,
-            255, // priority
-            ut16d,
+            test_proc::fault_source_proc,
+            caller_params,
+            caller_cnode_local,
+            255,  // priority
+            None, // fault_source
+            ut16c,
             &mut boot_info,
             root_cnode,
         )

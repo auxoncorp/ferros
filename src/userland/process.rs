@@ -3,9 +3,9 @@ use core::mem::{self, size_of};
 use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
-    role, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights, Endpoint, Error, FaultSource,
-    LocalCap, MappedPage, ThreadControlBlock, UnassignedPageDirectory, UnmappedPage,
-    UnmappedPageTable, Untyped,
+    role, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights, Error, FaultSource, LocalCap,
+    MappedPage, ThreadControlBlock, UnassignedPageDirectory, UnmappedPage, UnmappedPageTable,
+    Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Diff;
@@ -73,6 +73,7 @@ pub fn spawn<T: RetypeForSetup, FreeSlots: Unsigned, RootCNodeFreeSlots: Unsigne
     process_parameter: SetupVer<T>,
     child_cnode: LocalCap<CNode<RootCNodeFreeSlots, role::Child>>,
     priority: u8,
+    fault_source: Option<FaultSource<role::Child>>,
 
     // context-related
     ut16: LocalCap<Untyped<U16>>,
@@ -174,7 +175,6 @@ where
     }
 
     let (mut tcb, _cnode): (Cap<ThreadControlBlock, _>, _) = tcb_ut.retype_local(cnode)?;
-    let fault_source = None; // TODO - pass in through params
     tcb.configure(
         child_cnode,
         fault_source,

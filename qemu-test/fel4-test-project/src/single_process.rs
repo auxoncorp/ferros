@@ -84,7 +84,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
         proc_main,
         params,
         child_cnode,
-        255, // priority
+        255,  // priority
+        None, // fault_source
         child_proc_ut,
         &mut boot_info,
         root_cnode,
