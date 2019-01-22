@@ -207,18 +207,11 @@ impl DirectRetype for Endpoint {
 
 #[derive(Debug)]
 pub struct AssignedPageDirectory<FreeSlots: Unsigned> {
-    _free_slots: PhantomData<FreeSlots>,
+    pub(super) next_free_slot: usize,
+    pub(super) _free_slots: PhantomData<FreeSlots>,
 }
 
 impl<FreeSlots: Unsigned> CapType for AssignedPageDirectory<FreeSlots> {}
-
-impl<FreeSlots: Unsigned> PhantomCap for AssignedPageDirectory<FreeSlots> {
-    fn phantom_instance() -> Self {
-        Self {
-            _free_slots: PhantomData,
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct UnassignedPageDirectory {}
@@ -229,10 +222,6 @@ impl PhantomCap for UnassignedPageDirectory {
     fn phantom_instance() -> Self {
         Self {}
     }
-}
-
-impl CopyAliasable for UnassignedPageDirectory {
-    type CopyOutput = Self;
 }
 
 impl DirectRetype for UnassignedPageDirectory {

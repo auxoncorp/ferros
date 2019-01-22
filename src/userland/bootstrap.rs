@@ -27,10 +27,10 @@ pub fn root_cnode(_bootinfo: &'static seL4_BootInfo) -> LocalCap<CNode<U1024, ro
     }
 }
 
-mod paging {
+pub mod paging {
     use crate::pow::Pow;
     use typenum::operator_aliases::Diff;
-    use typenum::{U12, U2, U8, U9};
+    use typenum::{U1, U12, U8, U9};
 
     pub type PageDirectoryBits = U12;
     pub type PageTableBits = U8;
@@ -40,9 +40,11 @@ mod paging {
     // 2^9 (512) pagedir entries.
     pub type BasePageDirFreeSlots = Diff<Pow<PageDirectoryBits>, Pow<U9>>;
 
-    // Assume the first two page tables are reserved, for the root task
-    // TODO: Justify this
-    pub type RootTaskPageDirFreeSlots = Diff<BasePageDirFreeSlots, U2>;
+    // The first page table is already mapped for the root task, for the user
+    // image. (which also reserves 64k for the root task's stack)
+    pub type RootTaskReservedPageDirSlots = U1;
+
+    pub type RootTaskPageDirFreeSlots = Diff<BasePageDirFreeSlots, RootTaskReservedPageDirSlots>;
 }
 
 pub mod address_space {
@@ -89,7 +91,14 @@ impl BootInfo {
 
         (
             BootInfo {
-                page_directory: Cap::wrap_cptr(seL4_CapInitThreadVSpace as usize),
+                page_directory: Cap {
+                    cptr: seL4_CapInitThreadVSpace as usize,
+                    _role: PhantomData,
+                    cap_data: AssignedPageDirectory {
+                        next_free_slot: paging::RootTaskReservedPageDirSlots::USIZE,
+                        _free_slots: PhantomData,
+                    },
+                },
                 tcb: Cap::wrap_cptr(seL4_CapInitThreadTCB as usize),
                 asid_pool: asid_pool,
                 user_image_frames_start: bootinfo.userImageFrames.start,
@@ -161,26 +170,5 @@ impl LocalCap<Untyped<U12>> {
             },
             dest_cnode,
         ))
-    }
-}
-
-// This is used in both bootstrap and spawn
-impl Cap<ASIDPool, role::Local> {
-    pub fn assign(
-        &mut self,
-        vspace: Cap<UnassignedPageDirectory, role::Local>,
-    ) -> Result<Cap<AssignedPageDirectory<paging::RootTaskPageDirFreeSlots>, role::Local>, SeL4Error>
-    {
-        let err = unsafe { seL4_ARM_ASIDPool_Assign(self.cptr, vspace.cptr) };
-
-        if err != 0 {
-            return Err(SeL4Error::ASIDPoolAssign(err));
-        }
-
-        Ok(Cap {
-            cptr: vspace.cptr,
-            cap_data: PhantomCap::phantom_instance(),
-            _role: PhantomData,
-        })
     }
 }

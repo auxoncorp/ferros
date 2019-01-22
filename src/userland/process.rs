@@ -1,11 +1,12 @@
 use core::cmp;
+use core::marker::PhantomData;
 use core::mem::{self, size_of};
 use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
-    address_space, role, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights, FaultSource,
-    LocalCap, MappedPage, SeL4Error, ThreadControlBlock, UnassignedPageDirectory, UnmappedPage,
-    UnmappedPageTable, Untyped,
+    address_space, paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights,
+    FaultSource, LocalCap, MappedPage, SeL4Error, ThreadControlBlock, UnassignedPageDirectory,
+    UnmappedPage, UnmappedPageTable, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Diff;
@@ -210,6 +211,30 @@ where
     }
 
     Ok(local_cnode)
+}
+
+// This is used in only in spawn
+impl Cap<ASIDPool, role::Local> {
+    pub fn assign(
+        &mut self,
+        vspace: Cap<UnassignedPageDirectory, role::Local>,
+    ) -> Result<Cap<AssignedPageDirectory<paging::BasePageDirFreeSlots>, role::Local>, SeL4Error>
+    {
+        let err = unsafe { seL4_ARM_ASIDPool_Assign(self.cptr, vspace.cptr) };
+
+        if err != 0 {
+            return Err(SeL4Error::ASIDPoolAssign(err));
+        }
+
+        Ok(Cap {
+            cptr: vspace.cptr,
+            _role: PhantomData,
+            cap_data: AssignedPageDirectory {
+                next_free_slot: 0,
+                _free_slots: PhantomData,
+            },
+        })
+    }
 }
 
 /// Set up the target registers and stack to pass the parameter. See
