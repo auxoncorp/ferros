@@ -1,7 +1,8 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
 use crate::userland::{
-    role, CNodeRole, Cap, CapRights, ChildCNode, Endpoint, Error, LocalCNode, LocalCap, Untyped,
+    role, Badge, CNodeRole, Cap, CapRights, ChildCNode, ChildCap, Endpoint, Error, LocalCNode,
+    LocalCap, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
@@ -14,6 +15,11 @@ pub enum IPCError {
     ResponseSizeTooBig,
     ResponseSizeMismatch,
     RequestSizeMismatch,
+}
+
+#[derive(Debug)]
+pub enum FaultManagementError {
+    SelfFaultHandlingForbidden,
 }
 
 /// Fastpath call channel -> given some memory capacity (untyped) and two child cnodes,
@@ -371,6 +377,90 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
     }
 }
 
+struct FaultSinkBuilder {
+    // Local pointer to the endpoint, kept around for easy copying
+    local_endpoint: LocalCap<Endpoint>,
+    // Copy of the same endpoint, set up with the correct rights,
+    // living in the CSpace of a child CNode that will become
+    // the root of the fault-handling process.
+    sink_child_endpoint: ChildCap<Endpoint>,
+
+    // To enable checking whether there is an accidental attempt
+    // to wire up a process root CSpace as its own fault handler
+    sink_cspace_local_cptr: usize,
+}
+
+impl FaultSinkBuilder {
+    pub fn new<ScratchFreeSlots: Unsigned, FaultSinkChildFreeSlots: Unsigned>(
+        local_cnode: LocalCap<LocalCNode<ScratchFreeSlots>>,
+        untyped: LocalCap<Untyped<U4>>,
+        child_cnode_fault_sink: LocalCap<ChildCNode<FaultSinkChildFreeSlots>>,
+    ) -> (
+        Self,
+        LocalCap<ChildCNode<Sub1<FaultSinkChildFreeSlots>>>,
+        LocalCap<LocalCNode<Sub1<ScratchFreeSlots>>>,
+    )
+    where
+        ScratchFreeSlots: Sub<B1>,
+        Diff<ScratchFreeSlots, B1>: Unsigned,
+        FaultSinkChildFreeSlots: Sub<B1>,
+        Sub1<FaultSinkChildFreeSlots>: Unsigned,
+    {
+        let (local_endpoint, local_cnode): (LocalCap<Endpoint>, _) = untyped
+            .retype_local(local_cnode)
+            .expect("could not create local endpoint");
+        let (sink_child_endpoint, child_cnode_fault_sink) = local_endpoint
+            .copy(&local_cnode, child_cnode_fault_sink, CapRights::RW)
+            .expect("Could not copy to fault sink cnode");
+        (
+            FaultSinkBuilder {
+                local_endpoint,
+                sink_child_endpoint,
+                sink_cspace_local_cptr: child_cnode_fault_sink.cptr,
+            },
+            child_cnode_fault_sink,
+            local_cnode,
+        )
+    }
+
+    pub fn add_fault_source<FaultSourceChildFreeSlots: Unsigned, LocalFreeSlots: Unsigned>(
+        &self,
+        local_cnode: &LocalCap<LocalCNode<LocalFreeSlots>>,
+        child_cnode_fault_source: LocalCap<ChildCNode<FaultSourceChildFreeSlots>>,
+        badge: Badge,
+    ) -> Result<
+        (
+            FaultSource<role::Child>,
+            LocalCap<ChildCNode<Sub1<FaultSourceChildFreeSlots>>>,
+        ),
+        FaultManagementError,
+    >
+    where
+        FaultSourceChildFreeSlots: Sub<B1>,
+        Sub1<FaultSourceChildFreeSlots>: Unsigned,
+    {
+        if child_cnode_fault_source.cptr == self.sink_cspace_local_cptr {
+            return Err(FaultManagementError::SelfFaultHandlingForbidden);
+        }
+        let (child_endpoint_fault_source, child_cnode_fault_source) = self
+            .local_endpoint
+            .mint(local_cnode, child_cnode_fault_source, CapRights::RWG, badge)
+            .expect("Could not copy to fault source cnode");
+        Ok((
+            FaultSource {
+                endpoint: child_endpoint_fault_source,
+            },
+            child_cnode_fault_source,
+        ))
+    }
+
+    pub fn build(self) -> FaultSink<role::Child> {
+        FaultSink {
+            endpoint: self.sink_child_endpoint,
+        }
+    }
+}
+
 /// Only supports establishing two child processes where one process will be watching for faults on the other.
 /// Requires a separate input signature if we want the local/current thread to be the watcher due to
 /// our consuming full instances of the local scratch CNode and the destination CNodes separately in this function.
@@ -401,33 +491,17 @@ where
     FaultSinkChildFreeSlots: Sub<B1>,
     Sub1<FaultSinkChildFreeSlots>: Unsigned,
 {
-    let (local_endpoint, local_cnode): (LocalCap<Endpoint>, _) = untyped
-        .retype_local(local_cnode)
-        .expect("could not create local endpoint in call_channel");
-    let (child_endpoint_fault_source, child_cnode_fault_source) = local_endpoint
-        .copy(&local_cnode, child_cnode_fault_source, CapRights::RWG)
-        .expect("Could not copy to fault source cnode");
-    let (child_endpoint_fault_sink, child_cnode_fault_sink) = local_endpoint
-        .copy(&local_cnode, child_cnode_fault_sink, CapRights::RW)
-        .expect("Could not copy to fault sink cnode");
-
-    // TODO - how should we incorporate badging as a means of allowing a fault-handling/receiving thread
-    // to distinguish between the various sources of faults?
-    // seems like there is a M:1 problem here that we need to sort out.
-    // Possible answer -- keep around a handler to a joint sink endpoint,
-    // copy/mutate from that and
+    let (builder, child_cnode_fault_sink, local_cnode) =
+        FaultSinkBuilder::new(local_cnode, untyped, child_cnode_fault_sink);
+    let (fault_source, child_cnode_fault_source) = builder.add_fault_source(
+        &local_cnode, child_cnode_fault_source, Badge::from(0)
+    ).expect("Should be impossible to generate a self-handler since we are consuming independent parameters for both the source and sink child cnodes");
 
     Ok((
         child_cnode_fault_source,
         child_cnode_fault_sink,
-        FaultSource {
-            endpoint: child_endpoint_fault_source,
-            _role: PhantomData,
-        },
-        FaultSink {
-            endpoint: child_endpoint_fault_sink,
-            _role: PhantomData,
-        },
+        fault_source,
+        builder.build(),
         local_cnode,
     ))
 }
@@ -436,14 +510,12 @@ where
 #[derive(Debug)]
 pub struct FaultSource<Role: CNodeRole> {
     pub(crate) endpoint: Cap<Endpoint, Role>,
-    _role: PhantomData<Role>,
 }
 
 /// The side of a fault endpoint that receives fault messages
 #[derive(Debug)]
 pub struct FaultSink<Role: CNodeRole> {
     pub(crate) endpoint: Cap<Endpoint, Role>,
-    _role: PhantomData<Role>,
 }
 
 impl FaultSink<role::Local> {

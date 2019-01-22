@@ -8,6 +8,7 @@ pub enum Error {
     MapPage(u32),
     UnmapPage(u32),
     CNodeCopy(u32),
+    CNodeMint(u32),
     TCBWriteRegisters(u32),
     TCBSetPriority(u32),
     TCBResume(u32),

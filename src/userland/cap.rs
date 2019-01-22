@@ -40,6 +40,12 @@ pub trait CopyAliasable {
     type CopyOutput: CapType;
 }
 
+/// Marker trait for CapType implementing structs to indicate that
+/// instances of this type of capability can be copied and aliased safely
+/// when done through the use of this API, and furthermore can be
+/// granted badges
+pub trait Mintable: CopyAliasable {}
+
 /// Internal marker trait for CapType implementing structs that can
 /// have meaningful instances created for them purely from
 /// their type signatures.
@@ -83,6 +89,28 @@ where
             cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         }
+    }
+}
+
+/// Wrapper for an Endpoint or Notification badge.
+/// Note that the kernel will ignore any use of the high 4 bits
+#[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Debug, Hash)]
+pub struct Badge {
+    inner: usize,
+}
+
+impl From<usize> for Badge {
+    fn from(u: usize) -> Self {
+        let shifted_left = u << 4;
+        Badge {
+            inner: shifted_left >> 4,
+        }
+    }
+}
+
+impl From<Badge> for usize {
+    fn from(b: Badge) -> Self {
+        b.inner
     }
 }
 
@@ -168,6 +196,8 @@ impl PhantomCap for Endpoint {
 impl CopyAliasable for Endpoint {
     type CopyOutput = Self;
 }
+
+impl Mintable for Endpoint {}
 
 impl DirectRetype for Endpoint {
     fn sel4_type_id() -> usize {
@@ -346,6 +376,59 @@ impl<CT: CapType> Cap<CT, role::Local> {
 
         if err != 0 {
             Err(Error::CNodeCopy(err))
+        } else {
+            Ok((
+                Cap {
+                    cptr: dest_slot.offset,
+                    cap_data: PhantomCap::phantom_instance(),
+                    _role: PhantomData,
+                },
+                dest_cnode,
+            ))
+        }
+    }
+
+    /// Copy a capability while also setting rights and a badge
+    pub(crate) fn mint<SourceFreeSlots: Unsigned, FreeSlots: Unsigned, DestRole: CNodeRole>(
+        &self,
+        src_cnode: &LocalCap<CNode<SourceFreeSlots, role::Local>>,
+        dest_cnode: LocalCap<CNode<FreeSlots, DestRole>>,
+        rights: CapRights,
+        badge: Badge,
+    ) -> Result<
+        (
+            Cap<CT::CopyOutput, DestRole>,
+            LocalCap<CNode<Sub1<FreeSlots>, DestRole>>,
+        ),
+        Error,
+    >
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
+        CT: Mintable,
+        CT: CopyAliasable,
+        CT: PhantomCap,
+        <CT as CopyAliasable>::CopyOutput: PhantomCap,
+    {
+        let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
+
+        let err = unsafe {
+            seL4_CNode_Mint(
+                dest_slot.cptr,      // _service
+                dest_slot.offset,    // dest index
+                seL4_WordBits as u8, // dest depth
+                // Since src_cnode is restricted to Root, the cptr must
+                // actually be the slot index
+                src_cnode.cptr,      // src_root
+                self.cptr,           // src_index
+                seL4_WordBits as u8, // src_depth
+                rights.into(),       // rights
+                badge.into(),        // badge
+            )
+        };
+
+        if err != 0 {
+            Err(Error::CNodeMint(err))
         } else {
             Ok((
                 Cap {

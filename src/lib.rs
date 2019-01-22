@@ -119,12 +119,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
         )
         .expect("spawn process 2");
 
-        unsafe {
-            seL4_Yield(); // TODO - Replace this crappy yield with actually using an appropriate mechanism for awaiting startup
-            seL4_Yield(); // TODO - Replace this crappy yield with actually using an appropriate mechanism for awaiting startup
-            seL4_Yield(); // TODO - Replace this crappy yield with actually using an appropriate mechanism for awaiting startup
-        }
-
         let root_cnode = spawn(
             test_proc::fault_source_proc,
             caller_params,
