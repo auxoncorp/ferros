@@ -1,12 +1,13 @@
 use core::marker::PhantomData;
 use crate::userland::{
-    role, AssignedPageDirectory, Cap, CapRights, MappedPage, MappedPageTable, PhantomCap,
+    role, AssignedPageDirectory, Cap, CapRights, LocalCap, MappedPage, MappedPageTable, PhantomCap,
     SeL4Error, UnmappedPage, UnmappedPageTable,
 };
 use sel4_sys::*;
+use typenum::Unsigned;
 
 // vspace related capability operations
-impl Cap<AssignedPageDirectory, role::Local> {
+impl<FreeSlots: Unsigned> LocalCap<AssignedPageDirectory<FreeSlots>> {
     pub fn map_page_table(
         &mut self,
         page_table: Cap<UnmappedPageTable, role::Local>,
@@ -31,7 +32,7 @@ impl Cap<AssignedPageDirectory, role::Local> {
         Ok(Cap {
             cptr: page_table.cptr,
             cap_data: MappedPageTable {
-                vaddr: virtual_address
+                vaddr: virtual_address,
             },
             _role: PhantomData,
         })

@@ -3,8 +3,8 @@ use core::mem::{self, size_of};
 use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
-    role, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights, FaultSource, LocalCap,
-    MappedPage, SeL4Error, ThreadControlBlock, UnassignedPageDirectory, UnmappedPage,
+    address_space, role, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights, FaultSource,
+    LocalCap, MappedPage, SeL4Error, ThreadControlBlock, UnassignedPageDirectory, UnmappedPage,
     UnmappedPageTable, Untyped,
 };
 use sel4_sys::*;
@@ -12,12 +12,13 @@ use typenum::operator_aliases::Diff;
 use typenum::{Unsigned, U128, U16, U256};
 
 impl Cap<ThreadControlBlock, role::Local> {
-    fn configure<FreeSlots: Unsigned>(
+    fn configure<CNodeFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>(
         &mut self,
-        cspace_root: LocalCap<CNode<FreeSlots, role::Child>>,
+        cspace_root: LocalCap<CNode<CNodeFreeSlots, role::Child>>,
         fault_source: Option<FaultSource<role::Child>>,
         // cspace_root_data: usize, // set the guard bits here
-        vspace_root: LocalCap<AssignedPageDirectory>, // TODO make a marker trait for VSpace?
+        // TODO make a marker trait for VSpace?
+        vspace_root: LocalCap<AssignedPageDirectory<PageDirFreeSlots>>,
         // vspace_root_data: usize, // always 0
         ipc_buffer_addr: usize,
         ipc_buffer: LocalCap<MappedPage>,
@@ -154,20 +155,18 @@ where
 
     // TODO: map enough page tables for larger images? Ideally, find out the
     // image size from the build linker, somehow.
+
     let (code_page_table, cnode): (Cap<UnmappedPageTable, _>, _) =
         code_page_table_ut.retype_local(cnode)?;
-    let _code_page_table = page_dir.map_page_table(code_page_table, BootInfo::program_vaddr_start())?;
+    let _code_page_table =
+        page_dir.map_page_table(code_page_table, address_space::ProgramStart::USIZE)?;
 
     // TODO: the number of pages we reserve here needs to be checked against the
     // size of the binary.
     let (dest_reservation_iter, cnode) = cnode.reservation_iter::<U128>();
 
-    for (page_cap, slot_cnode) in boot_info
-        .user_image_pages_iter()
-        .zip(dest_reservation_iter)
-    {
+    for (page_cap, slot_cnode) in boot_info.user_image_pages_iter().zip(dest_reservation_iter) {
         let (copied_page_cap, _) = page_cap.copy(&local_cnode, slot_cnode, CapRights::W)?;
-
         let _mapped_page_cap = page_dir.map_page(copied_page_cap, page_cap.cap_data.vaddr)?;
     }
 

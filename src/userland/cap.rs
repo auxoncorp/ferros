@@ -206,18 +206,18 @@ impl DirectRetype for Endpoint {
 }
 
 #[derive(Debug)]
-pub struct AssignedPageDirectory {}
-
-impl CapType for AssignedPageDirectory {}
-
-impl PhantomCap for AssignedPageDirectory {
-    fn phantom_instance() -> Self {
-        Self {}
-    }
+pub struct AssignedPageDirectory<FreeSlots: Unsigned> {
+    _free_slots: PhantomData<FreeSlots>,
 }
 
-impl CopyAliasable for AssignedPageDirectory {
-    type CopyOutput = UnassignedPageDirectory;
+impl<FreeSlots: Unsigned> CapType for AssignedPageDirectory<FreeSlots> {}
+
+impl<FreeSlots: Unsigned> PhantomCap for AssignedPageDirectory<FreeSlots> {
+    fn phantom_instance() -> Self {
+        Self {
+            _free_slots: PhantomData,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -264,7 +264,7 @@ impl DirectRetype for UnmappedPageTable {
 
 #[derive(Debug)]
 pub struct MappedPageTable {
-    pub(super) vaddr: usize
+    pub(super) vaddr: usize,
 }
 
 impl CapType for MappedPageTable {}
@@ -296,7 +296,7 @@ impl CopyAliasable for UnmappedPage {
 
 #[derive(Debug)]
 pub struct MappedPage {
-    pub(super) vaddr: usize
+    pub(super) vaddr: usize,
 }
 
 impl CapType for MappedPage {}
@@ -308,6 +308,8 @@ impl CopyAliasable for MappedPage {
 impl<FreeSlots: typenum::Unsigned, Role: CNodeRole> CapType for CNode<FreeSlots, Role> {}
 
 mod private {
+    use super::Unsigned;
+
     pub trait SealedRole {}
     impl SealedRole for super::role::Local {}
     impl SealedRole for super::role::Child {}
@@ -322,7 +324,7 @@ mod private {
     impl SealedCapType for super::Endpoint {}
     impl SealedCapType for super::ASIDControl {}
     impl SealedCapType for super::ASIDPool {}
-    impl SealedCapType for super::AssignedPageDirectory {}
+    impl<FreeSlots: Unsigned> SealedCapType for super::AssignedPageDirectory<FreeSlots> {}
     impl SealedCapType for super::UnassignedPageDirectory {}
     impl SealedCapType for super::UnmappedPageTable {}
     impl SealedCapType for super::MappedPageTable {}

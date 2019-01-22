@@ -27,8 +27,43 @@ pub fn root_cnode(_bootinfo: &'static seL4_BootInfo) -> LocalCap<CNode<U1024, ro
     }
 }
 
+mod paging {
+    use crate::pow::Pow;
+    use typenum::operator_aliases::Diff;
+    use typenum::{U12, U2, U8, U9};
+
+    pub type PageDirectoryBits = U12;
+    pub type PageTableBits = U8;
+    pub type PageBits = U12;
+
+    // 0xe00000000 and up is reserved to the kernel; this translates to the last
+    // 2^9 (512) pagedir entries.
+    pub type BasePageDirFreeSlots = Diff<Pow<PageDirectoryBits>, Pow<U9>>;
+
+    // Assume the first two page tables are reserved, for the root task
+    // TODO: Justify this
+    pub type RootTaskPageDirFreeSlots = Diff<BasePageDirFreeSlots, U2>;
+}
+
+pub mod address_space {
+    use crate::pow::Pow;
+    use typenum::operator_aliases::Sum;
+    use typenum::{U16, U20, U29, U30, U31};
+
+    // TODO this is a magic numbers we got from inspecting the binary.
+    /// 0x00010000
+    pub type ProgramStart = Pow<U16>;
+
+    // TODO calculate the real one
+    /// 0x00080000 - the end of the range of the first page table
+    pub type ProgramEnd = Pow<U20>;
+
+    /// 0xe0000000
+    pub type KernelReservedStart = Sum<Pow<U31>, Sum<Pow<U30>, Pow<U29>>>;
+}
+
 pub struct BootInfo {
-    pub page_directory: Cap<AssignedPageDirectory, role::Local>,
+    pub page_directory: Cap<AssignedPageDirectory<paging::RootTaskPageDirFreeSlots>, role::Local>,
     pub tcb: LocalCap<ThreadControlBlock>,
     pub asid_pool: LocalCap<ASIDPool>,
     user_image_frames_start: usize,
@@ -64,30 +99,24 @@ impl BootInfo {
         )
     }
 
-    // TODO these are more magic numbers we got from inspecting the binary.
-    pub const fn program_vaddr_start() -> usize {
-        0x00010000
-    }
-
-    pub const fn program_vaddr_end() -> usize {
-        0x00060000
+    pub const fn kernel_reseved_space_start() -> usize {
+        0xe0000000
     }
 
     // TODO this doesn't enforce the aliasing constraints we want at the type
     // level. This can be modeled as an array (or other sized thing) once we
     // know how big the user image is.
     pub fn user_image_pages_iter(&self) -> impl Iterator<Item = Cap<MappedPage, role::Local>> {
+        let vaddr_iter = (address_space::ProgramStart::USIZE..address_space::ProgramEnd::USIZE)
+            .step_by(1 << paging::PageBits::USIZE);
 
-        let vaddr_iter = (Self::program_vaddr_start()..Self::program_vaddr_end()).step_by(1 << seL4_PageBits);
-
-        (self.user_image_frames_start..self.user_image_frames_end).zip(vaddr_iter)
-            .map(|(cptr, vaddr)|
-                 Cap {
-                     cptr,
-                     cap_data: MappedPage { vaddr },
-                     _role: PhantomData
-                 })
-                 // Cap::<MappedPage, role::Local>::wrap_cptr(cptr as usize))
+        (self.user_image_frames_start..self.user_image_frames_end)
+            .zip(vaddr_iter)
+            .map(|(cptr, vaddr)| Cap {
+                cptr,
+                cap_data: MappedPage { vaddr },
+                _role: PhantomData,
+            })
     }
 }
 
@@ -135,11 +164,13 @@ impl LocalCap<Untyped<U12>> {
     }
 }
 
+// This is used in both bootstrap and spawn
 impl Cap<ASIDPool, role::Local> {
     pub fn assign(
         &mut self,
         vspace: Cap<UnassignedPageDirectory, role::Local>,
-    ) -> Result<Cap<AssignedPageDirectory, role::Local>, SeL4Error> {
+    ) -> Result<Cap<AssignedPageDirectory<paging::RootTaskPageDirFreeSlots>, role::Local>, SeL4Error>
+    {
         let err = unsafe { seL4_ARM_ASIDPool_Assign(self.cptr, vspace.cptr) };
 
         if err != 0 {
