@@ -185,4 +185,16 @@ mod tests {
             );
         }
     }
+
+    sequential_test! {
+        fn fault_pair() {
+            run_qemu_test(
+                "fault_pair",
+
+                Regex::new(".*Caught a fault: CapFault\\(CapFault \\{ sender: 0, in_receive_phase: false, cap_address: 314159 \\}\\).*").unwrap(),
+                Regex::new(".*Root task should never return from main.*").unwrap(),
+                Some(vec![("dual_process", "true")]),
+            );
+        }
+    }
 }

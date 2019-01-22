@@ -1,8 +1,9 @@
+use core::marker::PhantomData;
 use iron_pegasus::micro_alloc::{self, GetUntyped};
 use iron_pegasus::pow::Pow;
 use iron_pegasus::userland::{
-    call_channel, role, root_cnode, spawn, BootInfo, CNode, CNodeRole, Caller, Cap, Endpoint,
-    LocalCap, Responder, RetypeForSetup, Untyped,
+    call_channel, role, root_cnode, setup_fault_endpoint_pair, spawn, BootInfo, CNode, CNodeRole,
+    Caller, Cap, Endpoint, FaultSink, LocalCap, Responder, RetypeForSetup, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Diff;
@@ -65,6 +66,53 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
             my_cnode: responder_cnode_child,
             responder,
         };
+        (
+            caller_params,
+            caller_cnode_local,
+            responder_params,
+            responder_cnode_local,
+            root_cnode,
+        )
+    };
+    #[cfg(test_case = "fault_pair")]
+    let (child_params_a, proc_cnode_local_a, child_params_b, proc_cnode_local_b, root_cnode) = {
+        let (fault_source_cnode_local, root_cnode): (
+            LocalCap<CNode<U4096, role::Child>>,
+            _,
+        ) = ut16a
+            .retype_local_cnode::<_, U12>(root_cnode)
+            .expect("Couldn't retype to caller_cnode_local");
+
+        let (fault_sink_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) = ut16b
+            .retype_local_cnode::<_, U12>(root_cnode)
+            .expect("Couldn't retype to responder_cnode_local");
+
+        let (
+            fault_source_cnode_local,
+            fault_sink_cnode_local,
+            fault_source,
+            fault_sink,
+            root_cnode,
+        ) = setup_fault_endpoint_pair(
+            root_cnode,
+            ut4,
+            fault_source_cnode_local,
+            fault_sink_cnode_local,
+        )
+        .expect("Could not make a fault endpoint pair");
+
+        // self-reference must come last because it seals our ability to add more capabilities
+        // from the current thread's perspective
+        let (_caller_cnode_child, caller_cnode_local) = fault_source_cnode_local
+            .generate_self_reference(&root_cnode)
+            .expect("caller self awareness");
+        let (_responder_cnode_child, responder_cnode_local) = fault_sink_cnode_local
+            .generate_self_reference(&root_cnode)
+            .expect("responder self awareness");
+
+        let caller_params = MischiefMakerParams { _role: PhantomData };
+
+        let responder_params = MischiefDetectorParams::<role::Child> { fault_sink };
         (
             caller_params,
             caller_cnode_local,
@@ -177,4 +225,42 @@ pub extern "C" fn child_proc_b(p: ResponderParams<role::Local>) {
             (AdditionResponse { sum: req.a + req.b }, state + 1)
         })
         .expect("Could not set up a reply_recv");
+}
+
+#[derive(Debug)]
+pub struct MischiefMakerParams<Role: CNodeRole> {
+    pub _role: PhantomData<Role>,
+}
+
+impl RetypeForSetup for MischiefMakerParams<role::Local> {
+    type Output = MischiefMakerParams<role::Child>;
+}
+
+#[derive(Debug)]
+pub struct MischiefDetectorParams<Role: CNodeRole> {
+    pub fault_sink: FaultSink<Role>,
+}
+
+impl RetypeForSetup for MischiefDetectorParams<role::Local> {
+    type Output = MischiefDetectorParams<role::Child>;
+}
+
+#[cfg(test_case = "fault_pair")]
+pub extern "C" fn child_proc_a(_p: MischiefMakerParams<role::Local>) {
+    debug_println!("Inside fault_source_proc");
+    debug_println!("\nAttempting to cause a cap fault");
+    unsafe {
+        seL4_Send(
+            314159, // bogus cptr to nonexistent endpoint
+            seL4_MessageInfo_new(0, 0, 0, 0),
+        )
+    }
+    debug_println!("This is after the capability fault inducing code, and should not be printed.");
+}
+
+#[cfg(test_case = "fault_pair")]
+pub extern "C" fn child_proc_b(p: MischiefDetectorParams<role::Local>) {
+    debug_println!("Inside fault_sink_proc");
+    let fault = p.fault_sink.wait_for_fault();
+    debug_println!("Caught a fault: {:?}", fault);
 }
