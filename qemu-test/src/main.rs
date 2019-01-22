@@ -9,6 +9,7 @@ use rexpect::process::signal::Signal;
 use rexpect::session::spawn_command;
 use std::process::Command;
 use std::sync::Mutex;
+use std::io::{self, Write};
 
 lazy_static! {
     static ref SEQUENTIAL_TEST_MUTEX: Mutex<()> = Mutex::new(());
@@ -72,8 +73,11 @@ fn run_qemu_test(
         "running 'TEST_CASE={} {} cargo fel4 build",
         name, escaped_flags_summary
     );
-    let build_result = build_command.output().expect("Couldn't build test project");
-
+    let build_result = build_command.output().expect("Couldn't run `cargo fel4 build`");
+    if !build_result.status.success() {
+        io::stdout().write_all(&build_result.stdout).unwrap();
+        io::stderr().write_all(&build_result.stderr).unwrap();
+    }
     assert!(build_result.status.success());
 
     println!("running 'cargo fel4 simulate");
@@ -90,6 +94,7 @@ fn run_qemu_test(
         let line = sim
             .read_line()
             .expect("couldn't read line from simulate process");
+        println!("{}", line);
 
         if pass_line.is_match(&line) {
             sim.process.kill(Signal::SIGKILL).unwrap();
@@ -191,7 +196,7 @@ mod tests {
             run_qemu_test(
                 "fault_pair",
 
-                Regex::new(".*Caught a fault: CapFault\\(CapFault \\{ sender: 0, in_receive_phase: false, cap_address: 314159 \\}\\).*").unwrap(),
+                Regex::new(".*Caught a fault: CapFault\\(CapFault \\{ sender: Badge \\{ inner: 0 \\}, in_receive_phase: false, cap_address: 314159 \\}\\).*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
                 Some(vec![("dual_process", "true")]),
             );

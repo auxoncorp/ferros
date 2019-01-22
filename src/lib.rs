@@ -28,7 +28,7 @@ mod test_proc;
 use core::marker::PhantomData;
 use crate::micro_alloc::GetUntyped;
 use crate::userland::{
-    role, root_cnode, setup_fault_endpoint_pair, spawn, BootInfo, CNode, LocalCap,
+    role, root_cnode, spawn, Badge, BootInfo, CNode, FaultSinkBuilder, LocalCap,
 };
 use sel4_sys::*;
 use typenum::{U12, U20, U4096};
@@ -56,7 +56,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
 
     let (ut18, ut18b, _, _, root_cnode) = ut20.quarter(root_cnode).expect("quarter");
     let (ut16a, ut16b, ut16c, ut16d, root_cnode) = ut18.quarter(root_cnode).expect("quarter");
-    let (ut16e, _, _, _, root_cnode) = ut18b.quarter(root_cnode).expect("quarter");
+    let (ut16e, ut16f, ut16g, _, root_cnode) = ut18b.quarter(root_cnode).expect("quarter");
     let (ut14, _, _, _, root_cnode) = ut16e.quarter(root_cnode).expect("quarter");
     let (ut12, asid_pool_ut, _, _, root_cnode) = ut14.quarter(root_cnode).expect("quarter");
     let (ut10, _, _, _, root_cnode) = ut12.quarter(root_cnode).expect("quarter");
@@ -69,42 +69,47 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     let (mut boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
 
     let _root_cnode = {
-        let (fault_source_cnode_local, root_cnode): (
+        let (cap_fault_source_cnode_local, root_cnode): (
             LocalCap<CNode<U4096, role::Child>>,
             _,
         ) = ut16a
             .retype_local_cnode::<_, U12>(root_cnode)
-            .expect("Couldn't retype to caller_cnode_local");
-
-        let (fault_sink_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) = ut16b
+            .expect("Couldn't retype");
+        let (vm_fault_source_cnode_local, root_cnode): (
+            LocalCap<CNode<U4096, role::Child>>,
+            _,
+        ) = ut16b
             .retype_local_cnode::<_, U12>(root_cnode)
-            .expect("Couldn't retype to responder_cnode_local");
+            .expect("Couldn't retype");
 
-        let (
-            fault_source_cnode_local,
-            fault_sink_cnode_local,
-            fault_source,
-            fault_sink,
-            root_cnode,
-        ) = setup_fault_endpoint_pair(
-            root_cnode,
-            ut4,
-            fault_source_cnode_local,
-            fault_sink_cnode_local,
-        )
-        .expect("Could not make a fault endpoint pair");
+        let (fault_sink_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) = ut16c
+            .retype_local_cnode::<_, U12>(root_cnode)
+            .expect("Couldn't retype");
+
+        let (sink_builder, fault_sink_cnode_local, root_cnode) =
+            FaultSinkBuilder::new(root_cnode, ut4, fault_sink_cnode_local);
+        let (cap_fault_source, cap_fault_source_cnode_local) = sink_builder
+            .add_fault_source(&root_cnode, cap_fault_source_cnode_local, Badge::from(123))
+            .expect("Could not add fault source");
+        let (vm_fault_source, vm_fault_source_cnode_local) = sink_builder
+            .add_fault_source(&root_cnode, vm_fault_source_cnode_local, Badge::from(345))
+            .expect("Could not add fault source");
+        let fault_sink = sink_builder.build();
 
         // self-reference must come last because it seals our ability to add more capabilities
         // from the current thread's perspective
-        let (_caller_cnode_child, caller_cnode_local) = fault_source_cnode_local
+        let (_cap_caller_cnode_child, cap_caller_cnode_local) = cap_fault_source_cnode_local
             .generate_self_reference(&root_cnode)
-            .expect("caller self awareness");
+            .expect("cap caller self awareness");
+        let (_vm_caller_cnode_child, vm_caller_cnode_local) = vm_fault_source_cnode_local
+            .generate_self_reference(&root_cnode)
+            .expect("vm caller self awareness");
         let (_responder_cnode_child, responder_cnode_local) = fault_sink_cnode_local
             .generate_self_reference(&root_cnode)
             .expect("responder self awareness");
 
-        let caller_params = test_proc::MischiefMakerParams { _role: PhantomData };
-
+        let cap_caller_params = test_proc::CapFaulterParams { _role: PhantomData };
+        let vm_caller_params = test_proc::VMFaulterParams { _role: PhantomData };
         let responder_params = test_proc::MischiefDetectorParams::<role::Child> { fault_sink };
 
         let root_cnode = spawn(
@@ -112,24 +117,36 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
             responder_params,
             responder_cnode_local,
             255, // priority
-            Some(fault_source),
+            None,
             ut16d,
             &mut boot_info,
             root_cnode,
         )
-        .expect("spawn process 2");
+        .expect("spawn process");
 
         let root_cnode = spawn(
-            test_proc::fault_source_proc,
-            caller_params,
-            caller_cnode_local,
-            255,  // priority
-            None, // fault_source
-            ut16c,
+            test_proc::cap_fault_source_proc,
+            cap_caller_params,
+            cap_caller_cnode_local,
+            255, // priority
+            Some(cap_fault_source),
+            ut16f,
             &mut boot_info,
             root_cnode,
         )
-        .expect("spawn process 2");
+        .expect("spawn process");
+
+        let root_cnode = spawn(
+            test_proc::vm_fault_source_proc,
+            vm_caller_params,
+            vm_caller_cnode_local,
+            255, // priority
+            Some(vm_fault_source),
+            ut16g,
+            &mut boot_info,
+            root_cnode,
+        )
+        .expect("spawn process");
 
         root_cnode
     };

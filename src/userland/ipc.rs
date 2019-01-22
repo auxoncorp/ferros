@@ -234,10 +234,24 @@ pub enum Fault {
     UnidentifiedFault(fault::UnidentifiedFault),
 }
 
+impl Fault {
+    pub fn sender(&self) -> Badge {
+        match self {
+            Fault::VMFault(f) => f.sender,
+            Fault::UnknownSyscall(f) => f.sender,
+            Fault::UserException(f) => f.sender,
+            Fault::NullFault(f) => f.sender,
+            Fault::CapFault(f) => f.sender,
+            Fault::UnidentifiedFault(f) => f.sender,
+        }
+    }
+}
+
 pub mod fault {
+    use super::Badge;
     #[derive(Debug)]
     pub struct VMFault {
-        pub sender: usize,
+        pub sender: Badge,
         pub program_counter: usize,
         pub address: usize,
         pub is_instruction_fault: bool,
@@ -245,19 +259,19 @@ pub mod fault {
     }
     #[derive(Debug)]
     pub struct UnknownSyscall {
-        pub sender: usize,
+        pub sender: Badge,
     }
     #[derive(Debug)]
     pub struct UserException {
-        pub sender: usize,
+        pub sender: Badge,
     }
     #[derive(Debug)]
     pub struct NullFault {
-        pub sender: usize,
+        pub sender: Badge,
     }
     #[derive(Debug)]
     pub struct CapFault {
-        pub sender: usize,
+        pub sender: Badge,
         pub in_receive_phase: bool, // failure occurred during a receive system call
         pub cap_address: usize,
         //lookup_failure_type: LookupFailure //TODO - deeper extraction of the exact cap failure type
@@ -265,13 +279,14 @@ pub mod fault {
     /// Grab bag for faults that don't fit the regular classification
     #[derive(Debug)]
     pub struct UnidentifiedFault {
-        pub sender: usize,
+        pub sender: Badge,
     }
 }
 
 impl From<(MessageInfo, usize)> for Fault {
     fn from(info_and_sender: (MessageInfo, usize)) -> Self {
         let (info, sender) = info_and_sender;
+        let sender: Badge = sender.into();
         let buffer: &mut seL4_IPCBuffer = unsafe { &mut *seL4_GetIPCBuffer() };
 
         match info {
@@ -377,7 +392,7 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
     }
 }
 
-struct FaultSinkBuilder {
+pub struct FaultSinkBuilder {
     // Local pointer to the endpoint, kept around for easy copying
     local_endpoint: LocalCap<Endpoint>,
     // Copy of the same endpoint, set up with the correct rights,
