@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
-use crate::userland::{role, CNodeRole, Cap, CapRights, ChildCap, Error, LocalCap};
+use crate::userland::{role, CNodeRole, Cap, CapRights, ChildCap, LocalCap, SeL4Error};
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U0, U1};
@@ -140,7 +140,7 @@ impl<FreeSlots: Unsigned> LocalCap<CNode<FreeSlots, role::Child>> {
             ChildCap<CNode<Sub1<FreeSlots>, role::Child>>,
             LocalCap<CNode<U0, role::Child>>,
         ),
-        Error,
+        SeL4Error,
     >
     where
         FreeSlots: Sub<B1>,
@@ -161,7 +161,7 @@ impl<FreeSlots: Unsigned> LocalCap<CNode<FreeSlots, role::Child>> {
         };
 
         if err != 0 {
-            Err(Error::CNodeCopy(err))
+            Err(SeL4Error::CNodeCopy(err))
         } else {
             Ok((
                 Cap {

@@ -2,8 +2,8 @@ use core::marker::PhantomData;
 use core::mem::size_of;
 use core::ops::Sub;
 use crate::userland::{
-    role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, Error, LocalCap, MappedPage,
-    PhantomCap, ThreadControlBlock, UnassignedPageDirectory, Untyped,
+    role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, LocalCap, MappedPage,
+    PhantomCap, SeL4Error, ThreadControlBlock, UnassignedPageDirectory, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
@@ -84,7 +84,7 @@ impl LocalCap<Untyped<U12>> {
             LocalCap<ASIDPool>,
             LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
         ),
-        Error,
+        SeL4Error,
     >
     where
         FreeSlots: Sub<B1>,
@@ -103,7 +103,7 @@ impl LocalCap<Untyped<U12>> {
         };
 
         if err != 0 {
-            return Err(Error::UntypedRetype(err));
+            return Err(SeL4Error::UntypedRetype(err));
         }
 
         Ok((
@@ -121,11 +121,11 @@ impl Cap<ASIDPool, role::Local> {
     pub fn assign(
         &mut self,
         vspace: Cap<UnassignedPageDirectory, role::Local>,
-    ) -> Result<Cap<AssignedPageDirectory, role::Local>, Error> {
+    ) -> Result<Cap<AssignedPageDirectory, role::Local>, SeL4Error> {
         let err = unsafe { seL4_ARM_ASIDPool_Assign(self.cptr, vspace.cptr) };
 
         if err != 0 {
-            return Err(Error::ASIDPoolAssign(err));
+            return Err(SeL4Error::ASIDPoolAssign(err));
         }
 
         Ok(Cap {

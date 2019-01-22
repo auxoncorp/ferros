@@ -3,24 +3,25 @@ use core::mem::{self, size_of};
 use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
-    role, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights, Error, LocalCap, MappedPage,
-    ThreadControlBlock, UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, Untyped,
+    role, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights, FaultSource, LocalCap,
+    MappedPage, SeL4Error, ThreadControlBlock, UnassignedPageDirectory, UnmappedPage,
+    UnmappedPageTable, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Diff;
 use typenum::{Unsigned, U128, U16, U256};
 
 impl Cap<ThreadControlBlock, role::Local> {
-    pub fn configure<FreeSlots: Unsigned>(
+    fn configure<FreeSlots: Unsigned>(
         &mut self,
-        // fault_ep: Cap<Endpoint>,
         cspace_root: LocalCap<CNode<FreeSlots, role::Child>>,
+        fault_source: Option<FaultSource<role::Child>>,
         // cspace_root_data: usize, // set the guard bits here
         vspace_root: LocalCap<AssignedPageDirectory>, // TODO make a marker trait for VSpace?
         // vspace_root_data: usize, // always 0
         ipc_buffer_addr: usize,
         ipc_buffer: LocalCap<MappedPage>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), SeL4Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
         // used by the radix.
         let cspace_root_data = unsafe {
@@ -34,7 +35,7 @@ impl Cap<ThreadControlBlock, role::Local> {
         let tcb_err = unsafe {
             seL4_TCB_Configure(
                 self.cptr,
-                seL4_CapNull as usize, // fault_ep.cptr,
+                fault_source.map_or(seL4_CapNull as usize, |source| source.endpoint.cptr), // fault_ep.cptr,
                 cspace_root.cptr,
                 cspace_root_data,
                 vspace_root.cptr,
@@ -45,7 +46,7 @@ impl Cap<ThreadControlBlock, role::Local> {
         };
 
         if tcb_err != 0 {
-            Err(Error::TCBConfigure(tcb_err))
+            Err(SeL4Error::TCBConfigure(tcb_err))
         } else {
             Ok(())
         }
@@ -60,6 +61,7 @@ fn yield_forever() {
     }
 }
 
+// TODO - consider renaming for clarity
 pub trait RetypeForSetup: Sized {
     type Output;
 }
@@ -72,12 +74,13 @@ pub fn spawn<T: RetypeForSetup, FreeSlots: Unsigned, RootCNodeFreeSlots: Unsigne
     process_parameter: SetupVer<T>,
     child_cnode: LocalCap<CNode<RootCNodeFreeSlots, role::Child>>,
     priority: u8,
+    fault_source: Option<FaultSource<role::Child>>,
 
     // context-related
     ut16: LocalCap<Untyped<U16>>,
     boot_info: &mut BootInfo,
     local_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
-) -> Result<LocalCap<CNode<Diff<FreeSlots, U256>, role::Local>>, Error>
+) -> Result<LocalCap<CNode<Diff<FreeSlots, U256>, role::Local>>, SeL4Error>
 where
     FreeSlots: Sub<U256>,
     Diff<FreeSlots, U256>: Unsigned,
@@ -173,7 +176,13 @@ where
     }
 
     let (mut tcb, _cnode): (Cap<ThreadControlBlock, _>, _) = tcb_ut.retype_local(cnode)?;
-    tcb.configure(child_cnode, page_dir, ipc_buffer_addr, ipc_buffer_page)?;
+    tcb.configure(
+        child_cnode,
+        fault_source,
+        page_dir,
+        ipc_buffer_addr,
+        ipc_buffer_page,
+    )?;
 
     regs.pc = function_descriptor as seL4_Word;
     regs.r14 = (yield_forever as *const fn() -> ()) as seL4_Word;
@@ -190,19 +199,19 @@ where
     };
 
     if err != 0 {
-        return Err(Error::TCBWriteRegisters(err));
+        return Err(SeL4Error::TCBWriteRegisters(err));
     }
 
     let err = unsafe { seL4_TCB_SetPriority(tcb.cptr, boot_info.tcb.cptr, priority as usize) };
 
     if err != 0 {
-        return Err(Error::TCBSetPriority(err));
+        return Err(SeL4Error::TCBSetPriority(err));
     }
 
     let err = unsafe { seL4_TCB_Resume(tcb.cptr) };
 
     if err != 0 {
-        return Err(Error::TCBResume(err));
+        return Err(SeL4Error::TCBResume(err));
     }
 
     Ok(local_cnode)
