@@ -1,19 +1,26 @@
 use core::marker::PhantomData;
+use core::ops::Sub;
 use crate::pow::Pow;
 use crate::userland::{
     paging, role, AssignedPageDirectory, Cap, CapRights, LocalCap, MappedPage, MappedPageTable,
     PhantomCap, SeL4Error, UnmappedPage, UnmappedPageTable,
 };
 use sel4_sys::*;
-use typenum::Unsigned;
+use typenum::operator_aliases::Sub1;
+use typenum::{Unsigned, B1};
 
 // vspace related capability operations
 impl<FreeSlots: Unsigned> LocalCap<AssignedPageDirectory<FreeSlots>> {
     pub fn map_page_table(
-        &mut self,
+        self,
         page_table: Cap<UnmappedPageTable, role::Local>,
         virtual_address: usize,
-    ) -> Result<Cap<MappedPageTable<Pow<paging::PageTableBits>>, role::Local>, SeL4Error> {
+        page_dir: LocalCap<AssignedPageDirectory<Sub1<FreeSlots>>>,
+    ) -> Result<Cap<MappedPageTable<Pow<paging::PageTableBits>>, role::Local>, SeL4Error>
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<B1>: Unsigned,
+    {
         // map the page table
         let err = unsafe {
             seL4_ARM_PageTable_Map(
@@ -30,15 +37,26 @@ impl<FreeSlots: Unsigned> LocalCap<AssignedPageDirectory<FreeSlots>> {
         if err != 0 {
             return Err(SeL4Error::MapPageTable(err));
         }
-        Ok(Cap {
-            cptr: page_table.cptr,
-            _role: PhantomData,
-            cap_data: MappedPageTable {
-                vaddr: virtual_address,
-                next_free_slot: 0,
-                _free_slots: PhantomData,
+        Ok(
+            Cap {
+                cptr: page_table.cptr,
+                _role: PhantomData,
+                cap_data: MappedPageTable {
+                    vaddr: virtual_address,
+                    next_free_slot: 0,
+                    _free_slots: PhantomData,
+                },
             },
-        })
+            // page_dir
+            Cap {
+                cptr: self.cptr,
+                _role: PhantomData,
+                cap_data: AssignedPageDirectory {
+                    next_free_slot: self.cap_data.next_free_slot + 1,
+                    _free_slots: PhantomData,
+                },
+            },
+        )
     }
 
     pub fn map_page(
