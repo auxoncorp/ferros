@@ -252,13 +252,15 @@ impl DirectRetype for UnmappedPageTable {
 }
 
 #[derive(Debug)]
-pub struct MappedPageTable {
+pub struct MappedPageTable<FreeSlots: Unsigned> {
     pub(super) vaddr: usize,
+    pub(super) next_free_slot: usize,
+    pub(super) _free_slots: PhantomData<FreeSlots>,
 }
 
-impl CapType for MappedPageTable {}
+impl<FreeSlots: Unsigned> CapType for MappedPageTable<FreeSlots> {}
 
-impl CopyAliasable for MappedPageTable {
+impl<FreeSlots: Unsigned> CopyAliasable for MappedPageTable<FreeSlots> {
     type CopyOutput = UnmappedPageTable;
 }
 
@@ -316,7 +318,7 @@ mod private {
     impl<FreeSlots: Unsigned> SealedCapType for super::AssignedPageDirectory<FreeSlots> {}
     impl SealedCapType for super::UnassignedPageDirectory {}
     impl SealedCapType for super::UnmappedPageTable {}
-    impl SealedCapType for super::MappedPageTable {}
+    impl<FreeSlots: Unsigned> SealedCapType for super::MappedPageTable<FreeSlots> {}
     impl SealedCapType for super::UnmappedPage {}
     impl SealedCapType for super::MappedPage {}
 }

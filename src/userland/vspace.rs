@@ -1,7 +1,8 @@
 use core::marker::PhantomData;
+use crate::pow::Pow;
 use crate::userland::{
-    role, AssignedPageDirectory, Cap, CapRights, LocalCap, MappedPage, MappedPageTable, PhantomCap,
-    SeL4Error, UnmappedPage, UnmappedPageTable,
+    paging, role, AssignedPageDirectory, Cap, CapRights, LocalCap, MappedPage, MappedPageTable,
+    PhantomCap, SeL4Error, UnmappedPage, UnmappedPageTable,
 };
 use sel4_sys::*;
 use typenum::Unsigned;
@@ -12,7 +13,7 @@ impl<FreeSlots: Unsigned> LocalCap<AssignedPageDirectory<FreeSlots>> {
         &mut self,
         page_table: Cap<UnmappedPageTable, role::Local>,
         virtual_address: usize,
-    ) -> Result<Cap<MappedPageTable, role::Local>, SeL4Error> {
+    ) -> Result<Cap<MappedPageTable<Pow<paging::PageTableBits>>, role::Local>, SeL4Error> {
         // map the page table
         let err = unsafe {
             seL4_ARM_PageTable_Map(
@@ -31,10 +32,12 @@ impl<FreeSlots: Unsigned> LocalCap<AssignedPageDirectory<FreeSlots>> {
         }
         Ok(Cap {
             cptr: page_table.cptr,
+            _role: PhantomData,
             cap_data: MappedPageTable {
                 vaddr: virtual_address,
+                next_free_slot: 0,
+                _free_slots: PhantomData,
             },
-            _role: PhantomData,
         })
     }
 
@@ -69,7 +72,7 @@ impl<FreeSlots: Unsigned> LocalCap<AssignedPageDirectory<FreeSlots>> {
     }
 }
 
-impl Cap<MappedPageTable, role::Local> {
+impl<FreeSlots: Unsigned> Cap<MappedPageTable<FreeSlots>, role::Local> {
     pub fn unmap(self) -> Result<Cap<UnmappedPageTable, role::Local>, SeL4Error> {
         let err = unsafe { seL4_ARM_PageTable_Unmap(self.cptr) };
         if err != 0 {
