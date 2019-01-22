@@ -263,15 +263,11 @@ impl DirectRetype for UnmappedPageTable {
 }
 
 #[derive(Debug)]
-pub struct MappedPageTable {}
+pub struct MappedPageTable {
+    pub(super) vaddr: usize
+}
 
 impl CapType for MappedPageTable {}
-
-impl PhantomCap for MappedPageTable {
-    fn phantom_instance() -> Self {
-        Self {}
-    }
-}
 
 impl CopyAliasable for MappedPageTable {
     type CopyOutput = UnmappedPageTable;
@@ -299,15 +295,11 @@ impl CopyAliasable for UnmappedPage {
 }
 
 #[derive(Debug)]
-pub struct MappedPage {}
+pub struct MappedPage {
+    pub(super) vaddr: usize
+}
 
 impl CapType for MappedPage {}
-
-impl PhantomCap for MappedPage {
-    fn phantom_instance() -> Self {
-        Self {}
-    }
-}
 
 impl CopyAliasable for MappedPage {
     type CopyOutput = UnmappedPage;
@@ -355,7 +347,6 @@ impl<CT: CapType> Cap<CT, role::Local> {
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
         CT: CopyAliasable,
-        CT: PhantomCap,
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
         let (dest_cnode, dest_slot) = dest_cnode.consume_slot();

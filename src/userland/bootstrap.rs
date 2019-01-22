@@ -64,12 +64,30 @@ impl BootInfo {
         )
     }
 
+    // TODO these are more magic numbers we got from inspecting the binary.
+    pub const fn program_vaddr_start() -> usize {
+        0x00010000
+    }
+
+    pub const fn program_vaddr_end() -> usize {
+        0x00060000
+    }
+
     // TODO this doesn't enforce the aliasing constraints we want at the type
     // level. This can be modeled as an array (or other sized thing) once we
     // know how big the user image is.
     pub fn user_image_pages_iter(&self) -> impl Iterator<Item = Cap<MappedPage, role::Local>> {
-        (self.user_image_frames_start..self.user_image_frames_end)
-            .map(|cptr| Cap::<MappedPage, role::Local>::wrap_cptr(cptr as usize))
+
+        let vaddr_iter = (Self::program_vaddr_start()..Self::program_vaddr_end()).step_by(1 << seL4_PageBits);
+
+        (self.user_image_frames_start..self.user_image_frames_end).zip(vaddr_iter)
+            .map(|(cptr, vaddr)|
+                 Cap {
+                     cptr,
+                     cap_data: MappedPage { vaddr },
+                     _role: PhantomData
+                 })
+                 // Cap::<MappedPage, role::Local>::wrap_cptr(cptr as usize))
     }
 }
 

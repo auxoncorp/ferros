@@ -30,7 +30,9 @@ impl Cap<AssignedPageDirectory, role::Local> {
         }
         Ok(Cap {
             cptr: page_table.cptr,
-            cap_data: PhantomCap::phantom_instance(),
+            cap_data: MappedPageTable {
+                vaddr: virtual_address
+            },
             _role: PhantomData,
         })
     }
@@ -58,7 +60,9 @@ impl Cap<AssignedPageDirectory, role::Local> {
         }
         Ok(Cap {
             cptr: page.cptr,
-            cap_data: PhantomCap::phantom_instance(),
+            cap_data: MappedPage {
+                vaddr: virtual_address,
+            },
             _role: PhantomData,
         })
     }

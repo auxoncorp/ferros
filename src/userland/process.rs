@@ -151,28 +151,24 @@ where
     let _stack_page = page_dir.map_page(stack_page, stack_base)?;
 
     // map in the user image
-    let program_vaddr_start = 0x00010000;
-    let program_vaddr_end = program_vaddr_start + 0x00060000;
 
     // TODO: map enough page tables for larger images? Ideally, find out the
     // image size from the build linker, somehow.
     let (code_page_table, cnode): (Cap<UnmappedPageTable, _>, _) =
         code_page_table_ut.retype_local(cnode)?;
-    let _code_page_table = page_dir.map_page_table(code_page_table, program_vaddr_start)?;
+    let _code_page_table = page_dir.map_page_table(code_page_table, BootInfo::program_vaddr_start())?;
 
     // TODO: the number of pages we reserve here needs to be checked against the
     // size of the binary.
     let (dest_reservation_iter, cnode) = cnode.reservation_iter::<U128>();
-    let vaddr_iter = (program_vaddr_start..program_vaddr_end).step_by(0x1000);
 
-    for ((page_cap, slot_cnode), vaddr) in boot_info
+    for (page_cap, slot_cnode) in boot_info
         .user_image_pages_iter()
         .zip(dest_reservation_iter)
-        .zip(vaddr_iter)
     {
         let (copied_page_cap, _) = page_cap.copy(&local_cnode, slot_cnode, CapRights::W)?;
 
-        let _mapped_page_cap = page_dir.map_page(copied_page_cap, vaddr)?;
+        let _mapped_page_cap = page_dir.map_page(copied_page_cap, page_cap.cap_data.vaddr)?;
     }
 
     let (mut tcb, _cnode): (Cap<ThreadControlBlock, _>, _) = tcb_ut.retype_local(cnode)?;
