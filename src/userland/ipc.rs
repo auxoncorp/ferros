@@ -1,20 +1,26 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
 use crate::userland::{
-    role, Badge, CNodeRole, Cap, CapRights, ChildCNode, ChildCap, Endpoint, Error, LocalCNode,
-    LocalCap, Untyped,
+    role, Badge, CNodeRole, Cap, CapRights, ChildCNode, ChildCap, Endpoint, LocalCNode, LocalCap,
+    SeL4Error, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U4};
 
-// TODO - improve names and document variants
 #[derive(Debug)]
 pub enum IPCError {
     RequestSizeTooBig,
     ResponseSizeTooBig,
     ResponseSizeMismatch,
     RequestSizeMismatch,
+    SeL4Error(SeL4Error),
+}
+
+impl From<SeL4Error> for IPCError {
+    fn from(s: SeL4Error) -> Self {
+        IPCError::SeL4Error(s)
+    }
 }
 
 #[derive(Debug)]
@@ -46,7 +52,7 @@ pub fn call_channel<
         Responder<Req, Rsp, role::Child>,
         LocalCap<LocalCNode<Sub1<ScratchFreeSlots>>>,
     ),
-    Error,
+    IPCError,
 >
 where
     ScratchFreeSlots: Sub<B1>,
@@ -56,15 +62,13 @@ where
     ChildBFreeSlots: Sub<B1>,
     Sub1<ChildBFreeSlots>: Unsigned,
 {
-    let (local_endpoint, local_cnode): (LocalCap<Endpoint>, _) = untyped
-        .retype_local(local_cnode)
-        .expect("could not create local endpoint in call_channel");
-    let (child_endpoint_caller, child_cnode_caller) = local_endpoint
-        .copy(&local_cnode, child_cnode_caller, CapRights::RWG)
-        .expect("Could not copy to child a");
-    let (child_endpoint_responder, child_cnode_responder) = local_endpoint
-        .copy(&local_cnode, child_cnode_responder, CapRights::RW)
-        .expect("Could not copy to child b");
+    let _ = IPCBuffer::<Req, Rsp>::new()?; // Check buffer fits Req and Rsp
+    let (local_endpoint, local_cnode): (LocalCap<Endpoint>, _) =
+        untyped.retype_local(local_cnode)?;
+    let (child_endpoint_caller, child_cnode_caller) =
+        local_endpoint.copy(&local_cnode, child_cnode_caller, CapRights::RWG)?;
+    let (child_endpoint_responder, child_cnode_responder) =
+        local_endpoint.copy(&local_cnode, child_cnode_responder, CapRights::RW)?;
 
     Ok((
         child_cnode_caller,
@@ -94,6 +98,8 @@ pub struct Caller<Req: Sized, Rsp: Sized, Role: CNodeRole> {
 }
 
 /// Internal convenience for working with IPC Buffer instances
+/// *Note:* In a given thread or process, all instances of
+/// IPCBuffer wrap a pointer to the very same underlying buffer.
 struct IPCBuffer<'a, Req: Sized, Rsp: Sized> {
     buffer: &'a mut seL4_IPCBuffer,
     _req: PhantomData<Req>,
@@ -101,6 +107,40 @@ struct IPCBuffer<'a, Req: Sized, Rsp: Sized> {
 }
 
 impl<'a, Req: Sized, Rsp: Sized> IPCBuffer<'a, Req, Rsp> {
+    /// Don't forget that while this says `new` in the signature,
+    /// it is still aliasing the thread-global IPC Buffer pointer
+    fn new() -> Result<Self, IPCError> {
+        let request_size = core::mem::size_of::<Req>();
+        let response_size = core::mem::size_of::<Rsp>();
+        let buffer = unchecked_raw_ipc_buffer();
+        let buffer_size = core::mem::size_of_val(&buffer.msg);
+        // TODO - Move this to compile-time somehow
+        if request_size > buffer_size {
+            return Err(IPCError::RequestSizeTooBig);
+        }
+        if response_size > buffer_size {
+            return Err(IPCError::ResponseSizeTooBig);
+        }
+        Ok(IPCBuffer {
+            buffer,
+            _req: PhantomData,
+            _rsp: PhantomData,
+        })
+    }
+
+    /// Don't forget that while this says `new` in the signature,
+    /// it is still aliasing the thread-global IPC Buffer pointer
+    ///
+    /// Use only when all possible prior paths have conclusively
+    /// checked sizing constraints
+    unsafe fn unchecked_new() -> Self {
+        IPCBuffer {
+            buffer: unchecked_raw_ipc_buffer(),
+            _req: PhantomData,
+            _rsp: PhantomData,
+        }
+    }
+
     unsafe fn unchecked_copy_into_buffer<T: Sized>(&mut self, data: &T) {
         core::ptr::copy(
             data as *const T,
@@ -134,35 +174,35 @@ impl<'a, Req: Sized, Rsp: Sized> IPCBuffer<'a, Req, Rsp> {
     }
 }
 
-fn get_ipc_buffer<'a, Req, Rsp>() -> Result<IPCBuffer<'a, Req, Rsp>, IPCError> {
-    let request_size = core::mem::size_of::<Req>();
-    let response_size = core::mem::size_of::<Rsp>();
-    let buffer = unsafe {
-        let buffer: &mut seL4_IPCBuffer = &mut *seL4_GetIPCBuffer();
-        let buffer_size = core::mem::size_of_val(&buffer.msg);
-        // TODO - Move this to compile-time somehow
-        if request_size > buffer_size {
-            return Err(IPCError::RequestSizeTooBig);
-        }
-        if response_size > buffer_size {
-            return Err(IPCError::ResponseSizeTooBig);
-        }
-        buffer
-    };
-    Ok(IPCBuffer {
-        buffer,
-        _req: PhantomData,
-        _rsp: PhantomData,
-    })
+fn unchecked_raw_ipc_buffer<'a>() -> &'a mut seL4_IPCBuffer {
+    unsafe { &mut *seL4_GetIPCBuffer() }
+}
+
+fn type_length_in_words<T>() -> usize {
+    let t_bytes = core::mem::size_of::<T>();
+    let usize_bytes = core::mem::size_of::<usize>();
+    if t_bytes == 0 {
+        return 0;
+    }
+    if t_bytes < usize_bytes {
+        return 1;
+    }
+    let words = t_bytes / usize_bytes;
+    let rem = t_bytes % usize_bytes;
+    if rem > 0 {
+        words + 1
+    } else {
+        words
+    }
 }
 
 fn type_length_message_info<T>() -> seL4_MessageInfo_t {
     unsafe {
         seL4_MessageInfo_new(
-            0,                         // label,
-            0,                         // capsUnwrapped,
-            0,                         // extraCaps,
-            core::mem::size_of::<T>(), // length
+            0,                           // label,
+            0,                           // capsUnwrapped,
+            0,                           // extraCaps,
+            type_length_in_words::<T>(), // length in words!
         )
     }
 }
@@ -185,7 +225,11 @@ impl MessageInfo {
             )
         }
     }
-    pub fn length(&self) -> usize {
+
+    /// Length of the message in words, ought to be
+    /// less than the length of the IPC Buffer's msg array,
+    /// an array of `usize` words.
+    fn length_words(&self) -> usize {
         unsafe {
             seL4_MessageInfo_ptr_get_length(
                 &self.inner as *const seL4_MessageInfo_t as *mut seL4_MessageInfo_t,
@@ -223,7 +267,6 @@ impl From<seL4_MessageInfo_t> for MessageInfo {
 /// TODO - consider dragging more information
 /// out of the fault message in the IPC Buffer
 /// and populating some inner fields
-/// TODO - consider rolling in the sender here, too
 #[derive(Debug)]
 pub enum Fault {
     VMFault(fault::VMFault),
@@ -272,9 +315,8 @@ pub mod fault {
     #[derive(Debug)]
     pub struct CapFault {
         pub sender: Badge,
-        pub in_receive_phase: bool, // failure occurred during a receive system call
+        pub in_receive_phase: bool,
         pub cap_address: usize,
-        //lookup_failure_type: LookupFailure //TODO - deeper extraction of the exact cap failure type
     }
     /// Grab bag for faults that don't fit the regular classification
     #[derive(Debug)]
@@ -283,10 +325,9 @@ pub mod fault {
     }
 }
 
-impl From<(MessageInfo, usize)> for Fault {
-    fn from(info_and_sender: (MessageInfo, usize)) -> Self {
+impl From<(MessageInfo, Badge)> for Fault {
+    fn from(info_and_sender: (MessageInfo, Badge)) -> Self {
         let (info, sender) = info_and_sender;
-        let sender: Badge = sender.into();
         let buffer: &mut seL4_IPCBuffer = unsafe { &mut *seL4_GetIPCBuffer() };
 
         match info {
@@ -305,7 +346,7 @@ impl From<(MessageInfo, usize)> for Fault {
             _ if info.is_cap_fault() => Fault::CapFault(fault::CapFault {
                 sender,
                 cap_address: buffer.msg[seL4_CapFault_Addr as usize],
-                in_receive_phase: 1usize == buffer.msg[seL4_CapFault_InRecvPhase as usize],
+                in_receive_phase: 1 == buffer.msg[seL4_CapFault_InRecvPhase as usize],
             }),
             _ => Fault::UnidentifiedFault(fault::UnidentifiedFault { sender }),
         }
@@ -314,13 +355,14 @@ impl From<(MessageInfo, usize)> for Fault {
 
 impl<Req, Rsp> Caller<Req, Rsp, role::Local> {
     pub fn blocking_call<'a>(&self, request: &Req) -> Result<Rsp, IPCError> {
-        let mut ipc_buffer = get_ipc_buffer()?;
+        // Can safely use unchecked_new because we check sizing during the creation of Caller
+        let mut ipc_buffer = unsafe { IPCBuffer::unchecked_new() };
         let msg_info: MessageInfo = unsafe {
             ipc_buffer.copy_req_into_buffer(request);
             seL4_Call(self.endpoint.cptr, type_length_message_info::<Req>())
         }
         .into();
-        if msg_info.length() != core::mem::size_of::<Rsp>() {
+        if msg_info.length_words() != type_length_in_words::<Rsp>() {
             return Err(IPCError::ResponseSizeMismatch);
         }
         Ok(ipc_buffer.copy_rsp_from_buffer())
@@ -351,44 +393,44 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
     where
         F: Fn(&Req, State) -> (Rsp, State),
     {
-        let request_size = core::mem::size_of::<Req>();
-        let mut ipc_buffer = get_ipc_buffer()?;
+        // Can safely use unchecked_new because we check sizing during the creation of Responder
+        let mut ipc_buffer = unsafe { IPCBuffer::unchecked_new() };
+        let mut sender_badge: usize = 0;
         // Do a regular receive to seed our initial value
-        let mut msg_info: MessageInfo = unsafe {
-            seL4_Recv(
-                self.endpoint.cptr,
-                0 as *const usize as *mut usize, // TODO - consider actually caring about sender
-            )
-        }
-        .into();
+        let mut msg_info: MessageInfo =
+            unsafe { seL4_Recv(self.endpoint.cptr, &mut sender_badge as *mut usize) }.into();
 
+        let request_length_in_words = type_length_in_words::<Req>();
         let mut response = unsafe { core::mem::zeroed() }; // TODO - replace with Option-swapping
         let mut state = initial_state;
         loop {
-            if msg_info.length() != request_size {
-                // TODO - we should be dropping bad data or replying with an error code
-                debug_println!("Request size incoming does not match static size expectation");
-                // Note that `continue`'ing from here will essentially cause this process
-                // to loop forever, most likely leaving the caller perpetually blocked.
+            if msg_info.length_words() != request_length_in_words {
+                // A wrong-sized message length is an indication of unforeseen or
+                // misunderstood kernel operations. Using the checks established in
+                // the creation of Caller/Responder sets should prevent the creation
+                // of wrong-sized messages through their expected paths.
+                //
+                // Not knowing what this incoming message is, we drop it and spin-fail the loop.
+                // Note that `continue`'ing from here will cause this process
+                // to loop forever doing this check with no fresh data, most likely leaving the caller perpetually blocked.
+                debug_println!("Request size incoming ({} words) does not match static size expectation ({} words).",
+                msg_info.length_words(), request_length_in_words);
                 continue;
             }
             let out = f(&ipc_buffer.copy_req_from_buffer(), state);
             response = out.0;
             state = out.1;
 
+            ipc_buffer.copy_rsp_into_buffer(&response);
             msg_info = unsafe {
-                ipc_buffer.copy_rsp_into_buffer(&response);
                 seL4_ReplyRecv(
                     self.endpoint.cptr,
                     type_length_message_info::<Rsp>(),
-                    0 as *const usize as *mut usize, // TODO - do we care about sender?
+                    &mut sender_badge as *mut usize,
                 )
             }
             .into();
         }
-
-        // TODO - Let's get some better piping/handling of error conditions - panic only so far
-        // TODO - Consider allowing fn to return Option<Rsp> and if None do Rcv rather than ReplyRecv
     }
 }
 
@@ -496,7 +538,7 @@ pub fn setup_fault_endpoint_pair<
         FaultSink<role::Child>,
         LocalCap<LocalCNode<Sub1<ScratchFreeSlots>>>,
     ),
-    Error,
+    SeL4Error,
 >
 where
     ScratchFreeSlots: Sub<B1>,
@@ -536,13 +578,7 @@ pub struct FaultSink<Role: CNodeRole> {
 impl FaultSink<role::Local> {
     pub fn wait_for_fault(&self) -> Fault {
         let mut sender: usize = 0;
-        let info = unsafe {
-            seL4_Recv(
-                self.endpoint.cptr,
-                &mut sender as *mut usize, // TODO - consider actually caring about sender
-            )
-        }
-        .into();
-        (info, sender).into()
+        let info = unsafe { seL4_Recv(self.endpoint.cptr, &mut sender as *mut usize) }.into();
+        (info, Badge::from(sender)).into()
     }
 }

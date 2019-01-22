@@ -1,5 +1,5 @@
 #[derive(Debug)]
-pub enum Error {
+pub enum SeL4Error {
     UntypedRetype(u32),
     TCBConfigure(u32),
     MapPageTable(u32),

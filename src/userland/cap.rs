@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
-use crate::userland::{CNode, CapRights, Error};
+use crate::userland::{CNode, CapRights, SeL4Error};
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
 use typenum::{Unsigned, B1};
@@ -349,7 +349,7 @@ impl<CT: CapType> Cap<CT, role::Local> {
             Cap<CT::CopyOutput, DestRole>,
             LocalCap<CNode<Sub1<FreeSlots>, DestRole>>,
         ),
-        Error,
+        SeL4Error,
     >
     where
         FreeSlots: Sub<B1>,
@@ -375,7 +375,7 @@ impl<CT: CapType> Cap<CT, role::Local> {
         };
 
         if err != 0 {
-            Err(Error::CNodeCopy(err))
+            Err(SeL4Error::CNodeCopy(err))
         } else {
             Ok((
                 Cap {
@@ -400,7 +400,7 @@ impl<CT: CapType> Cap<CT, role::Local> {
             Cap<CT::CopyOutput, DestRole>,
             LocalCap<CNode<Sub1<FreeSlots>, DestRole>>,
         ),
-        Error,
+        SeL4Error,
     >
     where
         FreeSlots: Sub<B1>,
@@ -428,7 +428,7 @@ impl<CT: CapType> Cap<CT, role::Local> {
         };
 
         if err != 0 {
-            Err(Error::CNodeMint(err))
+            Err(SeL4Error::CNodeMint(err))
         } else {
             Ok((
                 Cap {
@@ -451,7 +451,7 @@ impl<CT: CapType> Cap<CT, role::Local> {
             Cap<CT, DestRole>,
             LocalCap<CNode<Sub1<FreeSlots>, DestRole>>,
         ),
-        Error,
+        SeL4Error,
     >
     where
         FreeSlots: Sub<B1>,
@@ -474,7 +474,7 @@ impl<CT: CapType> Cap<CT, role::Local> {
         };
 
         if err != 0 {
-            Err(Error::CNodeMove(err))
+            Err(SeL4Error::CNodeMove(err))
         } else {
             Ok((
                 Cap {
@@ -491,7 +491,7 @@ impl<CT: CapType> Cap<CT, role::Local> {
     pub fn delete<FreeSlots: Unsigned>(
         self,
         parent_cnode: &LocalCap<CNode<FreeSlots, role::Local>>,
-    ) -> Result<(), Error>
+    ) -> Result<(), SeL4Error>
     where
         CT: Delible,
     {
@@ -503,7 +503,7 @@ impl<CT: CapType> Cap<CT, role::Local> {
             )
         };
         if err != 0 {
-            Err(Error::CNodeDelete(err))
+            Err(SeL4Error::CNodeDelete(err))
         } else {
             Ok(())
         }

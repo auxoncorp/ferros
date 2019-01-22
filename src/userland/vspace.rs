@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 use crate::userland::{
-    role, AssignedPageDirectory, Cap, CapRights, Error, MappedPage, MappedPageTable, PhantomCap,
-    UnmappedPage, UnmappedPageTable,
+    role, AssignedPageDirectory, Cap, CapRights, MappedPage, MappedPageTable, PhantomCap,
+    SeL4Error, UnmappedPage, UnmappedPageTable,
 };
 use sel4_sys::*;
 
@@ -11,7 +11,7 @@ impl Cap<AssignedPageDirectory, role::Local> {
         &mut self,
         page_table: Cap<UnmappedPageTable, role::Local>,
         virtual_address: usize,
-    ) -> Result<Cap<MappedPageTable, role::Local>, Error> {
+    ) -> Result<Cap<MappedPageTable, role::Local>, SeL4Error> {
         // map the page table
         let err = unsafe {
             seL4_ARM_PageTable_Map(
@@ -26,7 +26,7 @@ impl Cap<AssignedPageDirectory, role::Local> {
         };
 
         if err != 0 {
-            return Err(Error::MapPageTable(err));
+            return Err(SeL4Error::MapPageTable(err));
         }
         Ok(Cap {
             cptr: page_table.cptr,
@@ -39,7 +39,7 @@ impl Cap<AssignedPageDirectory, role::Local> {
         &mut self,
         page: Cap<UnmappedPage, role::Local>,
         virtual_address: usize,
-    ) -> Result<Cap<MappedPage, role::Local>, Error> {
+    ) -> Result<Cap<MappedPage, role::Local>, SeL4Error> {
         let err = unsafe {
             seL4_ARM_Page_Map(
                 page.cptr,
@@ -54,7 +54,7 @@ impl Cap<AssignedPageDirectory, role::Local> {
             )
         };
         if err != 0 {
-            return Err(Error::MapPage(err));
+            return Err(SeL4Error::MapPage(err));
         }
         Ok(Cap {
             cptr: page.cptr,
@@ -65,10 +65,10 @@ impl Cap<AssignedPageDirectory, role::Local> {
 }
 
 impl Cap<MappedPageTable, role::Local> {
-    pub fn unmap(self) -> Result<Cap<UnmappedPageTable, role::Local>, Error> {
+    pub fn unmap(self) -> Result<Cap<UnmappedPageTable, role::Local>, SeL4Error> {
         let err = unsafe { seL4_ARM_PageTable_Unmap(self.cptr) };
         if err != 0 {
-            return Err(Error::UnmapPageTable(err));
+            return Err(SeL4Error::UnmapPageTable(err));
         }
         Ok(Cap {
             cptr: self.cptr,
@@ -79,10 +79,10 @@ impl Cap<MappedPageTable, role::Local> {
 }
 
 impl Cap<MappedPage, role::Local> {
-    pub fn unmap(self) -> Result<Cap<UnmappedPage, role::Local>, Error> {
+    pub fn unmap(self) -> Result<Cap<UnmappedPage, role::Local>, SeL4Error> {
         let err = unsafe { seL4_ARM_Page_Unmap(self.cptr) };
         if err != 0 {
-            return Err(Error::UnmapPage(err));
+            return Err(SeL4Error::UnmapPage(err));
         }
         Ok(Cap {
             cptr: self.cptr,

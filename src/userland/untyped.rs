@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 use core::ops::Sub;
 use crate::pow::{Pow, _Pow};
 use crate::userland::{
-    role, CNode, Cap, CapType, DirectRetype, Error, LocalCap, PhantomCap, Untyped,
+    role, CNode, Cap, CapType, DirectRetype, LocalCap, PhantomCap, SeL4Error, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
@@ -35,7 +35,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
             LocalCap<Untyped<Sub1<BitSize>>>,
             LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
         ),
-        Error,
+        SeL4Error,
     >
     where
         FreeSlots: Sub<B1>,
@@ -59,7 +59,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
             )
         };
         if err != 0 {
-            return Err(Error::UntypedRetype(err));
+            return Err(SeL4Error::UntypedRetype(err));
         }
 
         Ok((
@@ -88,7 +88,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
             LocalCap<Untyped<Diff<BitSize, U2>>>,
             LocalCap<CNode<Sub1<Sub1<Sub1<FreeSlots>>>, role::Local>>,
         ),
-        Error,
+        SeL4Error,
     >
     where
         FreeSlots: Sub<U3>,
@@ -124,7 +124,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
             )
         };
         if err != 0 {
-            return Err(Error::UntypedRetype(err));
+            return Err(SeL4Error::UntypedRetype(err));
         }
 
         Ok((
@@ -162,7 +162,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
             LocalCap<TargetCapType>,
             LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
         ),
-        Error,
+        SeL4Error,
     >
     where
         FreeSlots: Sub<B1>,
@@ -186,7 +186,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
         };
 
         if err != 0 {
-            return Err(Error::UntypedRetype(err));
+            return Err(SeL4Error::UntypedRetype(err));
         }
 
         Ok((
@@ -209,7 +209,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
             LocalCap<CNode<Pow<ChildRadix>, role::Child>>,
             LocalCap<CNode<Diff<FreeSlots, U2>, role::Local>>,
         ),
-        Error,
+        SeL4Error,
     >
     where
         FreeSlots: Sub<U2>,
@@ -235,7 +235,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
             );
 
             if err != 0 {
-                return Err(Error::CNodeMutate(err));
+                return Err(SeL4Error::CNodeMutate(err));
             }
 
             // In order to set the guard (for the sake of our C-pointer simplification scheme),
@@ -261,7 +261,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
             // the incorrect guard (the one originally occupying the scratch slot).
 
             if err != 0 {
-                return Err(Error::UntypedRetype(err));
+                return Err(SeL4Error::UntypedRetype(err));
             }
         }
 
@@ -288,7 +288,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
             Cap<TargetCapType, role::Child>,
             LocalCap<CNode<Sub1<FreeSlots>, role::Child>>,
         ),
-        Error,
+        SeL4Error,
     >
     where
         FreeSlots: Sub<B1>,
@@ -312,7 +312,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
         };
 
         if err != 0 {
-            return Err(Error::UntypedRetype(err));
+            return Err(SeL4Error::UntypedRetype(err));
         }
 
         Ok((

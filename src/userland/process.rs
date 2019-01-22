@@ -3,9 +3,9 @@ use core::mem::{self, size_of};
 use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
-    role, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights, Error, FaultSource, LocalCap,
-    MappedPage, ThreadControlBlock, UnassignedPageDirectory, UnmappedPage, UnmappedPageTable,
-    Untyped,
+    role, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights, FaultSource, LocalCap,
+    MappedPage, SeL4Error, ThreadControlBlock, UnassignedPageDirectory, UnmappedPage,
+    UnmappedPageTable, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Diff;
@@ -21,7 +21,7 @@ impl Cap<ThreadControlBlock, role::Local> {
         // vspace_root_data: usize, // always 0
         ipc_buffer_addr: usize,
         ipc_buffer: LocalCap<MappedPage>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), SeL4Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
         // used by the radix.
         let cspace_root_data = unsafe {
@@ -46,7 +46,7 @@ impl Cap<ThreadControlBlock, role::Local> {
         };
 
         if tcb_err != 0 {
-            Err(Error::TCBConfigure(tcb_err))
+            Err(SeL4Error::TCBConfigure(tcb_err))
         } else {
             Ok(())
         }
@@ -79,7 +79,7 @@ pub fn spawn<T: RetypeForSetup, FreeSlots: Unsigned, RootCNodeFreeSlots: Unsigne
     ut16: LocalCap<Untyped<U16>>,
     boot_info: &mut BootInfo,
     local_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
-) -> Result<LocalCap<CNode<Diff<FreeSlots, U256>, role::Local>>, Error>
+) -> Result<LocalCap<CNode<Diff<FreeSlots, U256>, role::Local>>, SeL4Error>
 where
     FreeSlots: Sub<U256>,
     Diff<FreeSlots, U256>: Unsigned,
@@ -198,19 +198,19 @@ where
     };
 
     if err != 0 {
-        return Err(Error::TCBWriteRegisters(err));
+        return Err(SeL4Error::TCBWriteRegisters(err));
     }
 
     let err = unsafe { seL4_TCB_SetPriority(tcb.cptr, boot_info.tcb.cptr, priority as usize) };
 
     if err != 0 {
-        return Err(Error::TCBSetPriority(err));
+        return Err(SeL4Error::TCBSetPriority(err));
     }
 
     let err = unsafe { seL4_TCB_Resume(tcb.cptr) };
 
     if err != 0 {
-        return Err(Error::TCBResume(err));
+        return Err(SeL4Error::TCBResume(err));
     }
 
     Ok(local_cnode)
