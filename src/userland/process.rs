@@ -21,7 +21,6 @@ impl Cap<ThreadControlBlock, role::Local> {
         // TODO make a marker trait for VSpace?
         vspace_root: LocalCap<AssignedPageDirectory<PageDirFreeSlots>>,
         // vspace_root_data: usize, // always 0
-        ipc_buffer_addr: usize,
         ipc_buffer: LocalCap<MappedPage>,
     ) -> Result<(), SeL4Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
@@ -42,8 +41,8 @@ impl Cap<ThreadControlBlock, role::Local> {
                 cspace_root_data,
                 vspace_root.cptr,
                 seL4_NilData as usize,
-                ipc_buffer_addr, // buffer address
-                ipc_buffer.cptr, // bufferFrame capability
+                ipc_buffer.cap_data.vaddr, // buffer address
+                ipc_buffer.cptr,           // bufferFrame capability
             )
         };
 
@@ -116,11 +115,6 @@ where
     let (ut8, _, _, _, cnode) = ut10.quarter(cnode)?;
     let (ut6, _, _, _, cnode) = ut8.quarter(cnode)?;
     let (_, _, _, _, cnode) = ut6.quarter(cnode)?;
-
-    // Process address space layout
-    let stack_base = 0x10000000;
-    let stack_top = stack_base + 0x1000;
-    let ipc_buffer_addr = stack_base - 0x2000; // this must be 512-byte aligned, per the seL4 manual
 
     //////////////////////////////////////////////////
     // Page directory and page table initialization //
@@ -202,13 +196,7 @@ where
     ///////////////////////////
 
     let (mut tcb, _cnode): (Cap<ThreadControlBlock, _>, _) = tcb_ut.retype_local(cnode)?;
-    tcb.configure(
-        child_cnode,
-        fault_source,
-        page_dir,
-        ipc_buffer_addr,
-        ipc_buffer_page,
-    )?;
+    tcb.configure(child_cnode, fault_source, page_dir, ipc_buffer_page)?;
 
     regs.pc = function_descriptor as seL4_Word;
     regs.r14 = (yield_forever as *const fn() -> ()) as seL4_Word;
