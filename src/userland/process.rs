@@ -4,9 +4,9 @@ use core::mem::{self, size_of};
 use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
-    address_space, paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights,
-    FaultSource, LocalCap, MappedPage, MappedPageTable, SeL4Error, ThreadControlBlock,
-    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, Untyped,
+    paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights, FaultSource,
+    LocalCap, MappedPage, MappedPageTable, SeL4Error, ThreadControlBlock, UnassignedPageDirectory,
+    UnmappedPage, UnmappedPageTable, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};

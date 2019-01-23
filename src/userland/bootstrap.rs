@@ -4,8 +4,7 @@ use core::ops::Sub;
 use crate::pow::Pow;
 use crate::userland::{
     role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, LocalCap, MappedPage,
-    MappedPageTable, PhantomCap, SeL4Error, ThreadControlBlock, UnassignedPageDirectory,
-    UnmappedPageTable, Untyped,
+    MappedPageTable, PhantomCap, SeL4Error, ThreadControlBlock, UnmappedPageTable, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
