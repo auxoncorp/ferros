@@ -101,17 +101,9 @@ where
 
     // this significantly cleans up the type constraints above
     let (cnode, local_cnode) = local_cnode.reserve_region::<U256>();
-
-    let (ut14, page_dir_ut, ut14b, _, cnode) = ut16.quarter(cnode)?;
-
-    // 12 bits
-    let (ut12, stack_page_ut, _, _, cnode) = ut14.quarter(cnode)?;
-    let (ut12b, ipc_buffer_ut, _, _, cnode) = ut14b.quarter(cnode)?;
-
-    // 10 bits
+    let (ut14, page_dir_ut, _, _, cnode) = ut16.quarter(cnode)?;
+    let (ut12, stack_page_ut, ipc_buffer_ut, _, cnode) = ut14.quarter(cnode)?;
     let (ut10, data_page_table_ut, code_page_table_ut, tcb_ut, cnode) = ut12.quarter(cnode)?;
-    let (ipc_buffer_page_table_ut, _, _, _, cnode) = ut12b.quarter(cnode)?;
-
     let (ut8, _, _, _, cnode) = ut10.quarter(cnode)?;
     let (ut6, _, _, _, cnode) = ut8.quarter(cnode)?;
     let (_, _, _, _, cnode) = ut6.quarter(cnode)?;
