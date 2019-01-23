@@ -120,7 +120,7 @@ where
 
     // Hook up the process page directory, and map the page table for the chunk
     // of vaddr space where the code will be mapped
-    let (code_page_table, mut page_dir) = boot_info.asid_pool.assign(code_page_table, page_dir)?;
+    let (code_page_table, page_dir) = boot_info.asid_pool.assign(code_page_table, page_dir)?;
 
     // This is where the stack, IPC buffer, and shared memory buffers will go
     let (data_page_table, cnode): (LocalCap<UnmappedPageTable>, _) =
@@ -134,7 +134,7 @@ where
     // TODO: the number of pages we reserve here needs to be checked against the
     // size of the binary.
     let (dest_reservation_iter, cnode) = cnode.reservation_iter::<U128>();
-    let (code_page_table_reservation_iter, code_page_table) =
+    let (code_page_table_reservation_iter, _code_page_table) =
         code_page_table.reservation_iter::<U128>();
 
     for ((page_cap, slot_cnode), slot_page_table) in boot_info
@@ -180,7 +180,7 @@ where
     // allocate and map the ipc buffer
     let (ipc_buffer_page, cnode): (LocalCap<UnmappedPage>, _) =
         ipc_buffer_ut.retype_local(cnode)?;
-    let (ipc_buffer_page, data_page_table) =
+    let (ipc_buffer_page, _data_page_table) =
         data_page_table.map_page(ipc_buffer_page, &mut page_dir)?;
 
     ///////////////////////////

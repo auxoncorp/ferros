@@ -67,7 +67,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     let (ut4, _, root_cnode) = ut5.split(root_cnode).expect("split"); // Why two splits? To exercise split.
 
     // wrap the rest of the critical boot info
-    let (mut boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
+    let (boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
 
     let _root_cnode = {
         let (cap_fault_source_cnode_local, root_cnode): (
