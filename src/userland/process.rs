@@ -421,7 +421,7 @@ pub mod test {
 
         let param_size = size_of_val(&param);
 
-        let regs = unsafe {
+        let (regs, stack_extent) = unsafe {
             setup_initial_stack_and_regs(
                 &param as *const T as *const usize,
                 param_size,
@@ -434,11 +434,7 @@ pub mod test {
         check_equal("r2", r2, regs.r2)?;
         check_equal("r3", r3, regs.r3)?;
         check_equal("top stack word", stack0, fake_stack[1023])?;
-        check_equal(
-            "sp offset",
-            sp_offset,
-            unsafe { (&fake_stack[0] as *const usize).add(1024) as usize } - regs.sp,
-        )?;
+        check_equal("sp_offset", sp_offset, stack_extent)?;
 
         Ok(())
     }
