@@ -85,6 +85,7 @@ impl<FreeSlots: Unsigned> LocalCap<MappedPageTable<FreeSlots>> {
     {
         let page_vaddr =
             self.cap_data.vaddr + (self.cap_data.next_free_slot << paging::PageBits::USIZE);
+
         let err = unsafe {
             seL4_ARM_Page_Map(
                 page.cptr,
@@ -146,6 +147,7 @@ impl<FreeSlots: Unsigned> LocalCap<MappedPageTable<FreeSlots>> {
         let (mapped_page, _) = temp_page_table.map_page(unmapped_page, &mut page_dir)?;
         let res = f(&mapped_page);
         let unmapped_page = mapped_page.unmap()?;
+
         Ok((res, unmapped_page))
     }
 
@@ -186,14 +188,14 @@ impl<FreeSlots: Unsigned> LocalCap<MappedPageTable<FreeSlots>> {
                             _free_slots: PhantomData,
                         },
                     }
-                }
+                },
             ),
-            self.skip_pages::<Count>()
+            self.skip_pages::<Count>(),
         )
     }
 
     pub(super) fn skip_pages<Count: Unsigned>(
-        self
+        self,
     ) -> LocalCap<MappedPageTable<Diff<FreeSlots, Count>>>
     where
         FreeSlots: Sub<Count>,
@@ -203,7 +205,7 @@ impl<FreeSlots: Unsigned> LocalCap<MappedPageTable<FreeSlots>> {
             cptr: self.cptr,
             _role: PhantomData,
             cap_data: MappedPageTable {
-                next_free_slot: ( self.cap_data.next_free_slot + Count::to_usize() ),
+                next_free_slot: (self.cap_data.next_free_slot + Count::to_usize()),
                 vaddr: self.cap_data.vaddr,
                 _free_slots: PhantomData,
             },

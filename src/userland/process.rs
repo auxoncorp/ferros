@@ -10,7 +10,7 @@ use crate::userland::{
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U128, U16, U256};
+use typenum::{Unsigned, B1, U1, U128, U16, U256};
 
 impl Cap<ThreadControlBlock, role::Local> {
     fn configure<CNodeFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>(
@@ -110,7 +110,7 @@ where
     let (ut12b, ipc_buffer_ut, _, _, cnode) = ut14b.quarter(cnode)?;
 
     // 10 bits
-    let (ut10, stack_page_table_ut, code_page_table_ut, tcb_ut, cnode) = ut12.quarter(cnode)?;
+    let (ut10, data_page_table_ut, code_page_table_ut, tcb_ut, cnode) = ut12.quarter(cnode)?;
     let (ipc_buffer_page_table_ut, _, _, _, cnode) = ut12b.quarter(cnode)?;
 
     let (ut8, _, _, _, cnode) = ut10.quarter(cnode)?;
@@ -122,68 +122,28 @@ where
     let stack_top = stack_base + 0x1000;
     let ipc_buffer_addr = stack_base - 0x2000; // this must be 512-byte aligned, per the seL4 manual
 
+    //////////////////////////////////////////////////
+    // Page directory and page table initialization //
+    //////////////////////////////////////////////////
+
     let (code_page_table, cnode): (Cap<UnmappedPageTable, _>, _) =
         code_page_table_ut.retype_local(cnode)?;
 
     let (page_dir, cnode): (Cap<UnassignedPageDirectory, _>, _) =
         page_dir_ut.retype_local(cnode)?;
 
+    // Hook up the process page directory, and map the page table for the chunk
+    // of vaddr space where the code will be mapped
     let (code_page_table, mut page_dir) = boot_info.asid_pool.assign(code_page_table, page_dir)?;
 
-    // set up ipc buffer
-    let (ipc_buffer_page_table, cnode): (Cap<UnmappedPageTable, _>, _) =
-        ipc_buffer_page_table_ut.retype_local(cnode)?;
-    let (ipc_buffer_page, cnode): (Cap<UnmappedPage, _>, _) = ipc_buffer_ut.retype_local(cnode)?;
+    // This is where the stack, IPC buffer, and shared memory buffers will go
+    let (data_page_table, cnode): (LocalCap<UnmappedPageTable>, _) =
+        data_page_table_ut.retype_local(cnode)?;
+    let (data_page_table, mut page_dir) = page_dir.map_page_table(data_page_table)?;
 
-    let (ipc_buffer_page_table, mut page_dir) = page_dir.map_page_table(ipc_buffer_page_table)?;
-    let (ipc_buffer_page, ipc_buffer_page_table) =
-        ipc_buffer_page_table.map_page(ipc_buffer_page, &mut page_dir)?;
-
-    // Set up a single page for the child's stack (4k)
-    // let (stack_page_table, cnode): (Cap<UnmappedPageTable, _>, _) =
-    //     stack_page_table_ut.retype_local(cnode)?;
-    // let (stack_page, cnode): (Cap<UnmappedPage, _>, _) = stack_page_ut.retype_local(cnode)?;
-
-    // map the child stack into local memory so we can set it up
-
-    // borrow_page maps a page temporarily
-    let (stack_page, cnode): (Cap<UnmappedPage, _>, _) = stack_page_ut.retype_local(cnode)?;
-    let (mut regs, stack_page) = scratch_page_table.temporarily_map_page(
-        stack_page,
-        &mut boot_info.page_directory,
-        |mapped_page| unsafe {
-            setup_initial_stack_and_regs(
-                &process_parameter as *const SetupVer<T> as *const usize,
-                size_of::<SetupVer<T>>(),
-                (mapped_page.cap_data.vaddr + 1 << paging::PageBits::USIZE) as *mut usize,
-            )
-        },
-    )?;
-
-    // let stack_page_table = boot_info
-    //     .page_directory
-    //     .map_page_table(stack_page_table, stack_base)?;
-    // let stack_page = boot_info.page_directory.map_page(stack_page, stack_base)?;
-
-    // let mut regs = unsafe {
-    //     setup_initial_stack_and_regs(
-    //         &process_parameter as *const SetupVer<T> as *const usize,
-    //         size_of::<SetupVer<T>>(),
-    //         stack_top as *mut usize,
-    //     )
-    // };
-
-    // // unmap the stack pages
-    // let stack_page = stack_page.unmap()?;
-    // let stack_page_table = stack_page_table.unmap()?;
-
-    // map the stack to the target address space
-    let (stack_page_table, cnode): (Cap<UnmappedPageTable, _>, _) =
-        stack_page_table_ut.retype_local(cnode)?;
-    let (stack_page_table, mut page_dir) = page_dir.map_page_table(stack_page_table)?;
-    let (stack_page, stack_page_table) = stack_page_table.map_page(stack_page, &mut page_dir)?;
-
-    // map in the user image
+    ////////////////////////////////////////
+    // Map in the code (user image) pages //
+    ////////////////////////////////////////
 
     // TODO: the number of pages we reserve here needs to be checked against the
     // size of the binary.
@@ -199,9 +159,47 @@ where
         let (copied_page_cap, _) = page_cap.copy(&local_cnode, slot_cnode, CapRights::W)?;
         let (_slot_page_table, _mapped_page) =
             slot_page_table.map_page(copied_page_cap, &mut page_dir)?;
-
-        // let _mapped_page_cap = page_dir.map_page(copied_page_cap, page_cap.cap_data.vaddr)?;
     }
+
+    //////////////////////////////////////////
+    // Data page initialization and mapping //
+    //////////////////////////////////////////
+
+    // reserve a guard page before the stack
+    let data_page_table = data_page_table.skip_pages::<U1>();
+
+    // Set up a single page for the child's stack (4k)
+    let (stack_page, cnode): (Cap<UnmappedPage, _>, _) = stack_page_ut.retype_local(cnode)?;
+
+    // map the child stack into local memory so we can set it up
+    let ((mut regs, param_size_on_stack), stack_page) = scratch_page_table.temporarily_map_page(
+        stack_page,
+        &mut boot_info.page_directory,
+        |mapped_page| unsafe {
+            setup_initial_stack_and_regs(
+                &process_parameter as *const SetupVer<T> as *const usize,
+                size_of::<SetupVer<T>>(),
+                (mapped_page.cap_data.vaddr + (1 << paging::PageBits::USIZE)) as *mut usize,
+            )
+        },
+    )?;
+
+    // map the stack to the target address space
+    let (stack_page, data_page_table) = data_page_table.map_page(stack_page, &mut page_dir)?;
+    regs.sp = stack_page.cap_data.vaddr + (1 << paging::PageBits::USIZE) - param_size_on_stack;
+
+    // reserve a guard page after the stack
+    let data_page_table = data_page_table.skip_pages::<U1>();
+
+    // allocate and map the ipc buffer
+    let (ipc_buffer_page, cnode): (LocalCap<UnmappedPage>, _) =
+        ipc_buffer_ut.retype_local(cnode)?;
+    let (ipc_buffer_page, data_page_table) =
+        data_page_table.map_page(ipc_buffer_page, &mut page_dir)?;
+
+    ///////////////////////////
+    // Set up the TCB and go //
+    ///////////////////////////
 
     let (mut tcb, _cnode): (Cap<ThreadControlBlock, _>, _) = tcb_ut.retype_local(cnode)?;
     tcb.configure(
@@ -215,31 +213,31 @@ where
     regs.pc = function_descriptor as seL4_Word;
     regs.r14 = (yield_forever as *const fn() -> ()) as seL4_Word;
 
-    let err = unsafe {
-        seL4_TCB_WriteRegisters(
+    // debug_println!("Configuring TCB: PC=0x{:08x}, SP=0x{:08x}", regs.pc, regs.sp);
+    // debug_println!("  R0={}, R1={}, R2={}, R3={}", regs.r0, regs.r1, regs.r2, regs.r3);
+
+    unsafe {
+        let err = seL4_TCB_WriteRegisters(
             tcb.cptr,
             0,
             0,
             // all the regs
             size_of::<seL4_UserContext>() / size_of::<seL4_Word>(),
             &mut regs,
-        )
-    };
+        );
+        if err != 0 {
+            return Err(SeL4Error::TCBWriteRegisters(err));
+        }
 
-    if err != 0 {
-        return Err(SeL4Error::TCBWriteRegisters(err));
-    }
+        let err = seL4_TCB_SetPriority(tcb.cptr, boot_info.tcb.cptr, priority as usize);
+        if err != 0 {
+            return Err(SeL4Error::TCBSetPriority(err));
+        }
 
-    let err = unsafe { seL4_TCB_SetPriority(tcb.cptr, boot_info.tcb.cptr, priority as usize) };
-
-    if err != 0 {
-        return Err(SeL4Error::TCBSetPriority(err));
-    }
-
-    let err = unsafe { seL4_TCB_Resume(tcb.cptr) };
-
-    if err != 0 {
-        return Err(SeL4Error::TCBResume(err));
+        let err = seL4_TCB_Resume(tcb.cptr);
+        if err != 0 {
+            return Err(SeL4Error::TCBResume(err));
+        }
     }
 
     Ok(local_cnode)
@@ -291,11 +289,13 @@ impl Cap<ASIDPool, role::Local> {
 /// Set up the target registers and stack to pass the parameter. See
 /// http://infocenter.arm.com/help/topic/com.arm.doc.ihi0042f/IHI0042F_aapcs.pdf
 /// "Procedure Call Standard for the ARM Architecture", Section 5.5
+///
+/// Returns a tuple of (regs, stack_extent), where regs only has r0-r3 set.
 unsafe fn setup_initial_stack_and_regs(
     param: *const usize,
     param_size: usize,
     stack_top: *mut usize,
-) -> seL4_UserContext {
+) -> (seL4_UserContext, usize) {
     let word_size = size_of::<usize>();
 
     // The 'tail' is the part of the parameter that doesn't fit in the
@@ -316,7 +316,6 @@ unsafe fn setup_initial_stack_and_regs(
         cmp::max(0, padded_param_size as isize - (4 * word_size) as isize) as usize;
 
     let mut regs: seL4_UserContext = mem::zeroed();
-    regs.sp = stack_top as usize;
 
     // The cursor pointer to traverse the parameter data word one word at a
     // time
@@ -349,7 +348,7 @@ unsafe fn setup_initial_stack_and_regs(
     } else {
         // If not, store the pre-computed tail word here and be done.
         regs.r0 = tail_word;
-        return regs;
+        return (regs, 0);
     }
 
     if p < tail as *const usize {
@@ -357,7 +356,7 @@ unsafe fn setup_initial_stack_and_regs(
         p = p.add(1);
     } else {
         regs.r1 = tail_word;
-        return regs;
+        return (regs, 0);
     }
 
     if p < tail as *const usize {
@@ -365,7 +364,7 @@ unsafe fn setup_initial_stack_and_regs(
         p = p.add(1);
     } else {
         regs.r2 = tail_word;
-        return regs;
+        return (regs, 0);
     }
 
     if p < tail as *const usize {
@@ -373,19 +372,17 @@ unsafe fn setup_initial_stack_and_regs(
         p = p.add(1);
     } else {
         regs.r3 = tail_word;
-        return regs;
+        return (regs, 0);
     }
 
     // The rest of the data goes on the stack.
     if param_size_on_stack > 0 {
+        // TODO: stack pointer is supposed to be 8-byte aligned on ARM 32
         let sp = (stack_top as *mut u8).sub(param_size_on_stack);
         ptr::copy_nonoverlapping(p as *const u8, sp, param_size_on_stack);
-
-        // TODO: stack pointer is supposed to be 8-byte aligned on ARM 32
-        regs.sp = sp as usize;
     }
 
-    regs
+    (regs, param_size_on_stack)
 }
 
 #[cfg(feature = "test")]
