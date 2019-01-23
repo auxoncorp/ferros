@@ -84,7 +84,7 @@ impl<FreeSlots: Unsigned> LocalCap<MappedPageTable<FreeSlots>> {
         Sub1<FreeSlots>: Unsigned,
     {
         let page_vaddr =
-            self.cap_data.vaddr + self.cap_data.next_free_slot << paging::PageBits::USIZE;
+            self.cap_data.vaddr + (self.cap_data.next_free_slot << paging::PageBits::USIZE);
         let err = unsafe {
             seL4_ARM_Page_Map(
                 page.cptr,
