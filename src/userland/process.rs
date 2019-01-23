@@ -253,7 +253,7 @@ impl Cap<ASIDPool, role::Local> {
         vspace: Cap<UnassignedPageDirectory, role::Local>,
     ) -> Result<
         (
-            LocalCap<MappedPageTable<paging::BasePageTableFreeSlots>>,
+            LocalCap<MappedPageTable<Diff<paging::BasePageTableFreeSlots, U16>>>,
             LocalCap<AssignedPageDirectory<Sub1<paging::BasePageDirFreeSlots>>>,
         ),
         SeL4Error,
@@ -280,6 +280,9 @@ impl Cap<ASIDPool, role::Local> {
         // TODO: This limits us to a megabyte of code. If we want to allow more,
         // we need more than one page table here.
         let (code_page_table, page_dir) = page_dir.map_page_table(code_page_table)?;
+
+        // munge the code page table so the first page gets mapped to 0x00010000
+        let code_page_table = code_page_table.skip_pages::<U16>();
 
         Ok((code_page_table, page_dir))
     }

@@ -176,26 +176,38 @@ impl<FreeSlots: Unsigned> LocalCap<MappedPageTable<FreeSlots>> {
 
         (
             (self.cap_data.next_free_slot..self.cap_data.next_free_slot + Count::to_usize()).map(
-                move |slot| Cap {
-                    cptr: iter_cptr,
-                    _role: PhantomData,
-                    cap_data: MappedPageTable {
-                        next_free_slot: slot,
-                        vaddr: iter_base_vaddr + slot << paging::PageBits::USIZE,
-                        _free_slots: PhantomData,
-                    },
-                },
+                move |slot| {
+                    Cap {
+                        cptr: iter_cptr,
+                        _role: PhantomData,
+                        cap_data: MappedPageTable {
+                            next_free_slot: slot,
+                            vaddr: iter_base_vaddr, //item_vaddr,
+                            _free_slots: PhantomData,
+                        },
+                    }
+                }
             ),
-            Cap {
-                cptr: self.cptr,
-                _role: PhantomData,
-                cap_data: MappedPageTable {
-                    next_free_slot: self.cap_data.next_free_slot + Count::to_usize(),
-                    vaddr: self.cap_data.vaddr + Count::USIZE << paging::PageBits::USIZE,
-                    _free_slots: PhantomData,
-                },
-            },
+            self.skip_pages::<Count>()
         )
+    }
+
+    pub(super) fn skip_pages<Count: Unsigned>(
+        self
+    ) -> LocalCap<MappedPageTable<Diff<FreeSlots, Count>>>
+    where
+        FreeSlots: Sub<Count>,
+        Diff<FreeSlots, Count>: Unsigned,
+    {
+        Cap {
+            cptr: self.cptr,
+            _role: PhantomData,
+            cap_data: MappedPageTable {
+                next_free_slot: ( self.cap_data.next_free_slot + Count::to_usize() ),
+                vaddr: self.cap_data.vaddr,
+                _free_slots: PhantomData,
+            },
+        }
     }
 }
 
