@@ -3,7 +3,7 @@ use iron_pegasus::micro_alloc::{self, GetUntyped};
 use iron_pegasus::pow::Pow;
 use iron_pegasus::userland::{
     call_channel, role, root_cnode, setup_fault_endpoint_pair, spawn, BootInfo, CNode, CNodeRole,
-    Caller, Cap, Endpoint, FaultSink, LocalCap, Responder, RetypeForSetup, Untyped,
+    Caller, Cap, Endpoint, FaultSink, LocalCap, Responder, RetypeForSetup, Untyped, UnmappedPageTable
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Diff;
@@ -27,7 +27,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     let (ut16e, _, _, _, root_cnode) = ut18b.quarter(root_cnode).expect("quarter");
     let (ut14, _, _, _, root_cnode) = ut16e.quarter(root_cnode).expect("quarter");
     let (ut12, asid_pool_ut, _, _, root_cnode) = ut14.quarter(root_cnode).expect("quarter");
-    let (ut10, _, _, _, root_cnode) = ut12.quarter(root_cnode).expect("quarter");
+    let (ut10, scratch_page_table_ut, _, _, root_cnode) = ut12.quarter(root_cnode).expect("quarter");
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode).expect("quarter");
     let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode).expect("quarter");
     let (ut5, _, root_cnode) = ut6.split(root_cnode).expect("split");
@@ -35,6 +35,14 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
 
     // wrap the rest of the critical boot info
     let (mut boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
+
+    let (scratch_page_table, root_cnode): (LocalCap<UnmappedPageTable>, _) =
+        scratch_page_table_ut
+        .retype_local(root_cnode)
+        .expect("retype scratch page table");
+    let (mut scratch_page_table, mut boot_info) = boot_info
+        .map_page_table(scratch_page_table)
+        .expect("map scratch page table");
 
     #[cfg(test_case = "call_and_response_loop")]
     let (child_params_a, proc_cnode_local_a, child_params_b, proc_cnode_local_b, root_cnode) = {
@@ -130,6 +138,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
         None, // fault_source
         ut16c,
         &mut boot_info,
+        &mut scratch_page_table,
         root_cnode,
     )
     .expect("spawn process 2");
@@ -142,6 +151,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
         None, // fault_source
         ut16d,
         &mut boot_info,
+        &mut scratch_page_table,
         root_cnode,
     )
     .expect("spawn process 2");
