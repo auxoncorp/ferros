@@ -1,9 +1,11 @@
 use core::marker::PhantomData;
 use core::mem::size_of;
 use core::ops::Sub;
+use crate::pow::Pow;
 use crate::userland::{
     role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, LocalCap, MappedPage,
-    PhantomCap, SeL4Error, ThreadControlBlock, UnassignedPageDirectory, Untyped,
+    MappedPageTable, PhantomCap, SeL4Error, ThreadControlBlock, UnassignedPageDirectory,
+    UnmappedPageTable, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
@@ -40,6 +42,8 @@ pub mod paging {
     // 2^9 (512) pagedir entries.
     pub type BasePageDirFreeSlots = Diff<Pow<PageDirectoryBits>, Pow<U9>>;
 
+    pub type BasePageTableFreeSlots = Pow<PageTableBits>;
+
     // The first page table is already mapped for the root task, for the user
     // image. (which also reserves 64k for the root task's stack)
     pub type RootTaskReservedPageDirSlots = U1;
@@ -50,11 +54,13 @@ pub mod paging {
 pub mod address_space {
     use crate::pow::Pow;
     use typenum::operator_aliases::Sum;
-    use typenum::{U16, U20, U29, U30, U31};
+    use typenum::{U0, U16, U20, U29, U30, U31};
 
     // TODO this is a magic numbers we got from inspecting the binary.
     /// 0x00010000
     pub type ProgramStart = Pow<U16>;
+
+    pub type ProgramStartPageTableSlot = U0;
 
     // TODO calculate the real one
     /// 0x00080000 - the end of the range of the first page table
@@ -64,20 +70,20 @@ pub mod address_space {
     pub type KernelReservedStart = Sum<Pow<U31>, Sum<Pow<U30>, Pow<U29>>>;
 }
 
-pub struct BootInfo {
-    pub page_directory: Cap<AssignedPageDirectory<paging::RootTaskPageDirFreeSlots>, role::Local>,
+pub struct BootInfo<PageDirFreeSlots: Unsigned> {
+    pub page_directory: LocalCap<AssignedPageDirectory<PageDirFreeSlots>>,
     pub tcb: LocalCap<ThreadControlBlock>,
     pub asid_pool: LocalCap<ASIDPool>,
     user_image_frames_start: usize,
     user_image_frames_end: usize,
 }
 
-impl BootInfo {
+impl BootInfo<paging::RootTaskPageDirFreeSlots> {
     pub fn wrap<FreeSlots: Unsigned>(
         bootinfo: &'static seL4_BootInfo,
         asid_pool_ut: LocalCap<Untyped<U12>>,
         dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
-    ) -> (BootInfo, LocalCap<CNode<Sub1<FreeSlots>, role::Local>>)
+    ) -> (Self, LocalCap<CNode<Sub1<FreeSlots>, role::Local>>)
     where
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
@@ -107,11 +113,9 @@ impl BootInfo {
             dest_cnode,
         )
     }
+}
 
-    pub const fn kernel_reseved_space_start() -> usize {
-        0xe0000000
-    }
-
+impl<PageDirFreeSlots: Unsigned> BootInfo<PageDirFreeSlots> {
     // TODO this doesn't enforce the aliasing constraints we want at the type
     // level. This can be modeled as an array (or other sized thing) once we
     // know how big the user image is.
@@ -126,6 +130,35 @@ impl BootInfo {
                 cap_data: MappedPage { vaddr },
                 _role: PhantomData,
             })
+    }
+
+    /// Proxy to page_directory for convenience
+    pub fn map_page_table(
+        self,
+        unmapped_page_table: LocalCap<UnmappedPageTable>,
+    ) -> Result<
+        (
+            LocalCap<MappedPageTable<Pow<paging::PageTableBits>>>,
+            BootInfo<Sub1<PageDirFreeSlots>>,
+        ),
+        SeL4Error,
+    >
+    where
+        PageDirFreeSlots: Sub<B1>,
+        Sub1<PageDirFreeSlots>: Unsigned,
+    {
+        let (mapped_page_table, page_dir) =
+            self.page_directory.map_page_table(unmapped_page_table)?;
+        Ok((
+            mapped_page_table,
+            BootInfo {
+                page_directory: page_dir,
+                tcb: self.tcb,
+                asid_pool: self.asid_pool,
+                user_image_frames_start: self.user_image_frames_start,
+                user_image_frames_end: self.user_image_frames_end,
+            },
+        ))
     }
 }
 

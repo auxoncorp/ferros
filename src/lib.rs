@@ -27,7 +27,9 @@ mod test_proc;
 
 use core::marker::PhantomData;
 use crate::micro_alloc::GetUntyped;
-use crate::userland::{role, root_cnode, spawn, Badge, BootInfo, CNode, FaultSinkSetup, LocalCap};
+use crate::userland::{
+    role, root_cnode, spawn, Badge, BootInfo, CNode, FaultSinkSetup, LocalCap, UnmappedPageTable,
+};
 use sel4_sys::*;
 use typenum::{U12, U20, U4096};
 
@@ -57,7 +59,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     let (ut16e, ut16f, ut16g, _, root_cnode) = ut18b.quarter(root_cnode).expect("quarter");
     let (ut14, _, _, _, root_cnode) = ut16e.quarter(root_cnode).expect("quarter");
     let (ut12, asid_pool_ut, _, _, root_cnode) = ut14.quarter(root_cnode).expect("quarter");
-    let (ut10, _, _, _, root_cnode) = ut12.quarter(root_cnode).expect("quarter");
+    let (ut10, scratch_page_table_ut, _, _, root_cnode) =
+        ut12.quarter(root_cnode).expect("quarter");
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode).expect("quarter");
     let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode).expect("quarter");
     let (ut5, _, root_cnode) = ut6.split(root_cnode).expect("split");
@@ -106,6 +109,14 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
             .generate_self_reference(&root_cnode)
             .expect("responder self awareness");
 
+        let (scratch_page_table, root_cnode): (LocalCap<UnmappedPageTable>, _) =
+            scratch_page_table_ut
+                .retype_local(root_cnode)
+                .expect("retype scratch page table");
+        let (mut scratch_page_table, mut boot_info) = boot_info
+            .map_page_table(scratch_page_table)
+            .expect("map scratch page table");
+
         let cap_caller_params = test_proc::CapFaulterParams { _role: PhantomData };
         let vm_caller_params = test_proc::VMFaulterParams { _role: PhantomData };
         let responder_params = test_proc::MischiefDetectorParams::<role::Child> { fault_sink };
@@ -118,6 +129,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
             None,
             ut16d,
             &mut boot_info,
+            &mut scratch_page_table,
             root_cnode,
         )
         .expect("spawn process");
@@ -130,6 +142,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
             Some(cap_fault_source),
             ut16f,
             &mut boot_info,
+            &mut scratch_page_table,
             root_cnode,
         )
         .expect("spawn process");
@@ -142,6 +155,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
             Some(vm_fault_source),
             ut16g,
             &mut boot_info,
+            &mut scratch_page_table,
             root_cnode,
         )
         .expect("spawn process");

@@ -5,12 +5,12 @@ use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
     address_space, paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNode, Cap, CapRights,
-    FaultSource, LocalCap, MappedPage, SeL4Error, ThreadControlBlock, UnassignedPageDirectory,
-    UnmappedPage, UnmappedPageTable, Untyped,
+    FaultSource, LocalCap, MappedPage, MappedPageTable, SeL4Error, ThreadControlBlock,
+    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, Untyped,
 };
 use sel4_sys::*;
-use typenum::operator_aliases::Diff;
-use typenum::{Unsigned, U128, U16, U256};
+use typenum::operator_aliases::{Diff, Sub1};
+use typenum::{Unsigned, B1, U128, U16, U256};
 
 impl Cap<ThreadControlBlock, role::Local> {
     fn configure<CNodeFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>(
@@ -70,7 +70,13 @@ pub trait RetypeForSetup: Sized {
 
 type SetupVer<X> = <X as RetypeForSetup>::Output;
 
-pub fn spawn<T: RetypeForSetup, FreeSlots: Unsigned, RootCNodeFreeSlots: Unsigned>(
+pub fn spawn<
+    T: RetypeForSetup,
+    FreeSlots: Unsigned,
+    RootCNodeFreeSlots: Unsigned,
+    PageDirFreeSlots: Unsigned,
+    ScratchPageTableSlots: Unsigned,
+>(
     // process-related
     function_descriptor: extern "C" fn(T) -> (),
     process_parameter: SetupVer<T>,
@@ -80,13 +86,16 @@ pub fn spawn<T: RetypeForSetup, FreeSlots: Unsigned, RootCNodeFreeSlots: Unsigne
 
     // context-related
     ut16: LocalCap<Untyped<U16>>,
-    boot_info: &mut BootInfo,
+    boot_info: &mut BootInfo<PageDirFreeSlots>,
+    scratch_page_table: &mut LocalCap<MappedPageTable<ScratchPageTableSlots>>,
     local_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
 ) -> Result<LocalCap<CNode<Diff<FreeSlots, U256>, role::Local>>, SeL4Error>
 where
     FreeSlots: Sub<U256>,
     Diff<FreeSlots, U256>: Unsigned,
     T: core::marker::Sized,
+    ScratchPageTableSlots: Sub<B1>,
+    Sub1<ScratchPageTableSlots>: Unsigned,
 {
     // TODO can we somehow make this a static assertion? both of these should be const
     assert!(size_of::<SetupVer<T>>() == size_of::<T>());
@@ -113,62 +122,85 @@ where
     let stack_top = stack_base + 0x1000;
     let ipc_buffer_addr = stack_base - 0x2000; // this must be 512-byte aligned, per the seL4 manual
 
+    let (code_page_table, cnode): (Cap<UnmappedPageTable, _>, _) =
+        code_page_table_ut.retype_local(cnode)?;
+
     let (page_dir, cnode): (Cap<UnassignedPageDirectory, _>, _) =
         page_dir_ut.retype_local(cnode)?;
-    let mut page_dir = boot_info.asid_pool.assign(page_dir)?;
+
+    let (code_page_table, mut page_dir) = boot_info.asid_pool.assign(code_page_table, page_dir)?;
 
     // set up ipc buffer
     let (ipc_buffer_page_table, cnode): (Cap<UnmappedPageTable, _>, _) =
         ipc_buffer_page_table_ut.retype_local(cnode)?;
     let (ipc_buffer_page, cnode): (Cap<UnmappedPage, _>, _) = ipc_buffer_ut.retype_local(cnode)?;
 
-    let _ipc_buffer_page_table = page_dir.map_page_table(ipc_buffer_page_table, ipc_buffer_addr)?;
-    let ipc_buffer_page = page_dir.map_page(ipc_buffer_page, ipc_buffer_addr)?;
+    let (ipc_buffer_page_table, mut page_dir) = page_dir.map_page_table(ipc_buffer_page_table)?;
+    let (ipc_buffer_page, ipc_buffer_page_table) =
+        ipc_buffer_page_table.map_page(ipc_buffer_page, &mut page_dir)?;
 
     // Set up a single page for the child's stack (4k)
-    let (stack_page_table, cnode): (Cap<UnmappedPageTable, _>, _) =
-        stack_page_table_ut.retype_local(cnode)?;
-    let (stack_page, cnode): (Cap<UnmappedPage, _>, _) = stack_page_ut.retype_local(cnode)?;
+    // let (stack_page_table, cnode): (Cap<UnmappedPageTable, _>, _) =
+    //     stack_page_table_ut.retype_local(cnode)?;
+    // let (stack_page, cnode): (Cap<UnmappedPage, _>, _) = stack_page_ut.retype_local(cnode)?;
 
     // map the child stack into local memory so we can set it up
-    let stack_page_table = boot_info
-        .page_directory
-        .map_page_table(stack_page_table, stack_base)?;
-    let stack_page = boot_info.page_directory.map_page(stack_page, stack_base)?;
 
-    let mut regs = unsafe {
-        setup_initial_stack_and_regs(
-            &process_parameter as *const SetupVer<T> as *const usize,
-            size_of::<SetupVer<T>>(),
-            stack_top as *mut usize,
-        )
-    };
+    // borrow_page maps a page temporarily
+    let (stack_page, cnode): (Cap<UnmappedPage, _>, _) = stack_page_ut.retype_local(cnode)?;
+    let (mut regs, stack_page) = scratch_page_table.temporarily_map_page(
+        stack_page,
+        &mut boot_info.page_directory,
+        |mapped_page| unsafe {
+            setup_initial_stack_and_regs(
+                &process_parameter as *const SetupVer<T> as *const usize,
+                size_of::<SetupVer<T>>(),
+                (mapped_page.cap_data.vaddr + 1 << paging::PageBits::USIZE) as *mut usize,
+            )
+        },
+    )?;
 
-    // unmap the stack pages
-    let stack_page = stack_page.unmap()?;
-    let stack_page_table = stack_page_table.unmap()?;
+    // let stack_page_table = boot_info
+    //     .page_directory
+    //     .map_page_table(stack_page_table, stack_base)?;
+    // let stack_page = boot_info.page_directory.map_page(stack_page, stack_base)?;
+
+    // let mut regs = unsafe {
+    //     setup_initial_stack_and_regs(
+    //         &process_parameter as *const SetupVer<T> as *const usize,
+    //         size_of::<SetupVer<T>>(),
+    //         stack_top as *mut usize,
+    //     )
+    // };
+
+    // // unmap the stack pages
+    // let stack_page = stack_page.unmap()?;
+    // let stack_page_table = stack_page_table.unmap()?;
 
     // map the stack to the target address space
-    let _stack_page_table = page_dir.map_page_table(stack_page_table, stack_base)?;
-    let _stack_page = page_dir.map_page(stack_page, stack_base)?;
+    let (stack_page_table, cnode): (Cap<UnmappedPageTable, _>, _) =
+        stack_page_table_ut.retype_local(cnode)?;
+    let (stack_page_table, mut page_dir) = page_dir.map_page_table(stack_page_table)?;
+    let (stack_page, stack_page_table) = stack_page_table.map_page(stack_page, &mut page_dir)?;
 
     // map in the user image
-
-    // TODO: map enough page tables for larger images? Ideally, find out the
-    // image size from the build linker, somehow.
-
-    let (code_page_table, cnode): (Cap<UnmappedPageTable, _>, _) =
-        code_page_table_ut.retype_local(cnode)?;
-    let _code_page_table =
-        page_dir.map_page_table(code_page_table, address_space::ProgramStart::USIZE)?;
 
     // TODO: the number of pages we reserve here needs to be checked against the
     // size of the binary.
     let (dest_reservation_iter, cnode) = cnode.reservation_iter::<U128>();
+    let (code_page_table_reservation_iter, code_page_table) =
+        code_page_table.reservation_iter::<U128>();
 
-    for (page_cap, slot_cnode) in boot_info.user_image_pages_iter().zip(dest_reservation_iter) {
+    for ((page_cap, slot_cnode), slot_page_table) in boot_info
+        .user_image_pages_iter()
+        .zip(dest_reservation_iter)
+        .zip(code_page_table_reservation_iter)
+    {
         let (copied_page_cap, _) = page_cap.copy(&local_cnode, slot_cnode, CapRights::W)?;
-        let _mapped_page_cap = page_dir.map_page(copied_page_cap, page_cap.cap_data.vaddr)?;
+        let (_slot_page_table, _mapped_page) =
+            slot_page_table.map_page(copied_page_cap, &mut page_dir)?;
+
+        // let _mapped_page_cap = page_dir.map_page(copied_page_cap, page_cap.cap_data.vaddr)?;
     }
 
     let (mut tcb, _cnode): (Cap<ThreadControlBlock, _>, _) = tcb_ut.retype_local(cnode)?;
@@ -217,23 +249,39 @@ where
 impl Cap<ASIDPool, role::Local> {
     pub fn assign(
         &mut self,
+        code_page_table: LocalCap<UnmappedPageTable>,
         vspace: Cap<UnassignedPageDirectory, role::Local>,
-    ) -> Result<Cap<AssignedPageDirectory<paging::BasePageDirFreeSlots>, role::Local>, SeL4Error>
-    {
+    ) -> Result<
+        (
+            LocalCap<MappedPageTable<paging::BasePageTableFreeSlots>>,
+            LocalCap<AssignedPageDirectory<Sub1<paging::BasePageDirFreeSlots>>>,
+        ),
+        SeL4Error,
+    > {
         let err = unsafe { seL4_ARM_ASIDPool_Assign(self.cptr, vspace.cptr) };
 
         if err != 0 {
             return Err(SeL4Error::ASIDPoolAssign(err));
         }
 
-        Ok(Cap {
+        let page_dir = Cap {
             cptr: vspace.cptr,
             _role: PhantomData,
-            cap_data: AssignedPageDirectory {
+            cap_data: AssignedPageDirectory::<paging::BasePageDirFreeSlots> {
                 next_free_slot: 0,
                 _free_slots: PhantomData,
             },
-        })
+        };
+
+        // Do this immediately after assigning the page directory because it has
+        // to be the first page table; that's the portion of the address space
+        // where the program expects to find itself.
+        //
+        // TODO: This limits us to a megabyte of code. If we want to allow more,
+        // we need more than one page table here.
+        let (code_page_table, page_dir) = page_dir.map_page_table(code_page_table)?;
+
+        Ok((code_page_table, page_dir))
     }
 }
 
