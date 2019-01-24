@@ -6,6 +6,7 @@
 extern crate alloc;
 
 extern crate arrayvec;
+extern crate generic_array;
 extern crate sel4_sys;
 extern crate typenum;
 
