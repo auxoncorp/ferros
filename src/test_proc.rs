@@ -3,8 +3,8 @@ use crate::micro_alloc::{self, GetUntyped};
 use crate::pow::Pow;
 use crate::userland::{
     call_channel, role, root_cnode, setup_fault_endpoint_pair, spawn, BootInfo, CNode, CNodeRole,
-    Caller, Cap, Endpoint, FaultSink, LocalCap, Responder, RetypeForSetup, UnmappedPageTable,
-    Untyped,
+    Caller, Cap, Endpoint, FaultSink, LocalCap, MappedPage, Responder, RetypeForSetup,
+    UnmappedPageTable, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Diff;
@@ -25,6 +25,7 @@ pub struct AdditionResponse {
 pub struct CallerParams<Role: CNodeRole> {
     pub my_cnode: Cap<CNode<Diff<Pow<U12>, U2>, Role>, Role>,
     pub caller: Caller<AdditionRequest, AdditionResponse, Role>,
+    pub shared_page: MappedPage,
 }
 
 impl RetypeForSetup for CallerParams<role::Local> {
@@ -35,6 +36,7 @@ impl RetypeForSetup for CallerParams<role::Local> {
 pub struct ResponderParams<Role: CNodeRole> {
     pub my_cnode: Cap<CNode<Diff<Pow<U12>, U2>, Role>, Role>,
     pub responder: Responder<AdditionRequest, AdditionResponse, Role>,
+    pub shared_page: MappedPage,
 }
 
 impl RetypeForSetup for ResponderParams<role::Local> {

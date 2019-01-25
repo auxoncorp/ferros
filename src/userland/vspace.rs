@@ -234,7 +234,7 @@ where
         ))
     }
 
-    fn map_page(
+    pub fn map_page(
         self,
         page: LocalCap<UnmappedPage>,
     ) -> Result<

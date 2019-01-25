@@ -68,7 +68,8 @@ pub trait Delible {}
 #[derive(Debug)]
 pub struct Cap<CT: CapType, Role: CNodeRole> {
     pub cptr: usize,
-    pub(super) cap_data: CT,
+    // TODO: put this back to pub(super)
+    pub(crate) cap_data: CT,
     pub(super) _role: PhantomData<Role>,
 }
 
@@ -280,7 +281,7 @@ impl CopyAliasable for UnmappedPage {
 
 #[derive(Debug)]
 pub struct MappedPage {
-    pub(super) vaddr: usize,
+    pub(crate) vaddr: usize,
 }
 
 impl CapType for MappedPage {}
@@ -361,6 +362,53 @@ impl<CT: CapType> Cap<CT, role::Local> {
                     _role: PhantomData,
                 },
                 dest_cnode,
+            ))
+        }
+    }
+
+    pub fn copy_inside_cnode<FreeSlots: Unsigned>(
+        &self,
+        src_and_dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
+        rights: CapRights,
+    ) -> Result<
+        (
+            Cap<CT::CopyOutput, role::Local>,
+            LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
+        ),
+        SeL4Error,
+    >
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
+        CT: CopyAliasable,
+        <CT as CopyAliasable>::CopyOutput: PhantomCap,
+    {
+        let (src_and_dest_cnode, dest_slot) = src_and_dest_cnode.consume_slot();
+
+        let err = unsafe {
+            seL4_CNode_Copy(
+                dest_slot.cptr,      // _service
+                dest_slot.offset,    // index
+                seL4_WordBits as u8, // depth
+                // Since src_cnode is restricted to Root, the cptr must
+                // actually be the slot index
+                src_and_dest_cnode.cptr, // src_root
+                self.cptr,               // src_index
+                seL4_WordBits as u8,     // src_depth
+                rights.into(),           // rights
+            )
+        };
+
+        if err != 0 {
+            Err(SeL4Error::CNodeCopy(err))
+        } else {
+            Ok((
+                Cap {
+                    cptr: dest_slot.offset,
+                    cap_data: PhantomCap::phantom_instance(),
+                    _role: PhantomData,
+                },
+                src_and_dest_cnode,
             ))
         }
     }
