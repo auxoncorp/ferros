@@ -113,7 +113,7 @@ impl VSpace {
             .zip(cnode_slot_reservation_iter)
             .zip(code_page_slot_reservation_iter)
         {
-            let (copied_page_cap, _) = page_cap.copy(&cnode, slot_cnode, CapRights::W)?;
+            let (copied_page_cap, _) = page_cap.copy(&cnode, slot_cnode, CapRights::R)?;
             let _mapped_page = page_slot.map_page(copied_page_cap)?;
         }
 
