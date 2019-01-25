@@ -1,6 +1,7 @@
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
 use crate::pow::Pow;
+use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, SetupVer};
 use crate::userland::{
     paging, role, ASIDPool, AssignedPageDirectory, BootInfo, Cap, CapRights, LocalCNode, LocalCap,
     MappedPage, MappedPageTable, PhantomCap, SeL4Error, UnassignedPageDirectory, UnmappedPage,
@@ -10,9 +11,27 @@ use generic_array::sequence::Concat;
 use generic_array::{arr, arr_impl, ArrayLength, GenericArray};
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1, Sum};
-use typenum::{Unsigned, B1, U0, U1, U10, U128, U14, U16, U2, U256};
+use typenum::{Unsigned, B1, U0, U1, U10, U128, U14, U16, U2, U256, U3, U4};
 
-// encapsulate vspace setup
+#[derive(Debug)]
+pub enum VSpaceError {
+    ProcessParameterTooBigForStack,
+    SeL4Error(SeL4Error),
+}
+
+impl From<SeL4Error> for VSpaceError {
+    fn from(s: SeL4Error) -> Self {
+        VSpaceError::SeL4Error(s)
+    }
+}
+
+/// A VSpace instance represents the virtual memory space
+/// intended to be associated with a particular process,
+/// and is used in the setup and creation of that process.
+///
+/// A VSpace instance comes with with user-image code
+/// of the running feL4 application already copied into
+/// its internal paging structures.
 pub struct VSpace<
     PageDirFreeSlots: Unsigned,
     PageTableFreeSlots: Unsigned,
@@ -211,6 +230,32 @@ where
         ))
     }
 
+    fn map_page(
+        self,
+        page: LocalCap<UnmappedPage>,
+    ) -> Result<
+        (
+            LocalCap<MappedPage>,
+            VSpace<PageDirFreeSlots, Sub1<PageTableFreeSlots>, FilledPageTableCount>,
+        ),
+        SeL4Error,
+    >
+    where
+        PageTableFreeSlots: Sub<B1>,
+        Sub1<PageTableFreeSlots>: Unsigned,
+    {
+        let mut page_dir = self.page_dir;
+        let (mapped_page, page_table) = self.current_page_table.map_page(page, &mut page_dir)?;
+        Ok((
+            mapped_page,
+            VSpace {
+                page_dir: page_dir,
+                current_page_table: page_table,
+                filled_page_tables: self.filled_page_tables,
+            },
+        ))
+    }
+
     pub(super) fn skip_pages<Count: Unsigned>(
         self,
     ) -> VSpace<PageDirFreeSlots, Diff<PageTableFreeSlots, Count>, FilledPageTableCount>
@@ -263,6 +308,104 @@ where
 
         (iter, self.skip_pages::<Count>())
     }
+
+    pub fn prepare_stack<T: RetypeForSetup, LocalCNodeFreeSlots: Unsigned>(
+        self,
+        process_parameter: SetupVer<T>,
+        stack_page_untyped: LocalCap<Untyped<U4>>,
+        local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
+    ) -> Result<
+        (
+            Stack<T>,
+            VSpace<PageDirFreeSlots, Sub1<PageTableFreeSlots>, FilledPageTableCount>,
+            LocalCap<LocalCNode<Sub1<LocalCNodeFreeSlots>>>,
+        ),
+        VSpaceError,
+    >
+    where
+        // TODO - Expect to change this to support subtracting 3 page table slots thanks to guards
+        PageTableFreeSlots: Sub<B1>,
+        Sub1<PageTableFreeSlots>: Unsigned,
+
+        LocalCNodeFreeSlots: Sub<B1>,
+        Sub1<LocalCNodeFreeSlots>: Unsigned,
+    {
+        // TODO - parameterize this function with Count in order
+        // take more than one page for the stack. Requires:
+        //   * Use of CNode's reservation_iter
+        //   * Getting a handle on the first page (or few pages?)
+        // for the params-insertion despite iter-use
+        //   * Connecting the Count to the size of the untyped parameter
+        //   * Either an iterator over the split-out untypeds
+        //   * Or a private/internal bulk retype-local
+
+        // TODO - lift this check to compile-time
+        // Note - This comparison is conservative because technically
+        // we can fit some of the params into available registers.
+        if core::mem::size_of::<SetupVer<T>>() > paging::PageBytes::USIZE {
+            return Err(VSpaceError::ProcessParameterTooBigForStack);
+        }
+
+        // TODO - RESTORE - Reserve a guard page before the stack
+        //let mut vspace = self.skip_pages::<U1>();
+        let mut vspace = self;
+
+        let (stack_page, local_cnode): (Cap<UnmappedPage, _>, _) =
+            stack_page_untyped.retype_local(local_cnode)?;
+        // map the child stack into local memory so we can set it up
+        let ((mut registers, param_size_on_stack), stack_page) = vspace
+            .current_page_table
+            .temporarily_map_page(stack_page, &mut vspace.page_dir, |mapped_page| unsafe {
+                setup_initial_stack_and_regs(
+                    &process_parameter as *const SetupVer<T> as *const usize,
+                    core::mem::size_of::<SetupVer<T>>(),
+                    (mapped_page.cap_data.vaddr + (1 << paging::PageBits::USIZE)) as *mut usize,
+                )
+            })?;
+        // Capture the signature before we map the page in order to get local-unique indexing
+        let vspace_signature = VSpaceSignature {
+            page_dir_cptr: vspace.page_dir.cptr,
+            page_dir_next_free_slot: vspace.page_dir.cap_data.next_free_slot,
+            current_page_table_cptr: vspace.current_page_table.cptr,
+            current_page_table_vaddr: vspace.current_page_table.cap_data.vaddr,
+            current_page_table_next_free_slot: vspace.current_page_table.cap_data.next_free_slot,
+        };
+        // Map the stack to the target address space
+        let (stack_page, vspace) = vspace.map_page(stack_page)?;
+
+        let stack_pointer =
+            stack_page.cap_data.vaddr + (1 << paging::PageBits::USIZE) - param_size_on_stack;
+        registers.sp = stack_pointer;
+        let stack = Stack {
+            vspace_signature,
+            registers,
+            _process_params: PhantomData,
+        };
+
+        // TODO - RESTORE - Reserve a guard page after the stack
+        //let vspace = self.skip_pages::<U1>();
+
+        Ok((stack, vspace, local_cnode))
+    }
+}
+
+/// Opaque snapshot of VSpace internals in the middle of stack setup.
+/// Purely for equality-checking to ensure that a Stack instance
+/// is associated with the correct VSpace instance
+#[derive(Debug, PartialEq)]
+#[allow(dead_code)]
+struct VSpaceSignature {
+    page_dir_cptr: usize,
+    page_dir_next_free_slot: usize,
+    current_page_table_cptr: usize,
+    current_page_table_vaddr: usize,
+    current_page_table_next_free_slot: usize,
+}
+
+pub struct Stack<T: RetypeForSetup> {
+    registers: seL4_UserContext,
+    vspace_signature: VSpaceSignature,
+    _process_params: PhantomData<SetupVer<T>>,
 }
 
 pub struct PageSlot {

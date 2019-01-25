@@ -67,7 +67,7 @@ pub trait RetypeForSetup: Sized {
     type Output;
 }
 
-type SetupVer<X> = <X as RetypeForSetup>::Output;
+pub type SetupVer<X> = <X as RetypeForSetup>::Output;
 
 pub fn spawn<
     T: RetypeForSetup,
@@ -276,7 +276,7 @@ impl<FreeSlots: Unsigned> Cap<ASIDPool<FreeSlots>, role::Local> {
 /// "Procedure Call Standard for the ARM Architecture", Section 5.5
 ///
 /// Returns a tuple of (regs, stack_extent), where regs only has r0-r3 set.
-unsafe fn setup_initial_stack_and_regs(
+pub(crate) unsafe fn setup_initial_stack_and_regs(
     param: *const usize,
     param_size: usize,
     stack_top: *mut usize,

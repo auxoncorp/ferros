@@ -50,6 +50,9 @@ pub mod paging {
     pub type RootTaskReservedPageDirSlots = U1;
 
     pub type RootTaskPageDirFreeSlots = Diff<BasePageDirFreeSlots, RootTaskReservedPageDirSlots>;
+
+    // Useful for constant comparison to data structure size_of results
+    pub type PageBytes = Pow<PageBits>;
 }
 
 pub mod address_space {
