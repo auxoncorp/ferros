@@ -21,6 +21,10 @@ pub struct AdditionResponse {
     sum: u32,
 }
 
+struct SharedData {
+    c: u32,
+}
+
 #[derive(Debug)]
 pub struct CallerParams<Role: CNodeRole> {
     pub my_cnode: Cap<CNode<Diff<Pow<U12>, U2>, Role>, Role>,
@@ -51,9 +55,15 @@ pub extern "C" fn caller(p: CallerParams<role::Local>) {
         a: current_sum,
         b: current_sum,
     };
+
+    let shared: &mut SharedData =
+        unsafe { core::mem::transmute(p.shared_page.vaddr as *mut SharedData) };
+
     while current_sum < 100 {
         addition_request.a = current_sum;
         addition_request.b = current_sum;
+        shared.c = current_sum;
+
         debug_println!(
             "Q: What is {} + {}?",
             addition_request.a,
@@ -81,9 +91,13 @@ pub extern "C" fn caller(p: CallerParams<role::Local>) {
 pub extern "C" fn responder(p: ResponderParams<role::Local>) {
     debug_println!("Inside addition_responder");
     let initial_state: usize = 0;
+    let shared: &SharedData =
+        unsafe { core::mem::transmute(p.shared_page.vaddr as *const SharedData) };
+
     p.responder
         .reply_recv_with_state(initial_state, move |req, state| {
             debug_println!("Addition has happened {} times", state);
+            debug_println!("SHM says that shared.c={}", shared.c);
 
             (AdditionResponse { sum: req.a + req.b }, state + 1)
         })
