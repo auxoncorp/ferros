@@ -313,12 +313,20 @@ where
         (iter, self.skip_pages::<Count>())
     }
 
-    pub fn prepare_thread<T: RetypeForSetup, LocalCNodeFreeSlots: Unsigned>(
+    pub fn prepare_thread<
+        T: RetypeForSetup,
+        LocalCNodeFreeSlots: Unsigned,
+        ScratchPageTableSlots: Unsigned,
+        LocalPageDirFreeSlots: Unsigned,
+    >(
         self,
         function_descriptor: extern "C" fn(T) -> (),
         process_parameter: SetupVer<T>,
         untyped: LocalCap<Untyped<U14>>,
         local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
+        // TODO: We should index MappedPageTable, MappedPage, and VSpace by role to indicate what address space we're dealing with.
+        scratch_page_table: &mut LocalCap<MappedPageTable<ScratchPageTableSlots>>,
+        mut local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots>>,
     ) -> Result<
         (
             ReadyThread,
@@ -337,6 +345,9 @@ where
 
         LocalCNodeFreeSlots: Sub<U9>,
         Diff<LocalCNodeFreeSlots, U9>: Unsigned,
+
+        ScratchPageTableSlots: Sub<B1>,
+        Sub1<ScratchPageTableSlots>: Unsigned,
     {
         // TODO - parameterize this function with Count in order
         // take more than one page for the stack. Requires:
@@ -368,9 +379,8 @@ where
             stack_page_ut.retype_local(local_cnode)?;
 
         // map the child stack into local memory so we can set it up
-        let ((mut registers, param_size_on_stack), stack_page) = vspace
-            .current_page_table
-            .temporarily_map_page(stack_page, &mut vspace.page_dir, |mapped_page| unsafe {
+        let ((mut registers, param_size_on_stack), stack_page) = scratch_page_table
+            .temporarily_map_page(stack_page, &mut local_page_dir, |mapped_page| unsafe {
                 setup_initial_stack_and_regs(
                     &process_parameter as *const SetupVer<T> as *const usize,
                     core::mem::size_of::<SetupVer<T>>(),
