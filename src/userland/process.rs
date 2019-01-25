@@ -54,14 +54,6 @@ impl Cap<ThreadControlBlock, role::Local> {
     }
 }
 
-fn yield_forever() {
-    unsafe {
-        loop {
-            seL4_Yield();
-        }
-    }
-}
-
 // TODO - consider renaming for clarity
 pub trait RetypeForSetup: Sized {
     type Output;
@@ -191,8 +183,9 @@ where
     let (mut tcb, _cnode): (Cap<ThreadControlBlock, _>, _) = tcb_ut.retype_local(cnode)?;
     tcb.configure(child_cnode, fault_source, page_dir, ipc_buffer_page)?;
 
-    regs.pc = function_descriptor as seL4_Word;
-    regs.r14 = (yield_forever as *const fn() -> ()) as seL4_Word;
+    // TODO - DESTROY
+    //regs.pc = function_descriptor as seL4_Word;
+    //regs.r14 = (yield_forever as *const fn() -> ()) as seL4_Word;
 
     // debug_println!("Configuring TCB: PC=0x{:08x}, SP=0x{:08x}", regs.pc, regs.sp);
     // debug_println!("  R0={}, R1={}, R2={}, R3={}", regs.r0, regs.r1, regs.r2, regs.r3);

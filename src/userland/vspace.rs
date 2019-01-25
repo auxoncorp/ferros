@@ -1,6 +1,7 @@
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
 use crate::pow::Pow;
+use crate::userland::cap::ThreadControlBlock;
 use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, SetupVer};
 use crate::userland::{
     paging, role, ASIDPool, AssignedPageDirectory, BootInfo, Cap, CapRights, LocalCNode, LocalCap,
@@ -11,11 +12,12 @@ use generic_array::sequence::Concat;
 use generic_array::{arr, arr_impl, ArrayLength, GenericArray};
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1, Sum};
-use typenum::{Unsigned, B1, U0, U1, U10, U128, U14, U16, U2, U256, U3, U4};
+use typenum::{Unsigned, B1, U0, U1, U10, U128, U14, U16, U2, U256, U3, U4, U7, U9};
 
 #[derive(Debug)]
 pub enum VSpaceError {
     ProcessParameterTooBigForStack,
+    ProcessParameterHandoffSizeMismatch,
     SeL4Error(SeL4Error),
 }
 
@@ -309,26 +311,30 @@ where
         (iter, self.skip_pages::<Count>())
     }
 
-    pub fn prepare_stack<T: RetypeForSetup, LocalCNodeFreeSlots: Unsigned>(
+    pub fn prepare_thread<T: RetypeForSetup, LocalCNodeFreeSlots: Unsigned>(
         self,
+        function_descriptor: extern "C" fn(T) -> (),
         process_parameter: SetupVer<T>,
-        stack_page_untyped: LocalCap<Untyped<U4>>,
+        untyped: LocalCap<Untyped<U14>>,
         local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
     ) -> Result<
         (
-            Stack<T>,
-            VSpace<PageDirFreeSlots, Sub1<PageTableFreeSlots>, FilledPageTableCount>,
-            LocalCap<LocalCNode<Sub1<LocalCNodeFreeSlots>>>,
+            ReadyThread<T>,
+            VSpace<PageDirFreeSlots, Sub1<Sub1<PageTableFreeSlots>>, FilledPageTableCount>,
+            LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U9>>>,
         ),
         VSpaceError,
     >
     where
-        // TODO - Expect to change this to support subtracting 3 page table slots thanks to guards
+        // TODO - Expect to change this to support subtracting 4 page table slots thanks to guards
         PageTableFreeSlots: Sub<B1>,
         Sub1<PageTableFreeSlots>: Unsigned,
 
-        LocalCNodeFreeSlots: Sub<B1>,
-        Sub1<LocalCNodeFreeSlots>: Unsigned,
+        Sub1<PageTableFreeSlots>: Sub<B1>,
+        Sub1<Sub1<PageTableFreeSlots>>: Unsigned,
+
+        LocalCNodeFreeSlots: Sub<U9>,
+        Diff<LocalCNodeFreeSlots, U9>: Unsigned,
     {
         // TODO - parameterize this function with Count in order
         // take more than one page for the stack. Requires:
@@ -339,19 +345,26 @@ where
         //   * Either an iterator over the split-out untypeds
         //   * Or a private/internal bulk retype-local
 
-        // TODO - lift this check to compile-time
+        // TODO - lift these checks to compile-time, as static assertions
         // Note - This comparison is conservative because technically
         // we can fit some of the params into available registers.
         if core::mem::size_of::<SetupVer<T>>() > paging::PageBytes::USIZE {
             return Err(VSpaceError::ProcessParameterTooBigForStack);
         }
+        if core::mem::size_of::<SetupVer<T>>() != core::mem::size_of::<T>() {
+            return Err(VSpaceError::ProcessParameterHandoffSizeMismatch);
+        }
 
         // TODO - RESTORE - Reserve a guard page before the stack
         //let mut vspace = self.skip_pages::<U1>();
         let mut vspace = self;
+        let (local_cnode, output_cnode) = local_cnode.reserve_region::<U9>();
 
+        let (ut12, stack_page_ut, ipc_buffer_ut, _, local_cnode) = untyped.quarter(local_cnode)?;
+        let (ut10, _, _, tcb_ut, local_cnode) = ut12.quarter(local_cnode)?;
         let (stack_page, local_cnode): (Cap<UnmappedPage, _>, _) =
-            stack_page_untyped.retype_local(local_cnode)?;
+            stack_page_ut.retype_local(local_cnode)?;
+
         // map the child stack into local memory so we can set it up
         let ((mut registers, param_size_on_stack), stack_page) = vspace
             .current_page_table
@@ -362,22 +375,18 @@ where
                     (mapped_page.cap_data.vaddr + (1 << paging::PageBits::USIZE)) as *mut usize,
                 )
             })?;
-        // Capture the signature before we map the page in order to get local-unique indexing
-        let vspace_signature = VSpaceSignature {
-            page_dir_cptr: vspace.page_dir.cptr,
-            page_dir_next_free_slot: vspace.page_dir.cap_data.next_free_slot,
-            current_page_table_cptr: vspace.current_page_table.cptr,
-            current_page_table_vaddr: vspace.current_page_table.cap_data.vaddr,
-            current_page_table_next_free_slot: vspace.current_page_table.cap_data.next_free_slot,
-        };
         // Map the stack to the target address space
         let (stack_page, vspace) = vspace.map_page(stack_page)?;
-
         let stack_pointer =
             stack_page.cap_data.vaddr + (1 << paging::PageBits::USIZE) - param_size_on_stack;
+
         registers.sp = stack_pointer;
-        let stack = Stack {
-            vspace_signature,
+        registers.pc = function_descriptor as seL4_Word;
+        registers.r14 = (yield_forever as *const fn() -> ()) as seL4_Word;
+        let ready_thread = ReadyThread {
+            vspace_signature: VSpaceSignature {
+                page_dir_cptr: vspace.page_dir.cptr,
+            },
             registers,
             _process_params: PhantomData,
         };
@@ -385,7 +394,15 @@ where
         // TODO - RESTORE - Reserve a guard page after the stack
         //let vspace = self.skip_pages::<U1>();
 
-        Ok((stack, vspace, local_cnode))
+        // Allocate and map the ipc buffer
+        let (ipc_buffer_page, local_cnode): (LocalCap<UnmappedPage>, _) =
+            ipc_buffer_ut.retype_local(local_cnode)?;
+        let (_ipc_buffer_page, vspace) = vspace.map_page(ipc_buffer_page)?;
+
+        let (mut tcb, local_cnode): (Cap<ThreadControlBlock, _>, _) =
+            tcb_ut.retype_local(local_cnode)?;
+
+        Ok((ready_thread, vspace, output_cnode))
     }
 }
 
@@ -396,13 +413,9 @@ where
 #[allow(dead_code)]
 struct VSpaceSignature {
     page_dir_cptr: usize,
-    page_dir_next_free_slot: usize,
-    current_page_table_cptr: usize,
-    current_page_table_vaddr: usize,
-    current_page_table_next_free_slot: usize,
 }
 
-pub struct Stack<T: RetypeForSetup> {
+pub struct ReadyThread<T: RetypeForSetup> {
     registers: seL4_UserContext,
     vspace_signature: VSpaceSignature,
     _process_params: PhantomData<SetupVer<T>>,
@@ -689,5 +702,13 @@ impl Cap<MappedPage, role::Local> {
             cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         })
+    }
+}
+
+fn yield_forever() {
+    unsafe {
+        loop {
+            seL4_Yield();
+        }
     }
 }
