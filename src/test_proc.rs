@@ -43,7 +43,7 @@ impl RetypeForSetup for ResponderParams<role::Local> {
     type Output = ResponderParams<role::Child>;
 }
 
-pub extern "C" fn child_proc_a(p: CallerParams<role::Local>) {
+pub extern "C" fn caller(p: CallerParams<role::Local>) {
     debug_println!("Inside addition_requester");
     let mut current_sum: u32 = 1;
     let caller = p.caller;
@@ -78,7 +78,7 @@ pub extern "C" fn child_proc_a(p: CallerParams<role::Local>) {
     );
 }
 
-pub extern "C" fn child_proc_b(p: ResponderParams<role::Local>) {
+pub extern "C" fn responder(p: ResponderParams<role::Local>) {
     debug_println!("Inside addition_responder");
     let initial_state: usize = 0;
     p.responder

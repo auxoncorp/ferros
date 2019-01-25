@@ -127,51 +127,31 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
 
     // cnode setup
 
-    let (child_a_thread, caller_vspace, root_cnode) = caller_vspace
+    let (caller_thread, caller_vspace, root_cnode) = caller_vspace
         .prepare_thread(
-            test_proc::child_proc_a,
+            test_proc::caller,
             caller_params,
             caller_thread_ut,
             root_cnode,
+            &mut scratch_page_table,
+            &mut boot_info.page_directory,
         )
         .expect("prepare child thread a");
 
-    child_a_thread.start(caller_cnode_local, None, &boot_info.tcb, 255);
+    caller_thread.start(caller_cnode_local, None, &boot_info.tcb, 255);
 
-    let (child_b_thread, responder_vspace, root_cnode) = responder_vspace
+    let (responder_thread, responder_vspace, root_cnode) = responder_vspace
         .prepare_thread(
-            test_proc::child_proc_b,
+            test_proc::responder,
             responder_params,
             responder_thread_ut,
             root_cnode,
+            &mut scratch_page_table,
+            &mut boot_info.page_directory,
         )
         .expect("prepare child thread a");
 
-    child_b_thread.start(responder_cnode_local, None, &boot_info.tcb, 255);
-
-    // let root_cnode = spawn(
-    //     test_proc::child_proc_a,
-    //     caller_params,
-    //     caller_cnode_local,
-    //     255,  // priority
-    //     None, // fault_source
-    //     ut16c,
-    //     &mut boot_info,
-    //     &mut scratch_page_table,
-    //     root_cnode,
-    // )?;
-
-    // let root_cnode = spawn(
-    //     test_proc::child_proc_b,
-    //     responder_params,
-    //     responder_cnode_local,
-    //     255,  // priority
-    //     None, // fault_source
-    //     ut16d,
-    //     &mut boot_info,
-    //     &mut scratch_page_table,
-    //     root_cnode,
-    // )?;
+    responder_thread.start(responder_cnode_local, None, &boot_info.tcb, 255);
 
     Ok(())
 }
