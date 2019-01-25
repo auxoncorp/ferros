@@ -10,7 +10,7 @@ use generic_array::sequence::Concat;
 use generic_array::{arr, arr_impl, ArrayLength, GenericArray};
 use sel4_sys::*;
 use typenum::operator_aliases::{Add1, Diff, Sub1, Sum};
-use typenum::{Unsigned, B1, U0, U1, U10, U128, U14, U16, U2, U256};
+use typenum::{Unsigned, B1, U0, U1, U10, U128, U14, U144, U16, U2, U256};
 
 // encapsulate vspace setup
 pub struct VSpace<
@@ -88,7 +88,7 @@ where
         (
             VSpace<
                 Sub1<paging::BasePageDirFreeSlots>,
-                paging::BasePageTableFreeSlots,
+                Diff<paging::BasePageTableFreeSlots, U144>,
                 U0, // FilledPageTableCount
             >,
             // dest_cnode
