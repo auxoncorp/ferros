@@ -13,13 +13,15 @@ use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U1, U128, U16, U256};
 
 impl Cap<ThreadControlBlock, role::Local> {
-    fn configure<CNodeFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>(
+    pub(super) fn configure<
+        CNodeFreeSlots: Unsigned, // , PageDirFreeSlots: Unsigned //
+    >(
         &mut self,
         cspace_root: LocalCap<CNode<CNodeFreeSlots, role::Child>>,
         fault_source: Option<FaultSource<role::Child>>,
         // cspace_root_data: usize, // set the guard bits here
-        // TODO make a marker trait for VSpace?
-        vspace_root: LocalCap<AssignedPageDirectory<PageDirFreeSlots>>,
+        // TODO make this work with references to a wrapped vspace
+        vspace_cptr: usize, // vspace_root: LocalCap<AssignedPageDirectory<PageDirFreeSlots>>,
         // vspace_root_data: usize, // always 0
         ipc_buffer: LocalCap<MappedPage>,
     ) -> Result<(), SeL4Error> {
@@ -39,7 +41,7 @@ impl Cap<ThreadControlBlock, role::Local> {
                 fault_source.map_or(seL4_CapNull as usize, |source| source.endpoint.cptr), // fault_ep.cptr,
                 cspace_root.cptr,
                 cspace_root_data,
-                vspace_root.cptr,
+                vspace_cptr, //vspace_root.cptr,
                 seL4_NilData as usize,
                 ipc_buffer.cap_data.vaddr, // buffer address
                 ipc_buffer.cptr,           // bufferFrame capability
@@ -181,7 +183,8 @@ where
     ///////////////////////////
 
     let (mut tcb, _cnode): (Cap<ThreadControlBlock, _>, _) = tcb_ut.retype_local(cnode)?;
-    tcb.configure(child_cnode, fault_source, page_dir, ipc_buffer_page)?;
+    unimplemented!()
+    // tcb.configure(child_cnode, fault_source, page_dir.cptr, ipc_buffer_page)?;
 
     // TODO - DESTROY
     //regs.pc = function_descriptor as seL4_Word;
@@ -190,31 +193,31 @@ where
     // debug_println!("Configuring TCB: PC=0x{:08x}, SP=0x{:08x}", regs.pc, regs.sp);
     // debug_println!("  R0={}, R1={}, R2={}, R3={}", regs.r0, regs.r1, regs.r2, regs.r3);
 
-    unsafe {
-        let err = seL4_TCB_WriteRegisters(
-            tcb.cptr,
-            0,
-            0,
-            // all the regs
-            size_of::<seL4_UserContext>() / size_of::<seL4_Word>(),
-            &mut regs,
-        );
-        if err != 0 {
-            return Err(SeL4Error::TCBWriteRegisters(err));
-        }
+    // unsafe {
+    //     let err = seL4_TCB_WriteRegisters(
+    //         tcb.cptr,
+    //         0,
+    //         0,
+    //         // all the regs
+    //         size_of::<seL4_UserContext>() / size_of::<seL4_Word>(),
+    //         &mut regs,
+    //     );
+    //     if err != 0 {
+    //         return Err(SeL4Error::TCBWriteRegisters(err));
+    //     }
 
-        let err = seL4_TCB_SetPriority(tcb.cptr, boot_info.tcb.cptr, priority as usize);
-        if err != 0 {
-            return Err(SeL4Error::TCBSetPriority(err));
-        }
+    //     let err = seL4_TCB_SetPriority(tcb.cptr, boot_info.tcb.cptr, priority as usize);
+    //     if err != 0 {
+    //         return Err(SeL4Error::TCBSetPriority(err));
+    //     }
 
-        let err = seL4_TCB_Resume(tcb.cptr);
-        if err != 0 {
-            return Err(SeL4Error::TCBResume(err));
-        }
-    }
+    //     let err = seL4_TCB_Resume(tcb.cptr);
+    //     if err != 0 {
+    //         return Err(SeL4Error::TCBResume(err));
+    //     }
+    // }
 
-    Ok(local_cnode)
+    // Ok(local_cnode)
 }
 
 // This is used in only in spawn

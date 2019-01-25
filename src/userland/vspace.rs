@@ -4,9 +4,9 @@ use crate::pow::Pow;
 use crate::userland::cap::ThreadControlBlock;
 use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, SetupVer};
 use crate::userland::{
-    paging, role, ASIDPool, AssignedPageDirectory, BootInfo, Cap, CapRights, LocalCNode, LocalCap,
-    MappedPage, MappedPageTable, PhantomCap, SeL4Error, UnassignedPageDirectory, UnmappedPage,
-    UnmappedPageTable, Untyped,
+    paging, role, ASIDPool, AssignedPageDirectory, BootInfo, Cap, CapRights, ChildCNode,
+    FaultSource, LocalCNode, LocalCap, MappedPage, MappedPageTable, PhantomCap, SeL4Error,
+    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, Untyped,
 };
 use generic_array::sequence::Concat;
 use generic_array::{arr, arr_impl, ArrayLength, GenericArray};
@@ -35,9 +35,9 @@ impl From<SeL4Error> for VSpaceError {
 /// of the running feL4 application already copied into
 /// its internal paging structures.
 pub struct VSpace<
-    PageDirFreeSlots: Unsigned,
-    PageTableFreeSlots: Unsigned,
-    FilledPageTableCount: Unsigned,
+    PageDirFreeSlots: Unsigned = U0,
+    PageTableFreeSlots: Unsigned = U0,
+    FilledPageTableCount: Unsigned = U0,
 > where
     FilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0>>>,
 {
@@ -46,70 +46,7 @@ pub struct VSpace<
     filled_page_tables: GenericArray<LocalCap<MappedPageTable<U0>>, FilledPageTableCount>,
 }
 
-impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, FilledPageTableCount: Unsigned>
-    VSpace<PageDirFreeSlots, PageTableFreeSlots, FilledPageTableCount>
-where
-    FilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0>>>,
-{
-    // Set up the barest minimal vspace; it will be further initialized to be
-    // actually useful in the 'new' constructor. This needs untyped caps for the
-    // page dir and page table storage, two cnode slots to retype them with, and
-    // will consume 1 ASID to assign the page dir and 1 slot from the page dir
-    // to map in the initial page table.
-    fn internal_new<
-        ASIDPoolFreeSlots: Unsigned,
-        BootInfoPageDirFreeSlots: Unsigned,
-        CNodeFreeSlots: Unsigned,
-    >(
-        // TODO: model ASIDPool capacity at the type level
-        boot_info: BootInfo<ASIDPoolFreeSlots, BootInfoPageDirFreeSlots>,
-        page_dir_ut: LocalCap<Untyped<U14>>,
-        page_table_ut: LocalCap<Untyped<U10>>,
-        dest_cnode: LocalCap<LocalCNode<CNodeFreeSlots>>,
-    ) -> Result<
-        (
-            VSpace<
-                Sub1<paging::BasePageDirFreeSlots>,
-                paging::BasePageTableFreeSlots,
-                U0, // FilledPageTableCount
-            >,
-            BootInfo<Sub1<ASIDPoolFreeSlots>, BootInfoPageDirFreeSlots>,
-            // dest_cnode
-            LocalCap<LocalCNode<Diff<CNodeFreeSlots, U2>>>,
-        ),
-        SeL4Error,
-    >
-    where
-        CNodeFreeSlots: Sub<U2>,
-        Diff<CNodeFreeSlots, U2>: Unsigned,
-
-        ASIDPoolFreeSlots: Sub<B1>,
-        Sub1<ASIDPoolFreeSlots>: Unsigned,
-    {
-        let (cnode, dest_cnode) = dest_cnode.reserve_region::<U2>();
-
-        // allocate the page dir and initial page table
-        let (page_dir, cnode): (LocalCap<UnassignedPageDirectory>, _) =
-            page_dir_ut.retype_local(cnode)?;
-
-        let (initial_page_table, _cnode): (LocalCap<UnmappedPageTable>, _) =
-            page_table_ut.retype_local(cnode)?;
-
-        // assign the page dir and map in the initial page table.
-        let (page_dir, boot_info) = boot_info.assign_minimal_page_dir(page_dir)?;
-        let (initial_page_table, page_dir) = page_dir.map_page_table(initial_page_table)?;
-
-        Ok((
-            VSpace {
-                page_dir,
-                current_page_table: initial_page_table,
-                filled_page_tables: arr![LocalCap<MappedPageTable<U0>>;],
-            },
-            boot_info,
-            dest_cnode,
-        ))
-    }
-
+impl VSpace {
     pub fn new<
         ASIDPoolFreeSlots: Unsigned,
         CNodeFreeSlots: Unsigned,
@@ -184,6 +121,71 @@ where
         // unused CNode and Untyped capacity hanging around in here.
         let (vspace, _cnode) = vspace.next_page_table(second_page_table_ut, cnode)?;
         Ok((vspace, boot_info, dest_cnode))
+    }
+}
+
+impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, FilledPageTableCount: Unsigned>
+    VSpace<PageDirFreeSlots, PageTableFreeSlots, FilledPageTableCount>
+where
+    FilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0>>>,
+{
+    // Set up the barest minimal vspace; it will be further initialized to be
+    // actually useful in the 'new' constructor. This needs untyped caps for the
+    // page dir and page table storage, two cnode slots to retype them with, and
+    // will consume 1 ASID to assign the page dir and 1 slot from the page dir
+    // to map in the initial page table.
+    fn internal_new<
+        ASIDPoolFreeSlots: Unsigned,
+        BootInfoPageDirFreeSlots: Unsigned,
+        CNodeFreeSlots: Unsigned,
+    >(
+        // TODO: model ASIDPool capacity at the type level
+        boot_info: BootInfo<ASIDPoolFreeSlots, BootInfoPageDirFreeSlots>,
+        page_dir_ut: LocalCap<Untyped<U14>>,
+        page_table_ut: LocalCap<Untyped<U10>>,
+        dest_cnode: LocalCap<LocalCNode<CNodeFreeSlots>>,
+    ) -> Result<
+        (
+            VSpace<
+                Sub1<paging::BasePageDirFreeSlots>,
+                paging::BasePageTableFreeSlots,
+                U0, // FilledPageTableCount
+            >,
+            BootInfo<Sub1<ASIDPoolFreeSlots>, BootInfoPageDirFreeSlots>,
+            // dest_cnode
+            LocalCap<LocalCNode<Diff<CNodeFreeSlots, U2>>>,
+        ),
+        SeL4Error,
+    >
+    where
+        CNodeFreeSlots: Sub<U2>,
+        Diff<CNodeFreeSlots, U2>: Unsigned,
+
+        ASIDPoolFreeSlots: Sub<B1>,
+        Sub1<ASIDPoolFreeSlots>: Unsigned,
+    {
+        let (cnode, dest_cnode) = dest_cnode.reserve_region::<U2>();
+
+        // allocate the page dir and initial page table
+        let (page_dir, cnode): (LocalCap<UnassignedPageDirectory>, _) =
+            page_dir_ut.retype_local(cnode)?;
+
+        let (initial_page_table, _cnode): (LocalCap<UnmappedPageTable>, _) =
+            page_table_ut.retype_local(cnode)?;
+
+        // assign the page dir and map in the initial page table.
+        let (page_dir, boot_info) = boot_info.assign_minimal_page_dir(page_dir)?;
+        let (initial_page_table, page_dir) = page_dir.map_page_table(initial_page_table)?;
+
+        Ok((
+            VSpace {
+                page_dir,
+                current_page_table: initial_page_table,
+                filled_page_tables: arr![LocalCap<MappedPageTable<U0>>;],
+            },
+            boot_info,
+            dest_cnode,
+        ))
     }
 
     // fn map_page...
@@ -319,7 +321,7 @@ where
         local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
     ) -> Result<
         (
-            ReadyThread<T>,
+            ReadyThread,
             VSpace<PageDirFreeSlots, Sub1<Sub1<PageTableFreeSlots>>, FilledPageTableCount>,
             LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U9>>>,
         ),
@@ -383,42 +385,77 @@ where
         registers.sp = stack_pointer;
         registers.pc = function_descriptor as seL4_Word;
         registers.r14 = (yield_forever as *const fn() -> ()) as seL4_Word;
-        let ready_thread = ReadyThread {
-            vspace_signature: VSpaceSignature {
-                page_dir_cptr: vspace.page_dir.cptr,
-            },
-            registers,
-            _process_params: PhantomData,
-        };
 
         // TODO - RESTORE - Reserve a guard page after the stack
         //let vspace = self.skip_pages::<U1>();
 
         // Allocate and map the ipc buffer
-        let (ipc_buffer_page, local_cnode): (LocalCap<UnmappedPage>, _) =
-            ipc_buffer_ut.retype_local(local_cnode)?;
-        let (_ipc_buffer_page, vspace) = vspace.map_page(ipc_buffer_page)?;
+        let (ipc_buffer, local_cnode) = ipc_buffer_ut.retype_local(local_cnode)?;
+        let (ipc_buffer, vspace) = vspace.map_page(ipc_buffer)?;
 
-        let (mut tcb, local_cnode): (Cap<ThreadControlBlock, _>, _) =
-            tcb_ut.retype_local(local_cnode)?;
+        // allocate the thread control block
+        let (tcb, local_cnode) = tcb_ut.retype_local(local_cnode)?;
+
+        let ready_thread = ReadyThread {
+            vspace_cptr: vspace.page_dir.cptr,
+            registers,
+            ipc_buffer,
+            tcb,
+        };
 
         Ok((ready_thread, vspace, output_cnode))
     }
 }
 
-/// Opaque snapshot of VSpace internals in the middle of stack setup.
-/// Purely for equality-checking to ensure that a Stack instance
-/// is associated with the correct VSpace instance
-#[derive(Debug, PartialEq)]
-#[allow(dead_code)]
-struct VSpaceSignature {
-    page_dir_cptr: usize,
+pub struct ReadyThread {
+    registers: seL4_UserContext,
+    vspace_cptr: usize,
+    ipc_buffer: LocalCap<MappedPage>,
+    tcb: LocalCap<ThreadControlBlock>,
 }
 
-pub struct ReadyThread<T: RetypeForSetup> {
-    registers: seL4_UserContext,
-    vspace_signature: VSpaceSignature,
-    _process_params: PhantomData<SetupVer<T>>,
+impl ReadyThread {
+    pub fn start<CSpaceRootFreeSlots: Unsigned>(
+        self,
+        cspace: LocalCap<ChildCNode<CSpaceRootFreeSlots>>,
+        fault_source: Option<FaultSource<role::Child>>,
+        // TODO: index tcb by priority, so you can't set a higher priority than
+        // the authority (which is a runtime error)
+        priority_authority: &LocalCap<ThreadControlBlock>,
+        priority: u8,
+    ) -> Result<(), SeL4Error> {
+        let mut tcb = self.tcb;
+        let mut regs = self.registers;
+
+        // configure the tcb
+        tcb.configure(cspace, fault_source, self.vspace_cptr, self.ipc_buffer)?;
+
+        unsafe {
+            let err = seL4_TCB_WriteRegisters(
+                tcb.cptr,
+                0,
+                0,
+                // all the regs
+                core::mem::size_of::<seL4_UserContext>() / core::mem::size_of::<seL4_Word>(),
+                &mut regs,
+            );
+            if err != 0 {
+                return Err(SeL4Error::TCBWriteRegisters(err));
+            }
+
+            let err = seL4_TCB_SetPriority(tcb.cptr, priority_authority.cptr, priority as usize);
+            if err != 0 {
+                return Err(SeL4Error::TCBSetPriority(err));
+            }
+
+            let err = seL4_TCB_Resume(tcb.cptr);
+            if err != 0 {
+                return Err(SeL4Error::TCBResume(err));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 pub struct PageSlot {
