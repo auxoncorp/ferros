@@ -35,9 +35,13 @@ where
     // page dir and page table storage, two cnode slots to retype them with, and
     // will consume 1 ASID to assign the page dir and 1 slot from the page dir
     // to map in the initial page table.
-    fn internal_new<CNodeFreeSlots: Unsigned>(
+    fn internal_new<
+        ASIDPoolFreeSlots: Unsigned,
+        BootInfoPageDirFreeSlots: Unsigned,
+        CNodeFreeSlots: Unsigned,
+    >(
         // TODO: model ASIDPool capacity at the type level
-        asid_pool: &mut LocalCap<ASIDPool>,
+        boot_info: BootInfo<ASIDPoolFreeSlots, BootInfoPageDirFreeSlots>,
         page_dir_ut: LocalCap<Untyped<U14>>,
         page_table_ut: LocalCap<Untyped<U10>>,
         dest_cnode: LocalCap<LocalCNode<CNodeFreeSlots>>,
@@ -48,6 +52,7 @@ where
                 paging::BasePageTableFreeSlots,
                 U0, // FilledPageTableCount
             >,
+            BootInfo<Sub1<ASIDPoolFreeSlots>, BootInfoPageDirFreeSlots>,
             // dest_cnode
             LocalCap<LocalCNode<Diff<CNodeFreeSlots, U2>>>,
         ),
@@ -56,6 +61,9 @@ where
     where
         CNodeFreeSlots: Sub<U2>,
         Diff<CNodeFreeSlots, U2>: Unsigned,
+
+        ASIDPoolFreeSlots: Sub<B1>,
+        Sub1<ASIDPoolFreeSlots>: Unsigned,
     {
         let (cnode, dest_cnode) = dest_cnode.reserve_region::<U2>();
 
@@ -67,7 +75,7 @@ where
             page_table_ut.retype_local(cnode)?;
 
         // assign the page dir and map in the initial page table.
-        let page_dir = asid_pool.assign_minimal(page_dir)?;
+        let (page_dir, boot_info) = boot_info.assign_minimal_page_dir(page_dir)?;
         let (initial_page_table, page_dir) = page_dir.map_page_table(initial_page_table)?;
 
         Ok((
@@ -76,12 +84,17 @@ where
                 current_page_table: initial_page_table,
                 filled_page_tables: arr![LocalCap<MappedPageTable<U0>>;],
             },
+            boot_info,
             dest_cnode,
         ))
     }
 
-    pub fn new<CNodeFreeSlots: Unsigned>(
-        boot_info: &mut BootInfo<PageDirFreeSlots>,
+    pub fn new<
+        ASIDPoolFreeSlots: Unsigned,
+        CNodeFreeSlots: Unsigned,
+        BootInfoPageDirFreeSlots: Unsigned,
+    >(
+        boot_info: BootInfo<ASIDPoolFreeSlots, BootInfoPageDirFreeSlots>,
         ut16: LocalCap<Untyped<U16>>,
         dest_cnode: LocalCap<LocalCNode<CNodeFreeSlots>>,
     ) -> Result<
@@ -91,6 +104,7 @@ where
                 paging::BasePageTableFreeSlots,
                 U1, // FilledPageTableCount
             >,
+            BootInfo<Sub1<ASIDPoolFreeSlots>, BootInfoPageDirFreeSlots>,
             // dest_cnode
             LocalCap<LocalCNode<Diff<CNodeFreeSlots, U256>>>,
         ),
@@ -99,6 +113,9 @@ where
     where
         CNodeFreeSlots: Sub<U256>,
         Diff<CNodeFreeSlots, U256>: Unsigned,
+
+        ASIDPoolFreeSlots: Sub<B1>,
+        Sub1<ASIDPoolFreeSlots>: Unsigned,
     {
         let (cnode, dest_cnode) = dest_cnode.reserve_region::<U256>();
 
@@ -109,12 +126,8 @@ where
         let (ut6, _, _, _, cnode) = ut8.quarter(cnode)?;
         let (_, _, _, _, cnode) = ut6.quarter(cnode)?;
 
-        let (vspace, cnode) = Self::internal_new(
-            &mut boot_info.asid_pool,
-            page_dir_ut,
-            initial_page_table_ut,
-            cnode,
-        )?;
+        let (vspace, boot_info, cnode) =
+            Self::internal_new(boot_info, page_dir_ut, initial_page_table_ut, cnode)?;
 
         ////////////////////////////////////////
         // Map in the code (user image) pages //
@@ -149,7 +162,7 @@ where
         // Let the user start with a fresh page table since we have plenty of
         // unused CNode and Untyped capacity hanging around in here.
         let (vspace, _cnode) = vspace.next_page_table(second_page_table_ut, cnode)?;
-        Ok((vspace, dest_cnode))
+        Ok((vspace, boot_info, dest_cnode))
     }
 
     // fn map_page...
@@ -267,11 +280,21 @@ impl PageSlot {
     }
 }
 
-impl Cap<ASIDPool, role::Local> {
+impl<FreeSlots: Unsigned> Cap<ASIDPool<FreeSlots>, role::Local> {
     pub fn assign_minimal(
-        &mut self,
+        self,
         page_dir: LocalCap<UnassignedPageDirectory>,
-    ) -> Result<LocalCap<AssignedPageDirectory<paging::BasePageDirFreeSlots>>, SeL4Error> {
+    ) -> Result<
+        (
+            LocalCap<AssignedPageDirectory<paging::BasePageDirFreeSlots>>,
+            LocalCap<ASIDPool<Sub1<FreeSlots>>>,
+        ),
+        SeL4Error,
+    >
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
+    {
         let err = unsafe { seL4_ARM_ASIDPool_Assign(self.cptr, page_dir.cptr) };
 
         if err != 0 {
@@ -287,7 +310,17 @@ impl Cap<ASIDPool, role::Local> {
             },
         };
 
-        Ok(page_dir)
+        Ok((
+            page_dir,
+            Cap {
+                cptr: self.cptr,
+                _role: PhantomData,
+                cap_data: ASIDPool {
+                    next_free_slot: self.cap_data.next_free_slot + 1,
+                    _free_slots: PhantomData,
+                },
+            },
+        ))
     }
 }
 

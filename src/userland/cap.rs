@@ -163,24 +163,13 @@ impl PhantomCap for ASIDControl {
         Self {}
     }
 }
-
-// asid pool
-// TODO: track capacity with the types
-// TODO: track in the pagedirectory type whether it has been assigned (mapped), and for pagetable too
 #[derive(Debug)]
-pub struct ASIDPool {}
-
-impl CapType for ASIDPool {}
-
-impl PhantomCap for ASIDPool {
-    fn phantom_instance() -> Self {
-        Self {}
-    }
+pub struct ASIDPool<FreeSlots: Unsigned> {
+    pub(super) next_free_slot: usize,
+    pub(super) _free_slots: PhantomData<FreeSlots>,
 }
 
-impl CopyAliasable for ASIDPool {
-    type CopyOutput = Self;
-}
+impl<FreeSlots: Unsigned> CapType for ASIDPool<FreeSlots> {}
 
 #[derive(Debug)]
 pub struct Endpoint {}
@@ -314,7 +303,7 @@ mod private {
     impl SealedCapType for super::ThreadControlBlock {}
     impl SealedCapType for super::Endpoint {}
     impl SealedCapType for super::ASIDControl {}
-    impl SealedCapType for super::ASIDPool {}
+    impl<FreeSlots: Unsigned> SealedCapType for super::ASIDPool<FreeSlots> {}
     impl<FreeSlots: Unsigned> SealedCapType for super::AssignedPageDirectory<FreeSlots> {}
     impl SealedCapType for super::UnassignedPageDirectory {}
     impl SealedCapType for super::UnmappedPageTable {}

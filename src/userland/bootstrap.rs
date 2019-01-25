@@ -2,9 +2,10 @@ use core::marker::PhantomData;
 use core::mem::size_of;
 use core::ops::Sub;
 use crate::pow::Pow;
+use crate::userland::cap::UnassignedPageDirectory;
 use crate::userland::{
     role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, LocalCap, MappedPage,
-    MappedPageTable, PhantomCap, SeL4Error, ThreadControlBlock, UnmappedPageTable, Untyped,
+    MappedPageTable, SeL4Error, ThreadControlBlock, UnmappedPageTable, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
@@ -31,8 +32,9 @@ pub fn root_cnode(_bootinfo: &'static seL4_BootInfo) -> LocalCap<CNode<U1024, ro
 pub mod paging {
     use crate::pow::Pow;
     use typenum::operator_aliases::Diff;
-    use typenum::{U1, U12, U8, U9};
+    use typenum::{U1, U1024, U12, U8, U9};
 
+    pub type BaseASIDPoolFreeSlots = U1024;
     pub type PageDirectoryBits = U12;
     pub type PageTableBits = U8;
     pub type PageBits = U12;
@@ -69,15 +71,15 @@ pub mod address_space {
     pub type KernelReservedStart = Sum<Pow<U31>, Sum<Pow<U30>, Pow<U29>>>;
 }
 
-pub struct BootInfo<PageDirFreeSlots: Unsigned> {
+pub struct BootInfo<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned> {
     pub page_directory: LocalCap<AssignedPageDirectory<PageDirFreeSlots>>,
     pub tcb: LocalCap<ThreadControlBlock>,
-    pub asid_pool: LocalCap<ASIDPool>,
+    pub asid_pool: LocalCap<ASIDPool<ASIDPoolFreeSlots>>,
     user_image_frames_start: usize,
     user_image_frames_end: usize,
 }
 
-impl BootInfo<paging::RootTaskPageDirFreeSlots> {
+impl BootInfo<paging::BaseASIDPoolFreeSlots, paging::RootTaskPageDirFreeSlots> {
     pub fn wrap<FreeSlots: Unsigned>(
         bootinfo: &'static seL4_BootInfo,
         asid_pool_ut: LocalCap<Untyped<U12>>,
@@ -87,10 +89,8 @@ impl BootInfo<paging::RootTaskPageDirFreeSlots> {
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
     {
-        // asid pool
         let asid_control = Cap::wrap_cptr(seL4_CapASIDControl as usize);
-
-        let (asid_pool, dest_cnode): (Cap<ASIDPool, _>, _) = asid_pool_ut
+        let (asid_pool, dest_cnode): (Cap<ASIDPool<_>, _>, _) = asid_pool_ut
             .retype_asid_pool(asid_control, dest_cnode)
             .expect("retype asid pool");
 
@@ -114,7 +114,9 @@ impl BootInfo<paging::RootTaskPageDirFreeSlots> {
     }
 }
 
-impl<PageDirFreeSlots: Unsigned> BootInfo<PageDirFreeSlots> {
+impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
+    BootInfo<ASIDPoolFreeSlots, PageDirFreeSlots>
+{
     // TODO this doesn't enforce the aliasing constraints we want at the type
     // level. This can be modeled as an array (or other sized thing) once we
     // know how big the user image is.
@@ -138,7 +140,7 @@ impl<PageDirFreeSlots: Unsigned> BootInfo<PageDirFreeSlots> {
     ) -> Result<
         (
             LocalCap<MappedPageTable<Pow<paging::PageTableBits>>>,
-            BootInfo<Sub1<PageDirFreeSlots>>,
+            BootInfo<ASIDPoolFreeSlots, Sub1<PageDirFreeSlots>>,
         ),
         SeL4Error,
     >
@@ -159,9 +161,44 @@ impl<PageDirFreeSlots: Unsigned> BootInfo<PageDirFreeSlots> {
             },
         ))
     }
+
+    /// Convenience wrapper allowing assignment of page dirs to the
+    /// ASID Pool while updating the type signature appropriately,
+    /// saving the caller from having to de/re-structure BootInfo
+    pub fn assign_minimal_page_dir(
+        self,
+        page_dir: LocalCap<UnassignedPageDirectory>,
+    ) -> Result<
+        (
+            LocalCap<AssignedPageDirectory<paging::BasePageDirFreeSlots>>,
+            BootInfo<Sub1<ASIDPoolFreeSlots>, PageDirFreeSlots>,
+        ),
+        SeL4Error,
+    >
+    where
+        ASIDPoolFreeSlots: Sub<B1>,
+        Sub1<ASIDPoolFreeSlots>: Unsigned,
+    {
+        let (assigned_page_dir, asid_pool) = self.asid_pool.assign_minimal(page_dir)?;
+        Ok((
+            assigned_page_dir,
+            BootInfo {
+                page_directory: self.page_directory,
+                tcb: self.tcb,
+                asid_pool: asid_pool,
+                user_image_frames_start: self.user_image_frames_start,
+                user_image_frames_end: self.user_image_frames_end,
+            },
+        ))
+    }
 }
 
-// The ASID pool needs an untyped of exactly 4k
+/// The ASID pool needs an untyped of exactly 4k.
+///
+/// Note that we fully consume the ASIDControl capability,
+/// (which is assumed to be a singleton as well)
+/// because there is a lightly-documented seL4 constraint
+/// that limits us to a single ASIDPool per application.
 impl LocalCap<Untyped<U12>> {
     pub fn retype_asid_pool<FreeSlots: Unsigned>(
         self,
@@ -169,7 +206,7 @@ impl LocalCap<Untyped<U12>> {
         dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
     ) -> Result<
         (
-            LocalCap<ASIDPool>,
+            LocalCap<ASIDPool<paging::BaseASIDPoolFreeSlots>>,
             LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
         ),
         SeL4Error,
@@ -197,7 +234,10 @@ impl LocalCap<Untyped<U12>> {
         Ok((
             Cap {
                 cptr: dest_slot.offset,
-                cap_data: PhantomCap::phantom_instance(),
+                cap_data: ASIDPool {
+                    next_free_slot: 0,
+                    _free_slots: PhantomData,
+                },
                 _role: PhantomData,
             },
             dest_cnode,

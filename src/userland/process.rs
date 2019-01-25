@@ -71,7 +71,8 @@ type SetupVer<X> = <X as RetypeForSetup>::Output;
 
 pub fn spawn<
     T: RetypeForSetup,
-    FreeSlots: Unsigned,
+    ASIDPoolFreeSlots: Unsigned,
+    LocalCNodeFreeSlots: Unsigned,
     RootCNodeFreeSlots: Unsigned,
     PageDirFreeSlots: Unsigned,
     ScratchPageTableSlots: Unsigned,
@@ -85,13 +86,13 @@ pub fn spawn<
 
     // context-related
     ut16: LocalCap<Untyped<U16>>,
-    boot_info: &mut BootInfo<PageDirFreeSlots>,
+    boot_info: &mut BootInfo<ASIDPoolFreeSlots, PageDirFreeSlots>,
     scratch_page_table: &mut LocalCap<MappedPageTable<ScratchPageTableSlots>>,
-    local_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
-) -> Result<LocalCap<CNode<Diff<FreeSlots, U256>, role::Local>>, SeL4Error>
+    local_cnode: LocalCap<CNode<LocalCNodeFreeSlots, role::Local>>,
+) -> Result<LocalCap<CNode<Diff<LocalCNodeFreeSlots, U256>, role::Local>>, SeL4Error>
 where
-    FreeSlots: Sub<U256>,
-    Diff<FreeSlots, U256>: Unsigned,
+    LocalCNodeFreeSlots: Sub<U256>,
+    Diff<LocalCNodeFreeSlots, U256>: Unsigned,
     T: core::marker::Sized,
     ScratchPageTableSlots: Sub<B1>,
     Sub1<ScratchPageTableSlots>: Unsigned,
@@ -224,7 +225,11 @@ where
 }
 
 // This is used in only in spawn
-impl Cap<ASIDPool, role::Local> {
+impl<FreeSlots: Unsigned> Cap<ASIDPool<FreeSlots>, role::Local> {
+    /// TODO - DEPRECATED AND BROKEN - Does not reduce type-level slot capacity
+    /// assign_minimal in vspace (perhaps proxied through BootInfo) is the new deal
+    /// TODO - expect to fully delete this when `spawn` is updated to no longer
+    /// do the work that VSpace is taking care of.
     pub fn assign(
         &mut self,
         code_page_table: LocalCap<UnmappedPageTable>,
