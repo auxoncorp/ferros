@@ -9,8 +9,8 @@ use crate::userland::{
 use generic_array::sequence::Concat;
 use generic_array::{arr, arr_impl, ArrayLength, GenericArray};
 use sel4_sys::*;
-use typenum::operator_aliases::{Add1, Diff, Sub1, Sum};
-use typenum::{Unsigned, B1, U0, U1, U10, U128, U14, U144, U16, U2, U256};
+use typenum::operator_aliases::{Diff, Sub1, Sum};
+use typenum::{Unsigned, B1, U0, U1, U10, U128, U14, U16, U2, U256};
 
 // encapsulate vspace setup
 pub struct VSpace<
@@ -81,15 +81,15 @@ where
     }
 
     pub fn new<CNodeFreeSlots: Unsigned>(
-        mut boot_info: &mut BootInfo<PageDirFreeSlots>,
+        boot_info: &mut BootInfo<PageDirFreeSlots>,
         ut16: LocalCap<Untyped<U16>>,
         dest_cnode: LocalCap<LocalCNode<CNodeFreeSlots>>,
     ) -> Result<
         (
             VSpace<
-                Sub1<paging::BasePageDirFreeSlots>,
-                Diff<paging::BasePageTableFreeSlots, U144>,
-                U0, // FilledPageTableCount
+                Diff<paging::BasePageDirFreeSlots, U2>,
+                paging::BasePageTableFreeSlots,
+                U1, // FilledPageTableCount
             >,
             // dest_cnode
             LocalCap<LocalCNode<Diff<CNodeFreeSlots, U256>>>,
@@ -104,7 +104,7 @@ where
 
         let (ut14, page_dir_ut, _, _, cnode) = ut16.quarter(cnode)?;
         let (ut12, _, _, _, cnode) = ut14.quarter(cnode)?;
-        let (ut10, initial_page_table_ut, _, _, cnode) = ut12.quarter(cnode)?;
+        let (ut10, initial_page_table_ut, second_page_table_ut, _, cnode) = ut12.quarter(cnode)?;
         let (ut8, _, _, _, cnode) = ut10.quarter(cnode)?;
         let (ut6, _, _, _, cnode) = ut8.quarter(cnode)?;
         let (_, _, _, _, cnode) = ut6.quarter(cnode)?;
@@ -146,6 +146,9 @@ where
             let _mapped_page = page_slot.map_page(copied_page_cap)?;
         }
 
+        // Let the user start with a fresh page table since we have plenty of
+        // unused CNode and Untyped capacity hanging around in here.
+        let (vspace, _cnode) = vspace.next_page_table(second_page_table_ut, cnode)?;
         Ok((vspace, dest_cnode))
     }
 
