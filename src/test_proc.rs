@@ -1,5 +1,5 @@
 use core::marker::PhantomData;
-use crate::micro_alloc::{self, GetUntyped};
+use crate::micro_alloc;
 use crate::pow::Pow;
 use crate::userland::{
     call_channel, role, root_cnode, setup_fault_endpoint_pair, spawn, BootInfo, CNode, CNodeRole,

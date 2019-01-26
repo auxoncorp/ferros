@@ -61,19 +61,25 @@ impl Allocator {
 
         Ok(Allocator { items })
     }
-}
 
-pub trait GetUntyped {
-    fn get_untyped<BitSize: Unsigned>(&mut self) -> Option<Cap<Untyped<BitSize>, role::Local>>;
-}
+    fn find_block<BitSize: Unsigned>(
+        &mut self,
+        device_ok: bool,
+        paddr: Option<usize>,
+    ) -> Option<Cap<Untyped<BitSize>, role::Local>> {
+        let device_byte: u8 = if device_ok { 1 } else { 0 };
 
-impl GetUntyped for Allocator {
-    fn get_untyped<BitSize: Unsigned>(&mut self) -> Option<Cap<Untyped<BitSize>, role::Local>> {
         // This is very inefficient. But it should only be called a small
         // handful of times on startup.
         for bit_size in BitSize::to_u8()..=MAX_UNTYPED_SIZE_BITS {
             for item in &mut self.items {
-                if item.is_free && item.desc.sizeBits == bit_size {
+                if (item.is_free)
+                    && (item.desc.isDevice == device_byte)
+                    && (item.desc.sizeBits == bit_size)
+                    && match paddr {
+                        Some(a) => item.desc.paddr == a,
+                        None => true,
+                    } {
                     let u = wrap_untyped(item.cptr, item.desc);
                     if u.is_some() {
                         item.is_free = false;
@@ -84,5 +90,16 @@ impl GetUntyped for Allocator {
         }
 
         None
+    }
+
+    pub fn get_untyped<BitSize: Unsigned>(&mut self) -> Option<Cap<Untyped<BitSize>, role::Local>> {
+        self.find_block::<BitSize>(false, None)
+    }
+
+    pub fn get_device_untyped<BitSize: Unsigned>(
+        &mut self,
+        paddr: usize,
+    ) -> Option<Cap<Untyped<BitSize>, role::Local>> {
+        self.find_block::<BitSize>(true, Some(paddr))
     }
 }

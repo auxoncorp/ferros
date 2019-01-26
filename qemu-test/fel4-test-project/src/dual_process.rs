@@ -1,5 +1,5 @@
 use core::marker::PhantomData;
-use iron_pegasus::micro_alloc::{self, GetUntyped};
+use iron_pegasus::micro_alloc::{self};
 use iron_pegasus::pow::Pow;
 use iron_pegasus::userland::{
     call_channel, role, root_cnode, setup_fault_endpoint_pair, spawn, BootInfo, CNode, CNodeRole,

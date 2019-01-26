@@ -27,13 +27,12 @@ pub mod userland;
 mod test_proc;
 
 use core::marker::PhantomData;
-use crate::micro_alloc::GetUntyped;
 use crate::userland::{
     call_channel, role, root_cnode, spawn, Badge, BootInfo, CNode, CapRights, FaultSinkSetup,
     LocalCap, SeL4Error, UnmappedPage, UnmappedPageTable, VSpace,
 };
 use sel4_sys::*;
-use typenum::{U12, U20, U4096};
+use typenum::{U14, U12, U20, U4096};
 
 fn yield_forever() {
     unsafe {
@@ -48,6 +47,29 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     yield_forever();
 }
 
+// uart base regs
+// #define UART1_PADDR               0x02020000 /*   4 pages */
+const UART1_PADDR: usize = 0x02020000;
+// #define UART2_PADDR               0x021E8000 /*   4 pages */
+
+// uart reg offsets
+// #define URXD  0x00 /* UART Receiver Register */
+// #define UTXD  0x40 /* UART Transmitter Register */
+// #define UCR1  0x80 /* UART Control Register 1 */
+// #define UCR2  0x84 /* UART Control Register 2 */
+// #define UCR3  0x88 /* UART Control Register 3 */
+// #define UCR4  0x8c /* UART Control Register 4 */
+// #define UFCR  0x90 /* UART FIFO Control Register */
+// #define USR1  0x94 /* UART Status Register 1 */
+// #define USR2  0x98 /* UART Status Register 2 */
+// #define UESC  0x9c /* UART Escape Character Register */
+// #define UTIM  0xa0 /* UART Escape Timer Register */
+// #define UBIR  0xa4 /* UART BRM Incremental Register */
+// #define UBMR  0xa8 /* UART BRM Modulator Register */
+// #define UBRC  0xac /* UART Baud Rate Counter Register */
+// #define ONEMS 0xb0 /* UART One Millisecond Register */
+// #define UTS   0xb4 /* UART Test Register */
+
 fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     // wrap all untyped memory
     let mut allocator =
@@ -60,6 +82,11 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     let ut20 = allocator
         .get_untyped::<U20>()
         .expect("initial alloc failure");
+
+    // get the uart device
+    let uart_1_ut = allocator
+        .get_device_untyped::<U14>(UART1_PADDR)
+        .expect("find uart1 device memory");
 
     let (ut18, ut18b, _, _, root_cnode) = ut20.quarter(root_cnode)?;
     let (ut16a, ut16b, ut16c, ut16d, root_cnode) = ut18.quarter(root_cnode)?;

@@ -23,7 +23,7 @@ mod dual_process;
 #[cfg(single_process = "true")]
 mod single_process;
 
-use iron_pegasus::micro_alloc::{self, GetUntyped};
+use iron_pegasus::micro_alloc::{self};
 use iron_pegasus::pow::Pow;
 use iron_pegasus::userland::{
     role, root_cnode, spawn, BootInfo, CNode, CNodeRole, Cap, Endpoint, LocalCap, RetypeForSetup,
