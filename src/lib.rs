@@ -107,8 +107,26 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     ////////////////////
     let (driver_vspace, mut boot_info, root_cnode) = VSpace::new(boot_info, echo_ut, root_cnode)?;
 
+    // map device pages
+    // TODO this is a *very* good place for retype-multiple
+    let (uart_1_ut_a, uart_1_ut_b, uart_1_ut_c, uart_1_ut_d, root_cnode) =
+        uart_1_ut.quarter(root_cnode)?;
+    let (uart_1_page_a, root_cnode): (LocalCap<UnmappedPage>, _) =
+        uart_1_ut_a.retype_local(root_cnode)?;
+    let (uart_1_page_b, root_cnode): (LocalCap<UnmappedPage>, _) =
+        uart_1_ut_b.retype_local(root_cnode)?;
+    let (uart_1_page_c, root_cnode): (LocalCap<UnmappedPage>, _) =
+        uart_1_ut_c.retype_local(root_cnode)?;
+    let (uart_1_page_d, root_cnode): (LocalCap<UnmappedPage>, _) =
+        uart_1_ut_d.retype_local(root_cnode)?;
+
+    let (uart_1_page_a, driver_vspace) = driver_vspace.map_page(uart_1_page_a)?;
+    let (uart_1_page_b, driver_vspace) = driver_vspace.map_page(uart_1_page_b)?;
+    let (uart_1_page_c, driver_vspace) = driver_vspace.map_page(uart_1_page_c)?;
+    let (uart_1_page_d, driver_vspace) = driver_vspace.map_page(uart_1_page_d)?;
+
     let driver_config = crate::drivers::uart::basic::UARTConfig {
-        register_base_addr: UART1_PADDR, // TODO: map 4 pages, and pass down the vaddr
+        register_base_addr: uart_1_page_a.cap_data.vaddr,
         responder: uart_responder,
     };
 
