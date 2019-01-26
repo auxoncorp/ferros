@@ -10,6 +10,48 @@ use sel4_sys::*;
 use typenum::operator_aliases::Diff;
 use typenum::{U12, U2, U20, U4096, U6};
 
+/////////////////
+// Serial echo //
+/////////////////
+use crate::drivers::uart::basic::{UARTCommand, UARTResponse};
+
+pub struct EchoParams<Role: CNodeRole> {
+    pub uart: Caller<UARTCommand, UARTResponse, Role>,
+}
+
+impl RetypeForSetup for EchoParams<role::Local> {
+    type Output = EchoParams<role::Child>;
+}
+
+pub extern "C" fn echo(p: EchoParams<role::Local>) {
+    use self::UARTResponse::*;
+
+    debug_println!("Starting echo process");
+    let uart = p.uart;
+
+    loop {
+        debug_println!("getchar");
+        let c = match uart.blocking_call(&UARTCommand::GetChar) {
+            Ok(GotChar(c)) => c,
+            Ok(Error) => panic!("getchar error"),
+            Err(_) => panic!("system error"),
+            _ => panic!("unexpected getchar response"),
+        };
+
+        debug_println!("putchar");
+        match uart.blocking_call(&UARTCommand::PutChar(c)) {
+            Ok(WroteChar) => (),
+            Ok(Error) => panic!("putchar error"),
+            Err(_) => panic!("system error"),
+            _ => panic!("unexpected getchar response"),
+        }
+    }
+}
+
+///////////////////////
+// Addition with shm //
+///////////////////////
+
 #[derive(Debug)]
 pub struct AdditionRequest {
     a: u32,
