@@ -150,7 +150,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
             &mut scratch_page_table,
             &mut boot_info.page_directory,
         )
-        .expect("prepare child thread a");
+        .expect("prepare child thread b");
 
     responder_thread.start(responder_cnode_local, None, &boot_info.tcb, 255)?;
 

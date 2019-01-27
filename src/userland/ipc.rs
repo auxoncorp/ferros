@@ -399,7 +399,7 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
             unsafe { seL4_Recv(self.endpoint.cptr, &mut sender_badge as *mut usize) }.into();
 
         let request_length_in_words = type_length_in_words::<Req>();
-        let mut response = unsafe { core::mem::zeroed() }; // TODO - replace with Option-swapping
+        let mut response;
         let mut state = initial_state;
         loop {
             if msg_info.length_words() != request_length_in_words {

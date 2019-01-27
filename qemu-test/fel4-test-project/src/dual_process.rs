@@ -2,14 +2,15 @@ use core::marker::PhantomData;
 use iron_pegasus::micro_alloc::{self, GetUntyped};
 use iron_pegasus::pow::Pow;
 use iron_pegasus::userland::{
-    call_channel, role, root_cnode, setup_fault_endpoint_pair, spawn, BootInfo, CNode, CNodeRole,
-    Caller, Cap, Endpoint, FaultSink, LocalCap, Responder, RetypeForSetup, Untyped, UnmappedPageTable
+    call_channel, role, root_cnode, setup_fault_endpoint_pair, BootInfo, CNode, CNodeRole, Caller,
+    Cap, Endpoint, FaultSink, LocalCap, Responder, RetypeForSetup, SeL4Error, UnmappedPageTable,
+    Untyped, VSpace,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Diff;
 use typenum::{U12, U2, U20, U4096, U6};
 
-pub fn run(raw_boot_info: &'static seL4_BootInfo) {
+pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     // wrap all untyped memory
     let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)
         .expect("Couldn't set up bootstrap allocator");
@@ -23,11 +24,14 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
         .expect("Couldn't find initial untyped");
 
     let (ut18, ut18b, _, _, root_cnode) = ut20.quarter(root_cnode).expect("quarter");
-    let (ut16a, ut16b, ut16c, ut16d, root_cnode) = ut18.quarter(root_cnode).expect("quarter");
+    let (ut16a, ut16b, child_a_vspace_ut, child_b_vspace_ut, root_cnode) =
+        ut18.quarter(root_cnode).expect("quarter");
     let (ut16e, _, _, _, root_cnode) = ut18b.quarter(root_cnode).expect("quarter");
-    let (ut14, _, _, _, root_cnode) = ut16e.quarter(root_cnode).expect("quarter");
+    let (ut14, child_a_thread_ut, child_b_thread_ut, _, root_cnode) =
+        ut16e.quarter(root_cnode).expect("quarter");
     let (ut12, asid_pool_ut, _, _, root_cnode) = ut14.quarter(root_cnode).expect("quarter");
-    let (ut10, scratch_page_table_ut, _, _, root_cnode) = ut12.quarter(root_cnode).expect("quarter");
+    let (ut10, scratch_page_table_ut, _, _, root_cnode) =
+        ut12.quarter(root_cnode).expect("quarter");
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode).expect("quarter");
     let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode).expect("quarter");
     let (ut5, _, root_cnode) = ut6.split(root_cnode).expect("split");
@@ -36,8 +40,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     // wrap the rest of the critical boot info
     let (mut boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
 
-    let (scratch_page_table, root_cnode): (LocalCap<UnmappedPageTable>, _) =
-        scratch_page_table_ut
+    let (scratch_page_table, root_cnode): (LocalCap<UnmappedPageTable>, _) = scratch_page_table_ut
         .retype_local(root_cnode)
         .expect("retype scratch page table");
     let (mut scratch_page_table, mut boot_info) = boot_info
@@ -45,7 +48,15 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
         .expect("map scratch page table");
 
     #[cfg(test_case = "call_and_response_loop")]
-    let (child_params_a, proc_cnode_local_a, child_params_b, proc_cnode_local_b, root_cnode) = {
+    let (
+        child_params_a,
+        proc_cnode_local_a,
+        child_fault_source_a,
+        child_params_b,
+        proc_cnode_local_b,
+        child_fault_source_b,
+        root_cnode,
+    ) = {
         let (caller_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) = ut16a
             .retype_local_cnode::<_, U12>(root_cnode)
             .expect("Couldn't retype to caller_cnode_local");
@@ -77,13 +88,23 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
         (
             caller_params,
             caller_cnode_local,
+            None,
             responder_params,
             responder_cnode_local,
+            None,
             root_cnode,
         )
     };
     #[cfg(test_case = "fault_pair")]
-    let (child_params_a, proc_cnode_local_a, child_params_b, proc_cnode_local_b, root_cnode) = {
+    let (
+        child_params_a,
+        proc_cnode_local_a,
+        child_fault_source_a,
+        child_params_b,
+        proc_cnode_local_b,
+        child_fault_source_b,
+        root_cnode,
+    ) = {
         let (fault_source_cnode_local, root_cnode): (
             LocalCap<CNode<U4096, role::Child>>,
             _,
@@ -124,37 +145,79 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
         (
             caller_params,
             caller_cnode_local,
+            None,
             responder_params,
             responder_cnode_local,
+            Some(fault_source),
             root_cnode,
         )
     };
 
-    let root_cnode = spawn(
-        child_proc_a,
-        child_params_a,
+    let (child_a_vspace, mut boot_info, root_cnode) =
+        VSpace::new(boot_info, child_a_vspace_ut, root_cnode)?;
+    let (child_a_process, _caller_vspace, root_cnode) = child_a_vspace
+        .prepare_thread(
+            child_proc_a,
+            child_params_a,
+            child_a_thread_ut,
+            root_cnode,
+            &mut scratch_page_table,
+            &mut boot_info.page_directory,
+        )
+        .expect("prepare thread child_a");
+    child_a_process.start(
         proc_cnode_local_a,
-        255,  // priority
-        None, // fault_source
-        ut16c,
-        &mut boot_info,
-        &mut scratch_page_table,
-        root_cnode,
-    )
-    .expect("spawn process 2");
+        child_fault_source_a,
+        &boot_info.tcb,
+        255,
+    )?;
 
-    let root_cnode = spawn(
-        child_proc_b,
-        child_params_b,
+    let (child_b_vspace, mut boot_info, root_cnode) =
+        VSpace::new(boot_info, child_b_vspace_ut, root_cnode)?;
+    let (child_b_process, _caller_vspace, root_cnode) = child_b_vspace
+        .prepare_thread(
+            child_proc_b,
+            child_params_b,
+            child_b_thread_ut,
+            root_cnode,
+            &mut scratch_page_table,
+            &mut boot_info.page_directory,
+        )
+        .expect("prepare thread child_b");
+    child_b_process.start(
         proc_cnode_local_b,
-        255,  // priority
-        None, // fault_source
-        ut16d,
-        &mut boot_info,
-        &mut scratch_page_table,
-        root_cnode,
-    )
-    .expect("spawn process 2");
+        child_fault_source_b,
+        &boot_info.tcb,
+        255,
+    )?;
+
+    Ok(())
+
+    //let root_cnode = spawn(
+    //    child_proc_a,
+    //    child_params_a,
+    //    proc_cnode_local_a,
+    //    255,  // priority
+    //    None, // fault_source
+    //    ut16c,
+    //    &mut boot_info,
+    //    &mut scratch_page_table,
+    //    root_cnode,
+    //)
+    //.expect("spawn process 2");
+
+    //let root_cnode = spawn(
+    //    child_proc_b,
+    //    child_params_b,
+    //    proc_cnode_local_b,
+    //    255,  // priority
+    //    None, // fault_source
+    //    ut16d,
+    //    &mut boot_info,
+    //    &mut scratch_page_table,
+    //    root_cnode,
+    //)
+    //.expect("spawn process 2");
 }
 
 #[derive(Debug)]

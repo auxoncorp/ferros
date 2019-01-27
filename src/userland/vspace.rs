@@ -332,7 +332,6 @@ where
         process_parameter: SetupVer<T>,
         untyped: LocalCap<Untyped<U14>>,
         local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
-        // TODO: We should index MappedPageTable, MappedPage, and VSpace by role to indicate what address space we're dealing with.
         scratch_page_table: &mut LocalCap<MappedPageTable<ScratchPageTableSlots, role::Local>>,
         mut local_page_dir: &mut LocalCap<
             AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>,

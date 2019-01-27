@@ -195,7 +195,7 @@ impl DirectRetype for Endpoint {
     }
 }
 
-// TODO: It's important that assignedPageDirectory can never be moved or deleted
+// TODO: It's important that AssignedPageDirectory can never be moved or deleted
 // (or copied, likely), as that leads to ugly cptr aliasing issues that we're
 // not able to detect at compile time. Write compile-tests to ensure that it
 // doesn't implement those marker traits.

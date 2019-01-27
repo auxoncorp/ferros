@@ -26,8 +26,7 @@ mod single_process;
 use iron_pegasus::micro_alloc::{self, GetUntyped};
 use iron_pegasus::pow::Pow;
 use iron_pegasus::userland::{
-    role, root_cnode, spawn, BootInfo, CNode, CNodeRole, Cap, Endpoint, LocalCap, RetypeForSetup,
-    Untyped,
+    role, root_cnode, BootInfo, CNode, CNodeRole, Cap, Endpoint, LocalCap, RetypeForSetup, Untyped,
 };
 use typenum::operator_aliases::Diff;
 use typenum::{U12, U2, U20, U4096, U6};
@@ -42,9 +41,9 @@ fn yield_forever() {
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     #[cfg(single_process = "true")]
-    single_process::run(raw_boot_info);
+    single_process::run(raw_boot_info).expect("single_process run");
     #[cfg(dual_process = "true")]
-    dual_process::run(raw_boot_info);
+    dual_process::run(raw_boot_info).expect("dual_process run");
 
     yield_forever()
 }
