@@ -84,7 +84,7 @@ where
 {
     // TODO most of this should only happen in the bootstrap adapter
     // TODO - Make even more private!
-    pub fn wrap_cptr(cptr: usize) -> Cap<CT, Role> {
+    pub(crate) fn wrap_cptr(cptr: usize) -> Cap<CT, Role> {
         Cap {
             cptr: cptr,
             cap_data: PhantomCap::phantom_instance(),
@@ -200,12 +200,13 @@ impl DirectRetype for Endpoint {
 // not able to detect at compile time. Write compile-tests to ensure that it
 // doesn't implement those marker traits.
 #[derive(Debug)]
-pub struct AssignedPageDirectory<FreeSlots: Unsigned> {
+pub struct AssignedPageDirectory<FreeSlots: Unsigned, Role: CNodeRole> {
     pub(super) next_free_slot: usize,
     pub(super) _free_slots: PhantomData<FreeSlots>,
+    pub(super) _role: PhantomData<Role>,
 }
 
-impl<FreeSlots: Unsigned> CapType for AssignedPageDirectory<FreeSlots> {}
+impl<FreeSlots: Unsigned, Role: CNodeRole> CapType for AssignedPageDirectory<FreeSlots, Role> {}
 
 #[derive(Debug)]
 pub struct UnassignedPageDirectory {}
@@ -246,15 +247,16 @@ impl DirectRetype for UnmappedPageTable {
 }
 
 #[derive(Debug)]
-pub struct MappedPageTable<FreeSlots: Unsigned> {
+pub struct MappedPageTable<FreeSlots: Unsigned, Role: CNodeRole> {
     pub(super) vaddr: usize,
     pub(super) next_free_slot: usize,
     pub(super) _free_slots: PhantomData<FreeSlots>,
+    pub(super) _role: PhantomData<Role>,
 }
 
-impl<FreeSlots: Unsigned> CapType for MappedPageTable<FreeSlots> {}
+impl<FreeSlots: Unsigned, Role: CNodeRole> CapType for MappedPageTable<FreeSlots, Role> {}
 
-impl<FreeSlots: Unsigned> CopyAliasable for MappedPageTable<FreeSlots> {
+impl<FreeSlots: Unsigned, Role: CNodeRole> CopyAliasable for MappedPageTable<FreeSlots, Role> {
     type CopyOutput = UnmappedPageTable;
 }
 
@@ -280,28 +282,29 @@ impl CopyAliasable for UnmappedPage {
 }
 
 #[derive(Debug)]
-pub struct MappedPage {
+pub struct MappedPage<Role: CNodeRole> {
     pub(crate) vaddr: usize,
+    pub(crate) _role: PhantomData<Role>,
 }
 
-impl CapType for MappedPage {}
+impl<Role: CNodeRole> CapType for MappedPage<Role> {}
 
-impl CopyAliasable for MappedPage {
+impl<Role: CNodeRole> CopyAliasable for MappedPage<Role> {
     type CopyOutput = UnmappedPage;
 }
 
 impl<FreeSlots: typenum::Unsigned, Role: CNodeRole> CapType for CNode<FreeSlots, Role> {}
 
 mod private {
-    use super::Unsigned;
+    use super::{role, CNodeRole, Unsigned};
 
     pub trait SealedRole {}
-    impl SealedRole for super::role::Local {}
-    impl SealedRole for super::role::Child {}
+    impl SealedRole for role::Local {}
+    impl SealedRole for role::Child {}
 
     pub trait SealedCapType {}
     impl<BitSize: typenum::Unsigned> SealedCapType for super::Untyped<BitSize> {}
-    impl<FreeSlots: typenum::Unsigned, Role: super::CNodeRole> SealedCapType
+    impl<FreeSlots: typenum::Unsigned, Role: CNodeRole> SealedCapType
         for super::CNode<FreeSlots, Role>
     {
     }
@@ -309,12 +312,19 @@ mod private {
     impl SealedCapType for super::Endpoint {}
     impl SealedCapType for super::ASIDControl {}
     impl<FreeSlots: Unsigned> SealedCapType for super::ASIDPool<FreeSlots> {}
-    impl<FreeSlots: Unsigned> SealedCapType for super::AssignedPageDirectory<FreeSlots> {}
+    impl<FreeSlots: Unsigned, Role: CNodeRole> SealedCapType
+        for super::AssignedPageDirectory<FreeSlots, Role>
+    {
+    }
     impl SealedCapType for super::UnassignedPageDirectory {}
     impl SealedCapType for super::UnmappedPageTable {}
-    impl<FreeSlots: Unsigned> SealedCapType for super::MappedPageTable<FreeSlots> {}
+    impl<FreeSlots: Unsigned, Role: CNodeRole> SealedCapType
+        for super::MappedPageTable<FreeSlots, Role>
+    {
+    }
+
     impl SealedCapType for super::UnmappedPage {}
-    impl SealedCapType for super::MappedPage {}
+    impl<Role: CNodeRole> SealedCapType for super::MappedPage<Role> {}
 }
 
 impl<CT: CapType> Cap<CT, role::Local> {
@@ -372,7 +382,7 @@ impl<CT: CapType> Cap<CT, role::Local> {
         rights: CapRights,
     ) -> Result<
         (
-            Cap<CT::CopyOutput, role::Local>,
+            LocalCap<CT::CopyOutput>,
             LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
         ),
         SeL4Error,

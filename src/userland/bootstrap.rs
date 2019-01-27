@@ -74,12 +74,19 @@ pub mod address_space {
     pub type KernelReservedStart = Sum<Pow<U31>, Sum<Pow<U30>, Pow<U29>>>;
 }
 
+/// Currently assume that a BootInfo cannot be handed to child processes
+/// and thus its related structures always operate in a "Local" role.
 pub struct BootInfo<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned> {
-    pub page_directory: LocalCap<AssignedPageDirectory<PageDirFreeSlots>>,
+    pub page_directory: LocalCap<AssignedPageDirectory<PageDirFreeSlots, role::Local>>,
     pub tcb: LocalCap<ThreadControlBlock>,
     pub asid_pool: LocalCap<ASIDPool<ASIDPoolFreeSlots>>,
     user_image_frames_start: usize,
     user_image_frames_end: usize,
+}
+
+impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned> !Send
+    for BootInfo<ASIDPoolFreeSlots, PageDirFreeSlots>
+{
 }
 
 impl BootInfo<paging::BaseASIDPoolFreeSlots, paging::RootTaskPageDirFreeSlots> {
@@ -105,6 +112,7 @@ impl BootInfo<paging::BaseASIDPoolFreeSlots, paging::RootTaskPageDirFreeSlots> {
                     cap_data: AssignedPageDirectory {
                         next_free_slot: paging::RootTaskReservedPageDirSlots::USIZE,
                         _free_slots: PhantomData,
+                        _role: PhantomData,
                     },
                 },
                 tcb: Cap::wrap_cptr(seL4_CapInitThreadTCB as usize),
@@ -123,7 +131,7 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
     // TODO this doesn't enforce the aliasing constraints we want at the type
     // level. This can be modeled as an array (or other sized thing) once we
     // know how big the user image is.
-    pub fn user_image_pages_iter(&self) -> impl Iterator<Item = Cap<MappedPage, role::Local>> {
+    pub fn user_image_pages_iter(&self) -> impl Iterator<Item = LocalCap<MappedPage<role::Local>>> {
         let vaddr_iter = (address_space::ProgramStart::USIZE..address_space::ProgramEnd::USIZE)
             .step_by(1 << paging::PageBits::USIZE);
 
@@ -131,7 +139,10 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
             .zip(vaddr_iter)
             .map(|(cptr, vaddr)| Cap {
                 cptr,
-                cap_data: MappedPage { vaddr },
+                cap_data: MappedPage {
+                    vaddr,
+                    _role: PhantomData,
+                },
                 _role: PhantomData,
             })
     }
@@ -142,7 +153,7 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
         unmapped_page_table: LocalCap<UnmappedPageTable>,
     ) -> Result<
         (
-            LocalCap<MappedPageTable<Pow<paging::PageTableBits>>>,
+            LocalCap<MappedPageTable<Pow<paging::PageTableBits>, role::Local>>,
             BootInfo<ASIDPoolFreeSlots, Sub1<PageDirFreeSlots>>,
         ),
         SeL4Error,
@@ -173,7 +184,7 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
         page_dir: LocalCap<UnassignedPageDirectory>,
     ) -> Result<
         (
-            LocalCap<AssignedPageDirectory<paging::BasePageDirFreeSlots>>,
+            LocalCap<AssignedPageDirectory<paging::BasePageDirFreeSlots, role::Child>>,
             BootInfo<Sub1<ASIDPoolFreeSlots>, PageDirFreeSlots>,
         ),
         SeL4Error,

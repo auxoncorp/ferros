@@ -35,8 +35,8 @@ pub fn call_channel<
     ScratchFreeSlots: Unsigned,
     ChildAFreeSlots: Unsigned,
     ChildBFreeSlots: Unsigned,
-    Req,
-    Rsp,
+    Req: Send + Sync,
+    Rsp: Send + Sync,
 >(
     local_cnode: LocalCap<LocalCNode<ScratchFreeSlots>>,
     untyped: LocalCap<Untyped<U4>>,

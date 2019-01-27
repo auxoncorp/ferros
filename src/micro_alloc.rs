@@ -3,7 +3,7 @@
 //! that's big enough for the request.
 
 use arrayvec::ArrayVec;
-use crate::userland::{role, wrap_untyped, Cap, Untyped};
+use crate::userland::{wrap_untyped, LocalCap, Untyped};
 use typenum::Unsigned;
 
 use sel4_sys::{seL4_BootInfo, seL4_UntypedDesc};
@@ -64,11 +64,11 @@ impl Allocator {
 }
 
 pub trait GetUntyped {
-    fn get_untyped<BitSize: Unsigned>(&mut self) -> Option<Cap<Untyped<BitSize>, role::Local>>;
+    fn get_untyped<BitSize: Unsigned>(&mut self) -> Option<LocalCap<Untyped<BitSize>>>;
 }
 
 impl GetUntyped for Allocator {
-    fn get_untyped<BitSize: Unsigned>(&mut self) -> Option<Cap<Untyped<BitSize>, role::Local>> {
+    fn get_untyped<BitSize: Unsigned>(&mut self) -> Option<LocalCap<Untyped<BitSize>>> {
         // This is very inefficient. But it should only be called a small
         // handful of times on startup.
         for bit_size in BitSize::to_u8()..=MAX_UNTYPED_SIZE_BITS {

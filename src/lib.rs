@@ -1,5 +1,7 @@
 #![no_std]
 #![cfg_attr(feature = "alloc", feature(alloc))]
+// Necessary to mark as not-Send or not-Sync
+#![feature(optin_builtin_traits)]
 
 #[cfg(all(feature = "alloc"))]
 #[macro_use]
@@ -26,11 +28,10 @@ pub mod userland;
 
 mod test_proc;
 
-use core::marker::PhantomData;
 use crate::micro_alloc::GetUntyped;
 use crate::userland::{
-    call_channel, role, root_cnode, spawn, Badge, BootInfo, CNode, CapRights, FaultSinkSetup,
-    LocalCap, SeL4Error, UnmappedPage, UnmappedPageTable, VSpace,
+    call_channel, role, root_cnode, BootInfo, CNode, CapRights, LocalCap, SeL4Error, UnmappedPage,
+    UnmappedPageTable, VSpace,
 };
 use sel4_sys::*;
 use typenum::{U12, U20, U4096};
@@ -62,7 +63,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
         .expect("initial alloc failure");
 
     let (ut18, ut18b, _, _, root_cnode) = ut20.quarter(root_cnode)?;
-    let (ut16a, ut16b, ut16c, ut16d, root_cnode) = ut18.quarter(root_cnode)?;
+    let (ut16a, ut16b, _ut16c, _ut16d, root_cnode) = ut18.quarter(root_cnode)?;
     let (ut16e, caller_ut, responder_ut, _, root_cnode) = ut18b.quarter(root_cnode)?;
     let (ut14, caller_thread_ut, responder_thread_ut, _, root_cnode) = ut16e.quarter(root_cnode)?;
     let (ut12, asid_pool_ut, shared_page_ut, _, root_cnode) = ut14.quarter(root_cnode)?;
@@ -73,12 +74,12 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     let (ut4, _, root_cnode) = ut5.split(root_cnode)?; // Why two splits? To exercise split.
 
     // wrap the rest of the critical boot info
-    let (mut boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
+    let (boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
 
     // retypes
     let (scratch_page_table, root_cnode): (LocalCap<UnmappedPageTable>, _) =
         scratch_page_table_ut.retype_local(root_cnode)?;
-    let (mut scratch_page_table, mut boot_info) = boot_info.map_page_table(scratch_page_table)?;
+    let (mut scratch_page_table, boot_info) = boot_info.map_page_table(scratch_page_table)?;
 
     let (caller_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
         ut16a.retype_local_cnode::<_, U12>(root_cnode)?;
@@ -91,7 +92,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
             .expect("ipc error");
 
     // vspace setup
-    let (caller_vspace, mut boot_info, root_cnode) = VSpace::new(boot_info, caller_ut, root_cnode)?;
+    let (caller_vspace, boot_info, root_cnode) = VSpace::new(boot_info, caller_ut, root_cnode)?;
 
     let (responder_vspace, mut boot_info, root_cnode) =
         VSpace::new(boot_info, responder_ut, root_cnode)?;
@@ -127,7 +128,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
 
     // cnode setup
 
-    let (caller_thread, caller_vspace, root_cnode) = caller_vspace
+    let (caller_thread, _caller_vspace, root_cnode) = caller_vspace
         .prepare_thread(
             test_proc::caller,
             caller_params,
@@ -138,9 +139,9 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
         )
         .expect("prepare child thread a");
 
-    caller_thread.start(caller_cnode_local, None, &boot_info.tcb, 255);
+    caller_thread.start(caller_cnode_local, None, &boot_info.tcb, 255)?;
 
-    let (responder_thread, responder_vspace, root_cnode) = responder_vspace
+    let (responder_thread, _responder_vspace, _root_cnode) = responder_vspace
         .prepare_thread(
             test_proc::responder,
             responder_params,
@@ -151,7 +152,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
         )
         .expect("prepare child thread a");
 
-    responder_thread.start(responder_cnode_local, None, &boot_info.tcb, 255);
+    responder_thread.start(responder_cnode_local, None, &boot_info.tcb, 255)?;
 
     Ok(())
 }

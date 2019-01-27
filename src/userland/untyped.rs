@@ -2,7 +2,8 @@ use core::marker::PhantomData;
 use core::ops::Sub;
 use crate::pow::{Pow, _Pow};
 use crate::userland::{
-    role, CNode, Cap, CapType, DirectRetype, LocalCap, PhantomCap, SeL4Error, Untyped,
+    role, CNode, Cap, CapType, ChildCNode, ChildCap, DirectRetype, LocalCap, PhantomCap, SeL4Error,
+    Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
@@ -13,7 +14,7 @@ use typenum::{Unsigned, B1, U2, U3};
 pub fn wrap_untyped<BitSize: Unsigned>(
     cptr: usize,
     untyped_desc: &seL4_UntypedDesc,
-) -> Option<Cap<Untyped<BitSize>, role::Local>> {
+) -> Option<LocalCap<Untyped<BitSize>>> {
     if untyped_desc.sizeBits == BitSize::to_u8() {
         Some(Cap {
             cptr,
@@ -282,11 +283,11 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
 
     pub fn retype_child<FreeSlots: Unsigned, TargetCapType: CapType>(
         self,
-        dest_cnode: LocalCap<CNode<FreeSlots, role::Child>>,
+        dest_cnode: LocalCap<ChildCNode<FreeSlots>>,
     ) -> Result<
         (
-            Cap<TargetCapType, role::Child>,
-            LocalCap<CNode<Sub1<FreeSlots>, role::Child>>,
+            ChildCap<TargetCapType>,
+            LocalCap<ChildCNode<Sub1<FreeSlots>>>,
         ),
         SeL4Error,
     >
