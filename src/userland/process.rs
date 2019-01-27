@@ -2,21 +2,20 @@ use core::cmp;
 use core::mem::{self, size_of};
 use core::ptr;
 use crate::userland::{
-    role, CNode, CNodeRole, FaultSource, LocalCap, MappedPage, SeL4Error, ThreadControlBlock,
+    role, AssignedPageDirectory, CNode, CNodeRole, FaultSource,
+    ImmobileIndelibleInertCapabilityReference, LocalCap, MappedPage, SeL4Error, ThreadControlBlock,
 };
 use sel4_sys::*;
-use typenum::Unsigned;
+use typenum::{Unsigned, U0};
 
 impl LocalCap<ThreadControlBlock> {
-    pub(super) fn configure<
-        CNodeFreeSlots: Unsigned, // , PageDirFreeSlots: Unsigned //
-        VSpaceRole: CNodeRole,
-    >(
+    pub(super) fn configure<CNodeFreeSlots: Unsigned, VSpaceRole: CNodeRole>(
         &mut self,
         cspace_root: LocalCap<CNode<CNodeFreeSlots, role::Child>>,
         fault_source: Option<FaultSource<role::Child>>,
-        // TODO make this work with references to a wrapped vspace
-        vspace_cptr: usize, // vspace_root: LocalCap<AssignedPageDirectory<PageDirFreeSlots>>,
+        vspace_cptr: ImmobileIndelibleInertCapabilityReference<
+            AssignedPageDirectory<U0, VSpaceRole>,
+        >, // vspace_root,
         ipc_buffer: LocalCap<MappedPage<VSpaceRole>>,
     ) -> Result<(), SeL4Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
@@ -35,10 +34,10 @@ impl LocalCap<ThreadControlBlock> {
                 fault_source.map_or(seL4_CapNull as usize, |source| source.endpoint.cptr), // fault_ep.cptr,
                 cspace_root.cptr,
                 cspace_root_data,
-                vspace_cptr,               //vspace_root.cptr,
-                seL4_NilData as usize,     // vspace_root_data, always 0, reserved by kernel?
+                vspace_cptr.get_capability_pointer(), //vspace_root.cptr,
+                seL4_NilData as usize, // vspace_root_data, always 0, reserved by kernel?
                 ipc_buffer.cap_data.vaddr, // buffer address
-                ipc_buffer.cptr,           // bufferFrame capability
+                ipc_buffer.cptr,       // bufferFrame capability
             )
         };
 

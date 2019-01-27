@@ -5,8 +5,9 @@ use crate::userland::cap::ThreadControlBlock;
 use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, SetupVer};
 use crate::userland::{
     paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNodeRole, Cap, CapRights, ChildCNode,
-    FaultSource, LocalCNode, LocalCap, MappedPage, MappedPageTable, PhantomCap, SeL4Error,
-    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, Untyped,
+    FaultSource, ImmobileIndelibleInertCapabilityReference, LocalCNode, LocalCap, MappedPage,
+    MappedPageTable, PhantomCap, SeL4Error, UnassignedPageDirectory, UnmappedPage,
+    UnmappedPageTable, Untyped,
 };
 use generic_array::sequence::Concat;
 use generic_array::{arr, arr_impl, ArrayLength, GenericArray};
@@ -416,7 +417,9 @@ where
         let (tcb, _local_cnode) = tcb_ut.retype_local(local_cnode)?;
 
         let ready_thread = ReadyThread {
-            vspace_cptr: vspace.page_dir.cptr,
+            vspace_cptr: unsafe {
+                ImmobileIndelibleInertCapabilityReference::new(vspace.page_dir.cptr)
+            },
             registers,
             ipc_buffer,
             tcb,
@@ -428,9 +431,7 @@ where
 
 pub struct ReadyThread<Role: CNodeRole> {
     registers: seL4_UserContext,
-    // TODO - Replace with reference! We most certainly should not be passing
-    // bare usize cpointers around due to aliasing and misinterpretation risk.
-    vspace_cptr: usize,
+    vspace_cptr: ImmobileIndelibleInertCapabilityReference<AssignedPageDirectory<U0, Role>>,
     ipc_buffer: LocalCap<MappedPage<Role>>,
     tcb: LocalCap<ThreadControlBlock>,
 }
