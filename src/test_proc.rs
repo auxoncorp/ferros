@@ -1,14 +1,7 @@
-use core::marker::PhantomData;
-use crate::micro_alloc;
 use crate::pow::Pow;
-use crate::userland::{
-    call_channel, role, root_cnode, setup_fault_endpoint_pair, spawn, BootInfo, CNode, CNodeRole,
-    Caller, Cap, Endpoint, FaultSink, LocalCap, MappedPage, Responder, RetypeForSetup,
-    UnmappedPageTable, Untyped,
-};
-use sel4_sys::*;
+use crate::userland::{role, CNode, CNodeRole, Caller, Cap, MappedPage, Responder, RetypeForSetup};
 use typenum::operator_aliases::Diff;
-use typenum::{U12, U2, U20, U4096, U6};
+use typenum::{U12, U2};
 
 /////////////////
 // Serial echo //
@@ -23,28 +16,36 @@ impl RetypeForSetup for EchoParams<role::Local> {
     type Output = EchoParams<role::Child>;
 }
 
-pub extern "C" fn echo(p: EchoParams<role::Local>) {
+fn get_byte(uart: &Caller<UARTCommand, UARTResponse, role::Local>) -> u8 {
     use self::UARTResponse::*;
 
+    match uart.blocking_call(&UARTCommand::GetByte) {
+        Ok(GotByte(b)) => b,
+        Ok(Error) => panic!("getchar error"),
+        Err(_) => panic!("system error"),
+        _ => panic!("unexpected getchar response"),
+    }
+}
+
+fn put_byte(uart: &Caller<UARTCommand, UARTResponse, role::Local>, value: u8) {
+    use self::UARTResponse::*;
+
+    match uart.blocking_call(&UARTCommand::PutByte(value)) {
+        Ok(WroteByte) => (),
+        Ok(Error) => panic!("putchar error"),
+        Err(_) => panic!("system error"),
+        _ => panic!("unexpected getchar response"),
+    };
+}
+
+pub extern "C" fn echo(p: EchoParams<role::Local>) {
     debug_println!("Starting echo process");
     let uart = p.uart;
 
     loop {
-        debug_println!("getchar");
-        let c = match uart.blocking_call(&UARTCommand::GetChar) {
-            Ok(GotChar(c)) => c,
-            Ok(Error) => panic!("getchar error"),
-            Err(_) => panic!("system error"),
-            _ => panic!("unexpected getchar response"),
-        };
-
-        debug_println!("putchar");
-        match uart.blocking_call(&UARTCommand::PutChar(c)) {
-            Ok(WroteChar) => (),
-            Ok(Error) => panic!("putchar error"),
-            Err(_) => panic!("system error"),
-            _ => panic!("unexpected getchar response"),
-        }
+        let b = get_byte(&uart);
+        put_byte(&uart, b);
+        put_byte(&uart, '!' as u8);
     }
 }
 
@@ -145,71 +146,3 @@ pub extern "C" fn responder(p: ResponderParams<role::Local>) {
         })
         .expect("Could not set up a reply_recv");
 }
-
-// #[derive(Debug)]
-// pub struct CapFaulterParams<Role: CNodeRole> {
-//     pub _role: PhantomData<Role>,
-// }
-
-// impl RetypeForSetup for CapFaulterParams<role::Local> {
-//     type Output = CapFaulterParams<role::Child>;
-// }
-
-// #[derive(Debug)]
-// pub struct VMFaulterParams<Role: CNodeRole> {
-//     pub _role: PhantomData<Role>,
-// }
-
-// impl RetypeForSetup for VMFaulterParams<role::Local> {
-//     type Output = VMFaulterParams<role::Child>;
-// }
-
-// #[derive(Debug)]
-// pub struct MischiefDetectorParams<Role: CNodeRole> {
-//     pub fault_sink: FaultSink<Role>,
-// }
-
-// impl RetypeForSetup for MischiefDetectorParams<role::Local> {
-//     type Output = MischiefDetectorParams<role::Child>;
-// }
-
-// pub extern "C" fn vm_fault_source_proc(_p: VMFaulterParams<role::Local>) {
-//     debug_println!("Inside vm_fault_source_proc");
-//     debug_println!("Attempting to cause a segmentation fault");
-//     unsafe {
-//         let x: *const usize = 0x88888888usize as _;
-//         let y = *x;
-//         debug_println!(
-//             "Value from arbitrary memory is: {}, but we shouldn't get far enough to print it",
-//             y
-//         );
-//     }
-//     debug_println!("This is after the vm fault inducing code, and should not be printed.");
-// }
-
-// pub extern "C" fn cap_fault_source_proc(_p: CapFaulterParams<role::Local>) {
-//     debug_println!("Inside cap_fault_source_proc");
-//     debug_println!("\nAttempting to cause a cap fault");
-//     unsafe {
-//         seL4_Send(
-//             314159, // bogus cptr to nonexistent endpoint
-//             seL4_MessageInfo_new(0, 0, 0, 0),
-//         )
-//     }
-//     debug_println!("This is after the capability fault inducing code, and should not be printed.");
-// }
-
-// pub extern "C" fn fault_sink_proc(p: MischiefDetectorParams<role::Local>) {
-//     debug_println!("Inside fault_sink_proc");
-//     let mut last_sender = Badge::from(0usize);
-//     for i in 1..=2 {
-//         let fault = p.fault_sink.wait_for_fault();
-//         debug_println!("Caught fault {}: {:?}", i, fault);
-//         if last_sender == fault.sender() {
-//             debug_println!("Fault badges were equal, but we wanted distinct senders");
-//             panic!("Stop the presses")
-//         }
-//         last_sender = fault.sender();
-//     }
-//     debug_println!("Successfully caught 2 faults from 2 distinct sources");
-// }

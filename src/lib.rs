@@ -49,12 +49,27 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     yield_forever();
 }
 
-// uart base regs
-// #define UART1_PADDR               0x02020000 /*   4 pages */
-const UART1_PADDR: usize = 0x02020000;
-// #define UART2_PADDR               0x021E8000 /*   4 pages */
+const UART1_PADDR: usize = 0x02020000; // 4 pages
+const UART2_PADDR: usize = 0x021E8000; // 4 pages (used for debug printing)
 
 fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
+    // for desc in raw_boot_info.untypedList.iter() {
+    //     // pub paddr: seL4_Word,
+    //     // pub padding1: seL4_Uint8,
+    //     // pub padding2: seL4_Uint8,
+    //     // pub sizeBits: seL4_Uint8,
+    //     // pub isDevice: seL4_Uint8,
+
+    //     debug_println!(
+    //         "paddr: 0x{:08x} sizeBits: {} isDevice: {} pad1: {} pad2: {}",
+    //         desc.paddr,
+    //         desc.sizeBits,
+    //         desc.isDevice,
+    //         desc.padding1,
+    //         desc.padding2
+    //     );
+    // }
+
     // wrap all untyped memory
     let mut allocator =
         micro_alloc::Allocator::bootstrap(&raw_boot_info).expect("bootstrap failure");
@@ -105,6 +120,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     ////////////////////
     // driver process //
     ////////////////////
+    debug_println!("Setting up driver process...");
     let (driver_vspace, mut boot_info, root_cnode) = VSpace::new(boot_info, echo_ut, root_cnode)?;
 
     // map device pages
@@ -120,6 +136,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     let (uart_1_page_d, root_cnode): (LocalCap<UnmappedPage>, _) =
         uart_1_ut_d.retype_local(root_cnode)?;
 
+    debug_println!("Mapping uart device pages to driver process...");
     let (uart_1_page_a, driver_vspace) = driver_vspace.map_page(uart_1_page_a)?;
     let (uart_1_page_b, driver_vspace) = driver_vspace.map_page(uart_1_page_b)?;
     let (uart_1_page_c, driver_vspace) = driver_vspace.map_page(uart_1_page_c)?;
@@ -144,6 +161,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     //////////////////
     // echo process //
     //////////////////
+    debug_println!("Setting up echo process...");
     let (driver_vspace, mut boot_info, root_cnode) = VSpace::new(boot_info, driver_ut, root_cnode)?;
 
     let echo_params = test_proc::EchoParams { uart: uart_client };
@@ -160,61 +178,12 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
         .expect("prepare echo thread");
 
     // go!
-    driver_thread.start(driver_cnode, None, &boot_info.tcb, 255);
-    echo_thread.start(echo_cnode, None, &boot_info.tcb, 255);
-
-    // caller setup
-    // let (caller_shared_page, root_cnode) =
-    //     shared_page.copy_inside_cnode(root_cnode, CapRights::RW)?;
-    // let (caller_shared_page, caller_vspace) = caller_vspace.map_page(caller_shared_page)?;
-    // let (caller_cnode_child, echo_cnode) =
-    //     echo_cnode.generate_self_reference(&root_cnode)?;
-    // let caller_params = test_proc::CallerParams::<role::Child> {
-    //     my_cnode: caller_cnode_child,
-    //     caller,
-    //     shared_page: caller_shared_page.cap_data,
-    // };
-
-    // responder setup
-    // let (responder_shared_page, root_cnode) =
-    //     shared_page.copy_inside_cnode(root_cnode, CapRights::R)?;
-    // let (responder_shared_page, responder_vspace) =
-    //     responder_vspace.map_page(responder_shared_page)?;
-    // let (responder_cnode_child, driver_cnode) =
-    //     driver_cnode.generate_self_reference(&root_cnode)?;
-    // let responder_params = test_proc::ResponderParams::<role::Child> {
-    //     my_cnode: responder_cnode_child,
-    //     responder,
-    //     shared_page: responder_shared_page.cap_data,
-    // };
-
-    // cnode setup
-
-    // let (caller_thread, caller_vspace, root_cnode) = caller_vspace
-    //     .prepare_thread(
-    //         test_proc::caller,
-    //         caller_params,
-    //         echo_thread_ut,
-    //         root_cnode,
-    //         &mut scratch_page_table,
-    //         &mut boot_info.page_directory,
-    //     )
-    //     .expect("prepare child thread a");
-
-    // caller_thread.start(echo_cnode, None, &boot_info.tcb, 255);
-
-    // let (responder_thread, responder_vspace, root_cnode) = responder_vspace
-    //     .prepare_thread(
-    //         test_proc::responder,
-    //         responder_params,
-    //         driver_thread_ut,
-    //         root_cnode,
-    //         &mut scratch_page_table,
-    //         &mut boot_info.page_directory,
-    //     )
-    //     .expect("prepare child thread a");
-
-    // responder_thread.start(driver_cnode, None, &boot_info.tcb, 255);
+    driver_thread
+        .start(driver_cnode, None, &boot_info.tcb, 255)
+        .expect("start driver thread");
+    echo_thread
+        .start(echo_cnode, None, &boot_info.tcb, 255)
+        .expect("start echo thread");
 
     Ok(())
 }

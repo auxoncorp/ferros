@@ -552,8 +552,10 @@ impl<FreeSlots: Unsigned> LocalCap<AssignedPageDirectory<FreeSlots>> {
                 page_table.cptr,
                 self.cptr,
                 page_table_vaddr,
+                // TODO:allow vm attrs to be specified in as paramters
                 seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
-                    | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled, // | seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever
+                    | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled,
+                // | seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever
             )
         };
 
@@ -604,17 +606,26 @@ impl<FreeSlots: Unsigned> LocalCap<MappedPageTable<FreeSlots>> {
         let page_vaddr =
             self.cap_data.vaddr + (self.cap_data.next_free_slot << paging::PageBits::USIZE);
 
+        // unsafe {
+        //     let addr = seL4_ARM_Page_GetAddress(page.cptr);
+        //     debug_println!(
+        //         "...mapping page at {:#08x} to {}/{:#08x}",
+        //         addr.paddr,
+        //         page_dir.cptr,
+        //         page_vaddr
+        //     );
+        // }
+
         let err = unsafe {
             seL4_ARM_Page_Map(
                 page.cptr,
                 page_dir.cptr,
                 page_vaddr,
                 CapRights::RW.into(), // rights
-                // TODO: JON! What do we write here? The default (according to
-                // sel4_ appears to be pageCachable | parityEnabled)
+                // TODO:allow vm attrs to be specified in as paramters
                 seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
                     | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled
-                    // | seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever,
+                // | seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever,
             )
         };
         if err != 0 {

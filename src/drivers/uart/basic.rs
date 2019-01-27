@@ -1,14 +1,6 @@
-use core::marker::PhantomData;
-use crate::micro_alloc;
-use crate::pow::Pow;
-use crate::userland::{
-    call_channel, role, root_cnode, setup_fault_endpoint_pair, spawn, BootInfo, CNode, CNodeRole,
-    Caller, Cap, Endpoint, FaultSink, LocalCap, MappedPage, Responder, RetypeForSetup,
-    UnmappedPageTable, Untyped,
-};
-use sel4_sys::*;
-use typenum::operator_aliases::Diff;
-use typenum::{U12, U2, U20, U4096, U6};
+use core::mem;
+use core::ptr;
+use crate::userland::{role, CNodeRole, Responder, RetypeForSetup};
 
 // driver config
 #[derive(Debug)]
@@ -24,34 +16,53 @@ impl RetypeForSetup for UARTConfig<role::Local> {
 // driver api
 #[derive(Debug)]
 pub enum UARTCommand {
-    GetChar,
-    PutChar(char),
+    GetByte,
+    PutByte(u8),
 }
 
 #[derive(Debug)]
 pub enum UARTResponse {
-    GotChar(char),
-    WroteChar,
+    GotByte(u8),
+    WroteByte,
     Error,
 }
 
-// uart reg offsets
-const URXD: usize = 0x00; /* UART Receiver Register */
-const UTXD: usize = 0x40; /* UART Transmitter Register */
-const UCR1: usize = 0x80; /* UART Control Register 1 */
-const UCR2: usize = 0x84; /* UART Control Register 2 */
-const UCR3: usize = 0x88; /* UART Control Register 3 */
-const UCR4: usize = 0x8c; /* UART Control Register 4 */
-const UFCR: usize = 0x90; /* UART FIFO Control Register */
-const USR1: usize = 0x94; /* UART Status Register 1 */
-const USR2: usize = 0x98; /* UART Status Register 2 */
-const UESC: usize = 0x9c; /* UART Escape Character Register */
-const UTIM: usize = 0xa0; /* UART Escape Timer Register */
-const UBIR: usize = 0xa4; /* UART BRM Incremental Register */
-const UBMR: usize = 0xa8; /* UART BRM Modulator Register */
-const UBRC: usize = 0xac; /* UART Baud Rate Counter Register */
-const ONEMS: usize = 0xb0; /* UART One Millisecond Register */
-const UTS: usize = 0xb4; /* UART Test Register */
+// UART Receiver Register
+mod URXD {
+    pub const OFFSET: usize = 0x00;
+    pub const RX_DATA: usize = (0xFF << 0);
+}
+
+// UART Transmitter Register
+#[rustfmt::skip]
+mod UTXD {
+    pub const OFFSET: usize = 0x40;
+}
+
+// UART Status Register 2
+#[rustfmt::skip]
+mod USR2 {
+    pub const OFFSET: usize = 0x98;
+    pub const TXFE   : usize = (1 << 14); // Transmit buffer FIFO empty
+    pub const RDR    : usize = (1 << 0);  // Recv data ready
+}
+
+unsafe fn get_byte(usr2: *const usize, urxd: *const usize) -> u8 {
+    loop {
+        if (ptr::read_volatile(usr2) & USR2::RDR) != 0 {
+            return (ptr::read_volatile(urxd) & URXD::RX_DATA) as u8;
+        }
+    }
+}
+
+unsafe fn put_byte(value: u8, usr2: *const usize, utxd: *mut usize) {
+    loop {
+        if (ptr::read_volatile(usr2) & USR2::TXFE) != 0 {
+            ptr::write_volatile(utxd, value as usize);
+            return;
+        }
+    }
+}
 
 pub extern "C" fn run(config: UARTConfig<role::Local>) {
     debug_println!(
@@ -59,29 +70,21 @@ pub extern "C" fn run(config: UARTConfig<role::Local>) {
         config.register_base_addr
     );
 
+    let usr2: *const usize = unsafe { mem::transmute(config.register_base_addr + USR2::OFFSET) };
+    let urxd: *const usize = unsafe { mem::transmute(config.register_base_addr + URXD::OFFSET) };
+    let utxd: *mut usize = unsafe { mem::transmute(config.register_base_addr + UTXD::OFFSET) };
+
     config
         .responder
         .reply_recv(move |req| {
             use self::UARTCommand::*;
             match req {
-                GetChar => unimplemented!(),
-                PutChar(c) => unimplemented!(),
+                GetByte => UARTResponse::GotByte(unsafe { get_byte(usr2, urxd) }),
+                PutByte(b) => {
+                    unsafe { put_byte(*b, usr2, utxd) };
+                    UARTResponse::WroteByte
+                }
             }
         })
         .expect("Could not set up a reply_recv");
 }
-
-// void
-//     putDebugChar(unsigned char c)
-// {
-//     while (!(*UART_REG(USR2) & BIT(UART_SR2_TXFIFO_EMPTY)));
-//     *UART_REG(UTXD) = c;
-// }
-// #endif
-
-// unsigned char
-//     getDebugChar(void)
-// {
-//     while (!(*UART_REG(USR2) & BIT(UART_SR2_RXFIFO_RDR)));
-//     return *UART_REG(URXD);
-// }
