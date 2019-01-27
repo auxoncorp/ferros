@@ -129,11 +129,6 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
 
         Ok((
             Cap {
-                cptr: self.cptr,
-                cap_data: PhantomCap::phantom_instance(),
-                _role: PhantomData,
-            },
-            Cap {
                 cptr: dest_slot1.offset,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
@@ -145,6 +140,11 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
             },
             Cap {
                 cptr: dest_slot3.offset,
+                cap_data: PhantomCap::phantom_instance(),
+                _role: PhantomData,
+            },
+            Cap {
+                cptr: self.cptr,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
