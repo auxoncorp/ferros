@@ -1,13 +1,14 @@
 use iron_pegasus::micro_alloc::{self, GetUntyped};
 use iron_pegasus::pow::Pow;
 use iron_pegasus::userland::{
-    role, root_cnode, spawn, BootInfo, CNode, CNodeRole, Cap, Endpoint, LocalCap, RetypeForSetup,
-    Untyped,
+    role, root_cnode, BootInfo, CNode, CNodeRole, Cap, Endpoint, LocalCap, RetypeForSetup,
+    SeL4Error, UnmappedPageTable, Untyped, VSpace,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Diff;
 use typenum::{U12, U2, U20, U4096, U6};
-pub fn run(raw_boot_info: &'static seL4_BootInfo) {
+
+pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     #[cfg(test_case = "root_task_runs")]
     {
         debug_println!("\nhello from the root task!\n");
@@ -25,16 +26,24 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
         .expect("Couldn't find initial untyped");
 
     let (ut18, _, _, _, root_cnode) = ut20.quarter(root_cnode).expect("quarter");
-    let (ut16, child_cnode_ut, child_proc_ut, _, root_cnode) =
+    let (ut16, child_cnode_ut, child_vspace_ut, _, root_cnode) =
         ut18.quarter(root_cnode).expect("quarter");
-    let (ut14, _, _, _, root_cnode) = ut16.quarter(root_cnode).expect("quarter");
+    let (ut14, child_thread_ut, _, _, root_cnode) = ut16.quarter(root_cnode).expect("quarter");
     let (ut12, asid_pool_ut, _, _, root_cnode) = ut14.quarter(root_cnode).expect("quarter");
-    let (ut10, _, _, _, root_cnode) = ut12.quarter(root_cnode).expect("quarter");
+    let (ut10, scratch_page_table_ut, _, _, root_cnode) =
+        ut12.quarter(root_cnode).expect("quarter");
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode).expect("quarter");
     let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode).expect("quarter");
 
     // wrap the rest of the critical boot info
     let (mut boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
+
+    let (scratch_page_table, root_cnode): (LocalCap<UnmappedPageTable>, _) = scratch_page_table_ut
+        .retype_local(root_cnode)
+        .expect("retype scratch page table");
+    let (mut scratch_page_table, mut boot_info) = boot_info
+        .map_page_table(scratch_page_table)
+        .expect("map scratch page table");
 
     #[cfg(min_params = "true")]
     let (child_cnode, root_cnode, params) = {
@@ -80,17 +89,23 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
         (child_cnode, root_cnode, OverRegisterSizeParams { nums })
     };
 
-    let _root_cnode = spawn(
-        proc_main,
-        params,
-        child_cnode,
-        255,  // priority
-        None, // fault_source
-        child_proc_ut,
-        &mut boot_info,
-        root_cnode,
-    )
-    .expect("spawn process");
+    let (child_vspace, mut boot_info, root_cnode) =
+        VSpace::new(boot_info, child_vspace_ut, root_cnode)?;
+
+    let (child_process, _caller_vspace, root_cnode) = child_vspace
+        .prepare_thread(
+            proc_main,
+            params,
+            child_thread_ut,
+            root_cnode,
+            &mut scratch_page_table,
+            &mut boot_info.page_directory,
+        )
+        .expect("prepare child thread a");
+
+    child_process.start(child_cnode, None, &boot_info.tcb, 255)?;
+
+    Ok(())
 }
 
 pub struct ProcParams {

@@ -5,7 +5,7 @@ use core::marker::PhantomData;
 use core::mem::transmute;
 use core::ops::{Add, Sub};
 use crate::pow::{Pow, _Pow};
-use crate::userland::{role, CNode, CNodeRole, Cap, Untyped};
+use crate::userland::{role, CNode, CNodeRole, Cap, LocalCap, Untyped};
 use typenum::operator_aliases::{Diff, Sub1, Sum};
 use typenum::{Bit, UInt, UTerm, Unsigned, B0, B1, U0, U1, U10, U2, U4, U6};
 
@@ -17,7 +17,7 @@ struct Allocator<Flags: Unsigned> {
 }
 
 fn new_allocator<InitialBitSize: Unsigned>(
-    ut: Cap<Untyped<InitialBitSize>, role::Local>,
+    ut: LocalCap<Untyped<InitialBitSize>>,
 ) -> Allocator<Pow<InitialBitSize>>
 where
     InitialBitSize: _Pow,
@@ -80,7 +80,7 @@ impl<Flags: Unsigned> Allocator<Flags> {
         mut self,
         dest_cnode: CNode<FreeSlots, Role>,
     ) -> (
-        Cap<Untyped<Bits>, role::Local>,
+        LocalCap<Untyped<Bits>>,
         Allocator<TakeSlot_Flags<Flags, Bits>>,
         CNode<Diff<FreeSlots, TakeSlot_NewUntypedCount<Flags, Bits>>, Role>,
     )
@@ -156,12 +156,12 @@ fn allocator_compile_test() {
     type Bin0110000 = UInt<UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B0>, B1>, B1>, B0>, B0>, B0>, B0>;
 
     // The allocator starts with a 6-bit untyped
-    let ut: Cap<Untyped<U6>, role::Local> = unimplemented!();
+    let ut: LocalCap<Untyped<U6>> = unimplemented!();
     let allocator: Allocator<Bin1000000> = new_allocator(ut);
     let cnode: CNode<U10, role::Local> = unimplemented!();
 
     // after allocating a 4-bit untyped, there should be 1 4-bit and 1 5-bit left
-    let (a, allocator, cnode): (Cap<Untyped<U4>, role::Local>, _, _) = allocator.alloc(cnode);
+    let (a, allocator, cnode): (LocalCap<Untyped<U4>>, _, _) = allocator.alloc(cnode);
     let allocator: Allocator<Bin0110000> = allocator;
 
     // the allocation required two splits, so it consumed 4 cnode slots

@@ -68,7 +68,8 @@ pub trait Delible {}
 #[derive(Debug)]
 pub struct Cap<CT: CapType, Role: CNodeRole> {
     pub cptr: usize,
-    pub(super) cap_data: CT,
+    // TODO: put this back to pub(super)
+    pub(crate) cap_data: CT,
     pub(super) _role: PhantomData<Role>,
 }
 
@@ -83,11 +84,40 @@ where
 {
     // TODO most of this should only happen in the bootstrap adapter
     // TODO - Make even more private!
-    pub fn wrap_cptr(cptr: usize) -> Cap<CT, Role> {
+    pub(crate) fn wrap_cptr(cptr: usize) -> Cap<CT, Role> {
         Cap {
             cptr: cptr,
             cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
+        }
+    }
+}
+
+/// Never-to-be-exposed internal wrapper around a capability pointer (cptr)
+/// to a capability with the following characteristics:
+///   * It cannot be moved out of its slot, ever
+///   * The underlying capability kernel object cannot be deleted, ever
+///   * Its cptr can serve a purpose without access to any other runtime data about that particular capability
+///
+/// The point of this reference kind is to allow us to carefully pass around
+/// cptrs to kernel objects whose validity will not change even if their
+/// local Rust-representing instances are consumed, mutated, or dropped.
+///
+/// The absurdly long name is an intentional deterrent to the use of this type.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ImmobileIndelibleInertCapabilityReference<CT: CapType> {
+    pub(crate) cptr: usize,
+    pub(crate) _cap_type: PhantomData<CT>,
+}
+
+impl<CT: CapType> ImmobileIndelibleInertCapabilityReference<CT> {
+    pub(crate) unsafe fn get_capability_pointer(&self) -> usize {
+        self.cptr
+    }
+    pub(crate) unsafe fn new(cptr: usize) -> Self {
+        ImmobileIndelibleInertCapabilityReference {
+            cptr: cptr,
+            _cap_type: PhantomData,
         }
     }
 }
@@ -163,24 +193,13 @@ impl PhantomCap for ASIDControl {
         Self {}
     }
 }
-
-// asid pool
-// TODO: track capacity with the types
-// TODO: track in the pagedirectory type whether it has been assigned (mapped), and for pagetable too
 #[derive(Debug)]
-pub struct ASIDPool {}
-
-impl CapType for ASIDPool {}
-
-impl PhantomCap for ASIDPool {
-    fn phantom_instance() -> Self {
-        Self {}
-    }
+pub struct ASIDPool<FreeSlots: Unsigned> {
+    pub(super) next_free_slot: usize,
+    pub(super) _free_slots: PhantomData<FreeSlots>,
 }
 
-impl CopyAliasable for ASIDPool {
-    type CopyOutput = Self;
-}
+impl<FreeSlots: Unsigned> CapType for ASIDPool<FreeSlots> {}
 
 #[derive(Debug)]
 pub struct Endpoint {}
@@ -205,20 +224,18 @@ impl DirectRetype for Endpoint {
     }
 }
 
+// TODO: It's important that AssignedPageDirectory can never be moved or deleted
+// (or copied, likely), as that leads to ugly cptr aliasing issues that we're
+// not able to detect at compile time. Write compile-tests to ensure that it
+// doesn't implement those marker traits.
 #[derive(Debug)]
-pub struct AssignedPageDirectory {}
-
-impl CapType for AssignedPageDirectory {}
-
-impl PhantomCap for AssignedPageDirectory {
-    fn phantom_instance() -> Self {
-        Self {}
-    }
+pub struct AssignedPageDirectory<FreeSlots: Unsigned, Role: CNodeRole> {
+    pub(super) next_free_slot: usize,
+    pub(super) _free_slots: PhantomData<FreeSlots>,
+    pub(super) _role: PhantomData<Role>,
 }
 
-impl CopyAliasable for AssignedPageDirectory {
-    type CopyOutput = UnassignedPageDirectory;
-}
+impl<FreeSlots: Unsigned, Role: CNodeRole> CapType for AssignedPageDirectory<FreeSlots, Role> {}
 
 #[derive(Debug)]
 pub struct UnassignedPageDirectory {}
@@ -229,10 +246,6 @@ impl PhantomCap for UnassignedPageDirectory {
     fn phantom_instance() -> Self {
         Self {}
     }
-}
-
-impl CopyAliasable for UnassignedPageDirectory {
-    type CopyOutput = Self;
 }
 
 impl DirectRetype for UnassignedPageDirectory {
@@ -263,17 +276,16 @@ impl DirectRetype for UnmappedPageTable {
 }
 
 #[derive(Debug)]
-pub struct MappedPageTable {}
-
-impl CapType for MappedPageTable {}
-
-impl PhantomCap for MappedPageTable {
-    fn phantom_instance() -> Self {
-        Self {}
-    }
+pub struct MappedPageTable<FreeSlots: Unsigned, Role: CNodeRole> {
+    pub(super) vaddr: usize,
+    pub(super) next_free_slot: usize,
+    pub(super) _free_slots: PhantomData<FreeSlots>,
+    pub(super) _role: PhantomData<Role>,
 }
 
-impl CopyAliasable for MappedPageTable {
+impl<FreeSlots: Unsigned, Role: CNodeRole> CapType for MappedPageTable<FreeSlots, Role> {}
+
+impl<FreeSlots: Unsigned, Role: CNodeRole> CopyAliasable for MappedPageTable<FreeSlots, Role> {
     type CopyOutput = UnmappedPageTable;
 }
 
@@ -299,43 +311,49 @@ impl CopyAliasable for UnmappedPage {
 }
 
 #[derive(Debug)]
-pub struct MappedPage {}
-
-impl CapType for MappedPage {}
-
-impl PhantomCap for MappedPage {
-    fn phantom_instance() -> Self {
-        Self {}
-    }
+pub struct MappedPage<Role: CNodeRole> {
+    pub(crate) vaddr: usize,
+    pub(crate) _role: PhantomData<Role>,
 }
 
-impl CopyAliasable for MappedPage {
+impl<Role: CNodeRole> CapType for MappedPage<Role> {}
+
+impl<Role: CNodeRole> CopyAliasable for MappedPage<Role> {
     type CopyOutput = UnmappedPage;
 }
 
 impl<FreeSlots: typenum::Unsigned, Role: CNodeRole> CapType for CNode<FreeSlots, Role> {}
 
 mod private {
+    use super::{role, CNodeRole, Unsigned};
+
     pub trait SealedRole {}
-    impl SealedRole for super::role::Local {}
-    impl SealedRole for super::role::Child {}
+    impl SealedRole for role::Local {}
+    impl SealedRole for role::Child {}
 
     pub trait SealedCapType {}
     impl<BitSize: typenum::Unsigned> SealedCapType for super::Untyped<BitSize> {}
-    impl<FreeSlots: typenum::Unsigned, Role: super::CNodeRole> SealedCapType
+    impl<FreeSlots: typenum::Unsigned, Role: CNodeRole> SealedCapType
         for super::CNode<FreeSlots, Role>
     {
     }
     impl SealedCapType for super::ThreadControlBlock {}
     impl SealedCapType for super::Endpoint {}
     impl SealedCapType for super::ASIDControl {}
-    impl SealedCapType for super::ASIDPool {}
-    impl SealedCapType for super::AssignedPageDirectory {}
+    impl<FreeSlots: Unsigned> SealedCapType for super::ASIDPool<FreeSlots> {}
+    impl<FreeSlots: Unsigned, Role: CNodeRole> SealedCapType
+        for super::AssignedPageDirectory<FreeSlots, Role>
+    {
+    }
     impl SealedCapType for super::UnassignedPageDirectory {}
     impl SealedCapType for super::UnmappedPageTable {}
-    impl SealedCapType for super::MappedPageTable {}
+    impl<FreeSlots: Unsigned, Role: CNodeRole> SealedCapType
+        for super::MappedPageTable<FreeSlots, Role>
+    {
+    }
+
     impl SealedCapType for super::UnmappedPage {}
-    impl SealedCapType for super::MappedPage {}
+    impl<Role: CNodeRole> SealedCapType for super::MappedPage<Role> {}
 }
 
 impl<CT: CapType> Cap<CT, role::Local> {
@@ -355,7 +373,6 @@ impl<CT: CapType> Cap<CT, role::Local> {
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
         CT: CopyAliasable,
-        CT: PhantomCap,
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
         let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
@@ -384,6 +401,53 @@ impl<CT: CapType> Cap<CT, role::Local> {
                     _role: PhantomData,
                 },
                 dest_cnode,
+            ))
+        }
+    }
+
+    pub fn copy_inside_cnode<FreeSlots: Unsigned>(
+        &self,
+        src_and_dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
+        rights: CapRights,
+    ) -> Result<
+        (
+            LocalCap<CT::CopyOutput>,
+            LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
+        ),
+        SeL4Error,
+    >
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
+        CT: CopyAliasable,
+        <CT as CopyAliasable>::CopyOutput: PhantomCap,
+    {
+        let (src_and_dest_cnode, dest_slot) = src_and_dest_cnode.consume_slot();
+
+        let err = unsafe {
+            seL4_CNode_Copy(
+                dest_slot.cptr,      // _service
+                dest_slot.offset,    // index
+                seL4_WordBits as u8, // depth
+                // Since src_cnode is restricted to Root, the cptr must
+                // actually be the slot index
+                src_and_dest_cnode.cptr, // src_root
+                self.cptr,               // src_index
+                seL4_WordBits as u8,     // src_depth
+                rights.into(),           // rights
+            )
+        };
+
+        if err != 0 {
+            Err(SeL4Error::CNodeCopy(err))
+        } else {
+            Ok((
+                Cap {
+                    cptr: dest_slot.offset,
+                    cap_data: PhantomCap::phantom_instance(),
+                    _role: PhantomData,
+                },
+                src_and_dest_cnode,
             ))
         }
     }

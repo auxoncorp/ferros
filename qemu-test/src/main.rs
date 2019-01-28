@@ -7,9 +7,9 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use rexpect::process::signal::Signal;
 use rexpect::session::spawn_command;
+use std::io::{self, Write};
 use std::process::Command;
 use std::sync::Mutex;
-use std::io::{self, Write};
 
 lazy_static! {
     static ref SEQUENTIAL_TEST_MUTEX: Mutex<()> = Mutex::new(());
@@ -73,7 +73,9 @@ fn run_qemu_test(
         "running 'TEST_CASE={} {} cargo fel4 build",
         name, escaped_flags_summary
     );
-    let build_result = build_command.output().expect("Couldn't run `cargo fel4 build`");
+    let build_result = build_command
+        .output()
+        .expect("Couldn't run `cargo fel4 build`");
     if !build_result.status.success() {
         io::stdout().write_all(&build_result.stdout).unwrap();
         io::stderr().write_all(&build_result.stderr).unwrap();
