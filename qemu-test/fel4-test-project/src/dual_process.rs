@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
-use iron_pegasus::micro_alloc::{self, GetUntyped};
-use iron_pegasus::pow::Pow;
-use iron_pegasus::userland::{
+use ferros::micro_alloc::{self, GetUntyped};
+use ferros::pow::Pow;
+use ferros::userland::{
     call_channel, role, root_cnode, setup_fault_endpoint_pair, BootInfo, CNode, CNodeRole, Caller,
     Cap, Endpoint, FaultSink, LocalCap, Responder, RetypeForSetup, SeL4Error, UnmappedPageTable,
     Untyped, VSpace,

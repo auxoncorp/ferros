@@ -9,5 +9,5 @@ edition = "2015"
 # don't currently work when pulled down from crates.io
 # libsel4-sys = "0.5"
 libsel4-sys = { git = "ssh://git@github.com/auxoncorp/libsel4-sys.git", branch = "master" }
-iron-pegasus = { path = "../.." }
+ferros = { path = "../.." }
 typenum = "1.10.0"

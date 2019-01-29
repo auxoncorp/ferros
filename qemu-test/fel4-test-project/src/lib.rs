@@ -1,6 +1,6 @@
 #![no_std]
 
-extern crate iron_pegasus;
+extern crate ferros;
 extern crate sel4_sys;
 extern crate typenum;
 
@@ -23,9 +23,9 @@ mod dual_process;
 #[cfg(single_process = "true")]
 mod single_process;
 
-use iron_pegasus::micro_alloc::{self, GetUntyped};
-use iron_pegasus::pow::Pow;
-use iron_pegasus::userland::{
+use ferros::micro_alloc::{self, GetUntyped};
+use ferros::pow::Pow;
+use ferros::userland::{
     role, root_cnode, BootInfo, CNode, CNodeRole, Cap, Endpoint, LocalCap, RetypeForSetup, Untyped,
 };
 use typenum::operator_aliases::Diff;
