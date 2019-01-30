@@ -29,9 +29,9 @@ pub mod userland;
 mod test_proc;
 
 use crate::micro_alloc::GetUntyped;
+use crate::userland::sync::extended_call_channel;
 use crate::userland::{
-    extended_call_channel, role, root_cnode, BootInfo, CNode, LocalCap, SeL4Error,
-    UnmappedPageTable, VSpace,
+    role, root_cnode, BootInfo, CNode, LocalCap, SeL4Error, UnmappedPageTable, VSpace,
 };
 use sel4_sys::*;
 use typenum::{U12, U20, U4096};

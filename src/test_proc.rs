@@ -1,4 +1,5 @@
-use crate::userland::{role, CNodeRole, ExtendedCaller, ExtendedResponder, RetypeForSetup};
+use crate::userland::sync::{ExtendedCaller, ExtendedResponder};
+use crate::userland::{role, CNodeRole, RetypeForSetup};
 
 pub struct AdditionRequest {
     a: u64,
