@@ -1,6 +1,6 @@
-use iron_pegasus::micro_alloc::{self, GetUntyped};
-use iron_pegasus::pow::Pow;
-use iron_pegasus::userland::{
+use ferros::micro_alloc::{self, GetUntyped};
+use ferros::pow::Pow;
+use ferros::userland::{
     role, root_cnode, BootInfo, CNode, CNodeRole, Cap, Endpoint, LocalCap, RetypeForSetup,
     SeL4Error, UnmappedPageTable, Untyped, VSpace,
 };

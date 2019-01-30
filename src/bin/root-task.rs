@@ -15,7 +15,7 @@ extern crate wee_alloc;
 #[cfg(all(feature = "test", feature = "alloc"))]
 #[macro_use]
 extern crate proptest;
-extern crate iron_pegasus;
+extern crate ferros;
 
 use core::alloc::Layout;
 use core::intrinsics;
@@ -168,11 +168,11 @@ fn main() {
     let boot_info = unsafe { &*BOOTINFO };
     #[cfg(feature = "test")]
     {
-        iron_pegasus::fel4_test::run(boot_info);
+        ferros::fel4_test::run(boot_info);
     }
     #[cfg(not(feature = "test"))]
     {
-        iron_pegasus::run(boot_info);
+        ferros::run(boot_info);
     }
 }
 global_asm!(

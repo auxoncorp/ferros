@@ -1,13 +1,12 @@
 [package]
-name = "iron-pegasus"
+name = "ferros"
 version = "0.1.0"
-authors = ["Russell Mull <russell@auxon.io>"]
+authors = ["Russell Mull <russell@auxon.io>", "Zack Pierce <zack@auxon.io"]
 edition = "2018"
 
 [dependencies]
 # NOTE: We use a git dependency directly since the git submodules
 # don't currently work when pulled down from crates.io
-# libsel4-sys = "0.5"
 libsel4-sys = { git = "ssh://git@github.com/auxoncorp/libsel4-sys.git", branch = "master" }
 typenum = "1.10.0"
 generic-array = "0.12.0"
