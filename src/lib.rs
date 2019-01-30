@@ -30,7 +30,7 @@ mod test_proc;
 
 use crate::micro_alloc::GetUntyped;
 use crate::userland::{
-    call_channel, role, root_cnode, BootInfo, CNode, CapRights, LocalCap, SeL4Error, UnmappedPage,
+    extended_call_channel, role, root_cnode, BootInfo, CNode, LocalCap, SeL4Error,
     UnmappedPageTable, VSpace,
 };
 use sel4_sys::*;
@@ -71,7 +71,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode)?;
     let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode)?;
     let (ut5, _, root_cnode) = ut6.split(root_cnode)?;
-    let (ut4, _, root_cnode) = ut5.split(root_cnode)?; // Why two splits? To exercise split.
+    let (ut4a, ut4b, root_cnode) = ut5.split(root_cnode)?; // Why two splits? To exercise split.
 
     // wrap the rest of the critical boot info
     let (boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
@@ -87,46 +87,33 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     let (responder_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
         ut16b.retype_local_cnode::<_, U12>(root_cnode)?;
 
-    let (caller_cnode_local, responder_cnode_local, caller, responder, root_cnode) =
-        call_channel(root_cnode, ut4, caller_cnode_local, responder_cnode_local)
-            .expect("ipc error");
-
     // vspace setup
     let (caller_vspace, boot_info, root_cnode) = VSpace::new(boot_info, caller_ut, root_cnode)?;
-
     let (responder_vspace, mut boot_info, root_cnode) =
         VSpace::new(boot_info, responder_ut, root_cnode)?;
 
-    // set up shm page caps
-    let (shared_page, root_cnode): (LocalCap<UnmappedPage>, _) =
-        shared_page_ut.retype_local(root_cnode)?;
-
-    // caller setup
-    let (caller_shared_page, root_cnode) =
-        shared_page.copy_inside_cnode(root_cnode, CapRights::RW)?;
-    let (caller_shared_page, caller_vspace) = caller_vspace.map_page(caller_shared_page)?;
-    let (caller_cnode_child, caller_cnode_local) =
-        caller_cnode_local.generate_self_reference(&root_cnode)?;
-    let caller_params = test_proc::CallerParams::<role::Child> {
-        my_cnode: caller_cnode_child,
+    let (
+        caller_cnode_local,
+        responder_cnode_local,
         caller,
-        shared_page: caller_shared_page.cap_data,
-    };
-
-    // responder setup
-    let (responder_shared_page, root_cnode) =
-        shared_page.copy_inside_cnode(root_cnode, CapRights::R)?;
-    let (responder_shared_page, responder_vspace) =
-        responder_vspace.map_page(responder_shared_page)?;
-    let (responder_cnode_child, responder_cnode_local) =
-        responder_cnode_local.generate_self_reference(&root_cnode)?;
-    let responder_params = test_proc::ResponderParams::<role::Child> {
-        my_cnode: responder_cnode_child,
         responder,
-        shared_page: responder_shared_page.cap_data,
-    };
+        caller_vspace,
+        responder_vspace,
+        root_cnode,
+    ) = extended_call_channel(
+        root_cnode,
+        shared_page_ut,
+        ut4a,
+        ut4b,
+        caller_vspace,
+        responder_vspace,
+        caller_cnode_local,
+        responder_cnode_local,
+    )
+    .expect("ipc error");
 
-    // cnode setup
+    let caller_params = test_proc::ExtendedCallerParams::<role::Child> { caller };
+    let responder_params = test_proc::ExtendedResponderParams::<role::Child> { responder };
 
     let (caller_thread, _caller_vspace, root_cnode) = caller_vspace
         .prepare_thread(

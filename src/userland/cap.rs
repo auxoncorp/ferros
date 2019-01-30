@@ -224,6 +224,29 @@ impl DirectRetype for Endpoint {
     }
 }
 
+#[derive(Debug)]
+pub struct Notification {}
+
+impl CapType for Notification {}
+
+impl PhantomCap for Notification {
+    fn phantom_instance() -> Self {
+        Self {}
+    }
+}
+
+impl CopyAliasable for Notification {
+    type CopyOutput = Self;
+}
+
+impl Mintable for Notification {}
+
+impl DirectRetype for Notification {
+    fn sel4_type_id() -> usize {
+        api_object_seL4_NotificationObject as usize
+    }
+}
+
 // TODO: It's important that AssignedPageDirectory can never be moved or deleted
 // (or copied, likely), as that leads to ugly cptr aliasing issues that we're
 // not able to detect at compile time. Write compile-tests to ensure that it
@@ -339,6 +362,7 @@ mod private {
     }
     impl SealedCapType for super::ThreadControlBlock {}
     impl SealedCapType for super::Endpoint {}
+    impl SealedCapType for super::Notification {}
     impl SealedCapType for super::ASIDControl {}
     impl<FreeSlots: Unsigned> SealedCapType for super::ASIDPool<FreeSlots> {}
     impl<FreeSlots: Unsigned, Role: CNodeRole> SealedCapType
