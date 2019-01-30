@@ -8,7 +8,7 @@ use crate::userland::{
 use generic_array::ArrayLength;
 use sel4_sys::{seL4_Signal, seL4_Wait};
 use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U0, U14, U2, U4, U5};
+use typenum::{Unsigned, B1, U0, U12, U2, U4, U5};
 
 /// A synchronous call channel backed by a page of shared memory
 pub fn extended_call_channel<
@@ -25,7 +25,7 @@ pub fn extended_call_channel<
     Rsp: Send + Sync,
 >(
     local_cnode: LocalCap<LocalCNode<ScratchFreeSlots>>,
-    shared_page_ut: LocalCap<Untyped<U14>>,
+    shared_page_ut: LocalCap<Untyped<U12>>,
     call_notification_ut: LocalCap<Untyped<U4>>,
     response_notification_ut: LocalCap<Untyped<U4>>,
     caller_vspace: VSpace<
