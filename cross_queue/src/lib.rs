@@ -1,3 +1,5 @@
+#![no_std]
+#![feature(optin_builtin_traits)]
 //! A lock free queue implementation adapted from Crossbeam's `ArrayQueue`:
 //! https://github.com/crossbeam-rs/crossbeam
 //! TODO: Mention license? crossbeam is dual apache / MIT.
@@ -465,9 +467,33 @@ where
 /// Error which occurs when popping from an empty queue.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct PopError;
+impl fmt::Debug for PopError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        "PopError".fmt(f)
+    }
+}
+
+impl fmt::Display for PopError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        "popping from an empty queue".fmt(f)
+    }
+}
+
 /// Error which occurs when pushing into a full queue.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct PushError<T>(pub T);
+
+impl<T> fmt::Debug for PushError<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        "PushError(..)".fmt(f)
+    }
+}
+
+impl<T> fmt::Display for PushError<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        "pushing into a full queue".fmt(f)
+    }
+}
 
 const SPIN_LIMIT: u32 = 6;
 const YIELD_LIMIT: u32 = 10;
