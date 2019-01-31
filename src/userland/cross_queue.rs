@@ -8,7 +8,9 @@ use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{self, AtomicUsize, Ordering};
 
-use generic_array::{arr, ArrayLength, GenericArray};
+use generic_array::sequence::GenericSequence;
+use generic_array::{ArrayLength, GenericArray};
+
 use typenum::consts::U0;
 use typenum::{IsGreater, Unsigned};
 
@@ -115,7 +117,7 @@ where
     tail: CachePadded<AtomicUsize>,
 
     /// The buffer holding slots.
-    buffer: GenericArray<Slot<T>, Size>,
+    buffer: UnsafeCell<GenericArray<Slot<T>, Size>>,
 
     /// The queue capacity.
     cap: usize,
@@ -152,7 +154,10 @@ where
         let one_lap = (Size::USIZE + 1).next_power_of_two();
 
         ArrayQueue {
-            buffer: arr![Slot<T>;],
+            buffer: UnsafeCell::new(GenericArray::generate(move |i| Slot {
+                stamp: AtomicUsize::new(i),
+                value: unsafe { core::mem::zeroed() },
+            })),
             one_lap: one_lap,
             cap: Size::USIZE,
             head: CachePadded::new(AtomicUsize::new(head)),
@@ -186,7 +191,7 @@ where
             let lap = tail & !(self.one_lap - 1);
 
             // Inspect the corresponding slot.
-            let slot = unsafe { &*self.buffer[index] };
+            let slot = &mut unsafe { &mut *self.buffer.get() }[index];
             let stamp = slot.stamp.load(Ordering::Acquire);
 
             // If the tail and the stamp match, we may attempt to push.
@@ -266,7 +271,7 @@ where
             let lap = head & !(self.one_lap - 1);
 
             // Inspect the corresponding slot.
-            let slot = unsafe { &*self.buffer.add(index) };
+            let slot = &mut unsafe { &mut *self.buffer.get() }[index];
             let stamp = slot.stamp.load(Ordering::Acquire);
 
             // If the the stamp is ahead of the head by 1, we may attempt to pop.
@@ -424,7 +429,6 @@ where
     }
 }
 
-// TODO - re-evaluate the Drop implementation in the absence of a Vec
 impl<T, Size: Unsigned> Drop for ArrayQueue<T, Size>
 where
     Size: IsGreater<U0>,
@@ -444,12 +448,14 @@ where
             };
 
             unsafe {
-                self.buffer.add(index).drop_in_place();
+                (&mut (*self.buffer.get())[index] as *mut Slot<T>).drop_in_place();
             }
         }
 
         // TODO - re-evaluate the Drop implementation in the absence of a Vec
-        // Finally, deallocate the buffer, but don't run any destructors.
+        // The original implementation in crossbeam-queue had the intent of
+        // deallocating the buffer without running any destructors for the members.
+        //
         //unsafe {
         //    Vec::from_raw_parts(self.buffer, 0, self.cap);
         //}
