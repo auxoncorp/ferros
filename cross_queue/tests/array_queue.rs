@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use cross_queue::ArrayQueue;
 use crossbeam_utils::thread::scope;
 use rand::{thread_rng, Rng};
-use typenum::U1;
+use typenum::{Unsigned, U1, U10, U1000, U2, U3, U4, U50};
 
 #[test]
 fn smoke() {
@@ -24,21 +24,24 @@ fn smoke() {
 
 #[test]
 fn capacity() {
-    for i in 1..10 {
-        let q = ArrayQueue::<i32>::new(i);
-        assert_eq!(q.capacity(), i);
-    }
+    let q = ArrayQueue::<i32, U1>::new();
+    assert_eq!(q.capacity(), 1);
+    let q = ArrayQueue::<i32, U2>::new();
+    assert_eq!(q.capacity(), 2);
+    let q = ArrayQueue::<i32, U10>::new();
+    assert_eq!(q.capacity(), 10);
 }
 
 #[test]
-#[should_panic(expected = "capacity must be non-zero")]
 fn zero_capacity() {
-    let _ = ArrayQueue::<i32>::new(0);
+    // If you were to uncomment the following, it would fail to compile
+    // because zero-capacity queues are not permitted
+    //let q = ArrayQueue::<_, U0>::new();
 }
 
 #[test]
 fn len_empty_full() {
-    let q = ArrayQueue::new(2);
+    let q = ArrayQueue::<_, U2>::new();
 
     assert_eq!(q.len(), 0);
     assert_eq!(q.is_empty(), true);
@@ -66,12 +69,12 @@ fn len_empty_full() {
 #[test]
 fn len() {
     const COUNT: usize = 25_000;
-    const CAP: usize = 1000;
+    type CAP = U1000;
 
-    let q = ArrayQueue::new(CAP);
+    let q = ArrayQueue::<_, CAP>::new();
     assert_eq!(q.len(), 0);
 
-    for _ in 0..CAP / 10 {
+    for _ in 0..CAP::USIZE / 10 {
         for i in 0..50 {
             q.push(i).unwrap();
             assert_eq!(q.len(), i + 1);
@@ -84,12 +87,12 @@ fn len() {
     }
     assert_eq!(q.len(), 0);
 
-    for i in 0..CAP {
+    for i in 0..CAP::USIZE {
         q.push(i).unwrap();
         assert_eq!(q.len(), i + 1);
     }
 
-    for _ in 0..CAP {
+    for _ in 0..CAP::USIZE {
         q.pop().unwrap();
     }
     assert_eq!(q.len(), 0);
@@ -104,7 +107,7 @@ fn len() {
                     }
                 }
                 let len = q.len();
-                assert!(len <= CAP);
+                assert!(len <= CAP::USIZE);
             }
         });
 
@@ -112,7 +115,7 @@ fn len() {
             for i in 0..COUNT {
                 while q.push(i).is_err() {}
                 let len = q.len();
-                assert!(len <= CAP);
+                assert!(len <= CAP::USIZE);
             }
         });
     })
@@ -124,7 +127,7 @@ fn len() {
 fn spsc() {
     const COUNT: usize = 100_000;
 
-    let q = ArrayQueue::new(3);
+    let q = ArrayQueue::<_, U3>::new();
 
     scope(|scope| {
         scope.spawn(|_| {
@@ -153,7 +156,7 @@ fn mpmc() {
     const COUNT: usize = 25_000;
     const THREADS: usize = 4;
 
-    let q = ArrayQueue::<usize>::new(3);
+    let q = ArrayQueue::<usize, U3>::new();
     let v = (0..COUNT).map(|_| AtomicUsize::new(0)).collect::<Vec<_>>();
 
     scope(|scope| {
@@ -201,12 +204,12 @@ fn drops() {
 
     let mut rng = thread_rng();
 
-    for _ in 0..RUNS {
+    for curr_run_index in 0..RUNS {
         let steps = rng.gen_range(0, 10_000);
         let additional = rng.gen_range(0, 50);
 
         DROPS.store(0, Ordering::SeqCst);
-        let q = ArrayQueue::new(50);
+        let q = ArrayQueue::<_, U50>::new();
 
         scope(|scope| {
             scope.spawn(|_| {
@@ -229,21 +232,35 @@ fn drops() {
             q.push(DropCounter).unwrap();
         }
 
-        assert_eq!(DROPS.load(Ordering::SeqCst), steps);
+        assert_eq!(
+            DROPS.load(Ordering::SeqCst),
+            steps,
+            "{}: Pre-queue-drop status where steps: {} and additional: {}",
+            curr_run_index,
+            steps,
+            additional
+        );
         drop(q);
-        assert_eq!(DROPS.load(Ordering::SeqCst), steps + additional);
+        assert_eq!(
+            DROPS.load(Ordering::SeqCst),
+            steps + additional,
+            "{}: Post-queue-drop status where steps: {} and additional: {}",
+            curr_run_index,
+            steps,
+            additional
+        );
     }
 }
 
 #[test]
 fn linearizable() {
     const COUNT: usize = 25_000;
-    const THREADS: usize = 4;
+    type THREADS = U4;
 
-    let q = ArrayQueue::new(THREADS);
+    let q = ArrayQueue::<_, THREADS>::new();
 
     scope(|scope| {
-        for _ in 0..THREADS {
+        for _ in 0..THREADS::USIZE {
             scope.spawn(|_| {
                 for _ in 0..COUNT {
                     while q.push(0).is_err() {}

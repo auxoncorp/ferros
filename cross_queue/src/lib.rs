@@ -14,7 +14,7 @@ use generic_array::sequence::GenericSequence;
 use generic_array::{ArrayLength, GenericArray};
 
 use typenum::consts::U0;
-use typenum::{IsGreater, Unsigned};
+use typenum::{Cmp, Greater, UTerm, Unsigned};
 
 /// A slot in a queue.
 pub struct Slot<T> {
@@ -30,20 +30,22 @@ pub struct Slot<T> {
 
 unsafe impl<T: Send, Size: Unsigned> Send for ArrayQueue<T, Size>
 where
-    Size: IsGreater<U0>,
     Size: ArrayLength<Slot<T>>,
+    Size: Cmp<U0, Output = Greater>,
+    Size: Cmp<UTerm>,
 {
 }
 
 unsafe impl<T: Send, Size: Unsigned> Sync for ArrayQueue<T, Size>
 where
-    Size: IsGreater<U0>,
     Size: ArrayLength<Slot<T>>,
+    Size: Cmp<U0, Output = Greater>,
+    Size: Cmp<UTerm>,
 {
 }
 
 #[repr(align(64))]
-struct CachePadded<T> {
+pub struct CachePadded<T> {
     value: T,
 }
 
@@ -57,27 +59,12 @@ impl<T> CachePadded<T> {
     /// # Examples
     ///
     /// ```
-    /// use ferros::userland::cross_queue::CachePadded;
+    /// use cross_queue::CachePadded;
     ///
     /// let padded_value = CachePadded::new(1);
     /// ```
     pub fn new(t: T) -> CachePadded<T> {
         CachePadded::<T> { value: t }
-    }
-
-    /// Returns the value value.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use ferros::userland::cross_queue::CachePadded;
-    ///
-    /// let padded_value = CachePadded::new(7);
-    /// let value = padded_value.into_inner();
-    /// assert_eq!(value, 7);
-    /// ```
-    pub fn into_inner(self) -> T {
-        self.value
     }
 }
 
@@ -97,8 +84,9 @@ impl<T> DerefMut for CachePadded<T> {
 
 pub struct ArrayQueue<T, Size: Unsigned>
 where
-    Size: IsGreater<U0>,
     Size: ArrayLength<Slot<T>>,
+    Size: Cmp<U0, Output = Greater>,
+    Size: Cmp<UTerm>,
 {
     /// The head of the queue.
     ///
@@ -119,10 +107,9 @@ where
     tail: CachePadded<AtomicUsize>,
 
     /// The buffer holding slots.
-    buffer: UnsafeCell<GenericArray<Slot<T>, Size>>,
-
-    /// The queue capacity.
-    cap: usize,
+    /// Should always contain `Some` at the beginning and end of every method,
+    /// with the sole exception of the Drop implementation.
+    buffer: UnsafeCell<Option<GenericArray<Slot<T>, Size>>>,
 
     /// A stamp with the value of `{ lap: 1, index: 0 }`.
     one_lap: usize,
@@ -136,13 +123,15 @@ where
 
 impl<T, Size: Unsigned> ArrayQueue<T, Size>
 where
-    Size: IsGreater<U0>,
     Size: ArrayLength<Slot<T>>,
+    Size: Cmp<U0, Output = Greater>,
+    Size: Cmp<UTerm>,
 {
     /// Creates a new bounded queue with the capacity `Size`.
     ///
     /// ```
-    /// use ferros::usersland::cross_queue::ArrayQueue;
+    /// use cross_queue::ArrayQueue;
+    /// use typenum::U100;
     ///
     /// let q = ArrayQueue::<i32, U100>::new();
     /// ```
@@ -156,12 +145,11 @@ where
         let one_lap = (Size::USIZE + 1).next_power_of_two();
 
         ArrayQueue {
-            buffer: UnsafeCell::new(GenericArray::generate(move |i| Slot {
+            buffer: UnsafeCell::new(Some(GenericArray::generate(move |i| Slot {
                 stamp: AtomicUsize::new(i),
                 value: unsafe { core::mem::zeroed() },
-            })),
+            }))),
             one_lap: one_lap,
-            cap: Size::USIZE,
             head: CachePadded::new(AtomicUsize::new(head)),
             tail: CachePadded::new(AtomicUsize::new(tail)),
             _marker: PhantomData,
@@ -176,14 +164,24 @@ where
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_queue::{ArrayQueue, PushError};
+    /// use cross_queue::{ArrayQueue, PushError};
+    /// use typenum::U1;
     ///
-    /// let q = ArrayQueue::new(1);
+    /// let q = ArrayQueue::<_, U1>::new();
     ///
     /// assert_eq!(q.push(10), Ok(()));
     /// assert_eq!(q.push(20), Err(PushError(20)));
     /// ```
     pub fn push(&self, value: T) -> Result<(), PushError<T>> {
+        let local_buffer: &mut GenericArray<Slot<T>, Size> = unsafe {
+            let mut b: Option<&mut GenericArray<Slot<T>, Size>> =
+                (&mut *self.buffer.get()).as_mut();
+            // We can safely unwrap because the implementation maintains an invariant
+            // that the inner contents of buffer are always Some at the beginning
+            // and ends of all methods, with the sole exception of Drop.
+            b.take().expect("Failed to unwrap in push")
+        };
+
         let backoff = Backoff::new();
         let mut tail = self.tail.load(Ordering::Relaxed);
 
@@ -193,12 +191,12 @@ where
             let lap = tail & !(self.one_lap - 1);
 
             // Inspect the corresponding slot.
-            let slot = &mut unsafe { &mut *self.buffer.get() }[index];
+            let slot = &mut local_buffer[index];
             let stamp = slot.stamp.load(Ordering::Acquire);
 
             // If the tail and the stamp match, we may attempt to push.
             if tail == stamp {
-                let new_tail = if index + 1 < self.cap {
+                let new_tail = if index + 1 < Size::USIZE {
                     // Same lap, incremented index.
                     // Set to `{ lap: lap, index: index + 1 }`.
                     tail + 1
@@ -221,6 +219,9 @@ where
                             slot.value.get().write(value);
                         }
                         slot.stamp.store(tail + 1, Ordering::Release);
+                        // TODO - CLEANUP
+                        //// Repopulate self.buffer to ensure it remains Some at rest.
+                        //unsafe {(&mut *self.buffer.get()).replace(local_buffer);}
                         return Ok(());
                     }
                     Err(t) => {
@@ -235,6 +236,9 @@ where
                 // If the head lags one lap behind the tail as well...
                 if head.wrapping_add(self.one_lap) == tail {
                     // ...then the queue is full.
+                    // TODO - CLEANUP
+                    //// Repopulate self.buffer to ensure it remains Some at rest.
+                    //unsafe {(&mut *self.buffer.get()).replace(local_buffer);}
                     return Err(PushError(value));
                 }
 
@@ -255,15 +259,24 @@ where
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_queue::{ArrayQueue, PopError};
+    /// use cross_queue::{ArrayQueue, PopError};
+    /// use typenum::U1;
     ///
-    /// let q = ArrayQueue::new(1);
+    /// let q = ArrayQueue::<_, U1>::new();
     /// assert_eq!(q.push(10), Ok(()));
     ///
     /// assert_eq!(q.pop(), Ok(10));
     /// assert_eq!(q.pop(), Err(PopError));
     /// ```
     pub fn pop(&self) -> Result<T, PopError> {
+        let local_buffer: &mut GenericArray<Slot<T>, Size> = unsafe {
+            let mut b: Option<&mut GenericArray<Slot<T>, Size>> =
+                (&mut *self.buffer.get()).as_mut();
+            // We can safely unwrap because the implementation maintains an invariant
+            // that the inner contents of buffer are always Some at the beginning
+            // and ends of all methods, with the sole exception of Drop.
+            b.take().expect("Failed to unwrap in pop")
+        };
         let backoff = Backoff::new();
         let mut head = self.head.load(Ordering::Relaxed);
 
@@ -273,12 +286,12 @@ where
             let lap = head & !(self.one_lap - 1);
 
             // Inspect the corresponding slot.
-            let slot = &mut unsafe { &mut *self.buffer.get() }[index];
+            let slot = &mut local_buffer[index];
             let stamp = slot.stamp.load(Ordering::Acquire);
 
             // If the the stamp is ahead of the head by 1, we may attempt to pop.
             if head + 1 == stamp {
-                let new = if index + 1 < self.cap {
+                let new = if index + 1 < Size::USIZE {
                     // Same lap, incremented index.
                     // Set to `{ lap: lap, index: index + 1 }`.
                     head + 1
@@ -300,6 +313,9 @@ where
                         let msg = unsafe { slot.value.get().read() };
                         slot.stamp
                             .store(head.wrapping_add(self.one_lap), Ordering::Release);
+                        // TODO - CLEANUP
+                        //// Repopulate self.buffer to ensure it remains Some at rest.
+                        //unsafe {(&mut *self.buffer.get()).replace(local_buffer);}
                         return Ok(msg);
                     }
                     Err(h) => {
@@ -313,6 +329,9 @@ where
 
                 // If the tail equals the head, that means the channel is empty.
                 if tail == head {
+                    // TODO - CLEANUP
+                    //// Repopulate self.buffer to ensure it remains Some at rest.
+                    //unsafe {(&mut *self.buffer.get()).replace(local_buffer);}
                     return Err(PopError);
                 }
 
@@ -331,14 +350,15 @@ where
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_queue::{ArrayQueue, PopError};
+    /// use cross_queue::{ArrayQueue, PopError};
+    /// use typenum::{U100, Unsigned};
     ///
-    /// let q = ArrayQueue::<i32>::new(100);
+    /// let q = ArrayQueue::<i32, U100>::new();
     ///
     /// assert_eq!(q.capacity(), 100);
     /// ```
     pub fn capacity(&self) -> usize {
-        self.cap
+        Size::USIZE
     }
 
     /// Returns `true` if the queue is empty.
@@ -346,13 +366,16 @@ where
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_queue::{ArrayQueue, PopError};
+    /// use cross_queue::{ArrayQueue, PopError};
+    /// use typenum::{U100, Unsigned};
     ///
-    /// let q = ArrayQueue::new(100);
+    /// let q = ArrayQueue::<_, U100>::new();
     ///
     /// assert!(q.is_empty());
     /// q.push(1).unwrap();
     /// assert!(!q.is_empty());
+    /// q.pop().unwrap();
+    /// assert!(q.is_empty());
     /// ```
     pub fn is_empty(&self) -> bool {
         let head = self.head.load(Ordering::SeqCst);
@@ -371,9 +394,10 @@ where
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_queue::{ArrayQueue, PopError};
+    /// use cross_queue::{ArrayQueue, PopError};
+    /// use typenum::U1;
     ///
-    /// let q = ArrayQueue::new(1);
+    /// let q = ArrayQueue::<_, U1>::new();
     ///
     /// assert!(!q.is_full());
     /// q.push(1).unwrap();
@@ -395,9 +419,10 @@ where
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_queue::{ArrayQueue, PopError};
+    /// use cross_queue::{ArrayQueue, PopError};
+    /// use typenum::U100;
     ///
-    /// let q = ArrayQueue::new(100);
+    /// let q = ArrayQueue::<_, U100>::new();
     /// assert_eq!(q.len(), 0);
     ///
     /// q.push(10).unwrap();
@@ -420,11 +445,11 @@ where
                 return if hix < tix {
                     tix - hix
                 } else if hix > tix {
-                    self.cap - hix + tix
+                    Size::USIZE - hix + tix
                 } else if tail == head {
                     0
                 } else {
-                    self.cap
+                    Size::USIZE
                 };
             }
         }
@@ -433,34 +458,44 @@ where
 
 impl<T, Size: Unsigned> Drop for ArrayQueue<T, Size>
 where
-    Size: IsGreater<U0>,
     Size: ArrayLength<Slot<T>>,
+    Size: Cmp<U0, Output = Greater>,
+    Size: Cmp<UTerm>,
 {
     fn drop(&mut self) {
         // Get the index of the head.
         let hix = self.head.load(Ordering::Relaxed) & (self.one_lap - 1);
 
+        let local_buffer: &mut GenericArray<Slot<T>, Size> = unsafe {
+            (&mut *self.buffer.get())
+                .as_mut()
+                .take()
+                .expect("Failed to unwrap in drop")
+        };
+
         // Loop over all slots that hold a message and drop them.
         for i in 0..self.len() {
             // Compute the index of the next slot holding a message.
-            let index = if hix + i < self.cap {
+            let index = if hix + i < Size::USIZE {
                 hix + i
             } else {
-                hix + i - self.cap
+                hix + i - Size::USIZE
             };
 
             unsafe {
-                (&mut (*self.buffer.get())[index] as *mut Slot<T>).drop_in_place();
+                (&mut local_buffer[index] as *mut Slot<T>).drop_in_place();
             }
         }
 
-        // TODO - re-evaluate the Drop implementation in the absence of a Vec
+        let local_buffer: GenericArray<Slot<T>, Size> = unsafe {
+            (&mut *self.buffer.get())
+                .take()
+                .expect("Failed to unwrap second time in drop")
+        };
+        // Leak the buffer now that all actually-initialized values have been dropped
         // The original implementation in crossbeam-queue had the intent of
         // deallocating the buffer without running any destructors for the members.
-        //
-        //unsafe {
-        //    Vec::from_raw_parts(self.buffer, 0, self.cap);
-        //}
+        core::mem::forget(local_buffer)
     }
 }
 
