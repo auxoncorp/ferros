@@ -1,83 +1,65 @@
-use crate::userland::sync::{ExtendedCaller, ExtendedResponder};
-use crate::userland::{role, CNodeRole, RetypeForSetup};
-
-pub struct AdditionRequest {
-    a: u64,
-    b: u64,
-    history: [u64; 256],
-}
+use crate::userland::{role, CNodeRole, Consumer1, Producer, RetypeForSetup};
+use cross_queue::PushError;
+use sel4_sys::seL4_Yield;
+use typenum::U100;
 
 #[derive(Debug)]
-pub struct AdditionResponse {
-    sum: u64,
+pub struct Xenon {
+    a: u64,
 }
 
-pub struct ExtendedCallerParams<Role: CNodeRole> {
-    pub caller: ExtendedCaller<AdditionRequest, AdditionResponse, Role>,
+pub struct ConsumerParams<Role: CNodeRole> {
+    pub consumer: Consumer1<Role, Xenon, U100>,
 }
 
-impl RetypeForSetup for ExtendedCallerParams<role::Local> {
-    type Output = ExtendedCallerParams<role::Child>;
+impl RetypeForSetup for ConsumerParams<role::Local> {
+    type Output = ConsumerParams<role::Child>;
 }
 
-pub struct ExtendedResponderParams<Role: CNodeRole> {
-    pub responder: ExtendedResponder<AdditionRequest, AdditionResponse, Role>,
+pub struct ProducerParams<Role: CNodeRole> {
+    pub producer: Producer<Role, Xenon, U100>,
 }
 
-impl RetypeForSetup for ExtendedResponderParams<role::Local> {
-    type Output = ExtendedResponderParams<role::Child>;
+impl RetypeForSetup for ProducerParams<role::Local> {
+    type Output = ProducerParams<role::Child>;
 }
 
-pub extern "C" fn caller(p: ExtendedCallerParams<role::Local>) {
-    debug_println!("Inside addition_requester");
-    let mut current_sum = 1;
-    let mut caller = p.caller;
-    let mut addition_request = AdditionRequest {
-        a: current_sum,
-        b: current_sum,
-        history: [0; 256],
-    };
+pub extern "C" fn consumer(p: ConsumerParams<role::Local>) {
+    debug_println!("Inside consumer");
+    let initial_state = 0;
+    p.consumer.consume(
+        initial_state,
+        |state| {
+            let fresh_state = state + 1;
+            debug_println!("Creating fresh state {} in the waker callback", fresh_state);
+            fresh_state
+        },
+        |x, state| {
+            let fresh_state = x.a + state;
+            debug_println!(
+                "Creating fresh state {} from {:?} and {} in the queue callback",
+                fresh_state,
+                x,
+                state
+            );
+            fresh_state
+        },
+    )
+}
 
-    for i in 0..100 {
-        addition_request.a = current_sum;
-        addition_request.b = current_sum;
-
-        debug_println!(
-            "Q: What is {} + {} - ({} / 2)?",
-            addition_request.a,
-            addition_request.b,
-            addition_request.b
-        );
-        let AdditionResponse { sum } = caller.blocking_call(&addition_request);
-        current_sum = sum;
-        addition_request.history[i] = current_sum;
-        debug_println!("A: {}", current_sum);
+pub extern "C" fn producer(p: ProducerParams<role::Local>) {
+    debug_println!("Inside producer");
+    for i in 0..256 {
+        match p.producer.send(Xenon { a: i }) {
+            Ok(_) => {
+                debug_println!("The producer *thinks* it successfully sent {}", i);
+            }
+            Err(PushError(x)) => {
+                debug_println!("Rejected sending {:?}", x);
+                unsafe {
+                    seL4_Yield();
+                }
+            }
+        }
     }
-    debug_println!(
-        "Call and response addition finished. Last equation: {} + {} = {}",
-        addition_request.a,
-        addition_request.b,
-        current_sum,
-    );
-    debug_print!("History: [");
-    for h in addition_request.history.iter().take(100) {
-        debug_print!("{}, ", h);
-    }
-    debug_print!("]\n");
-}
-
-pub extern "C" fn responder(p: ExtendedResponderParams<role::Local>) {
-    debug_println!("Inside addition_responder");
-    let initial_state: usize = 0;
-
-    p.responder
-        .reply_recv_with_state(initial_state, move |req, state| {
-            debug_println!("Addition has happened {} times", state);
-            (
-                AdditionResponse {
-                    sum: req.a + req.b - (req.b / 2),
-                },
-                state + 1,
-            )
-        });
 }

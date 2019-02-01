@@ -13,9 +13,9 @@ use cross_queue::{ArrayQueue, Slot};
 use generic_array::ArrayLength;
 use sel4_sys::{seL4_Signal, seL4_Wait};
 use typenum::type_operators::Cmp;
-use typenum::{Diff, Greater, IsGreater, Sub1, UTerm, Unsigned, B1, U0, U1, U12, U3, U4};
+use typenum::{Diff, Greater, IsGreater, Sub1, UTerm, Unsigned, B1, U0, U12, U3, U4};
 
-pub struct Consumer1<Role: CNodeRole, T: Sized + Sync + Send, QLen: Unsigned, P: QPtrType<T, QLen>>
+pub struct Consumer1<Role: CNodeRole, T: Sized + Sync + Send, QLen: Unsigned>
 where
     QLen: IsGreater<U0>,
     QLen: Cmp<U0, Output = Greater>,
@@ -25,22 +25,21 @@ where
     interrupt_badge: Badge,
     queue_badge: Badge,
     notification: Cap<Notification, Role>,
-    queue: QueueHandle<T, Role, QLen, P>,
+    queue: QueueHandle<T, Role, QLen>,
 }
 
-pub struct Producer<Role: CNodeRole, T: Sized + Sync + Send, QLen: Unsigned, P: QPtrType<T, QLen>>
+pub struct Producer<Role: CNodeRole, T: Sized + Sync + Send, QLen: Unsigned>
 where
     QLen: IsGreater<U0>,
     QLen: Cmp<U0, Output = Greater>,
     QLen: Cmp<UTerm>,
     QLen: ArrayLength<Slot<T>>,
 {
-    queue_badge: Badge,
     notification: Cap<Notification, Role>,
-    queue: QueueHandle<T, Role, QLen, P>,
+    queue: QueueHandle<T, Role, QLen>,
 }
 
-pub struct QueueHandle<T: Sized, Role: CNodeRole, QLen: Unsigned, P: QPtrType<T, QLen>>
+pub struct QueueHandle<T: Sized, Role: CNodeRole, QLen: Unsigned>
 where
     QLen: IsGreater<U0>,
     QLen: Cmp<U0, Output = Greater>,
@@ -48,40 +47,13 @@ where
     QLen: ArrayLength<Slot<T>>,
 {
     // Only valid in the VSpace context of a particular process
-    shared_queue: <P as QPtrType<T, QLen>>::Type,
+    shared_queue: usize,
     _role: PhantomData<Role>,
+    _t: PhantomData<T>,
+    _queue_len: PhantomData<QLen>,
 }
 
-/// QPtrType is a type-level function which converts a
-/// pointer-as-usize to the actual pointer when the QueueHandle's
-/// role changes from Child -> Local. This is to prevent unsafe
-/// usage of its internal pointer to an `ArrayQueue`, which when
-/// the `QueueHandle` is in `Child` mode, contains a `vaddr` which
-/// is /not/ valid in that process's VSpace.
-pub trait QPtrType<ElementType, QLen> {
-    type Type;
-    type _QLen = QLen;
-    type _ElementType = ElementType;
-}
-
-impl<T: Sized, QLen: Unsigned> QPtrType<T, QLen> for role::Child
-where
-    QLen: IsGreater<U0>,
-    QLen: ArrayLength<Slot<T>>,
-{
-    type Type = usize;
-}
-
-impl<T: Sized, QLen: Unsigned> QPtrType<T, QLen> for role::Local
-where
-    QLen: IsGreater<U0>,
-    QLen: Cmp<U0, Output = Greater>,
-    QLen: Cmp<UTerm>,
-    QLen: ArrayLength<Slot<T>>,
-{
-    type Type = *mut ArrayQueue<T, QLen>;
-}
-
+#[derive(Debug)]
 pub enum DoubleDoorError {
     QueueTooBig,
     SeL4Error(SeL4Error),
@@ -139,11 +111,9 @@ pub struct WakerSetup {
 /// let (consumer_params_member, queue_producer_setup, waker_setup,  ...leftovers) = double_door(...)
 /// let (waker_params_member, ...leftovers) = Waker::new(waker_setup,waker_thread_cnode)
 /// let (producer_params_member, ...leftovers) = Producer::new(queue_producer_setup, producer_thread_cnode, producer_thread_vspace)
-pub fn double_door<
-    'a,
+pub fn create_double_door<
     T: Sized + Send + Sync,
     QLen: Unsigned,
-    P: QPtrType<T, QLen>,
     LocalCNodeFreeSlots: Unsigned,
     LocalPageDirFreeSlots: Unsigned,
     LocalPageTableFreeSlots: Unsigned,
@@ -161,12 +131,12 @@ pub fn double_door<
         ConsumerFilledPageTableCount,
         role::Child,
     >,
-    local_page_table: &'a mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
+    local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
     mut local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
     local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
 ) -> Result<
     (
-        Consumer1<role::Child, T, QLen, role::Child>,
+        Consumer1<role::Child, T, QLen>,
         ProducerSetup<T, QLen>,
         WakerSetup,
         LocalCap<ChildCNode<Sub1<ConsumerCNodeFreeSlots>>>,
@@ -219,7 +189,8 @@ where
                 // that operates directly on a pointer to an uninitialized/zeroed pointer
                 // in order to avoid letting the full ArrayQueue instance
                 // materialize all at once on the local stack (potentially blowing it)
-                *aq_ptr = ArrayQueue::<T, QLen>::new();
+                ArrayQueue::<T, QLen>::new_at_ptr(aq_ptr);
+                core::mem::forget(aq_ptr);
             }
         })?;
 
@@ -263,6 +234,8 @@ where
             queue: QueueHandle {
                 shared_queue: consumer_shared_page.cap_data.vaddr,
                 _role: PhantomData,
+                _t: PhantomData,
+                _queue_len: PhantomData,
             },
         },
         producer_setup,
@@ -304,7 +277,7 @@ impl Waker<role::Local> {
     }
 }
 
-impl<E: Sized + Sync + Send, QLen: Unsigned> Consumer1<role::Local, E, QLen, role::Local>
+impl<E: Sized + Sync + Send, QLen: Unsigned> Consumer1<role::Local, E, QLen>
 where
     QLen: IsGreater<U0>,
     QLen: ArrayLength<Slot<E>>,
@@ -318,7 +291,8 @@ where
     {
         let mut sender_badge: usize = 0;
         let mut state = initial_state;
-        let queue: &mut ArrayQueue<_, _> = unsafe { &mut *self.queue.shared_queue };
+        let queue: &mut ArrayQueue<E, QLen> =
+            unsafe { core::mem::transmute(self.queue.shared_queue as *mut ArrayQueue<E, QLen>) };
         loop {
             unsafe {
                 seL4_Wait(self.notification.cptr, &mut sender_badge as *mut usize);
@@ -338,7 +312,7 @@ where
         }
     }
 }
-impl<T: Sized + Sync + Send, QLen: Unsigned> Producer<role::Child, T, QLen, role::Child>
+impl<T: Sized + Sync + Send, QLen: Unsigned> Producer<role::Child, T, QLen>
 where
     QLen: IsGreater<U0>,
     QLen: ArrayLength<Slot<T>>,
@@ -402,11 +376,12 @@ where
         )?;
         Ok((
             Producer {
-                queue_badge: setup.queue_badge,
                 notification,
                 queue: QueueHandle {
                     shared_queue: producer_shared_page.cap_data.vaddr,
                     _role: PhantomData,
+                    _t: PhantomData,
+                    _queue_len: PhantomData,
                 },
             },
             child_cnode,
@@ -416,15 +391,18 @@ where
     }
 }
 
-impl<T: Sized + Sync + Send, QLen: Unsigned> Producer<role::Local, T, QLen, role::Local>
+impl<T: Sized + Sync + Send, QLen: Unsigned> Producer<role::Local, T, QLen>
 where
     QLen: IsGreater<U0>,
     QLen: ArrayLength<Slot<T>>,
     QLen: Cmp<U0, Output = Greater>,
     QLen: Cmp<UTerm>,
 {
-    fn send(&self, t: T) -> Result<(), PushError<T>> {
-        let queue: &mut ArrayQueue<_, _> = unsafe { &mut *self.queue.shared_queue };
+    // TODO - should we expose an error defined in this crate?
+    // signs point to yes.
+    pub fn send(&self, t: T) -> Result<(), PushError<T>> {
+        let queue: &mut ArrayQueue<T, QLen> =
+            unsafe { core::mem::transmute(self.queue.shared_queue as *mut ArrayQueue<T, QLen>) };
         queue.push(t)?;
         unsafe { seL4_Signal(self.notification.cptr) }
         Ok(())

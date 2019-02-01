@@ -47,6 +47,11 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
         .map_page_table(scratch_page_table)
         .expect("map scratch page table");
 
+    let (child_a_vspace, mut boot_info, root_cnode) =
+        VSpace::new(boot_info, child_a_vspace_ut, root_cnode)?;
+    let (child_b_vspace, mut boot_info, root_cnode) =
+        VSpace::new(boot_info, child_b_vspace_ut, root_cnode)?;
+
     #[cfg(test_case = "call_and_response_loop")]
     let (
         child_params_a,
@@ -152,9 +157,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
             root_cnode,
         )
     };
-
-    let (child_a_vspace, mut boot_info, root_cnode) =
-        VSpace::new(boot_info, child_a_vspace_ut, root_cnode)?;
     let (child_a_process, _caller_vspace, root_cnode) = child_a_vspace
         .prepare_thread(
             child_proc_a,
@@ -172,8 +174,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
         255,
     )?;
 
-    let (child_b_vspace, mut boot_info, root_cnode) =
-        VSpace::new(boot_info, child_b_vspace_ut, root_cnode)?;
     let (child_b_process, _caller_vspace, root_cnode) = child_b_vspace
         .prepare_thread(
             child_proc_b,
@@ -192,32 +192,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     )?;
 
     Ok(())
-
-    //let root_cnode = spawn(
-    //    child_proc_a,
-    //    child_params_a,
-    //    proc_cnode_local_a,
-    //    255,  // priority
-    //    None, // fault_source
-    //    ut16c,
-    //    &mut boot_info,
-    //    &mut scratch_page_table,
-    //    root_cnode,
-    //)
-    //.expect("spawn process 2");
-
-    //let root_cnode = spawn(
-    //    child_proc_b,
-    //    child_params_b,
-    //    proc_cnode_local_b,
-    //    255,  // priority
-    //    None, // fault_source
-    //    ut16d,
-    //    &mut boot_info,
-    //    &mut scratch_page_table,
-    //    root_cnode,
-    //)
-    //.expect("spawn process 2");
 }
 
 #[derive(Debug)]

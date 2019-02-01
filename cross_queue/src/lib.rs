@@ -156,6 +156,20 @@ where
             _size: PhantomData,
         }
     }
+    pub unsafe fn new_at_ptr(pointer: *mut ArrayQueue<T, Size>) {
+        // Head is initialized to `{ lap: 0, index: 0 }`.
+        // Tail is initialized to `{ lap: 0, index: 0 }`.
+
+    let q:&mut ArrayQueue<T, Size> = &mut *pointer;
+        q.head = CachePadded::new(AtomicUsize::new(0));
+        q.tail = CachePadded::new(AtomicUsize::new(0));
+        q.buffer = UnsafeCell::new(Some(GenericArray::generate(move |i| Slot {
+                stamp: AtomicUsize::new(i),
+                value: core::mem::zeroed(),
+            })));
+        // One lap is the smallest power of two greater than `cap`.
+        q.one_lap = (Size::USIZE + 1).next_power_of_two();
+    }
 
     /// Attempts to push an element into the queue.
     ///

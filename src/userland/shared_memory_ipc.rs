@@ -1,29 +1,23 @@
 use core::marker::PhantomData;
-use core::mem;
 use core::ops::Sub;
 
-use cross_queue::{ArrayQueue, Slot};
+use cross_queue::Slot;
 
-use crate::userland::double_door::{QPtrType, QueueHandle};
+use crate::userland::double_door::QueueHandle;
 use crate::userland::paging::PageBytes;
 use crate::userland::{
-    role, AssignedPageDirectory, Badge, CNodeRole, Cap, CapRights, ChildCNode, IPCError,
-    LocalCNode, LocalCap, MappedPageTable, Notification, UnmappedPage, Untyped, VSpace,
+    role, Badge, CNodeRole, Cap, CapRights, ChildCNode, IPCError, LocalCNode, LocalCap,
+    MappedPageTable, Notification, UnmappedPage, Untyped, VSpace,
 };
 use generic_array::ArrayLength;
 use sel4_sys::{seL4_Signal, seL4_Wait};
 use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{IsGreater, Unsigned, B1, U0, U1, U12, U2, U4, U5};
+use typenum::{IsGreater, Unsigned, B1, U0, U12, U2, U4, U5};
 
 pub mod queue {
     use super::*;
     use typenum::type_operators::Cmp;
     use typenum::Greater;
-    use typenum::UTerm;
-
-    enum QueueError {
-        Bad,
-    }
 
     // Per Consumer: Create a new Notification associate with a type
     // managing badge-bit capacity one copy of the capability to that
@@ -42,15 +36,7 @@ pub mod queue {
     //
     // pub fn setup_consumer() -> Consumer
 
-    pub struct Consumer2<
-        Role: CNodeRole,
-        E,
-        ESize: Unsigned,
-        EP: QPtrType<E, ESize>,
-        F,
-        FSize: Unsigned,
-        FP: QPtrType<F, FSize>,
-    >
+    pub struct Consumer2<Role: CNodeRole, E, ESize: Unsigned, F, FSize: Unsigned>
     where
         ESize: IsGreater<U0>,
         ESize: ArrayLength<Slot<E>>,
@@ -62,21 +48,10 @@ pub mod queue {
         FSize: Cmp<U0, Output = Greater>,
     {
         notification: Cap<Notification, Role>,
-        queues: (
-            QueueHandle<E, Role, ESize, EP>,
-            QueueHandle<F, Role, FSize, FP>,
-        ),
+        queues: (QueueHandle<E, Role, ESize>, QueueHandle<F, Role, FSize>),
     }
 
-    impl<
-            Role: CNodeRole,
-            E,
-            ESize: Unsigned,
-            EP: QPtrType<E, ESize>,
-            F,
-            FSize: Unsigned,
-            FP: QPtrType<F, FSize>,
-        > Consumer2<Role, E, ESize, EP, F, FSize, FP>
+    impl<Role: CNodeRole, E, ESize: Unsigned, F, FSize: Unsigned> Consumer2<Role, E, ESize, F, FSize>
     where
         ESize: IsGreater<U0>,
         ESize: ArrayLength<Slot<E>>,
@@ -89,8 +64,8 @@ pub mod queue {
     {
         fn new(
             ntf: Cap<Notification, Role>,
-            qh1: QueueHandle<E, Role, ESize, EP>,
-            qh2: QueueHandle<F, Role, FSize, FP>,
+            qh1: QueueHandle<E, Role, ESize>,
+            qh2: QueueHandle<F, Role, FSize>,
         ) -> Self {
             Self {
                 notification: ntf,
@@ -103,13 +78,10 @@ pub mod queue {
         Role: CNodeRole,
         E,
         ESize: Unsigned,
-        EP: QPtrType<E, ESize>,
         F,
         FSize: Unsigned,
-        FP: QPtrType<F, FSize>,
         G,
         GSize: Unsigned,
-        GP: QPtrType<G, GSize>,
     >
     where
         ESize: IsGreater<U0>,
@@ -127,24 +99,14 @@ pub mod queue {
     {
         notification: Cap<Notification, Role>,
         queues: (
-            QueueHandle<E, Role, ESize, EP>,
-            QueueHandle<F, Role, FSize, FP>,
-            QueueHandle<G, Role, GSize, GP>,
+            QueueHandle<E, Role, ESize>,
+            QueueHandle<F, Role, FSize>,
+            QueueHandle<G, Role, GSize>,
         ),
     }
 
-    impl<
-            Role: CNodeRole,
-            E,
-            ESize: Unsigned,
-            EP: QPtrType<E, ESize>,
-            F,
-            FSize: Unsigned,
-            FP: QPtrType<F, FSize>,
-            G,
-            GSize: Unsigned,
-            GP: QPtrType<G, GSize>,
-        > Consumer3<Role, E, ESize, EP, F, FSize, FP, G, GSize, GP>
+    impl<Role: CNodeRole, E, ESize: Unsigned, F, FSize: Unsigned, G, GSize: Unsigned>
+        Consumer3<Role, E, ESize, F, FSize, G, GSize>
     where
         ESize: IsGreater<U0>,
         ESize: ArrayLength<Slot<E>>,
@@ -161,9 +123,9 @@ pub mod queue {
     {
         fn new(
             ntf: Cap<Notification, Role>,
-            qh1: QueueHandle<E, Role, ESize, EP>,
-            qh2: QueueHandle<F, Role, FSize, FP>,
-            qh3: QueueHandle<G, Role, GSize, GP>,
+            qh1: QueueHandle<E, Role, ESize>,
+            qh2: QueueHandle<F, Role, FSize>,
+            qh3: QueueHandle<G, Role, GSize>,
         ) -> Self {
             Self {
                 notification: ntf,
