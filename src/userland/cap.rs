@@ -129,6 +129,16 @@ pub struct Badge {
     inner: usize,
 }
 
+impl Badge {
+    pub fn are_all_overlapping_bits_set(self, other: Badge) -> bool {
+        if self.inner == 0 && other.inner == 0 {
+            return true;
+        }
+        let overlap = self.inner & other.inner;
+        overlap != 0
+    }
+}
+
 impl From<usize> for Badge {
     fn from(u: usize) -> Self {
         let shifted_left = u << 4;

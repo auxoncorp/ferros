@@ -4,6 +4,7 @@ use core::ops::Sub;
 
 use cross_queue::{ArrayQueue, Slot};
 
+use crate::userland::double_door::{QPtrType, QueueHandle};
 use crate::userland::paging::PageBytes;
 use crate::userland::{
     role, AssignedPageDirectory, Badge, CNodeRole, Cap, CapRights, ChildCNode, IPCError,
@@ -16,6 +17,9 @@ use typenum::{IsGreater, Unsigned, B1, U0, U1, U12, U2, U4, U5};
 
 pub mod queue {
     use super::*;
+    use typenum::type_operators::Cmp;
+    use typenum::Greater;
+    use typenum::UTerm;
 
     enum QueueError {
         Bad,
@@ -38,28 +42,6 @@ pub mod queue {
     //
     // pub fn setup_consumer() -> Consumer
 
-    pub struct Consumer1<Role: CNodeRole, E, Size: Unsigned, P: QPtrType<E, Size>>
-    where
-        Size: IsGreater<U0>,
-        Size: ArrayLength<Slot<E>>,
-    {
-        notification: Cap<Notification, Role>,
-        queue: QueueHandle<E, Role, Size, P>,
-    }
-
-    impl<Role: CNodeRole, E, Size: Unsigned, P: QPtrType<E, Size>> Consumer1<Role, E, Size, P>
-    where
-        Size: IsGreater<U0>,
-        Size: ArrayLength<Slot<E>>,
-    {
-        fn new(ntf: Cap<Notification, Role>, qh: QueueHandle<E, Role, Size, P>) -> Self {
-            Self {
-                notification: ntf,
-                queue: qh,
-            }
-        }
-    }
-
     pub struct Consumer2<
         Role: CNodeRole,
         E,
@@ -72,8 +54,12 @@ pub mod queue {
     where
         ESize: IsGreater<U0>,
         ESize: ArrayLength<Slot<E>>,
+        ESize: IsGreater<U0>,
+        ESize: Cmp<U0, Output = Greater>,
         FSize: IsGreater<U0>,
         FSize: ArrayLength<Slot<F>>,
+        FSize: IsGreater<U0>,
+        FSize: Cmp<U0, Output = Greater>,
     {
         notification: Cap<Notification, Role>,
         queues: (
@@ -94,8 +80,12 @@ pub mod queue {
     where
         ESize: IsGreater<U0>,
         ESize: ArrayLength<Slot<E>>,
+        ESize: IsGreater<U0>,
+        ESize: Cmp<U0, Output = Greater>,
         FSize: IsGreater<U0>,
         FSize: ArrayLength<Slot<F>>,
+        FSize: IsGreater<U0>,
+        FSize: Cmp<U0, Output = Greater>,
     {
         fn new(
             ntf: Cap<Notification, Role>,
@@ -124,10 +114,16 @@ pub mod queue {
     where
         ESize: IsGreater<U0>,
         ESize: ArrayLength<Slot<E>>,
+        ESize: IsGreater<U0>,
+        ESize: Cmp<U0, Output = Greater>,
         FSize: IsGreater<U0>,
         FSize: ArrayLength<Slot<F>>,
+        FSize: IsGreater<U0>,
+        FSize: Cmp<U0, Output = Greater>,
         GSize: IsGreater<U0>,
         GSize: ArrayLength<Slot<G>>,
+        GSize: IsGreater<U0>,
+        GSize: Cmp<U0, Output = Greater>,
     {
         notification: Cap<Notification, Role>,
         queues: (
@@ -152,10 +148,16 @@ pub mod queue {
     where
         ESize: IsGreater<U0>,
         ESize: ArrayLength<Slot<E>>,
+        ESize: IsGreater<U0>,
+        ESize: Cmp<U0, Output = Greater>,
         FSize: IsGreater<U0>,
         FSize: ArrayLength<Slot<F>>,
+        FSize: IsGreater<U0>,
+        FSize: Cmp<U0, Output = Greater>,
         GSize: IsGreater<U0>,
         GSize: ArrayLength<Slot<G>>,
+        GSize: IsGreater<U0>,
+        GSize: Cmp<U0, Output = Greater>,
     {
         fn new(
             ntf: Cap<Notification, Role>,
@@ -170,124 +172,6 @@ pub mod queue {
         }
     }
 
-    /// QPtrType is a type-level function which converts a
-    /// pointer-as-usize to the actual pointer when the QueueHandle's
-    /// role changes from Child -> Local. This is to prevent unsafe
-    /// usage of its internal pointer to an `ArrayQueue`, which when
-    /// the `QueueHandle` is in `Child` mode, contains a `vaddr` which
-    /// is /not/ valid in that process's VSpace.
-    trait QPtrType<ElementType, Size> {
-        type Type;
-        type _Size = Size;
-        type _ElementType = ElementType;
-    }
-
-    impl<T: Sized, Size: Unsigned> QPtrType<T, Size> for role::Child
-    where
-        Size: IsGreater<U0>,
-        Size: ArrayLength<Slot<T>>,
-    {
-        type Type = usize;
-    }
-
-    impl<T: Sized, Size: Unsigned> QPtrType<T, Size> for role::Local
-    where
-        Size: IsGreater<U0>,
-        Size: ArrayLength<Slot<T>>,
-    {
-        type Type = *mut ArrayQueue<T, Size>;
-    }
-
-    #[derive(Debug)]
-    pub struct QueueHandle<T: Sized, Role: CNodeRole, Size: Unsigned, P: QPtrType<T, Size>>
-    where
-        Size: IsGreater<U0>,
-        Size: ArrayLength<Slot<T>>,
-    {
-        // Only valid in the VSpace context of a particular process
-        shared_queue: <P as QPtrType<T, Size>>::Type,
-        _role: PhantomData<Role>,
-    }
-
-    pub fn make_queue_handle<
-        T: Sized,
-        QSize: Unsigned,
-        P: QPtrType<T, QSize>,
-        ScratchFreeSlots: Unsigned,
-        ScratchPageDirSlots: Unsigned,
-        ScratchPageTableSlots: Unsigned,
-        TargetFreeSlots: Unsigned,
-        TargetPageDirFreeSlots: Unsigned,
-        TargetPageTableFreeSlots: Unsigned,
-        TargetFilledPageTableCount: Unsigned,
-    >(
-        local_cnode: LocalCap<LocalCNode<ScratchFreeSlots>>,
-        scratch_page_table: &mut LocalCap<MappedPageTable<ScratchPageTableSlots, role::Local>>,
-        mut scratch_page_dir: &mut LocalCap<
-            AssignedPageDirectory<ScratchPageDirSlots, role::Local>,
-        >,
-        shared_page_ut: LocalCap<Untyped<U12>>,
-        target_vspace: VSpace<
-            TargetPageDirFreeSlots,
-            TargetPageTableFreeSlots,
-            TargetFilledPageTableCount,
-            role::Child,
-        >,
-        target_cnode: LocalCap<ChildCNode<TargetFreeSlots>>,
-    ) -> Result<
-        (
-            LocalCap<ChildCNode<Diff<TargetFreeSlots, U1>>>,
-            VSpace<
-                TargetPageDirFreeSlots,
-                Sub1<TargetPageTableFreeSlots>,
-                TargetFilledPageTableCount,
-                role::Child,
-            >,
-            QueueHandle<T, role::Child, QSize, P>,
-            LocalCap<LocalCNode<Diff<ScratchFreeSlots, U1>>>,
-        ),
-        QueueError,
-    >
-    where
-        QSize: IsGreater<U0>,
-        QSize: ArrayLength<Slot<T>>,
-    {
-        // Retype the page.
-        let (shared_page, local_cnode) =
-            shared_page_ut.retype_local::<_, UnmappedPage>(local_cnode)?;
-
-        // Copy the capability into a the local cnode's cspace.
-        let (local_shared_page, local_cnode) =
-            shared_page.copy_inside_cnode(local_cnode, CapRights::RW)?;
-
-        // Put some data in there. Specifically, an `ArrayQueue`.
-        scratch_page_table.temporarily_map_page(
-            local_shared_page,
-            &mut scratch_page_dir,
-            |mapped_page| {
-                let aq_ptr =
-                    mem::transmute::<usize, ArrayQueue<T, QSize>>(mapped_page.cap_data.vaddr);
-                *aq_ptr = ArrayQueue::<T, QSize>::new();
-            },
-        )?;
-
-        // Copy the cap into the target CSpace.
-        let (target_shared_page, target_cnode) =
-            local_shared_page.copy(&local_cnode, target_cnode, CapRights::RWG)?;
-
-        // Map the page into the target VSpace.
-        let (target_shared_page, target_vspace) = target_vspace.map_page(target_shared_page)?;
-
-        Ok((
-            target_cnode,
-            target_vspace,
-            QueueHandle {
-                shared_queue: target_shared_page.cap_data.vaddr,
-                _role: PhantomData,
-            },
-            local_cnode,
-        ))
-    }
 }
 
 pub mod sync {
@@ -403,13 +287,13 @@ pub mod sync {
             &local_cnode,
             child_cnode_caller,
             CapRights::RWG,
-            Badge::from(0x01),
+            Badge::from(1 << 0),
         )?;
         let (caller_response_ready, _child_cnode_caller) = local_response_ready.mint(
             &local_cnode,
             child_cnode_caller,
             CapRights::RWG,
-            Badge::from(0x10),
+            Badge::from(1 << 1),
         )?;
 
         let caller = ExtendedCaller {
@@ -427,13 +311,13 @@ pub mod sync {
             &local_cnode,
             child_cnode_responder,
             CapRights::RWG,
-            Badge::from(0x100),
+            Badge::from(1 << 2),
         )?;
         let (responder_response_ready, _child_cnode_responder) = local_response_ready.mint(
             &local_cnode,
             child_cnode_responder,
             CapRights::RWG,
-            Badge::from(0x1000),
+            Badge::from(1 << 3),
         )?;
 
         let responder = ExtendedResponder {
@@ -505,18 +389,14 @@ pub mod sync {
         inner: SyncExtendedIpcPair<Req, Rsp, Role>,
     }
     impl<Req, Rsp> ExtendedResponder<Req, Rsp, role::Local> {
-        pub fn reply_recv<F>(self, f: F) -> Result<Rsp, IPCError>
+        pub fn reply_recv<F>(self, f: F) -> !
         where
             F: Fn(&Req) -> (Rsp),
         {
             self.reply_recv_with_state((), move |req, state| (f(req), state))
         }
 
-        pub fn reply_recv_with_state<F, State>(
-            self,
-            initial_state: State,
-            f: F,
-        ) -> Result<Rsp, IPCError>
+        pub fn reply_recv_with_state<F, State>(self, initial_state: State, f: F) -> !
         where
             F: Fn(&Req, State) -> (Rsp, State),
         {

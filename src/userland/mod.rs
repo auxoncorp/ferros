@@ -1,6 +1,7 @@
 mod bootstrap;
 mod cap;
 mod cnode;
+mod double_door;
 mod error;
 mod ipc;
 pub(crate) mod process;
@@ -12,6 +13,7 @@ mod vspace;
 pub use crate::userland::bootstrap::*;
 pub use crate::userland::cap::*;
 pub use crate::userland::cnode::*;
+pub use crate::userland::double_door::*;
 pub use crate::userland::error::*;
 pub use crate::userland::ipc::*;
 pub use crate::userland::process::*;

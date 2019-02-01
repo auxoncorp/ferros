@@ -79,6 +79,5 @@ pub extern "C" fn responder(p: ExtendedResponderParams<role::Local>) {
                 },
                 state + 1,
             )
-        })
-        .expect("Could not set up a reply_recv");
+        });
 }
