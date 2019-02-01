@@ -2,6 +2,7 @@
 #![cfg_attr(feature = "alloc", feature(alloc))]
 // Necessary to mark as not-Send or not-Sync
 #![feature(optin_builtin_traits)]
+#![feature(associated_type_defaults)]
 
 #[cfg(all(feature = "alloc"))]
 #[macro_use]
@@ -11,6 +12,8 @@ extern crate arrayvec;
 extern crate generic_array;
 extern crate sel4_sys;
 extern crate typenum;
+
+extern crate cross_queue;
 
 #[cfg(all(feature = "test"))]
 extern crate proptest;

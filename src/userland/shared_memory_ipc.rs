@@ -1,18 +1,25 @@
 use core::marker::PhantomData;
+use core::mem;
 use core::ops::Sub;
-use crate::userland::cross_queue::{ArrayQueue, Slot};
+
+use cross_queue::{ArrayQueue, Slot};
+
 use crate::userland::paging::PageBytes;
 use crate::userland::{
-    role, Badge, CNodeRole, Cap, CapRights, ChildCNode, IPCError, LocalCNode, LocalCap,
-    MappedPageTable, Notification, UnmappedPage, Untyped, VSpace,
+    role, AssignedPageDirectory, Badge, CNodeRole, Cap, CapRights, ChildCNode, IPCError,
+    LocalCNode, LocalCap, MappedPageTable, Notification, UnmappedPage, Untyped, VSpace,
 };
 use generic_array::ArrayLength;
 use sel4_sys::{seL4_Signal, seL4_Wait};
 use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{IsGreater, Unsigned, B1, U0, U12, U2, U4, U5};
+use typenum::{IsGreater, Unsigned, B1, U0, U1, U12, U2, U4, U5};
 
-pub mod lowlock {
+pub mod queue {
     use super::*;
+
+    enum QueueError {
+        Bad,
+    }
 
     // Per Consumer: Create a new Notification associate with a type
     // managing badge-bit capacity one copy of the capability to that
@@ -31,53 +38,256 @@ pub mod lowlock {
     //
     // pub fn setup_consumer() -> Consumer
 
-    // pub struct Consumer1<E, Role: CNodeRole> {
-    //     notification: Cap<Notification, Role>,
-    //     queues: QueueHandle<E, Role>,
-    // }
+    pub struct Consumer1<Role: CNodeRole, E, Size: Unsigned, P: QPtrType<E, Size>>
+    where
+        Size: IsGreater<U0>,
+        Size: ArrayLength<Slot<E>>,
+    {
+        notification: Cap<Notification, Role>,
+        queue: QueueHandle<E, Role, Size, P>,
+    }
 
-    // pub struct Consumer2<E, F> {
-    //     queues: (QueueHandle<E, Role>, QueueHandle<F, Role>),
-    // }
+    impl<Role: CNodeRole, E, Size: Unsigned, P: QPtrType<E, Size>> Consumer1<Role, E, Size, P>
+    where
+        Size: IsGreater<U0>,
+        Size: ArrayLength<Slot<E>>,
+    {
+        fn new(ntf: Cap<Notification, Role>, qh: QueueHandle<E, Role, Size, P>) -> Self {
+            Self {
+                notification: ntf,
+                queue: qh,
+            }
+        }
+    }
 
-    // pub struct Consumer3<E, F, G> {
-    //     queues: (
-    //         QueueHandle<E, Role>,
-    //         QueueHandle<F, Role>,
-    //         QueueHandle<G, Role>,
-    //     ),
-    // }
+    pub struct Consumer2<
+        Role: CNodeRole,
+        E,
+        ESize: Unsigned,
+        EP: QPtrType<E, ESize>,
+        F,
+        FSize: Unsigned,
+        FP: QPtrType<F, FSize>,
+    >
+    where
+        ESize: IsGreater<U0>,
+        ESize: ArrayLength<Slot<E>>,
+        FSize: IsGreater<U0>,
+        FSize: ArrayLength<Slot<F>>,
+    {
+        notification: Cap<Notification, Role>,
+        queues: (
+            QueueHandle<E, Role, ESize, EP>,
+            QueueHandle<F, Role, FSize, FP>,
+        ),
+    }
 
-    // impl Consumer3<E, F, G> {
-    //     fn consume_loop<X, Y, Z, IH, State>(
-    //         self,
-    //         x: X,
-    //         y: Y,
-    //         z: Z,
-    //         interrupt_handler: IH,
-    //         initial_state: State,
-    //     ) where
-    //         // TODO - state piping
-    //         X: Fn(E, State) -> State, // TODO - errors whaaaaat
-    //         Y: Fn(F, State) -> State,
-    //         Z: Fn(G, State) -> State,
-    //         IH: Fn(State) -> State,
-    //     {
-    //         unimplemented!()
-    //     }
-    // }
+    impl<
+            Role: CNodeRole,
+            E,
+            ESize: Unsigned,
+            EP: QPtrType<E, ESize>,
+            F,
+            FSize: Unsigned,
+            FP: QPtrType<F, FSize>,
+        > Consumer2<Role, E, ESize, EP, F, FSize, FP>
+    where
+        ESize: IsGreater<U0>,
+        ESize: ArrayLength<Slot<E>>,
+        FSize: IsGreater<U0>,
+        FSize: ArrayLength<Slot<F>>,
+    {
+        fn new(
+            ntf: Cap<Notification, Role>,
+            qh1: QueueHandle<E, Role, ESize, EP>,
+            qh2: QueueHandle<F, Role, FSize, FP>,
+        ) -> Self {
+            Self {
+                notification: ntf,
+                queues: (qh1, qh2),
+            }
+        }
+    }
+
+    pub struct Consumer3<
+        Role: CNodeRole,
+        E,
+        ESize: Unsigned,
+        EP: QPtrType<E, ESize>,
+        F,
+        FSize: Unsigned,
+        FP: QPtrType<F, FSize>,
+        G,
+        GSize: Unsigned,
+        GP: QPtrType<G, GSize>,
+    >
+    where
+        ESize: IsGreater<U0>,
+        ESize: ArrayLength<Slot<E>>,
+        FSize: IsGreater<U0>,
+        FSize: ArrayLength<Slot<F>>,
+        GSize: IsGreater<U0>,
+        GSize: ArrayLength<Slot<G>>,
+    {
+        notification: Cap<Notification, Role>,
+        queues: (
+            QueueHandle<E, Role, ESize, EP>,
+            QueueHandle<F, Role, FSize, FP>,
+            QueueHandle<G, Role, GSize, GP>,
+        ),
+    }
+
+    impl<
+            Role: CNodeRole,
+            E,
+            ESize: Unsigned,
+            EP: QPtrType<E, ESize>,
+            F,
+            FSize: Unsigned,
+            FP: QPtrType<F, FSize>,
+            G,
+            GSize: Unsigned,
+            GP: QPtrType<G, GSize>,
+        > Consumer3<Role, E, ESize, EP, F, FSize, FP, G, GSize, GP>
+    where
+        ESize: IsGreater<U0>,
+        ESize: ArrayLength<Slot<E>>,
+        FSize: IsGreater<U0>,
+        FSize: ArrayLength<Slot<F>>,
+        GSize: IsGreater<U0>,
+        GSize: ArrayLength<Slot<G>>,
+    {
+        fn new(
+            ntf: Cap<Notification, Role>,
+            qh1: QueueHandle<E, Role, ESize, EP>,
+            qh2: QueueHandle<F, Role, FSize, FP>,
+            qh3: QueueHandle<G, Role, GSize, GP>,
+        ) -> Self {
+            Self {
+                notification: ntf,
+                queues: (qh1, qh2, qh3),
+            }
+        }
+    }
+
+    /// QPtrType is a type-level function which converts a
+    /// pointer-as-usize to the actual pointer when the QueueHandle's
+    /// role changes from Child -> Local. This is to prevent unsafe
+    /// usage of its internal pointer to an `ArrayQueue`, which when
+    /// the `QueueHandle` is in `Child` mode, contains a `vaddr` which
+    /// is /not/ valid in that process's VSpace.
+    trait QPtrType<ElementType, Size> {
+        type Type;
+        type _Size = Size;
+        type _ElementType = ElementType;
+    }
+
+    impl<T: Sized, Size: Unsigned> QPtrType<T, Size> for role::Child
+    where
+        Size: IsGreater<U0>,
+        Size: ArrayLength<Slot<T>>,
+    {
+        type Type = usize;
+    }
+
+    impl<T: Sized, Size: Unsigned> QPtrType<T, Size> for role::Local
+    where
+        Size: IsGreater<U0>,
+        Size: ArrayLength<Slot<T>>,
+    {
+        type Type = *mut ArrayQueue<T, Size>;
+    }
 
     #[derive(Debug)]
-    pub struct QueueHandle<T: Sized, Role: CNodeRole, Size: Unsigned>
+    pub struct QueueHandle<T: Sized, Role: CNodeRole, Size: Unsigned, P: QPtrType<T, Size>>
     where
         Size: IsGreater<U0>,
         Size: ArrayLength<Slot<T>>,
     {
         // Only valid in the VSpace context of a particular process
-        shared_queue: *mut ArrayQueue<T, Size>,
+        shared_queue: <P as QPtrType<T, Size>>::Type,
         _role: PhantomData<Role>,
     }
 
+    pub fn make_queue_handle<
+        T: Sized,
+        QSize: Unsigned,
+        P: QPtrType<T, QSize>,
+        ScratchFreeSlots: Unsigned,
+        ScratchPageDirSlots: Unsigned,
+        ScratchPageTableSlots: Unsigned,
+        TargetFreeSlots: Unsigned,
+        TargetPageDirFreeSlots: Unsigned,
+        TargetPageTableFreeSlots: Unsigned,
+        TargetFilledPageTableCount: Unsigned,
+    >(
+        local_cnode: LocalCap<LocalCNode<ScratchFreeSlots>>,
+        scratch_page_table: &mut LocalCap<MappedPageTable<ScratchPageTableSlots, role::Local>>,
+        mut scratch_page_dir: &mut LocalCap<
+            AssignedPageDirectory<ScratchPageDirSlots, role::Local>,
+        >,
+        shared_page_ut: LocalCap<Untyped<U12>>,
+        target_vspace: VSpace<
+            TargetPageDirFreeSlots,
+            TargetPageTableFreeSlots,
+            TargetFilledPageTableCount,
+            role::Child,
+        >,
+        target_cnode: LocalCap<ChildCNode<TargetFreeSlots>>,
+    ) -> Result<
+        (
+            LocalCap<ChildCNode<Diff<TargetFreeSlots, U1>>>,
+            VSpace<
+                TargetPageDirFreeSlots,
+                Sub1<TargetPageTableFreeSlots>,
+                TargetFilledPageTableCount,
+                role::Child,
+            >,
+            QueueHandle<T, role::Child, QSize, P>,
+            LocalCap<LocalCNode<Diff<ScratchFreeSlots, U1>>>,
+        ),
+        QueueError,
+    >
+    where
+        QSize: IsGreater<U0>,
+        QSize: ArrayLength<Slot<T>>,
+    {
+        // Retype the page.
+        let (shared_page, local_cnode) =
+            shared_page_ut.retype_local::<_, UnmappedPage>(local_cnode)?;
+
+        // Copy the capability into a the local cnode's cspace.
+        let (local_shared_page, local_cnode) =
+            shared_page.copy_inside_cnode(local_cnode, CapRights::RW)?;
+
+        // Put some data in there. Specifically, an `ArrayQueue`.
+        scratch_page_table.temporarily_map_page(
+            local_shared_page,
+            &mut scratch_page_dir,
+            |mapped_page| {
+                let aq_ptr =
+                    mem::transmute::<usize, ArrayQueue<T, QSize>>(mapped_page.cap_data.vaddr);
+                *aq_ptr = ArrayQueue::<T, QSize>::new();
+            },
+        )?;
+
+        // Copy the cap into the target CSpace.
+        let (target_shared_page, target_cnode) =
+            local_shared_page.copy(&local_cnode, target_cnode, CapRights::RWG)?;
+
+        // Map the page into the target VSpace.
+        let (target_shared_page, target_vspace) = target_vspace.map_page(target_shared_page)?;
+
+        Ok((
+            target_cnode,
+            target_vspace,
+            QueueHandle {
+                shared_queue: target_shared_page.cap_data.vaddr,
+                _role: PhantomData,
+            },
+            local_cnode,
+        ))
+    }
 }
 
 pub mod sync {
