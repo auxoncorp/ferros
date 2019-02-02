@@ -1,5 +1,6 @@
 #![no_std]
 
+extern crate cross_queue;
 extern crate ferros;
 extern crate sel4_sys;
 extern crate typenum;

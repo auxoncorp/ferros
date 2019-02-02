@@ -194,6 +194,17 @@ mod tests {
     }
 
     sequential_test! {
+        fn shared_page_queue() {
+            run_qemu_test(
+                "shared_page_queue",
+                Regex::new(".*done producing!.*").unwrap(),
+                Regex::new(".*Root task should never return from main.*").unwrap(),
+                Some(vec![("dual_process", "true")]),
+            );
+        }
+    }
+
+    sequential_test! {
         fn fault_pair() {
             run_qemu_test(
                 "fault_pair",

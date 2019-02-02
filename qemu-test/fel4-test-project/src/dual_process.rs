@@ -2,13 +2,16 @@ use core::marker::PhantomData;
 use ferros::micro_alloc::{self, GetUntyped};
 use ferros::pow::Pow;
 use ferros::userland::{
-    call_channel, role, root_cnode, setup_fault_endpoint_pair, BootInfo, CNode, CNodeRole, Caller,
-    Cap, Endpoint, FaultSink, LocalCap, Responder, RetypeForSetup, SeL4Error, UnmappedPageTable,
-    Untyped, VSpace,
+    call_channel, create_double_door, role, root_cnode, setup_fault_endpoint_pair, BootInfo, CNode,
+    CNodeRole, Caller, Cap, Consumer1, Endpoint, FaultSink, LocalCap, Producer, ProducerSetup,
+    Responder, RetypeForSetup, SeL4Error, UnmappedPageTable, Untyped, VSpace,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Diff;
-use typenum::{U12, U2, U20, U4096, U6};
+use typenum::{U100, U12, U2, U20, U4096, U6};
+
+use cross_queue::PushError;
+use sel4_sys::seL4_Yield;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     // wrap all untyped memory
@@ -29,7 +32,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     let (ut16e, _, _, _, root_cnode) = ut18b.quarter(root_cnode).expect("quarter");
     let (ut14, child_a_thread_ut, child_b_thread_ut, _, root_cnode) =
         ut16e.quarter(root_cnode).expect("quarter");
-    let (ut12, asid_pool_ut, _, _, root_cnode) = ut14.quarter(root_cnode).expect("quarter");
+    let (ut12, asid_pool_ut, shared_page_ut, _, root_cnode) =
+        ut14.quarter(root_cnode).expect("quarter");
     let (ut10, scratch_page_table_ut, _, _, root_cnode) =
         ut12.quarter(root_cnode).expect("quarter");
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode).expect("quarter");
@@ -51,6 +55,66 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
         VSpace::new(boot_info, child_a_vspace_ut, root_cnode)?;
     let (child_b_vspace, mut boot_info, root_cnode) =
         VSpace::new(boot_info, child_b_vspace_ut, root_cnode)?;
+
+    #[cfg(test_case = "shared_page_queue")]
+    let (
+        child_params_a,
+        proc_cnode_local_a,
+        child_a_vspace,
+        child_fault_source_a,
+        child_params_b,
+        proc_cnode_local_b,
+        child_b_vspace,
+        child_fault_source_b,
+        root_cnode,
+    ) = {
+        let (producer_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) = ut16a
+            .retype_local_cnode::<_, U12>(root_cnode)
+            .expect("Couldn't retype to producer_cnode_local");
+
+        let (consumer_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) = ut16b
+            .retype_local_cnode::<_, U12>(root_cnode)
+            .expect("Couldn't retype to consumer_cnode_local");
+
+        let (consumer, producer_setup, waker_setup, consumer_cnode, consumer_vspace, root_cnode): (
+            Consumer1<_, Xenon, U100>,
+            _,
+            _,
+            _,
+            _,
+            _,
+        ) = create_double_door(
+            shared_page_ut,
+            ut4,
+            consumer_cnode_local,
+            child_a_vspace,
+            &mut scratch_page_table,
+            &mut boot_info.page_directory,
+            root_cnode,
+        ).expect("ipc error");
+
+        let consumer_params = ConsumerParams::<role::Child> { consumer };
+
+        let (producer, producer_cnode, producer_vspace, root_cnode) = Producer::new(
+            &producer_setup,
+            producer_cnode_local,
+            child_b_vspace,
+            root_cnode,
+        )?;
+
+        let producer_params = ProducerParams::<role::Child> { producer };
+        (
+            consumer_params,
+            consumer_cnode,
+            consumer_vspace,
+            None,
+            producer_params,
+            producer_cnode,
+            producer_vspace,
+            None,
+            root_cnode,
+        )
+    };
 
     #[cfg(test_case = "call_and_response_loop")]
     let (
@@ -223,6 +287,70 @@ pub struct ResponderParams<Role: CNodeRole> {
 
 impl RetypeForSetup for ResponderParams<role::Local> {
     type Output = ResponderParams<role::Child>;
+}
+
+#[derive(Debug)]
+pub struct Xenon {
+    a: u64,
+}
+
+pub struct ConsumerParams<Role: CNodeRole> {
+    pub consumer: Consumer1<Role, Xenon, U100>,
+}
+
+impl RetypeForSetup for ConsumerParams<role::Local> {
+    type Output = ConsumerParams<role::Child>;
+}
+
+pub struct ProducerParams<Role: CNodeRole> {
+    pub producer: Producer<Role, Xenon, U100>,
+}
+
+impl RetypeForSetup for ProducerParams<role::Local> {
+    type Output = ProducerParams<role::Child>;
+}
+
+#[cfg(test_case = "shared_page_queue")]
+pub extern "C" fn child_proc_a(p: ConsumerParams<role::Local>) {
+    debug_println!("Inside consumer");
+    let initial_state = 0;
+    p.consumer.consume(
+        initial_state,
+        |state| {
+            let fresh_state = state + 1;
+            debug_println!("Creating fresh state {} in the waker callback", fresh_state);
+            fresh_state
+        },
+        |x, state| {
+            let fresh_state = x.a + state;
+            debug_println!(
+                "Creating fresh state {} from {:?} and {} in the queue callback",
+                fresh_state,
+                x,
+                state
+            );
+            fresh_state
+        },
+    )
+}
+
+#[cfg(test_case = "shared_page_queue")]
+pub extern "C" fn child_proc_b(p: ProducerParams<role::Local>) {
+    debug_println!("Inside producer");
+    for i in 0..256 {
+        match p.producer.send(Xenon { a: i }) {
+            Ok(_) => {
+                debug_println!("The producer *thinks* it successfully sent {}", i);
+            }
+            Err(PushError(x)) => {
+                debug_println!("Rejected sending {:?}", x);
+                unsafe {
+                    seL4_Yield();
+                }
+            }
+        }
+        debug_println!("done producing!");
+    }
 }
 
 #[cfg(test_case = "call_and_response_loop")]
