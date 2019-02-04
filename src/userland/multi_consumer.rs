@@ -161,9 +161,7 @@ where
             role::Child,
         >,
         local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
-        mut local_page_dir: &mut LocalCap<
-            AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>,
-        >,
+        local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
         local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
     ) -> Result<
         (
@@ -281,9 +279,7 @@ where
             role::Child,
         >,
         local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
-        mut local_page_dir: &mut LocalCap<
-            AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>,
-        >,
+        local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
         local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
     ) -> Result<
         (
