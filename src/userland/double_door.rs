@@ -12,14 +12,11 @@ use cross_queue::PushError;
 use cross_queue::{ArrayQueue, Slot};
 use generic_array::ArrayLength;
 use sel4_sys::{seL4_Signal, seL4_Wait};
-use typenum::type_operators::Cmp;
-use typenum::{Diff, Greater, IsGreater, Sub1, UTerm, Unsigned, B1, U0, U12, U3, U4};
+use typenum::{Diff, IsGreater, Sub1, True, Unsigned, B1, U0, U12, U3, U4};
 
 pub struct Consumer1<Role: CNodeRole, T: Sized + Sync + Send, QLen: Unsigned>
 where
-    QLen: IsGreater<U0>,
-    QLen: Cmp<U0, Output = Greater>,
-    QLen: Cmp<UTerm>,
+    QLen: IsGreater<U0, Output = True>,
     QLen: ArrayLength<Slot<T>>,
 {
     interrupt_badge: Badge,
@@ -30,9 +27,7 @@ where
 
 pub struct Producer<Role: CNodeRole, T: Sized + Sync + Send, QLen: Unsigned>
 where
-    QLen: IsGreater<U0>,
-    QLen: Cmp<U0, Output = Greater>,
-    QLen: Cmp<UTerm>,
+    QLen: IsGreater<U0, Output = True>,
     QLen: ArrayLength<Slot<T>>,
 {
     notification: Cap<Notification, Role>,
@@ -41,9 +36,7 @@ where
 
 pub struct QueueHandle<T: Sized, Role: CNodeRole, QLen: Unsigned>
 where
-    QLen: IsGreater<U0>,
-    QLen: Cmp<U0, Output = Greater>,
-    QLen: Cmp<UTerm>,
+    QLen: IsGreater<U0, Output = True>,
     QLen: ArrayLength<Slot<T>>,
 {
     // Only valid in the VSpace context of a particular process
@@ -152,9 +145,7 @@ pub fn create_double_door<
 >
 where
     QLen: ArrayLength<Slot<T>>,
-    QLen: IsGreater<U0>,
-    QLen: Cmp<U0, Output = Greater>,
-    QLen: Cmp<UTerm>,
+    QLen: IsGreater<U0, Output = True>,
 
     LocalCNodeFreeSlots: Sub<U3>,
     Diff<LocalCNodeFreeSlots, U3>: Unsigned,
@@ -279,10 +270,8 @@ impl Waker<role::Local> {
 
 impl<E: Sized + Sync + Send, QLen: Unsigned> Consumer1<role::Local, E, QLen>
 where
-    QLen: IsGreater<U0>,
+    QLen: IsGreater<U0, Output = True>,
     QLen: ArrayLength<Slot<E>>,
-    QLen: Cmp<U0, Output = Greater>,
-    QLen: Cmp<UTerm>,
 {
     pub fn consume<State, WFn, EFn>(self, initial_state: State, waker_fn: WFn, queue_fn: EFn) -> !
     where
@@ -304,7 +293,7 @@ where
                     state = waker_fn(state);
                 }
                 if self.queue_badge.are_all_overlapping_bits_set(current_badge) {
-                    for _ in 0..QLen::USIZE.saturating_mul(2) {
+                    for _ in 0..QLen::USIZE.saturating_add(1) {
                         if let Ok(e) = queue.pop() {
                             state = queue_fn(e, state);
                         } else {
@@ -318,10 +307,8 @@ where
 }
 impl<T: Sized + Sync + Send, QLen: Unsigned> Producer<role::Child, T, QLen>
 where
-    QLen: IsGreater<U0>,
+    QLen: IsGreater<U0, Output = True>,
     QLen: ArrayLength<Slot<T>>,
-    QLen: Cmp<U0, Output = Greater>,
-    QLen: Cmp<UTerm>,
 {
     pub fn new<
         ChildCNodeSlots: Unsigned,
@@ -407,10 +394,8 @@ impl<T> From<PushError<T>> for QueueFullError<T> {
 
 impl<T: Sized + Sync + Send, QLen: Unsigned> Producer<role::Local, T, QLen>
 where
-    QLen: IsGreater<U0>,
+    QLen: IsGreater<U0, Output = True>,
     QLen: ArrayLength<Slot<T>>,
-    QLen: Cmp<U0, Output = Greater>,
-    QLen: Cmp<UTerm>,
 {
     // TODO - should we expose an error defined in this crate?
     // signs point to yes.

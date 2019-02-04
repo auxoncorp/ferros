@@ -13,8 +13,7 @@ use core::sync::atomic::{self, AtomicUsize, Ordering};
 use generic_array::sequence::GenericSequence;
 use generic_array::{ArrayLength, GenericArray};
 
-use typenum::consts::U0;
-use typenum::{Cmp, Greater, UTerm, Unsigned};
+use typenum::{IsGreater, True, Unsigned, U0};
 
 /// A slot in a queue.
 pub struct Slot<T> {
@@ -31,16 +30,14 @@ pub struct Slot<T> {
 unsafe impl<T: Send, Size: Unsigned> Send for ArrayQueue<T, Size>
 where
     Size: ArrayLength<Slot<T>>,
-    Size: Cmp<U0, Output = Greater>,
-    Size: Cmp<UTerm>,
+    Size: IsGreater<U0, Output = True>,
 {
 }
 
 unsafe impl<T: Send, Size: Unsigned> Sync for ArrayQueue<T, Size>
 where
     Size: ArrayLength<Slot<T>>,
-    Size: Cmp<U0, Output = Greater>,
-    Size: Cmp<UTerm>,
+    Size: IsGreater<U0, Output = True>,
 {
 }
 
@@ -85,8 +82,7 @@ impl<T> DerefMut for CachePadded<T> {
 pub struct ArrayQueue<T, Size: Unsigned>
 where
     Size: ArrayLength<Slot<T>>,
-    Size: Cmp<U0, Output = Greater>,
-    Size: Cmp<UTerm>,
+    Size: IsGreater<U0, Output = True>,
 {
     /// The head of the queue.
     ///
@@ -124,8 +120,7 @@ where
 impl<T, Size: Unsigned> ArrayQueue<T, Size>
 where
     Size: ArrayLength<Slot<T>>,
-    Size: Cmp<U0, Output = Greater>,
-    Size: Cmp<UTerm>,
+    Size: IsGreater<U0, Output = True>,
 {
     /// Creates a new bounded queue with the capacity `Size`.
     ///
@@ -160,13 +155,13 @@ where
         // Head is initialized to `{ lap: 0, index: 0 }`.
         // Tail is initialized to `{ lap: 0, index: 0 }`.
 
-    let q:&mut ArrayQueue<T, Size> = &mut *pointer;
+        let q: &mut ArrayQueue<T, Size> = &mut *pointer;
         q.head = CachePadded::new(AtomicUsize::new(0));
         q.tail = CachePadded::new(AtomicUsize::new(0));
         q.buffer = UnsafeCell::new(Some(GenericArray::generate(move |i| Slot {
-                stamp: AtomicUsize::new(i),
-                value: core::mem::zeroed(),
-            })));
+            stamp: AtomicUsize::new(i),
+            value: core::mem::zeroed(),
+        })));
         // One lap is the smallest power of two greater than `cap`.
         q.one_lap = (Size::USIZE + 1).next_power_of_two();
     }
@@ -473,8 +468,7 @@ where
 impl<T, Size: Unsigned> Drop for ArrayQueue<T, Size>
 where
     Size: ArrayLength<Slot<T>>,
-    Size: Cmp<U0, Output = Greater>,
-    Size: Cmp<UTerm>,
+    Size: IsGreater<U0, Output = True>,
 {
     fn drop(&mut self) {
         // Get the index of the head.

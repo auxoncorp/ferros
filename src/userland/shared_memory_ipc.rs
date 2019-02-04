@@ -12,12 +12,10 @@ use crate::userland::{
 use generic_array::ArrayLength;
 use sel4_sys::{seL4_Signal, seL4_Wait};
 use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{IsGreater, Unsigned, B1, U0, U12, U2, U4, U5};
+use typenum::{IsGreater, True, Unsigned, B1, U0, U12, U2, U4, U5};
 
 pub mod queue {
     use super::*;
-    use typenum::type_operators::Cmp;
-    use typenum::Greater;
 
     // Per Consumer: Create a new Notification associate with a type
     // managing badge-bit capacity one copy of the capability to that
@@ -38,14 +36,10 @@ pub mod queue {
 
     pub struct Consumer2<Role: CNodeRole, E, ESize: Unsigned, F, FSize: Unsigned>
     where
-        ESize: IsGreater<U0>,
+        ESize: IsGreater<U0, Output = True>,
         ESize: ArrayLength<Slot<E>>,
-        ESize: IsGreater<U0>,
-        ESize: Cmp<U0, Output = Greater>,
-        FSize: IsGreater<U0>,
+        FSize: IsGreater<U0, Output = True>,
         FSize: ArrayLength<Slot<F>>,
-        FSize: IsGreater<U0>,
-        FSize: Cmp<U0, Output = Greater>,
     {
         notification: Cap<Notification, Role>,
         queues: (QueueHandle<E, Role, ESize>, QueueHandle<F, Role, FSize>),
@@ -53,14 +47,10 @@ pub mod queue {
 
     impl<Role: CNodeRole, E, ESize: Unsigned, F, FSize: Unsigned> Consumer2<Role, E, ESize, F, FSize>
     where
-        ESize: IsGreater<U0>,
+        ESize: IsGreater<U0, Output = True>,
         ESize: ArrayLength<Slot<E>>,
-        ESize: IsGreater<U0>,
-        ESize: Cmp<U0, Output = Greater>,
-        FSize: IsGreater<U0>,
+        FSize: IsGreater<U0, Output = True>,
         FSize: ArrayLength<Slot<F>>,
-        FSize: IsGreater<U0>,
-        FSize: Cmp<U0, Output = Greater>,
     {
         fn new(
             ntf: Cap<Notification, Role>,
@@ -84,18 +74,12 @@ pub mod queue {
         GSize: Unsigned,
     >
     where
-        ESize: IsGreater<U0>,
+        ESize: IsGreater<U0, Output = True>,
         ESize: ArrayLength<Slot<E>>,
-        ESize: IsGreater<U0>,
-        ESize: Cmp<U0, Output = Greater>,
-        FSize: IsGreater<U0>,
+        FSize: IsGreater<U0, Output = True>,
         FSize: ArrayLength<Slot<F>>,
-        FSize: IsGreater<U0>,
-        FSize: Cmp<U0, Output = Greater>,
-        GSize: IsGreater<U0>,
+        GSize: IsGreater<U0, Output = True>,
         GSize: ArrayLength<Slot<G>>,
-        GSize: IsGreater<U0>,
-        GSize: Cmp<U0, Output = Greater>,
     {
         notification: Cap<Notification, Role>,
         queues: (
@@ -108,18 +92,12 @@ pub mod queue {
     impl<Role: CNodeRole, E, ESize: Unsigned, F, FSize: Unsigned, G, GSize: Unsigned>
         Consumer3<Role, E, ESize, F, FSize, G, GSize>
     where
-        ESize: IsGreater<U0>,
+        ESize: IsGreater<U0, Output = True>,
         ESize: ArrayLength<Slot<E>>,
-        ESize: IsGreater<U0>,
-        ESize: Cmp<U0, Output = Greater>,
-        FSize: IsGreater<U0>,
+        FSize: IsGreater<U0, Output = True>,
         FSize: ArrayLength<Slot<F>>,
-        FSize: IsGreater<U0>,
-        FSize: Cmp<U0, Output = Greater>,
-        GSize: IsGreater<U0>,
+        GSize: IsGreater<U0, Output = True>,
         GSize: ArrayLength<Slot<G>>,
-        GSize: IsGreater<U0>,
-        GSize: Cmp<U0, Output = Greater>,
     {
         fn new(
             ntf: Cap<Notification, Role>,
