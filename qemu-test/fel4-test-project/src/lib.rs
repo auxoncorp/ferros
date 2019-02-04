@@ -19,6 +19,7 @@ macro_rules! debug_println {
     ($fmt:expr, $($arg:tt)*) => (debug_print!(concat!($fmt, "\n"), $($arg)*));
 }
 
+mod double_door_backpressure;
 #[cfg(dual_process = "true")]
 mod dual_process;
 #[cfg(single_process = "true")]
@@ -45,6 +46,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     single_process::run(raw_boot_info).expect("single_process run");
     #[cfg(dual_process = "true")]
     dual_process::run(raw_boot_info).expect("dual_process run");
+    #[cfg(test_case = "double_door_backpressure")]
+    double_door_backpressure::run(raw_boot_info).expect("double_door_backpressure run");
 
     yield_forever()
 }

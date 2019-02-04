@@ -2,7 +2,7 @@ use crate::userland::{
     role, CNodeRole, Consumer1, Producer, QueueFullError, RetypeForSetup, Waker,
 };
 use sel4_sys::seL4_Yield;
-use typenum::U100;
+use typenum::U10;
 
 #[derive(Debug)]
 pub struct Xenon {
@@ -10,7 +10,7 @@ pub struct Xenon {
 }
 
 pub struct ConsumerParams<Role: CNodeRole> {
-    pub consumer: Consumer1<Role, Xenon, U100>,
+    pub consumer: Consumer1<Role, Xenon, U10>,
 }
 
 impl RetypeForSetup for ConsumerParams<role::Local> {
@@ -18,7 +18,7 @@ impl RetypeForSetup for ConsumerParams<role::Local> {
 }
 
 pub struct ProducerParams<Role: CNodeRole> {
-    pub producer: Producer<Role, Xenon, U100>,
+    pub producer: Producer<Role, Xenon, U10>,
 }
 
 impl RetypeForSetup for ProducerParams<role::Local> {
@@ -55,7 +55,7 @@ pub extern "C" fn consumer(p: ConsumerParams<role::Local>) {
                 element_count: state.element_count,
                 queue_sum: state.queue_sum,
             };
-            if fresh_state.element_count == 512 && fresh_state.interrupt_count == 1 {
+            if fresh_state.element_count == 40 && fresh_state.interrupt_count == 1 {
                 debug_println!(
                     "Creating fresh state {:?} in the waker callback",
                     fresh_state
@@ -69,7 +69,7 @@ pub extern "C" fn consumer(p: ConsumerParams<role::Local>) {
                 element_count: state.element_count.saturating_add(1),
                 queue_sum: state.queue_sum.saturating_add(x.a),
             };
-            if fresh_state.element_count == 512 && fresh_state.interrupt_count == 1 {
+            if fresh_state.element_count == 40 && fresh_state.interrupt_count == 1 {
                 debug_println!(
                     "Creating fresh state {:?} in the queue callback",
                     fresh_state
@@ -88,18 +88,14 @@ pub extern "C" fn waker(p: WakerParams<role::Local>) {
 pub extern "C" fn producer(p: ProducerParams<role::Local>) {
     debug_println!("Inside producer");
     let mut rejection_count = 0;
-    for i in 0..256 {
+    for i in 0..20 {
         let mut x = Xenon { a: i };
         loop {
             match p.producer.send(x) {
                 Ok(_) => {
-                    // TODO - cleanup
-                    //debug_println!("The producer *thinks* it successfully sent {:?}", i);
                     break;
                 }
                 Err(QueueFullError(rejected_x)) => {
-                    // TODO - cleanup
-                    // debug_println!("Rejected sending {:?}", rejected_x.a);
                     x = rejected_x;
                     rejection_count += 1;
                     unsafe {

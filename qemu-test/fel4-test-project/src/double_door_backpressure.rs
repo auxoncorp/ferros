@@ -1,58 +1,12 @@
-#![no_std]
-#![cfg_attr(feature = "alloc", feature(alloc))]
-// Necessary to mark as not-Send or not-Sync
-#![feature(optin_builtin_traits)]
-#![feature(associated_type_defaults)]
-
-#[cfg(all(feature = "alloc"))]
-#[macro_use]
-extern crate alloc;
-
-extern crate arrayvec;
-extern crate generic_array;
-extern crate sel4_sys;
-extern crate typenum;
-
-extern crate cross_queue;
-
-#[cfg(all(feature = "test"))]
-extern crate proptest;
-
-#[cfg(feature = "test")]
-pub mod fel4_test;
-
-#[macro_use]
-mod debug;
-
-pub mod micro_alloc;
-pub mod pow;
-mod twinkle_types;
-pub mod userland;
-
-mod test_proc;
-
-use crate::micro_alloc::GetUntyped;
-use crate::userland::{
-    create_double_door, role, root_cnode, BootInfo, CNode, LocalCap, Producer, SeL4Error,
-    UnmappedPageTable, VSpace, Waker,
+use ferros::micro_alloc::{self, GetUntyped};
+use ferros::userland::{
+    create_double_door, role, root_cnode, BootInfo, CNode, CNodeRole, Consumer1, LocalCap,
+    Producer, QueueFullError, RetypeForSetup, SeL4Error, UnmappedPageTable, VSpace, Waker,
 };
-use sel4_sys::*;
-use typenum::{U12, U20, U4096};
+use sel4_sys::{seL4_BootInfo, seL4_Yield, DebugOutHandle};
+use typenum::{U10, U12, U20, U4096};
 
-fn yield_forever() {
-    unsafe {
-        loop {
-            seL4_Yield();
-        }
-    }
-}
-
-pub fn run(raw_boot_info: &'static seL4_BootInfo) {
-    do_run(raw_boot_info).expect("run error");
-    yield_forever();
-}
-
-fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
+pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     // wrap all untyped memory
     let mut allocator =
         micro_alloc::Allocator::bootstrap(&raw_boot_info).expect("bootstrap failure");
@@ -77,7 +31,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode)?;
     let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode)?;
     let (ut5, _, root_cnode) = ut6.split(root_cnode)?;
-    let (ut4a, _ut4b, root_cnode) = ut5.split(root_cnode)?; // Why two splits? To exercise split.
+    let (ut4a, ut4b, root_cnode) = ut5.split(root_cnode)?; // Why two splits? To exercise split.
 
     // wrap the rest of the critical boot info
     let (boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
@@ -100,9 +54,9 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
 
     // vspace setup
     let (consumer_vspace, boot_info, root_cnode) = VSpace::new(boot_info, caller_ut, root_cnode)?;
-    let (producer_a_vspace, boot_info, root_cnode) =
+    let (producer_a_vspace, mut boot_info, root_cnode) =
         VSpace::new(boot_info, producer_a_ut, root_cnode)?;
-    let (producer_b_vspace, boot_info, root_cnode) =
+    let (producer_b_vspace, mut boot_info, root_cnode) =
         VSpace::new(boot_info, producer_b_ut, root_cnode)?;
 
     let (waker_vspace, mut boot_info, root_cnode) = VSpace::new(boot_info, waker_ut, root_cnode)?;
@@ -119,7 +73,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
         )
         .expect("ipc error");
 
-    let consumer_params = test_proc::ConsumerParams::<role::Child> { consumer };
+    let consumer_params = ConsumerParams::<role::Child> { consumer };
 
     let (producer_a, producer_a_cnode, producer_a_vspace, root_cnode) = Producer::new(
         &producer_setup,
@@ -127,7 +81,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
         producer_a_vspace,
         root_cnode,
     )?;
-    let producer_a_params = test_proc::ProducerParams::<role::Child> {
+    let producer_a_params = ProducerParams::<role::Child> {
         producer: producer_a,
     };
 
@@ -137,16 +91,16 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
         producer_b_vspace,
         root_cnode,
     )?;
-    let producer_b_params = test_proc::ProducerParams::<role::Child> {
+    let producer_b_params = ProducerParams::<role::Child> {
         producer: producer_b,
     };
 
     let (waker, waker_cnode) = Waker::new(&waker_setup, waker_cnode, &root_cnode)?;
-    let waker_params = test_proc::WakerParams::<role::Child> { waker };
+    let waker_params = WakerParams::<role::Child> { waker };
 
     let (consumer_thread, _consumer_vspace, root_cnode) = consumer_vspace
         .prepare_thread(
-            test_proc::consumer,
+            consumer_process,
             consumer_params,
             consumer_thread_ut,
             root_cnode,
@@ -159,7 +113,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
 
     let (producer_a_thread, _producer_a_vspace, root_cnode) = producer_a_vspace
         .prepare_thread(
-            test_proc::producer,
+            producer_process,
             producer_a_params,
             producer_a_thread_ut,
             root_cnode,
@@ -172,7 +126,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
 
     let (producer_b_thread, _producer_b_vspace, root_cnode) = producer_b_vspace
         .prepare_thread(
-            test_proc::producer,
+            producer_process,
             producer_b_params,
             producer_b_thread_ut,
             root_cnode,
@@ -185,7 +139,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
 
     let (waker_thread, _waker_vspace, _root_cnode) = waker_vspace
         .prepare_thread(
-            test_proc::waker,
+            waker_process,
             waker_params,
             waker_thread_ut,
             root_cnode,
@@ -197,4 +151,108 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     waker_thread.start(waker_cnode, None, &boot_info.tcb, 255)?;
 
     Ok(())
+}
+
+#[derive(Debug)]
+pub struct Xenon {
+    a: u64,
+}
+
+pub struct ConsumerParams<Role: CNodeRole> {
+    pub consumer: Consumer1<Role, Xenon, U10>,
+}
+
+impl RetypeForSetup for ConsumerParams<role::Local> {
+    type Output = ConsumerParams<role::Child>;
+}
+
+pub struct ProducerParams<Role: CNodeRole> {
+    pub producer: Producer<Role, Xenon, U10>,
+}
+
+impl RetypeForSetup for ProducerParams<role::Local> {
+    type Output = ProducerParams<role::Child>;
+}
+
+pub struct WakerParams<Role: CNodeRole> {
+    pub waker: Waker<Role>,
+}
+
+impl RetypeForSetup for WakerParams<role::Local> {
+    type Output = WakerParams<role::Child>;
+}
+
+pub extern "C" fn consumer_process(p: ConsumerParams<role::Local>) {
+    #[derive(Debug)]
+    struct State {
+        interrupt_count: usize,
+        element_count: usize,
+        queue_sum: u64,
+    }
+
+    debug_println!("Inside consumer");
+    let initial_state = State {
+        interrupt_count: 0,
+        element_count: 0,
+        queue_sum: 0,
+    };
+    p.consumer.consume(
+        initial_state,
+        |state| {
+            let fresh_state = State {
+                interrupt_count: state.interrupt_count.saturating_add(1),
+                element_count: state.element_count,
+                queue_sum: state.queue_sum,
+            };
+            if fresh_state.element_count == 40 && fresh_state.interrupt_count == 1 {
+                debug_println!(
+                    "Creating fresh state {:?} in the waker callback",
+                    fresh_state
+                );
+            }
+            fresh_state
+        },
+        |x, state| {
+            let fresh_state = State {
+                interrupt_count: state.interrupt_count,
+                element_count: state.element_count.saturating_add(1),
+                queue_sum: state.queue_sum.saturating_add(x.a),
+            };
+            if fresh_state.element_count == 40 && fresh_state.interrupt_count == 1 {
+                debug_println!(
+                    "Creating fresh state {:?} in the queue callback",
+                    fresh_state
+                );
+            }
+            fresh_state
+        },
+    )
+}
+
+pub extern "C" fn waker_process(p: WakerParams<role::Local>) {
+    debug_println!("Inside waker");
+    p.waker.send_wakeup_signal();
+}
+
+pub extern "C" fn producer_process(p: ProducerParams<role::Local>) {
+    debug_println!("Inside producer");
+    let mut rejection_count = 0;
+    for i in 0..20 {
+        let mut x = Xenon { a: i };
+        loop {
+            match p.producer.send(x) {
+                Ok(_) => {
+                    break;
+                }
+                Err(QueueFullError(rejected_x)) => {
+                    x = rejected_x;
+                    rejection_count += 1;
+                    unsafe {
+                        seL4_Yield();
+                    }
+                }
+            }
+        }
+    }
+    debug_println!("\n\nProducer rejection count: {}\n\n", rejection_count);
 }

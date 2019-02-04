@@ -215,4 +215,15 @@ mod tests {
             );
         }
     }
+
+    sequential_test! {
+        fn double_door_backpressure() {
+            run_qemu_test(
+                "double_door_backpressure",
+                Regex::new(".*Creating fresh state State \\{ interrupt_count: 1, element_count: 40, queue_sum: 380 \\} in the queue callback.*").unwrap(),
+                Regex::new(".*Root task should never return from main.*").unwrap(),
+                None,
+            );
+        }
+    }
 }
