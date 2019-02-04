@@ -1,6 +1,6 @@
 use ferros::micro_alloc::{self, GetUntyped};
 use ferros::userland::{
-    create_double_door, role, root_cnode, BootInfo, CNode, CNodeRole, Consumer1, LocalCap,
+    role, root_cnode, BootInfo, CNode, CNodeRole, Consumer1, LocalCap,
     Producer, QueueFullError, RetypeForSetup, SeL4Error, UnmappedPageTable, VSpace, Waker,
 };
 use sel4_sys::{seL4_BootInfo, seL4_Yield, DebugOutHandle};
@@ -62,7 +62,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     let (waker_vspace, mut boot_info, root_cnode) = VSpace::new(boot_info, waker_ut, root_cnode)?;
 
     let (consumer, producer_setup, waker_setup, consumer_cnode, consumer_vspace, root_cnode) =
-        create_double_door(
+        Consumer1::new(
             shared_page_ut,
             ut4a,
             consumer_cnode,

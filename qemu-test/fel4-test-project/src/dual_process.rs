@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 use ferros::micro_alloc::{self, GetUntyped};
 use ferros::pow::Pow;
 use ferros::userland::{
-    call_channel, create_double_door, role, root_cnode, setup_fault_endpoint_pair, BootInfo, CNode,
+    call_channel, role, root_cnode, setup_fault_endpoint_pair, BootInfo, CNode,
     CNodeRole, Caller, Cap, Consumer1, Endpoint, FaultSink, LocalCap, Producer, ProducerSetup,
     QueueFullError, Responder, RetypeForSetup, SeL4Error, UnmappedPageTable, Untyped, VSpace,
 };
@@ -76,7 +76,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
             .expect("Couldn't retype to consumer_cnode_local");
 
         let (consumer, producer_setup, waker_setup, consumer_cnode, consumer_vspace, root_cnode) =
-            create_double_door(
+            Consumer1::new(
                 shared_page_ut,
                 ut4,
                 consumer_cnode_local,

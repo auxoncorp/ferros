@@ -33,8 +33,8 @@ mod test_proc;
 
 use crate::micro_alloc::GetUntyped;
 use crate::userland::{
-    create_double_door, role, root_cnode, BootInfo, CNode, LocalCap, Producer, SeL4Error,
-    UnmappedPageTable, VSpace, Waker,
+    role, root_cnode, BootInfo, CNode, Consumer1, LocalCap, Producer, SeL4Error, UnmappedPageTable,
+    VSpace, Waker,
 };
 use sel4_sys::*;
 use typenum::{U12, U20, U4096};
@@ -108,7 +108,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     let (waker_vspace, mut boot_info, root_cnode) = VSpace::new(boot_info, waker_ut, root_cnode)?;
 
     let (consumer, producer_setup, waker_setup, consumer_cnode, consumer_vspace, root_cnode) =
-        create_double_door(
+        Consumer1::new(
             shared_page_ut,
             ut4a,
             consumer_cnode,
@@ -117,7 +117,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
             &mut boot_info.page_directory,
             root_cnode,
         )
-        .expect("ipc error");
+        .expect("consumer setup error");
 
     let consumer_params = test_proc::ConsumerParams::<role::Child> { consumer };
 

@@ -1,3 +1,27 @@
+/// A pattern for async IPC with driver processes/threads
+/// where there is a single (driver) consumer thread that is waiting
+/// on a single notification.
+/// There are two possible badge values for the notification, and
+/// based on the badge, the consumer will do one of the following:
+///
+/// A) Execute a custom, interrupt-handling-specialized path.
+/// B) Attempt to read from a shared memory queue. If an element is found, process it.
+///
+/// The alpha-path is intended to be bound to an interrupt notification,
+/// but technically will work out of the box with any regular notification-sender
+/// badged to match the A) path.
+///
+/// There may be many other threads producing to the shared memory queue.
+/// A queue-producer thread requires:
+/// * A capability to the notification, badged to correspond to the queue-path.
+/// * The page(s) where the queue lives mapped into its VSpace
+/// * A pointer to the shared memory queue valid in its VSpace.
+///
+/// There are two doors into the consumer thread. Do you pick door A or B?
+///
+/// let (consumer_params_member, queue_producer_setup, waker_setup,  ...leftovers) = double_door(...)
+/// let (waker_params_member, ...leftovers) = Waker::new(waker_setup,waker_thread_cnode)
+/// let (producer_params_member, ...leftovers) = Producer::new(queue_producer_setup, producer_thread_cnode, producer_thread_vspace)
 use core::marker::PhantomData;
 use core::ops::Sub;
 use crate::userland::cap::AssignedPageDirectory;
@@ -20,8 +44,8 @@ where
     QLen: ArrayLength<Slot<T>>,
 {
     interrupt_badge: Badge,
-    queue_badge: Badge,
     notification: Cap<Notification, Role>,
+    queue_badge: Badge,
     queue: QueueHandle<T, Role, QLen>,
 }
 
@@ -47,14 +71,14 @@ where
 }
 
 #[derive(Debug)]
-pub enum DoubleDoorError {
+pub enum MultiConsumerError {
     QueueTooBig,
     SeL4Error(SeL4Error),
 }
 
-impl From<SeL4Error> for DoubleDoorError {
+impl From<SeL4Error> for MultiConsumerError {
     fn from(s: SeL4Error) -> Self {
-        DoubleDoorError::SeL4Error(s)
+        MultiConsumerError::SeL4Error(s)
     }
 }
 
@@ -80,161 +104,148 @@ pub struct WakerSetup {
     notification: Cap<Notification, role::Local>,
 }
 
-/// A pattern for IPC with driver processes/threads
-/// where there is a single (driver) consumer thread that is waiting
-/// on a single notification.
-/// There are two possible badge values for the notification, and
-/// based on the badge, the consumer will do one of the following:
-///
-/// A) Execute a custom, interrupt-handling-specialized path.
-/// B) Attempt to read from a shared memory queue. If an element is found, process it.
-///
-/// The alpha-path is intended to be bound to an interrupt notification,
-/// but technically will work out of the box with any regular notification-sender
-/// badged to match the A) path.
-///
-/// There may be many other threads producing to the shared memory queue.
-/// A queue-producer thread requires:
-/// * A capability to the notification, badged to correspond to the queue-path.
-/// * The page(s) where the queue lives mapped into its VSpace
-/// * A pointer to the shared memory queue valid in its VSpace.
-///
-/// There are two doors into the consumer thread. Do you pick door A or B?
-///
-/// let (consumer_params_member, queue_producer_setup, waker_setup,  ...leftovers) = double_door(...)
-/// let (waker_params_member, ...leftovers) = Waker::new(waker_setup,waker_thread_cnode)
-/// let (producer_params_member, ...leftovers) = Producer::new(queue_producer_setup, producer_thread_cnode, producer_thread_vspace)
-pub fn create_double_door<
-    T: Sized + Send + Sync,
-    QLen: Unsigned,
-    LocalCNodeFreeSlots: Unsigned,
-    LocalPageDirFreeSlots: Unsigned,
-    LocalPageTableFreeSlots: Unsigned,
-    ConsumerCNodeFreeSlots: Unsigned,
-    ConsumerPageDirFreeSlots: Unsigned,
-    ConsumerPageTableFreeSlots: Unsigned,
-    ConsumerFilledPageTableCount: Unsigned,
->(
-    shared_page_ut: LocalCap<Untyped<U12>>,
-    notification_ut: LocalCap<Untyped<U4>>,
-    consumer_cnode: LocalCap<ChildCNode<ConsumerCNodeFreeSlots>>,
-    consumer_vspace: VSpace<
-        ConsumerPageDirFreeSlots,
-        ConsumerPageTableFreeSlots,
-        ConsumerFilledPageTableCount,
-        role::Child,
-    >,
-    local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
-    mut local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
-    local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
-) -> Result<
-    (
-        Consumer1<role::Child, T, QLen>,
-        ProducerSetup<T, QLen>,
-        WakerSetup,
-        LocalCap<ChildCNode<Sub1<ConsumerCNodeFreeSlots>>>,
-        VSpace<
+impl<E: Sized + Sync + Send, QLen: Unsigned> Consumer1<role::Child, E, QLen>
+where
+    QLen: IsGreater<U0, Output = True>,
+    QLen: ArrayLength<Slot<E>>,
+{
+    pub fn new<
+        LocalCNodeFreeSlots: Unsigned,
+        LocalPageDirFreeSlots: Unsigned,
+        LocalPageTableFreeSlots: Unsigned,
+        ConsumerCNodeFreeSlots: Unsigned,
+        ConsumerPageDirFreeSlots: Unsigned,
+        ConsumerPageTableFreeSlots: Unsigned,
+        ConsumerFilledPageTableCount: Unsigned,
+    >(
+        shared_page_ut: LocalCap<Untyped<U12>>,
+        notification_ut: LocalCap<Untyped<U4>>,
+        consumer_cnode: LocalCap<ChildCNode<ConsumerCNodeFreeSlots>>,
+        consumer_vspace: VSpace<
             ConsumerPageDirFreeSlots,
-            Sub1<ConsumerPageTableFreeSlots>,
+            ConsumerPageTableFreeSlots,
             ConsumerFilledPageTableCount,
             role::Child,
         >,
-        LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U3>>>,
-    ),
-    DoubleDoorError,
->
-where
-    QLen: ArrayLength<Slot<T>>,
-    QLen: IsGreater<U0, Output = True>,
+        local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
+        mut local_page_dir: &mut LocalCap<
+            AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>,
+        >,
+        local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
+    ) -> Result<
+        (
+            Consumer1<role::Child, E, QLen>,
+            ProducerSetup<E, QLen>,
+            WakerSetup,
+            LocalCap<ChildCNode<Sub1<ConsumerCNodeFreeSlots>>>,
+            VSpace<
+                ConsumerPageDirFreeSlots,
+                Sub1<ConsumerPageTableFreeSlots>,
+                ConsumerFilledPageTableCount,
+                role::Child,
+            >,
+            LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U3>>>,
+        ),
+        MultiConsumerError,
+    >
+    where
+        QLen: ArrayLength<Slot<E>>,
+        QLen: IsGreater<U0, Output = True>,
 
-    LocalCNodeFreeSlots: Sub<U3>,
-    Diff<LocalCNodeFreeSlots, U3>: Unsigned,
+        LocalCNodeFreeSlots: Sub<U3>,
+        Diff<LocalCNodeFreeSlots, U3>: Unsigned,
 
-    LocalPageTableFreeSlots: Sub<B1>,
-    Sub1<LocalPageTableFreeSlots>: Unsigned,
+        LocalPageTableFreeSlots: Sub<B1>,
+        Sub1<LocalPageTableFreeSlots>: Unsigned,
 
-    ConsumerCNodeFreeSlots: Sub<B1>,
-    Sub1<ConsumerCNodeFreeSlots>: Unsigned,
+        ConsumerCNodeFreeSlots: Sub<B1>,
+        Sub1<ConsumerCNodeFreeSlots>: Unsigned,
 
-    ConsumerPageTableFreeSlots: Sub<B1>,
-    Sub1<ConsumerPageTableFreeSlots>: Unsigned,
+        ConsumerPageTableFreeSlots: Sub<B1>,
+        Sub1<ConsumerPageTableFreeSlots>: Unsigned,
 
-    ConsumerFilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, role::Child>>>,
-{
-    let queue_size = core::mem::size_of::<ArrayQueue<T, QLen>>();
-    if queue_size > PageBytes::USIZE {
-        return Err(DoubleDoorError::QueueTooBig);
-    }
-    let (local_cnode, remainder_local_cnode) = local_cnode.reserve_region::<U3>();
+        ConsumerFilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, role::Child>>>,
+    {
+        let queue_size = core::mem::size_of::<ArrayQueue<E, QLen>>();
+        if queue_size > PageBytes::USIZE {
+            return Err(MultiConsumerError::QueueTooBig);
+        }
+        let (local_cnode, remainder_local_cnode) = local_cnode.reserve_region::<U3>();
 
-    let (shared_page, local_cnode) = shared_page_ut.retype_local::<_, UnmappedPage>(local_cnode)?;
+        let (shared_page, local_cnode) =
+            shared_page_ut.retype_local::<_, UnmappedPage>(local_cnode)?;
 
-    // Put some data in there. Specifically, an `ArrayQueue`.
-    let (_, shared_page) =
-        local_page_table.temporarily_map_page(shared_page, &mut local_page_dir, |mapped_page| {
-            unsafe {
-                let aq_ptr = core::mem::transmute::<usize, *mut ArrayQueue<T, QLen>>(
-                    mapped_page.cap_data.vaddr,
-                );
-                // TODO - consider making an alternative constructor
-                // that operates directly on a pointer to an uninitialized/zeroed pointer
-                // in order to avoid letting the full ArrayQueue instance
-                // materialize all at once on the local stack (potentially blowing it)
-                ArrayQueue::<T, QLen>::new_at_ptr(aq_ptr);
-                core::mem::forget(aq_ptr);
-            }
-        })?;
-
-    let (consumer_shared_page, local_cnode) =
-        shared_page.copy_inside_cnode(local_cnode, CapRights::RW)?;
-    let (consumer_shared_page, consumer_vspace) = consumer_vspace.map_page(consumer_shared_page)?;
-
-    let (local_notification, local_cnode) =
-        notification_ut.retype_local::<_, Notification>(local_cnode)?;
-    let (consumer_notification, consumer_cnode) = local_notification.mint(
-        &local_cnode,
-        consumer_cnode,
-        CapRights::RWG,
-        Badge::from(0x00), // Only for Wait'ing, no need to set badge bits
-    )?;
-    let interrupt_badge = Badge::from(1 << 0);
-    let queue_badge = Badge::from(1 << 1);
-
-    let producer_setup: ProducerSetup<T, QLen> = ProducerSetup {
-        shared_page,
-        queue_badge: queue_badge,
-        // Construct a user-inaccessible copy of the local notification
-        // purely for use in producing child-cnode-residing copies.
-        notification: Cap {
-            cptr: local_notification.cptr,
-            cap_data: PhantomCap::phantom_instance(),
-            _role: PhantomData,
-        },
-        _queue_element_type: PhantomData,
-        _queue_lenth: PhantomData,
-    };
-    let waker_setup = WakerSetup {
-        interrupt_badge: interrupt_badge,
-        notification: local_notification,
-    };
-    Ok((
-        Consumer1 {
-            interrupt_badge,
-            queue_badge,
-            notification: consumer_notification,
-            queue: QueueHandle {
-                shared_queue: consumer_shared_page.cap_data.vaddr,
-                _role: PhantomData,
-                _t: PhantomData,
-                _queue_len: PhantomData,
+        // Put some data in there. Specifically, an `ArrayQueue`.
+        let (_, shared_page) = local_page_table.temporarily_map_page(
+            shared_page,
+            &mut local_page_dir,
+            |mapped_page| {
+                unsafe {
+                    let aq_ptr = core::mem::transmute::<usize, *mut ArrayQueue<E, QLen>>(
+                        mapped_page.cap_data.vaddr,
+                    );
+                    // TODO - consider making an alternative constructor
+                    // that operates directly on a pointer to an uninitialized/zeroed pointer
+                    // in order to avoid letting the full ArrayQueue instance
+                    // materialize all at once on the local stack (potentially blowing it)
+                    ArrayQueue::<E, QLen>::new_at_ptr(aq_ptr);
+                    core::mem::forget(aq_ptr);
+                }
             },
-        },
-        producer_setup,
-        waker_setup,
-        consumer_cnode,
-        consumer_vspace,
-        remainder_local_cnode,
-    ))
+        )?;
+
+        let (consumer_shared_page, local_cnode) =
+            shared_page.copy_inside_cnode(local_cnode, CapRights::RW)?;
+        let (consumer_shared_page, consumer_vspace) =
+            consumer_vspace.map_page(consumer_shared_page)?;
+
+        let (local_notification, local_cnode) =
+            notification_ut.retype_local::<_, Notification>(local_cnode)?;
+        let (consumer_notification, consumer_cnode) = local_notification.mint(
+            &local_cnode,
+            consumer_cnode,
+            CapRights::RWG,
+            Badge::from(0x00), // Only for Wait'ing, no need to set badge bits
+        )?;
+        let interrupt_badge = Badge::from(1 << 0);
+        let queue_badge = Badge::from(1 << 1);
+
+        let producer_setup: ProducerSetup<E, QLen> = ProducerSetup {
+            shared_page,
+            queue_badge: queue_badge,
+            // Construct a user-inaccessible copy of the local notification
+            // purely for use in producing child-cnode-residing copies.
+            notification: Cap {
+                cptr: local_notification.cptr,
+                cap_data: PhantomCap::phantom_instance(),
+                _role: PhantomData,
+            },
+            _queue_element_type: PhantomData,
+            _queue_lenth: PhantomData,
+        };
+        let waker_setup = WakerSetup {
+            interrupt_badge: interrupt_badge,
+            notification: local_notification,
+        };
+        Ok((
+            Consumer1 {
+                interrupt_badge,
+                queue_badge,
+                notification: consumer_notification,
+                queue: QueueHandle {
+                    shared_queue: consumer_shared_page.cap_data.vaddr,
+                    _role: PhantomData,
+                    _t: PhantomData,
+                    _queue_len: PhantomData,
+                },
+            },
+            producer_setup,
+            waker_setup,
+            consumer_cnode,
+            consumer_vspace,
+            remainder_local_cnode,
+        ))
+    }
 }
 
 pub struct Waker<Role: CNodeRole> {
@@ -397,8 +408,6 @@ where
     QLen: IsGreater<U0, Output = True>,
     QLen: ArrayLength<Slot<T>>,
 {
-    // TODO - should we expose an error defined in this crate?
-    // signs point to yes.
     pub fn send(&self, t: T) -> Result<(), QueueFullError<T>> {
         let queue: &mut ArrayQueue<T, QLen> =
             unsafe { core::mem::transmute(self.queue.shared_queue as *mut ArrayQueue<T, QLen>) };

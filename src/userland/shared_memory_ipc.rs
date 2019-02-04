@@ -3,7 +3,7 @@ use core::ops::Sub;
 
 use cross_queue::Slot;
 
-use crate::userland::double_door::QueueHandle;
+use crate::userland::multi_consumer::QueueHandle;
 use crate::userland::paging::PageBytes;
 use crate::userland::{
     role, Badge, CNodeRole, Cap, CapRights, ChildCNode, IPCError, LocalCNode, LocalCap,
