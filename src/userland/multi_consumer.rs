@@ -64,6 +64,24 @@ where
     ),
 }
 
+pub struct Consumer3<Role: CNodeRole, E, ESize: Unsigned, F, FSize: Unsigned, G, GSize: Unsigned>
+where
+    ESize: IsGreater<U0, Output = True>,
+    ESize: ArrayLength<Slot<E>>,
+    FSize: IsGreater<U0, Output = True>,
+    FSize: ArrayLength<Slot<F>>,
+    GSize: IsGreater<U0, Output = True>,
+    GSize: ArrayLength<Slot<G>>,
+{
+    interrupt_badge: Badge,
+    notification: Cap<Notification, Role>,
+    queues: (
+        (Badge, QueueHandle<E, Role, ESize>),
+        (Badge, QueueHandle<F, Role, FSize>),
+        (Badge, QueueHandle<G, Role, GSize>),
+    ),
+}
+
 pub struct Producer<Role: CNodeRole, T: Sized + Sync + Send, QLen: Unsigned>
 where
     QLen: IsGreater<U0, Output = True>,
@@ -343,6 +361,115 @@ where
     }
 }
 
+impl<E: Sized + Sync + Send, ELen: Unsigned, F: Sized + Sync + Send, FLen: Unsigned>
+    Consumer2<role::Child, E, ELen, F, FLen>
+where
+    ELen: IsGreater<U0, Output = True>,
+    ELen: ArrayLength<Slot<E>>,
+    FLen: IsGreater<U0, Output = True>,
+    FLen: ArrayLength<Slot<F>>,
+{
+    pub fn add_queue<
+        G: Sized + Send + Sync,
+        GLen: Unsigned,
+        LocalCNodeFreeSlots: Unsigned,
+        LocalPageDirFreeSlots: Unsigned,
+        LocalPageTableFreeSlots: Unsigned,
+        ConsumerPageDirFreeSlots: Unsigned,
+        ConsumerPageTableFreeSlots: Unsigned,
+        ConsumerFilledPageTableCount: Unsigned,
+    >(
+        self,
+        producer_setup: &ProducerSetup<E, ELen>,
+        shared_page_ut: LocalCap<Untyped<U12>>,
+        consumer_vspace: VSpace<
+            ConsumerPageDirFreeSlots,
+            ConsumerPageTableFreeSlots,
+            ConsumerFilledPageTableCount,
+            role::Child,
+        >,
+        local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
+        local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
+        local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
+    ) -> Result<
+        (
+            Consumer3<role::Child, E, ELen, F, FLen, G, GLen>,
+            ProducerSetup<F, FLen>,
+            VSpace<
+                ConsumerPageDirFreeSlots,
+                Sub1<ConsumerPageTableFreeSlots>,
+                ConsumerFilledPageTableCount,
+                role::Child,
+            >,
+            LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U2>>>,
+        ),
+        MultiConsumerError,
+    >
+    where
+        FLen: ArrayLength<Slot<F>>,
+        FLen: IsGreater<U0, Output = True>,
+        GLen: ArrayLength<Slot<G>>,
+        GLen: IsGreater<U0, Output = True>,
+
+        LocalCNodeFreeSlots: Sub<U2>,
+        Diff<LocalCNodeFreeSlots, U2>: Unsigned,
+
+        LocalPageTableFreeSlots: Sub<B1>,
+        Sub1<LocalPageTableFreeSlots>: Unsigned,
+
+        ConsumerPageTableFreeSlots: Sub<B1>,
+        Sub1<ConsumerPageTableFreeSlots>: Unsigned,
+
+        ConsumerFilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, role::Child>>>,
+    {
+        let (shared_page, consumer_shared_page, consumer_vspace, remainder_local_cnode) =
+            create_page_filled_with_array_queue::<F, FLen, _, _, _, _, _, _>(
+                shared_page_ut,
+                consumer_vspace,
+                local_page_table,
+                local_page_dir,
+                local_cnode,
+            )?;
+
+        let fresh_queue_badge = Badge::from((self.queues.1).0.inner << 1);
+        let producer_setup: ProducerSetup<F, FLen> = ProducerSetup {
+            shared_page,
+            queue_badge: fresh_queue_badge,
+            // Construct a user-inaccessible copy of the local notification
+            // purely for use in producing child-cnode-residing copies.
+            notification: Cap {
+                cptr: producer_setup.notification.cptr,
+                cap_data: PhantomCap::phantom_instance(),
+                _role: PhantomData,
+            },
+            _queue_element_type: PhantomData,
+            _queue_lenth: PhantomData,
+        };
+        Ok((
+            Consumer3 {
+                interrupt_badge: self.interrupt_badge,
+                notification: self.notification,
+                queues: (
+                    self.queues.0,
+                    self.queues.1,
+                    (
+                        fresh_queue_badge,
+                        QueueHandle {
+                            shared_queue: consumer_shared_page.cap_data.vaddr,
+                            _role: PhantomData,
+                            _t: PhantomData,
+                            _queue_len: PhantomData,
+                        },
+                    ),
+                ),
+            },
+            producer_setup,
+            consumer_vspace,
+            remainder_local_cnode,
+        ))
+    }
+}
+
 fn create_page_filled_with_array_queue<
     T: Sized + Send + Sync,
     QLen: Unsigned,
@@ -543,6 +670,89 @@ where
                     for _ in 0..FLen::USIZE.saturating_add(1) {
                         if let Ok(e) = queue_f.pop() {
                             state = queue_f_fn(e, state);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl<
+        E: Sized + Sync + Send,
+        ELen: Unsigned,
+        F: Sized + Sync + Send,
+        FLen: Unsigned,
+        G: Sized + Sync + Send,
+        GLen: Unsigned,
+    > Consumer3<role::Local, E, ELen, F, FLen, G, GLen>
+where
+    ELen: IsGreater<U0, Output = True>,
+    ELen: ArrayLength<Slot<E>>,
+    FLen: IsGreater<U0, Output = True>,
+    FLen: ArrayLength<Slot<F>>,
+    GLen: IsGreater<U0, Output = True>,
+    GLen: ArrayLength<Slot<G>>,
+{
+    pub fn consume<State, WFn, EFn, FFn, GFn>(
+        self,
+        initial_state: State,
+        waker_fn: WFn,
+        queue_e_fn: EFn,
+        queue_f_fn: FFn,
+        queue_g_fn: GFn,
+    ) -> !
+    where
+        WFn: Fn(State) -> State,
+        EFn: Fn(E, State) -> State,
+        FFn: Fn(F, State) -> State,
+        GFn: Fn(G, State) -> State,
+    {
+        let mut sender_badge: usize = 0;
+        let mut state = initial_state;
+        let (badge_e, handle_e) = self.queues.0;
+        let queue_e: &mut ArrayQueue<E, ELen> =
+            unsafe { core::mem::transmute(handle_e.shared_queue as *mut ArrayQueue<E, ELen>) };
+        let (badge_f, handle_f) = self.queues.1;
+        let queue_f: &mut ArrayQueue<F, FLen> =
+            unsafe { core::mem::transmute(handle_f.shared_queue as *mut ArrayQueue<F, FLen>) };
+        let (badge_g, handle_g) = self.queues.2;
+        let queue_g: &mut ArrayQueue<G, GLen> =
+            unsafe { core::mem::transmute(handle_g.shared_queue as *mut ArrayQueue<G, GLen>) };
+        loop {
+            unsafe {
+                seL4_Wait(self.notification.cptr, &mut sender_badge as *mut usize);
+                let current_badge = Badge::from(sender_badge);
+                if self
+                    .interrupt_badge
+                    .are_all_overlapping_bits_set(current_badge)
+                {
+                    state = waker_fn(state);
+                }
+                if badge_e.are_all_overlapping_bits_set(current_badge) {
+                    for _ in 0..ELen::USIZE.saturating_add(1) {
+                        if let Ok(e) = queue_e.pop() {
+                            state = queue_e_fn(e, state);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                if badge_f.are_all_overlapping_bits_set(current_badge) {
+                    for _ in 0..FLen::USIZE.saturating_add(1) {
+                        if let Ok(e) = queue_f.pop() {
+                            state = queue_f_fn(e, state);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                if badge_g.are_all_overlapping_bits_set(current_badge) {
+                    for _ in 0..FLen::USIZE.saturating_add(1) {
+                        if let Ok(e) = queue_g.pop() {
+                            state = queue_g_fn(e, state);
                         } else {
                             break;
                         }

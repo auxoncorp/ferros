@@ -12,66 +12,7 @@ use crate::userland::{
 use generic_array::ArrayLength;
 use sel4_sys::{seL4_Signal, seL4_Wait};
 use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{IsGreater, True, Unsigned, B1, U0, U12, U2, U4, U5};
-
-pub mod queue {
-    use super::*;
-
-    // Per Consumer: Create a new Notification associate with a type
-    // managing badge-bit capacity one copy of the capability to that
-    // notification in the CSpace of the consumer thread (with read
-    // permissions) one path for dealing with the "interrupt" based
-    // wakeup
-    //
-    // Per Queue: backing shared page(s) per queue a single bit index
-    // from the badge bit-space per queue an associated element type
-    // access to the local (parent?) VSpace in order to do local
-    // mapping for setup? OR we do this in consumer
-    //
-    // Per Producer: a copy of the notification capability with write
-    // permissions in the CSpace of the producer thread a mapping of
-    // the queue backing pages for the relevant queue
-    //
-    // pub fn setup_consumer() -> Consumer
-
-    pub struct Consumer3<
-        Role: CNodeRole,
-        E,
-        ESize: Unsigned,
-        F,
-        FSize: Unsigned,
-        G,
-        GSize: Unsigned,
-    >
-    where
-        ESize: IsGreater<U0, Output = True>,
-        ESize: ArrayLength<Slot<E>>,
-        FSize: IsGreater<U0, Output = True>,
-        FSize: ArrayLength<Slot<F>>,
-        GSize: IsGreater<U0, Output = True>,
-        GSize: ArrayLength<Slot<G>>,
-    {
-        notification: Cap<Notification, Role>,
-        queues: (
-            QueueHandle<E, Role, ESize>,
-            QueueHandle<F, Role, FSize>,
-            QueueHandle<G, Role, GSize>,
-        ),
-    }
-
-    impl<Role: CNodeRole, E, ESize: Unsigned, F, FSize: Unsigned, G, GSize: Unsigned>
-        Consumer3<Role, E, ESize, F, FSize, G, GSize>
-    where
-        ESize: IsGreater<U0, Output = True>,
-        ESize: ArrayLength<Slot<E>>,
-        FSize: IsGreater<U0, Output = True>,
-        FSize: ArrayLength<Slot<F>>,
-        GSize: IsGreater<U0, Output = True>,
-        GSize: ArrayLength<Slot<G>>,
-    {
-    }
-
-}
+use typenum::{Unsigned, B1, U0, U12, U2, U4, U5};
 
 pub mod sync {
     use super::*;
