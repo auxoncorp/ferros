@@ -202,7 +202,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
 
     // TODO: the required size of the untyped depends in some way on the child radix, but HOW?
     // answer: it needs 4 more bits, this value is seL4_SlotBits.
-    pub fn retype_local_cnode<FreeSlots: Unsigned, ChildRadix: Unsigned>(
+    pub fn retype_cnode<FreeSlots: Unsigned, ChildRadix: Unsigned>(
         self,
         dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
     ) -> Result<

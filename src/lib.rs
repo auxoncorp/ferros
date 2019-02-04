@@ -66,12 +66,14 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
         .get_untyped::<U20>()
         .expect("initial alloc failure");
 
-    let (ut18, ut18b, _, _, root_cnode) = ut20.quarter(root_cnode)?;
-    let (ut16a, ut16b, _ut16c, _ut16d, root_cnode) = ut18.quarter(root_cnode)?;
-    let (ut16e, caller_ut, responder_ut, _, root_cnode) = ut18b.quarter(root_cnode)?;
-    let (ut14, consumer_thread_ut, producer_thread_ut, _, root_cnode) =
+    let (ut18, ut18b, ut18c, _, root_cnode) = ut20.quarter(root_cnode)?;
+    let (ut16a, ut16b, ut16c, ut16d, root_cnode) = ut18.quarter(root_cnode)?;
+    let (ut16e, caller_ut, producer_a_ut, waker_ut, root_cnode) = ut18b.quarter(root_cnode)?;
+    let (ut16i, producer_b_ut, _, _, root_cnode) = ut18c.quarter(root_cnode)?;
+    let (ut14a, consumer_thread_ut, producer_a_thread_ut, waker_thread_ut, root_cnode) =
         ut16e.quarter(root_cnode)?;
-    let (ut12, asid_pool_ut, shared_page_ut, _, root_cnode) = ut14.quarter(root_cnode)?;
+    let (_ut14e, producer_b_thread_ut, _, _, root_cnode) = ut16i.quarter(root_cnode)?;
+    let (ut12, asid_pool_ut, shared_page_ut, _, root_cnode) = ut14a.quarter(root_cnode)?;
     let (ut10, scratch_page_table_ut, _, _, root_cnode) = ut12.quarter(root_cnode)?;
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode)?;
     let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode)?;
@@ -87,40 +89,61 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     let (mut scratch_page_table, boot_info) = boot_info.map_page_table(scratch_page_table)?;
 
     let (consumer_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
-        ut16a.retype_local_cnode::<_, U12>(root_cnode)?;
+        ut16a.retype_cnode::<_, U12>(root_cnode)?;
 
-    let (producer_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
-        ut16b.retype_local_cnode::<_, U12>(root_cnode)?;
+    let (producer_a_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
+        ut16b.retype_cnode::<_, U12>(root_cnode)?;
+    let (producer_b_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
+        ut16c.retype_cnode::<_, U12>(root_cnode)?;
+
+    let (waker_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
+        ut16d.retype_cnode::<_, U12>(root_cnode)?;
 
     // vspace setup
     let (consumer_vspace, boot_info, root_cnode) = VSpace::new(boot_info, caller_ut, root_cnode)?;
-    let (producer_vspace, mut boot_info, root_cnode) =
-        VSpace::new(boot_info, responder_ut, root_cnode)?;
+    let (producer_a_vspace, mut boot_info, root_cnode) =
+        VSpace::new(boot_info, producer_a_ut, root_cnode)?;
+    let (producer_b_vspace, mut boot_info, root_cnode) =
+        VSpace::new(boot_info, producer_b_ut, root_cnode)?;
 
-    let (consumer, producer_setup, waker_setup, consumer_cnode, consumer_vspace, root_cnode): (
-        Consumer1<_, test_proc::Xenon, U100>,
-        _,
-        _,
-        _,
-        _,
-        _,
-    ) = create_double_door(
-        shared_page_ut,
-        ut4a,
-        consumer_cnode,
-        consumer_vspace,
-        &mut scratch_page_table,
-        &mut boot_info.page_directory,
-        root_cnode,
-    )
-    .expect("ipc error");
+    let (waker_vspace, mut boot_info, root_cnode) = VSpace::new(boot_info, waker_ut, root_cnode)?;
+
+    let (consumer, producer_setup, waker_setup, consumer_cnode, consumer_vspace, root_cnode) =
+        create_double_door(
+            shared_page_ut,
+            ut4a,
+            consumer_cnode,
+            consumer_vspace,
+            &mut scratch_page_table,
+            &mut boot_info.page_directory,
+            root_cnode,
+        )
+        .expect("ipc error");
 
     let consumer_params = test_proc::ConsumerParams::<role::Child> { consumer };
 
-    let (producer, producer_cnode, producer_vspace, root_cnode) =
-        Producer::new(&producer_setup, producer_cnode, producer_vspace, root_cnode)?;
+    let (producer_a, producer_a_cnode, producer_a_vspace, root_cnode) = Producer::new(
+        &producer_setup,
+        producer_a_cnode,
+        producer_a_vspace,
+        root_cnode,
+    )?;
+    let producer_a_params = test_proc::ProducerParams::<role::Child> {
+        producer: producer_a,
+    };
 
-    let producer_params = test_proc::ProducerParams::<role::Child> { producer };
+    let (producer_b, producer_b_cnode, producer_b_vspace, root_cnode) = Producer::new(
+        &producer_setup,
+        producer_b_cnode,
+        producer_b_vspace,
+        root_cnode,
+    )?;
+    let producer_b_params = test_proc::ProducerParams::<role::Child> {
+        producer: producer_b,
+    };
+
+    let (waker, waker_cnode) = Waker::new(&waker_setup, waker_cnode, &root_cnode)?;
+    let waker_params = test_proc::WakerParams::<role::Child> { waker };
 
     let (consumer_thread, _consumer_vspace, root_cnode) = consumer_vspace
         .prepare_thread(
@@ -135,18 +158,44 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
 
     consumer_thread.start(consumer_cnode, None, &boot_info.tcb, 255)?;
 
-    let (producer_thread, _producer_vspace, _root_cnode) = producer_vspace
+    let (producer_a_thread, _producer_a_vspace, root_cnode) = producer_a_vspace
         .prepare_thread(
             test_proc::producer,
-            producer_params,
-            producer_thread_ut,
+            producer_a_params,
+            producer_a_thread_ut,
             root_cnode,
             &mut scratch_page_table,
             &mut boot_info.page_directory,
         )
         .expect("prepare child thread b");
 
-    producer_thread.start(producer_cnode, None, &boot_info.tcb, 255)?;
+    producer_a_thread.start(producer_a_cnode, None, &boot_info.tcb, 255)?;
+
+    let (producer_b_thread, _producer_b_vspace, root_cnode) = producer_b_vspace
+        .prepare_thread(
+            test_proc::producer,
+            producer_b_params,
+            producer_b_thread_ut,
+            root_cnode,
+            &mut scratch_page_table,
+            &mut boot_info.page_directory,
+        )
+        .expect("prepare child thread b");
+
+    producer_b_thread.start(producer_b_cnode, None, &boot_info.tcb, 255)?;
+
+    let (waker_thread, _waker_vspace, _root_cnode) = waker_vspace
+        .prepare_thread(
+            test_proc::waker,
+            waker_params,
+            waker_thread_ut,
+            root_cnode,
+            &mut scratch_page_table,
+            &mut boot_info.page_directory,
+        )
+        .expect("prepare child thread b");
+
+    waker_thread.start(waker_cnode, None, &boot_info.tcb, 255)?;
 
     Ok(())
 }

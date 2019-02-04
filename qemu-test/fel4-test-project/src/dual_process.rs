@@ -4,13 +4,12 @@ use ferros::pow::Pow;
 use ferros::userland::{
     call_channel, create_double_door, role, root_cnode, setup_fault_endpoint_pair, BootInfo, CNode,
     CNodeRole, Caller, Cap, Consumer1, Endpoint, FaultSink, LocalCap, Producer, ProducerSetup,
-    Responder, RetypeForSetup, SeL4Error, UnmappedPageTable, Untyped, VSpace,
+    QueueFullError, Responder, RetypeForSetup, SeL4Error, UnmappedPageTable, Untyped, VSpace,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Diff;
 use typenum::{U100, U12, U2, U20, U4096, U6};
 
-use cross_queue::PushError;
 use sel4_sys::seL4_Yield;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
@@ -69,29 +68,24 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
         root_cnode,
     ) = {
         let (producer_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) = ut16a
-            .retype_local_cnode::<_, U12>(root_cnode)
+            .retype_cnode::<_, U12>(root_cnode)
             .expect("Couldn't retype to producer_cnode_local");
 
         let (consumer_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) = ut16b
-            .retype_local_cnode::<_, U12>(root_cnode)
+            .retype_cnode::<_, U12>(root_cnode)
             .expect("Couldn't retype to consumer_cnode_local");
 
-        let (consumer, producer_setup, waker_setup, consumer_cnode, consumer_vspace, root_cnode): (
-            Consumer1<_, Xenon, U100>,
-            _,
-            _,
-            _,
-            _,
-            _,
-        ) = create_double_door(
-            shared_page_ut,
-            ut4,
-            consumer_cnode_local,
-            child_a_vspace,
-            &mut scratch_page_table,
-            &mut boot_info.page_directory,
-            root_cnode,
-        ).expect("ipc error");
+        let (consumer, producer_setup, waker_setup, consumer_cnode, consumer_vspace, root_cnode) =
+            create_double_door(
+                shared_page_ut,
+                ut4,
+                consumer_cnode_local,
+                child_a_vspace,
+                &mut scratch_page_table,
+                &mut boot_info.page_directory,
+                root_cnode,
+            )
+            .expect("ipc error");
 
         let consumer_params = ConsumerParams::<role::Child> { consumer };
 
@@ -127,11 +121,11 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
         root_cnode,
     ) = {
         let (caller_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) = ut16a
-            .retype_local_cnode::<_, U12>(root_cnode)
+            .retype_cnode::<_, U12>(root_cnode)
             .expect("Couldn't retype to caller_cnode_local");
 
         let (responder_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) = ut16b
-            .retype_local_cnode::<_, U12>(root_cnode)
+            .retype_cnode::<_, U12>(root_cnode)
             .expect("Couldn't retype to responder_cnode_local");
 
         let (caller_cnode_local, responder_cnode_local, caller, responder, root_cnode) =
@@ -178,11 +172,11 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
             LocalCap<CNode<U4096, role::Child>>,
             _,
         ) = ut16a
-            .retype_local_cnode::<_, U12>(root_cnode)
+            .retype_cnode::<_, U12>(root_cnode)
             .expect("Couldn't retype to caller_cnode_local");
 
         let (fault_sink_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) = ut16b
-            .retype_local_cnode::<_, U12>(root_cnode)
+            .retype_cnode::<_, U12>(root_cnode)
             .expect("Couldn't retype to responder_cnode_local");
 
         let (
@@ -342,7 +336,7 @@ pub extern "C" fn child_proc_b(p: ProducerParams<role::Local>) {
             Ok(_) => {
                 debug_println!("The producer *thinks* it successfully sent {}", i);
             }
-            Err(PushError(x)) => {
+            Err(QueueFullError(x)) => {
                 debug_println!("Rejected sending {:?}", x);
                 unsafe {
                     seL4_Yield();

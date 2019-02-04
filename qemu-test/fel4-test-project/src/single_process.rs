@@ -48,7 +48,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     #[cfg(min_params = "true")]
     let (child_cnode, root_cnode, params) = {
         let (child_cnode, root_cnode) = child_cnode_ut
-            .retype_local_cnode::<_, U12>(root_cnode)
+            .retype_cnode::<_, U12>(root_cnode)
             .expect("Couldn't retype to child proc cnode");
 
         (child_cnode, root_cnode, ProcParams { value: 42 })
@@ -57,7 +57,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     #[cfg(test_case = "child_process_cap_management")]
     let (child_cnode, root_cnode, params) = {
         let (child_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) = child_cnode_ut
-            .retype_local_cnode::<_, U12>(root_cnode)
+            .retype_cnode::<_, U12>(root_cnode)
             .expect("Couldn't retype to child2 proc cnode");
 
         let (child_ut6, child_cnode) = ut6
@@ -80,7 +80,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     #[cfg(test_case = "over_register_size_params")]
     let (child_cnode, root_cnode, params) = {
         let (child_cnode, root_cnode) = child_cnode_ut
-            .retype_local_cnode::<_, U12>(root_cnode)
+            .retype_cnode::<_, U12>(root_cnode)
             .expect("Couldn't retype to child proc cnode");
 
         let mut nums = [0xaaaaaaaa; 140];

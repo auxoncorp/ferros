@@ -304,8 +304,12 @@ where
                     state = waker_fn(state);
                 }
                 if self.queue_badge.are_all_overlapping_bits_set(current_badge) {
-                    if let Ok(e) = queue.pop() {
-                        state = queue_fn(e, state);
+                    for _ in 0..QLen::USIZE.saturating_mul(2) {
+                        if let Ok(e) = queue.pop() {
+                            state = queue_fn(e, state);
+                        } else {
+                            break;
+                        }
                     }
                 }
             }
@@ -391,6 +395,16 @@ where
     }
 }
 
+/// Error which occurs when pushing into a full queue.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct QueueFullError<T>(pub T);
+
+impl<T> From<PushError<T>> for QueueFullError<T> {
+    fn from(p: PushError<T>) -> Self {
+        QueueFullError(p.0)
+    }
+}
+
 impl<T: Sized + Sync + Send, QLen: Unsigned> Producer<role::Local, T, QLen>
 where
     QLen: IsGreater<U0>,
@@ -400,7 +414,7 @@ where
 {
     // TODO - should we expose an error defined in this crate?
     // signs point to yes.
-    pub fn send(&self, t: T) -> Result<(), PushError<T>> {
+    pub fn send(&self, t: T) -> Result<(), QueueFullError<T>> {
         let queue: &mut ArrayQueue<T, QLen> =
             unsafe { core::mem::transmute(self.queue.shared_queue as *mut ArrayQueue<T, QLen>) };
         queue.push(t)?;
