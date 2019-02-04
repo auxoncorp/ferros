@@ -72,7 +72,8 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     let (ut14a, consumer_thread_ut, producer_a_thread_ut, waker_thread_ut, root_cnode) =
         ut16e.quarter(root_cnode)?;
     let (_ut14e, producer_b_thread_ut, _, _, root_cnode) = ut16i.quarter(root_cnode)?;
-    let (ut12, asid_pool_ut, shared_page_ut, _, root_cnode) = ut14a.quarter(root_cnode)?;
+    let (ut12, asid_pool_ut, shared_page_ut, shared_page_ut_b, root_cnode) =
+        ut14a.quarter(root_cnode)?;
     let (ut10, scratch_page_table_ut, _, _, root_cnode) = ut12.quarter(root_cnode)?;
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode)?;
     let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode)?;
@@ -107,7 +108,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
 
     let (waker_vspace, mut boot_info, root_cnode) = VSpace::new(boot_info, waker_ut, root_cnode)?;
 
-    let (consumer, producer_setup, waker_setup, consumer_cnode, consumer_vspace, root_cnode) =
+    let (consumer, producer_setup_a, waker_setup, consumer_cnode, consumer_vspace, root_cnode) =
         Consumer1::new(
             shared_page_ut,
             ut4a,
@@ -119,25 +120,36 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
         )
         .expect("consumer setup error");
 
+    let (consumer, producer_setup_b, consumer_vspace, root_cnode) = consumer
+        .add_queue(
+            &producer_setup_a,
+            shared_page_ut_b,
+            consumer_vspace,
+            &mut scratch_page_table,
+            &mut boot_info.page_directory,
+            root_cnode,
+        )
+        .expect("consumer 2 setup error");
+
     let consumer_params = test_proc::ConsumerParams::<role::Child> { consumer };
 
     let (producer_a, producer_a_cnode, producer_a_vspace, root_cnode) = Producer::new(
-        &producer_setup,
+        &producer_setup_a,
         producer_a_cnode,
         producer_a_vspace,
         root_cnode,
     )?;
-    let producer_a_params = test_proc::ProducerParams::<role::Child> {
+    let producer_a_params = test_proc::ProducerXParams::<role::Child> {
         producer: producer_a,
     };
 
     let (producer_b, producer_b_cnode, producer_b_vspace, root_cnode) = Producer::new(
-        &producer_setup,
+        &producer_setup_b,
         producer_b_cnode,
         producer_b_vspace,
         root_cnode,
     )?;
-    let producer_b_params = test_proc::ProducerParams::<role::Child> {
+    let producer_b_params = test_proc::ProducerYParams::<role::Child> {
         producer: producer_b,
     };
 
@@ -146,7 +158,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
 
     let (consumer_thread, _consumer_vspace, root_cnode) = consumer_vspace
         .prepare_thread(
-            test_proc::consumer,
+            test_proc::consumer_process,
             consumer_params,
             consumer_thread_ut,
             root_cnode,
@@ -159,7 +171,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
 
     let (producer_a_thread, _producer_a_vspace, root_cnode) = producer_a_vspace
         .prepare_thread(
-            test_proc::producer,
+            test_proc::producer_x_process,
             producer_a_params,
             producer_a_thread_ut,
             root_cnode,
@@ -172,7 +184,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
 
     let (producer_b_thread, _producer_b_vspace, root_cnode) = producer_b_vspace
         .prepare_thread(
-            test_proc::producer,
+            test_proc::producer_y_process,
             producer_b_params,
             producer_b_thread_ut,
             root_cnode,
@@ -185,7 +197,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
 
     let (waker_thread, _waker_vspace, _root_cnode) = waker_vspace
         .prepare_thread(
-            test_proc::waker,
+            test_proc::waker_process,
             waker_params,
             waker_thread_ut,
             root_cnode,
