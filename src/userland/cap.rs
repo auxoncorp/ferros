@@ -126,7 +126,7 @@ impl<CT: CapType> ImmobileIndelibleInertCapabilityReference<CT> {
 /// Note that the kernel will ignore any use of the high 4 bits
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Debug, Hash)]
 pub struct Badge {
-    inner: usize,
+    pub(crate) inner: usize,
 }
 
 impl Badge {

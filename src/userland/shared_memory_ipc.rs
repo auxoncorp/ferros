@@ -34,36 +34,6 @@ pub mod queue {
     //
     // pub fn setup_consumer() -> Consumer
 
-    pub struct Consumer2<Role: CNodeRole, E, ESize: Unsigned, F, FSize: Unsigned>
-    where
-        ESize: IsGreater<U0, Output = True>,
-        ESize: ArrayLength<Slot<E>>,
-        FSize: IsGreater<U0, Output = True>,
-        FSize: ArrayLength<Slot<F>>,
-    {
-        notification: Cap<Notification, Role>,
-        queues: (QueueHandle<E, Role, ESize>, QueueHandle<F, Role, FSize>),
-    }
-
-    impl<Role: CNodeRole, E, ESize: Unsigned, F, FSize: Unsigned> Consumer2<Role, E, ESize, F, FSize>
-    where
-        ESize: IsGreater<U0, Output = True>,
-        ESize: ArrayLength<Slot<E>>,
-        FSize: IsGreater<U0, Output = True>,
-        FSize: ArrayLength<Slot<F>>,
-    {
-        fn new(
-            ntf: Cap<Notification, Role>,
-            qh1: QueueHandle<E, Role, ESize>,
-            qh2: QueueHandle<F, Role, FSize>,
-        ) -> Self {
-            Self {
-                notification: ntf,
-                queues: (qh1, qh2),
-            }
-        }
-    }
-
     pub struct Consumer3<
         Role: CNodeRole,
         E,
@@ -99,17 +69,6 @@ pub mod queue {
         GSize: IsGreater<U0, Output = True>,
         GSize: ArrayLength<Slot<G>>,
     {
-        fn new(
-            ntf: Cap<Notification, Role>,
-            qh1: QueueHandle<E, Role, ESize>,
-            qh2: QueueHandle<F, Role, FSize>,
-            qh3: QueueHandle<G, Role, GSize>,
-        ) -> Self {
-            Self {
-                notification: ntf,
-                queues: (qh1, qh2, qh3),
-            }
-        }
     }
 
 }
