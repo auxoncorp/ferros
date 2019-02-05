@@ -12,11 +12,11 @@ pub trait CNodeRole: private::SealedRole {}
 pub mod role {
     use super::CNodeRole;
 
-    #[derive(Debug)]
+    #[derive(Debug, PartialEq)]
     pub struct Local {}
     impl CNodeRole for Local {}
 
-    #[derive(Debug)]
+    #[derive(Debug, PartialEq)]
     pub struct Child {}
     impl CNodeRole for Child {}
 }
@@ -104,7 +104,7 @@ where
 /// local Rust-representing instances are consumed, mutated, or dropped.
 ///
 /// The absurdly long name is an intentional deterrent to the use of this type.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ImmobileIndelibleInertCapabilityReference<CT: CapType> {
     pub(crate) cptr: usize,
     pub(crate) _cap_type: PhantomData<CT>,
@@ -261,7 +261,7 @@ impl DirectRetype for Notification {
 // (or copied, likely), as that leads to ugly cptr aliasing issues that we're
 // not able to detect at compile time. Write compile-tests to ensure that it
 // doesn't implement those marker traits.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct AssignedPageDirectory<FreeSlots: Unsigned, Role: CNodeRole> {
     pub(super) next_free_slot: usize,
     pub(super) _free_slots: PhantomData<FreeSlots>,

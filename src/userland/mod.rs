@@ -19,5 +19,5 @@ pub use crate::userland::multi_consumer::*;
 pub use crate::userland::process::*;
 pub use crate::userland::rights::*;
 pub use crate::userland::shared_memory_ipc::*;
-pub use crate::userland::untyped::*;
+pub(crate) use crate::userland::untyped::*;
 pub use crate::userland::vspace::*;

@@ -2,7 +2,30 @@
 #![feature(optin_builtin_traits)]
 //! A lock free queue implementation adapted from Crossbeam's `ArrayQueue`:
 //! https://github.com/crossbeam-rs/crossbeam
-//! TODO: Mention license? crossbeam is dual apache / MIT.
+//! crossbeam is dual-licensed via apache / MIT.
+//! Permission is hereby granted, free of charge, to any
+//! person obtaining a copy of this software and associated
+//! documentation files (the "Software"), to deal in the
+//! Software without restriction, including without
+//! limitation the rights to use, copy, modify, merge,
+//! publish, distribute, sublicense, and/or sell copies of
+//! the Software, and to permit persons to whom the Software
+//! is furnished to do so, subject to the following
+//! conditions:
+//!
+//! The above copyright notice and this permission notice
+//! shall be included in all copies or substantial portions
+//! of the Software.
+//!
+//! THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+//! ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+//! TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+//! PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+//! SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+//! CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+//! OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+//! IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+//! DEALINGS IN THE SOFTWARE.
 
 use core::cell::{Cell, UnsafeCell};
 use core::fmt;
@@ -228,9 +251,6 @@ where
                             slot.value.get().write(value);
                         }
                         slot.stamp.store(tail + 1, Ordering::Release);
-                        // TODO - CLEANUP
-                        //// Repopulate self.buffer to ensure it remains Some at rest.
-                        //unsafe {(&mut *self.buffer.get()).replace(local_buffer);}
                         return Ok(());
                     }
                     Err(t) => {
@@ -245,9 +265,6 @@ where
                 // If the head lags one lap behind the tail as well...
                 if head.wrapping_add(self.one_lap) == tail {
                     // ...then the queue is full.
-                    // TODO - CLEANUP
-                    //// Repopulate self.buffer to ensure it remains Some at rest.
-                    //unsafe {(&mut *self.buffer.get()).replace(local_buffer);}
                     return Err(PushError(value));
                 }
 
@@ -322,9 +339,6 @@ where
                         let msg = unsafe { slot.value.get().read() };
                         slot.stamp
                             .store(head.wrapping_add(self.one_lap), Ordering::Release);
-                        // TODO - CLEANUP
-                        //// Repopulate self.buffer to ensure it remains Some at rest.
-                        //unsafe {(&mut *self.buffer.get()).replace(local_buffer);}
                         return Ok(msg);
                     }
                     Err(h) => {
@@ -338,9 +352,6 @@ where
 
                 // If the tail equals the head, that means the channel is empty.
                 if tail == head {
-                    // TODO - CLEANUP
-                    //// Repopulate self.buffer to ensure it remains Some at rest.
-                    //unsafe {(&mut *self.buffer.get()).replace(local_buffer);}
                     return Err(PopError);
                 }
 

@@ -50,61 +50,52 @@ pub extern "C" fn consumer_process(p: ConsumerParams<role::Local>) {
     #[derive(Debug)]
     struct State {
         interrupt_count: usize,
-        element_count: usize,
-        queue_sum: u64,
+        queue_e_element_count: usize,
+        queue_e_sum: u64,
+        queue_f_element_count: usize,
+        queue_f_sum: u64,
+    }
+
+    impl State {
+        fn debug_if_finished(&self) {
+            if self.interrupt_count == 1
+                && self.queue_e_element_count == 20
+                && self.queue_f_element_count == 20
+            {
+                debug_println!("Final state: {:?}", self);
+            }
+        }
     }
 
     debug_println!("Inside consumer");
     let initial_state = State {
         interrupt_count: 0,
-        element_count: 0,
-        queue_sum: 0,
+        queue_e_element_count: 0,
+        queue_e_sum: 0,
+        queue_f_element_count: 0,
+        queue_f_sum: 0,
     };
     p.consumer.consume(
         initial_state,
-        |state| {
-            let fresh_state = State {
-                interrupt_count: state.interrupt_count.saturating_add(1),
-                element_count: state.element_count,
-                queue_sum: state.queue_sum,
-            };
-            //if fresh_state.element_count == 40 && fresh_state.interrupt_count == 1 {
-            //    debug_println!(
-            //        "Creating fresh state {:?} in the waker callback",
-            //        fresh_state
-            //    );
-            //}
-            fresh_state
+        |mut state| {
+            debug_println!("Interrupt wakeup happened!");
+            state.interrupt_count = state.interrupt_count.saturating_add(1);
+            state.debug_if_finished();
+            state
         },
-        |x, state| {
+        |x, mut state| {
             debug_println!("Pulling from Queue E, Xenon: {:?}", x);
-            let fresh_state = State {
-                interrupt_count: state.interrupt_count,
-                element_count: state.element_count.saturating_add(1),
-                queue_sum: state.queue_sum.saturating_add(x.a),
-            };
-            //if fresh_state.element_count == 40 && fresh_state.interrupt_count == 1 {
-            //    debug_println!(
-            //        "Creating fresh state {:?} in the queue callback",
-            //        fresh_state
-            //    );
-            //}
-            fresh_state
+            state.queue_e_element_count = state.queue_e_element_count.saturating_add(1);
+            state.queue_e_sum = state.queue_e_sum.saturating_add(x.a);
+            state.debug_if_finished();
+            state
         },
-        |y, state| {
+        |y, mut state| {
             debug_println!("Pulling from Queue F, Yttrium: {:?}", y);
-            let fresh_state = State {
-                interrupt_count: state.interrupt_count,
-                element_count: state.element_count.saturating_add(1),
-                queue_sum: state.queue_sum.saturating_add(y.b),
-            };
-            //if fresh_state.element_count == 40 && fresh_state.interrupt_count == 1 {
-            //    debug_println!(
-            //        "Creating fresh state {:?} in the queue callback",
-            //        fresh_state
-            //    );
-            //}
-            fresh_state
+            state.queue_f_element_count = state.queue_f_element_count.saturating_add(1);
+            state.queue_f_sum = state.queue_f_sum.saturating_add(y.b);
+            state.debug_if_finished();
+            state
         },
     )
 }

@@ -25,10 +25,11 @@ mod dual_process;
 #[cfg(single_process = "true")]
 mod single_process;
 
-use ferros::micro_alloc::{self, GetUntyped};
+use ferros::micro_alloc::{self, Error as AllocError, GetUntyped};
 use ferros::pow::Pow;
 use ferros::userland::{
-    role, root_cnode, BootInfo, CNode, CNodeRole, Cap, Endpoint, LocalCap, RetypeForSetup, Untyped,
+    role, root_cnode, BootInfo, CNode, CNodeRole, Cap, Endpoint, IPCError, LocalCap,
+    MultiConsumerError, RetypeForSetup, SeL4Error, Untyped, VSpaceError,
 };
 use typenum::operator_aliases::Diff;
 use typenum::{U12, U2, U20, U4096, U6};
@@ -50,4 +51,43 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     double_door_backpressure::run(raw_boot_info).expect("double_door_backpressure run");
 
     yield_forever()
+}
+
+#[derive(Debug)]
+pub enum TopLevelError {
+    AllocError(AllocError),
+    IPCError(IPCError),
+    MultiConsumerError(MultiConsumerError),
+    VSpaceError(VSpaceError),
+    SeL4Error(SeL4Error),
+}
+
+impl From<AllocError> for TopLevelError {
+    fn from(e: AllocError) -> Self {
+        TopLevelError::AllocError(e)
+    }
+}
+
+impl From<IPCError> for TopLevelError {
+    fn from(e: IPCError) -> Self {
+        TopLevelError::IPCError(e)
+    }
+}
+
+impl From<MultiConsumerError> for TopLevelError {
+    fn from(e: MultiConsumerError) -> Self {
+        TopLevelError::MultiConsumerError(e)
+    }
+}
+
+impl From<VSpaceError> for TopLevelError {
+    fn from(e: VSpaceError) -> Self {
+        TopLevelError::VSpaceError(e)
+    }
+}
+
+impl From<SeL4Error> for TopLevelError {
+    fn from(e: SeL4Error) -> Self {
+        TopLevelError::SeL4Error(e)
+    }
 }

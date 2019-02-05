@@ -1,15 +1,15 @@
+use super::TopLevelError;
 use ferros::micro_alloc::{self, GetUntyped};
 use ferros::userland::{
-    role, root_cnode, BootInfo, CNode, CNodeRole, Consumer1, LocalCap,
-    Producer, QueueFullError, RetypeForSetup, SeL4Error, UnmappedPageTable, VSpace, Waker,
+    role, root_cnode, BootInfo, CNode, CNodeRole, Consumer1, LocalCap, Producer, QueueFullError,
+    RetypeForSetup, SeL4Error, UnmappedPageTable, VSpace, Waker,
 };
 use sel4_sys::{seL4_BootInfo, seL4_Yield, DebugOutHandle};
 use typenum::{U10, U12, U20, U4096};
 
-pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
+pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     // wrap all untyped memory
-    let mut allocator =
-        micro_alloc::Allocator::bootstrap(&raw_boot_info).expect("bootstrap failure");
+    let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
 
     // wrap root CNode for safe usage
     let root_cnode = root_cnode(&raw_boot_info);
@@ -70,8 +70,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
             &mut scratch_page_table,
             &mut boot_info.page_directory,
             root_cnode,
-        )
-        .expect("ipc error");
+        )?;
 
     let consumer_params = ConsumerParams::<role::Child> { consumer };
 
@@ -98,55 +97,47 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     let (waker, waker_cnode) = Waker::new(&waker_setup, waker_cnode, &root_cnode)?;
     let waker_params = WakerParams::<role::Child> { waker };
 
-    let (consumer_thread, _consumer_vspace, root_cnode) = consumer_vspace
-        .prepare_thread(
-            consumer_process,
-            consumer_params,
-            consumer_thread_ut,
-            root_cnode,
-            &mut scratch_page_table,
-            &mut boot_info.page_directory,
-        )
-        .expect("prepare child thread a");
+    let (consumer_thread, _consumer_vspace, root_cnode) = consumer_vspace.prepare_thread(
+        consumer_process,
+        consumer_params,
+        consumer_thread_ut,
+        root_cnode,
+        &mut scratch_page_table,
+        &mut boot_info.page_directory,
+    )?;
 
     consumer_thread.start(consumer_cnode, None, &boot_info.tcb, 255)?;
 
-    let (producer_a_thread, _producer_a_vspace, root_cnode) = producer_a_vspace
-        .prepare_thread(
-            producer_process,
-            producer_a_params,
-            producer_a_thread_ut,
-            root_cnode,
-            &mut scratch_page_table,
-            &mut boot_info.page_directory,
-        )
-        .expect("prepare child thread b");
+    let (producer_a_thread, _producer_a_vspace, root_cnode) = producer_a_vspace.prepare_thread(
+        producer_process,
+        producer_a_params,
+        producer_a_thread_ut,
+        root_cnode,
+        &mut scratch_page_table,
+        &mut boot_info.page_directory,
+    )?;
 
     producer_a_thread.start(producer_a_cnode, None, &boot_info.tcb, 255)?;
 
-    let (producer_b_thread, _producer_b_vspace, root_cnode) = producer_b_vspace
-        .prepare_thread(
-            producer_process,
-            producer_b_params,
-            producer_b_thread_ut,
-            root_cnode,
-            &mut scratch_page_table,
-            &mut boot_info.page_directory,
-        )
-        .expect("prepare child thread b");
+    let (producer_b_thread, _producer_b_vspace, root_cnode) = producer_b_vspace.prepare_thread(
+        producer_process,
+        producer_b_params,
+        producer_b_thread_ut,
+        root_cnode,
+        &mut scratch_page_table,
+        &mut boot_info.page_directory,
+    )?;
 
     producer_b_thread.start(producer_b_cnode, None, &boot_info.tcb, 255)?;
 
-    let (waker_thread, _waker_vspace, _root_cnode) = waker_vspace
-        .prepare_thread(
-            waker_process,
-            waker_params,
-            waker_thread_ut,
-            root_cnode,
-            &mut scratch_page_table,
-            &mut boot_info.page_directory,
-        )
-        .expect("prepare child thread b");
+    let (waker_thread, _waker_vspace, _root_cnode) = waker_vspace.prepare_thread(
+        waker_process,
+        waker_params,
+        waker_thread_ut,
+        root_cnode,
+        &mut scratch_page_table,
+        &mut boot_info.page_directory,
+    )?;
 
     waker_thread.start(waker_cnode, None, &boot_info.tcb, 255)?;
 

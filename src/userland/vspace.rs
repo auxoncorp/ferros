@@ -428,6 +428,12 @@ where
 
         Ok((ready_thread, vspace, output_cnode))
     }
+
+    pub(crate) fn identity_ref(
+        &self,
+    ) -> ImmobileIndelibleInertCapabilityReference<AssignedPageDirectory<U0, Role>> {
+        unsafe { ImmobileIndelibleInertCapabilityReference::new(self.page_dir.cptr) }
+    }
 }
 
 pub struct ReadyThread<Role: CNodeRole> {

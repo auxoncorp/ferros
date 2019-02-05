@@ -29,8 +29,9 @@ use crate::userland::cap::Badge;
 use crate::userland::paging::PageBytes;
 use crate::userland::role;
 use crate::userland::{
-    CNodeRole, Cap, CapRights, ChildCNode, LocalCNode, LocalCap, MappedPage, MappedPageTable,
-    Notification, PhantomCap, SeL4Error, UnmappedPage, Untyped, VSpace,
+    CNodeRole, Cap, CapRights, ChildCNode, ImmobileIndelibleInertCapabilityReference, LocalCNode,
+    LocalCap, MappedPage, MappedPageTable, Notification, PhantomCap, SeL4Error, UnmappedPage,
+    Untyped, VSpace,
 };
 use cross_queue::PushError;
 use cross_queue::{ArrayQueue, Slot};
@@ -38,6 +39,10 @@ use generic_array::ArrayLength;
 use sel4_sys::{seL4_Signal, seL4_Wait};
 use typenum::{Diff, IsGreater, Sub1, True, Unsigned, B1, U0, U12, U2, U3, U4};
 
+/// A multi-consumer that consumes interrupt-style notifications and from 1 queue
+///
+/// Designed to be handed to a new process as a member of the
+/// initial thread parameters struct (see `VSpace::prepare_thread`).
 pub struct Consumer1<Role: CNodeRole, T: Sized + Sync + Send, QLen: Unsigned>
 where
     QLen: IsGreater<U0, Output = True>,
@@ -49,6 +54,10 @@ where
     queue: QueueHandle<T, Role, QLen>,
 }
 
+/// A multi-consumer that consumes interrupt-style notifications and from 2 queues
+///
+/// Designed to be handed to a new process as a member of the
+/// initial thread parameters struct (see `VSpace::prepare_thread`).
 pub struct Consumer2<Role: CNodeRole, E, ESize: Unsigned, F, FSize: Unsigned>
 where
     ESize: IsGreater<U0, Output = True>,
@@ -64,6 +73,10 @@ where
     ),
 }
 
+/// A multi-consumer that consumes interrupt-style notifications and from 3 queues
+///
+/// Designed to be handed to a new process as a member of the
+/// initial thread parameters struct (see `VSpace::prepare_thread`).
 pub struct Consumer3<Role: CNodeRole, E, ESize: Unsigned, F, FSize: Unsigned, G, GSize: Unsigned>
 where
     ESize: IsGreater<U0, Output = True>,
@@ -82,6 +95,12 @@ where
     ),
 }
 
+/// Wrapper around the necessary support and capabilities for a given
+/// thread to push elements to an ingest queue for a multi-consumer
+/// (e.g. `Consumer1`, `Consumer2`,etc).
+///
+/// Designed to be handed to a new process as a member of the
+/// initial thread parameters struct (see `VSpace::prepare_thread`).
 pub struct Producer<Role: CNodeRole, T: Sized + Sync + Send, QLen: Unsigned>
 where
     QLen: IsGreater<U0, Output = True>,
@@ -91,7 +110,7 @@ where
     queue: QueueHandle<T, Role, QLen>,
 }
 
-pub struct QueueHandle<T: Sized, Role: CNodeRole, QLen: Unsigned>
+struct QueueHandle<T: Sized, Role: CNodeRole, QLen: Unsigned>
 where
     QLen: IsGreater<U0, Output = True>,
     QLen: ArrayLength<Slot<T>>,
@@ -103,9 +122,13 @@ where
     _queue_len: PhantomData<QLen>,
 }
 
+/// Error relating to the creation of a multi-consumer or
+/// its related ingest pathways.
 #[derive(Debug)]
 pub enum MultiConsumerError {
     QueueTooBig,
+    ConsumerIdentityMismatch,
+    ProduceToOwnQueueForbidden,
     SeL4Error(SeL4Error),
 }
 
@@ -117,7 +140,11 @@ impl From<SeL4Error> for MultiConsumerError {
 
 /// Wrapper around the necessary resources
 /// to add a new producer to a given queue
+/// ingested by a multi-consumer (e.g. `Consumer1`)
 pub struct ProducerSetup<T, QLen: Unsigned> {
+    // Used to verify that the related components agree on the identity of the consumer process
+    consumer_vspace_pagedir:
+        ImmobileIndelibleInertCapabilityReference<AssignedPageDirectory<U0, role::Child>>,
     shared_page: LocalCap<UnmappedPage>,
     queue_badge: Badge,
     // User-concealed alias'ing happening here.
@@ -128,10 +155,14 @@ pub struct ProducerSetup<T, QLen: Unsigned> {
 }
 
 /// Wrapper around the necessary resources
-/// to trigger a double door consumer's non-queue-reading
+/// to trigger a multi-consumer's non-queue-reading
 /// interrupt-oriented wakeup path.
 pub struct WakerSetup {
+    // Used to verify that the related components agree on the identity of the consumer process
+    consumer_vspace_pagedir:
+        ImmobileIndelibleInertCapabilityReference<AssignedPageDirectory<U0, role::Child>>,
     interrupt_badge: Badge,
+
     // User-concealed alias'ing happening here.
     // Don't mutate this Cap. Copying/minting is okay.
     notification: Cap<Notification, role::Local>,
@@ -223,6 +254,7 @@ where
         let queue_badge = Badge::from(1 << 1);
 
         let producer_setup: ProducerSetup<E, ELen> = ProducerSetup {
+            consumer_vspace_pagedir: consumer_vspace.identity_ref(),
             shared_page,
             queue_badge: queue_badge,
             // Construct a user-inaccessible copy of the local notification
@@ -236,6 +268,7 @@ where
             _queue_lenth: PhantomData,
         };
         let waker_setup = WakerSetup {
+            consumer_vspace_pagedir: consumer_vspace.identity_ref(),
             interrupt_badge: interrupt_badge,
             notification: local_notification,
         };
@@ -270,7 +303,7 @@ where
         ConsumerFilledPageTableCount: Unsigned,
     >(
         self,
-        producer_setup: &ProducerSetup<E, ELen>,
+        waker_setup: &WakerSetup,
         shared_page_ut: LocalCap<Untyped<U12>>,
         consumer_vspace: VSpace<
             ConsumerPageDirFreeSlots,
@@ -310,6 +343,12 @@ where
 
         ConsumerFilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, role::Child>>>,
     {
+        if waker_setup.consumer_vspace_pagedir != consumer_vspace.identity_ref() {
+            // Ensure that the consumer process that the `waker_setup` is wrapping
+            // a notification to is the same process as the one referred to by
+            // the `consumer_vspace` parameter.
+            return Err(MultiConsumerError::ConsumerIdentityMismatch);
+        }
         let (shared_page, consumer_shared_page, consumer_vspace, remainder_local_cnode) =
             create_page_filled_with_array_queue::<F, FLen, _, _, _, _, _, _>(
                 shared_page_ut,
@@ -321,12 +360,13 @@ where
 
         let fresh_queue_badge = Badge::from(self.queue_badge.inner << 1);
         let producer_setup: ProducerSetup<F, FLen> = ProducerSetup {
+            consumer_vspace_pagedir: consumer_vspace.identity_ref(),
             shared_page,
             queue_badge: fresh_queue_badge,
             // Construct a user-inaccessible copy of the local notification
             // purely for use in producing child-cnode-residing copies.
             notification: Cap {
-                cptr: producer_setup.notification.cptr,
+                cptr: waker_setup.notification.cptr,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
@@ -376,7 +416,7 @@ where
         ConsumerFilledPageTableCount: Unsigned,
     >(
         self,
-        producer_setup: &ProducerSetup<E, ELen>,
+        waker_setup: &WakerSetup,
         shared_page_ut: LocalCap<Untyped<U12>>,
         consumer_vspace: VSpace<
             ConsumerPageDirFreeSlots,
@@ -418,6 +458,12 @@ where
 
         ConsumerFilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, role::Child>>>,
     {
+        if waker_setup.consumer_vspace_pagedir != consumer_vspace.identity_ref() {
+            // Ensure that the consumer process that the `waker_setup` is wrapping
+            // a notification to is the same process as the one referred to by
+            // the `consumer_vspace` parameter.
+            return Err(MultiConsumerError::ConsumerIdentityMismatch);
+        }
         let (shared_page, consumer_shared_page, consumer_vspace, remainder_local_cnode) =
             create_page_filled_with_array_queue::<F, FLen, _, _, _, _, _, _>(
                 shared_page_ut,
@@ -429,12 +475,13 @@ where
 
         let fresh_queue_badge = Badge::from((self.queues.1).0.inner << 1);
         let producer_setup: ProducerSetup<F, FLen> = ProducerSetup {
+            consumer_vspace_pagedir: consumer_vspace.identity_ref(),
             shared_page,
             queue_badge: fresh_queue_badge,
             // Construct a user-inaccessible copy of the local notification
             // purely for use in producing child-cnode-residing copies.
             notification: Cap {
-                cptr: producer_setup.notification.cptr,
+                cptr: waker_setup.notification.cptr,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
@@ -546,9 +593,15 @@ where
     ))
 }
 
+/// Wrapper around the necessary capabilities for a given
+/// thread to awaken a multi-consumer to run the "interrupt" path
+///
+/// Designed to be handed to a new process as a member of the
+/// initial thread parameters struct (see `VSpace::prepare_thread`).
 pub struct Waker<Role: CNodeRole> {
     notification: Cap<Notification, Role>,
 }
+
 impl Waker<role::Child> {
     pub fn new<ChildCNodeSlots: Unsigned, LocalCNodeSlots: Unsigned>(
         setup: &WakerSetup,
@@ -570,6 +623,7 @@ impl Waker<role::Child> {
 }
 
 impl Waker<role::Local> {
+    /// Let the multi-consumer know that it ought to run its "interrupt" path.
     pub fn send_wakeup_signal(&self) {
         unsafe {
             seL4_Signal(self.notification.cptr);
@@ -792,7 +846,7 @@ where
             >,
             LocalCap<LocalCNode<Sub1<LocalCNodeSlots>>>,
         ),
-        SeL4Error,
+        MultiConsumerError,
     >
     where
         LocalCNodeSlots: Sub<B1>,
@@ -809,6 +863,12 @@ where
 
         ChildFilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, role::Child>>>,
     {
+        if setup.consumer_vspace_pagedir == child_vspace.identity_ref() {
+            // To simplify reasoning about likely control flow patterns,
+            // we presently disallow a consumer thread from producing to one
+            // of its own ingest queues.
+            return Err(MultiConsumerError::ProduceToOwnQueueForbidden);
+        }
         let (producer_shared_page, local_cnode) = setup
             .shared_page
             .copy_inside_cnode(local_cnode, CapRights::RW)?;
