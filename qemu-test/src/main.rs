@@ -220,7 +220,7 @@ mod tests {
         fn double_door_backpressure() {
             run_qemu_test(
                 "double_door_backpressure",
-                Regex::new(".*Creating fresh state State \\{ interrupt_count: 1, element_count: 40, queue_sum: 380 \\} in the queue callback.*").unwrap(),
+                Regex::new(".*Final state: State \\{ interrupt_count: 1, queue_e_element_count: 20, queue_e_sum: 190, queue_f_element_count: 20, queue_f_sum: 190 \\}.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
                 None,
             );
