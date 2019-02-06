@@ -1,12 +1,15 @@
 use core::cmp;
 use core::mem::{self, size_of};
+use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
     role, AssignedPageDirectory, CNode, CNodeRole, FaultSource,
     ImmobileIndelibleInertCapabilityReference, LocalCap, MappedPage, SeL4Error, ThreadControlBlock,
+    IRQControl, IRQHandle, Cap
 };
 use sel4_sys::*;
-use typenum::{Unsigned, U0};
+use typenum::{Sub1, Unsigned, U0, B1};
+use core::marker::PhantomData;
 
 impl LocalCap<ThreadControlBlock> {
     pub(super) fn configure<CNodeFreeSlots: Unsigned, VSpaceRole: CNodeRole>(
@@ -55,6 +58,66 @@ pub trait RetypeForSetup: Sized + Send + Sync {
 }
 
 pub type SetupVer<X> = <X as RetypeForSetup>::Output;
+
+#[derive(Debug)]
+pub enum IRQError {
+    UnavailableIRQ,
+    SeL4Error(SeL4Error),
+}
+impl From<SeL4Error> for IRQError {
+    fn from(e: SeL4Error) -> Self {
+        IRQError::SeL4Error(e)
+    }
+}
+
+impl LocalCap<IRQControl> {
+    pub fn create_handler<
+        DestRole: CNodeRole,
+        DestFreeSlots:Unsigned>
+    (
+        &mut self, irq: u8,
+        dest_cnode: LocalCap<CNode<DestFreeSlots, DestRole>>,
+    ) -> Result<
+        (
+        Cap<IRQHandle, DestRole>,
+        LocalCap<CNode<Sub1<DestFreeSlots>, DestRole>>
+        ),
+        IRQError>
+    where
+        DestFreeSlots: Sub<B1>,
+        Sub1<DestFreeSlots>: Unsigned,
+    {
+        if self.cap_data.known_handled[irq as usize] {
+            return Err(IRQError::UnavailableIRQ);
+        }
+        let (dest_cnode_remainder, dest_slot) = dest_cnode.consume_slot();
+        let err = unsafe {
+            seL4_IRQControl_Get(
+                self.cptr, // service/authority
+                irq as i32,
+                dest_slot.cptr, //root
+                dest_slot.offset, //index
+                seL4_WordBits as u8, //depth
+            )
+        };
+        if err != 0 {
+            return Err(IRQError::SeL4Error(SeL4Error::IRQControlGet(err)))
+        }
+
+        self.cap_data.known_handled[irq as usize] = true;
+
+        Ok((
+            Cap {
+                cptr: dest_slot.offset,
+                cap_data: IRQHandle { irq },
+                _role: PhantomData,
+            },
+            dest_cnode_remainder
+            ))
+
+    }
+}
+
 
 /// Set up the target registers and stack to pass the parameter. See
 /// http://infocenter.arm.com/help/topic/com.arm.doc.ihi0042f/IHI0042F_aapcs.pdf

@@ -15,4 +15,5 @@ pub enum SeL4Error {
     CNodeMutate(u32),
     CNodeMove(u32),
     CNodeDelete(u32),
+    IRQControlGet(u32),
 }

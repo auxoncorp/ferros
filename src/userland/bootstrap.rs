@@ -5,7 +5,7 @@ use crate::pow::Pow;
 use crate::userland::cap::UnassignedPageDirectory;
 use crate::userland::{
     role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, LocalCap, MappedPage,
-    MappedPageTable, SeL4Error, ThreadControlBlock, UnmappedPageTable, Untyped,
+    MappedPageTable, SeL4Error, ThreadControlBlock, UnmappedPageTable, Untyped, IRQControl
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
@@ -80,6 +80,7 @@ pub struct BootInfo<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned> {
     pub page_directory: LocalCap<AssignedPageDirectory<PageDirFreeSlots, role::Local>>,
     pub tcb: LocalCap<ThreadControlBlock>,
     pub asid_pool: LocalCap<ASIDPool<ASIDPoolFreeSlots>>,
+    pub irq_control: LocalCap<IRQControl>,
     user_image_frames_start: usize,
     user_image_frames_end: usize,
 }
@@ -116,7 +117,10 @@ impl BootInfo<paging::BaseASIDPoolFreeSlots, paging::RootTaskPageDirFreeSlots> {
                     },
                 },
                 tcb: Cap::wrap_cptr(seL4_CapInitThreadTCB as usize),
-                asid_pool: asid_pool,
+                asid_pool,
+                irq_control: Cap {cptr: seL4_CapIRQControl as usize, cap_data: IRQControl {
+                    known_handled: [false;255]
+                }, _role: PhantomData},
                 user_image_frames_start: bootinfo.userImageFrames.start,
                 user_image_frames_end: bootinfo.userImageFrames.end,
             },
@@ -170,6 +174,7 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
                 page_directory: page_dir,
                 tcb: self.tcb,
                 asid_pool: self.asid_pool,
+                irq_control: self.irq_control,
                 user_image_frames_start: self.user_image_frames_start,
                 user_image_frames_end: self.user_image_frames_end,
             },
@@ -200,6 +205,7 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
                 page_directory: self.page_directory,
                 tcb: self.tcb,
                 asid_pool: asid_pool,
+                irq_control: self.irq_control,
                 user_image_frames_start: self.user_image_frames_start,
                 user_image_frames_end: self.user_image_frames_end,
             },

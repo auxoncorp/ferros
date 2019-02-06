@@ -193,6 +193,23 @@ impl CopyAliasable for ThreadControlBlock {
     type CopyOutput = Self;
 }
 
+// TODO - consider moving IRQ code allocation tracking to compile-time,
+// which may be feasible since we treat IRQControl as a global
+// singleton.
+// The goal of such tracking is to prevent accidental double-binding to a single IRQ
+pub struct IRQControl {
+    pub(crate) known_handled: [bool;255]
+}
+
+impl CapType for IRQControl {}
+
+pub struct IRQHandle {
+    pub(crate) irq: u8
+}
+
+impl CapType for IRQHandle{}
+
+
 #[derive(Debug)]
 pub struct ASIDControl {}
 
@@ -388,6 +405,8 @@ mod private {
 
     impl SealedCapType for super::UnmappedPage {}
     impl<Role: CNodeRole> SealedCapType for super::MappedPage<Role> {}
+    impl SealedCapType for super::IRQControl {}
+    impl SealedCapType for super::IRQHandle {}
 }
 
 impl<CT: CapType> Cap<CT, role::Local> {

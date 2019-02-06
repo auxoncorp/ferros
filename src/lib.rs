@@ -34,7 +34,7 @@ mod test_proc;
 use crate::micro_alloc::{Error as AllocError, GetUntyped};
 use crate::userland::{
     role, root_cnode, BootInfo, CNode, Consumer1, IPCError, LocalCap, MultiConsumerError, Producer,
-    SeL4Error, UnmappedPageTable, VSpace, VSpaceError, Waker,
+    SeL4Error, UnmappedPageTable, VSpace, VSpaceError, Waker, IRQError, Notification
 };
 use sel4_sys::*;
 use typenum::{U12, U20, U4096};
@@ -77,7 +77,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode)?;
     let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode)?;
     let (ut5, _, root_cnode) = ut6.split(root_cnode)?;
-    let (ut4a, _ut4b, root_cnode) = ut5.split(root_cnode)?; // Why two splits? To exercise split.
+    let (ut4a, ut4b, root_cnode) = ut5.split(root_cnode)?; // Why two splits? To exercise split.
 
     // wrap the rest of the critical boot info
     let (boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
@@ -145,6 +145,10 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         producer_b_vspace,
         root_cnode,
     )?;
+
+    let (irq_handler, producer_b_cnode) = (&mut boot_info.irq_control).create_handler(27, producer_b_cnode)?;
+    let (notification, producer_b_cnode) = ut4b.retype_local::<_, Notification>(producer_b_cnode);
+
     let producer_b_params = test_proc::ProducerYParams::<role::Child> {
         producer: producer_b,
     };
@@ -203,6 +207,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 enum TopLevelError {
     AllocError(AllocError),
     IPCError(IPCError),
+    IRQError(IRQError),
     MultiConsumerError(MultiConsumerError),
     SeL4Error(SeL4Error),
     VSpaceError(VSpaceError),
@@ -235,5 +240,11 @@ impl From<VSpaceError> for TopLevelError {
 impl From<SeL4Error> for TopLevelError {
     fn from(e: SeL4Error) -> Self {
         TopLevelError::SeL4Error(e)
+    }
+}
+
+impl From<IRQError> for TopLevelError {
+    fn from(e: IRQError) -> Self {
+        TopLevelError::IRQError(e)
     }
 }
