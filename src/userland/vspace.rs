@@ -13,7 +13,7 @@ use generic_array::sequence::Concat;
 use generic_array::{arr, arr_impl, ArrayLength, GenericArray};
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1, Sum};
-use typenum::{Unsigned, B1, U0, U1, U10, U128, U14, U16, U2, U256, U9};
+use typenum::{Unsigned, B1, U0, U1, U10, U100, U128, U14, U16, U2, U9};
 
 #[derive(Debug)]
 pub enum VSpaceError {
@@ -67,18 +67,18 @@ impl VSpace {
             >,
             BootInfo<Sub1<ASIDPoolFreeSlots>, BootInfoPageDirFreeSlots>,
             // dest_cnode
-            LocalCap<LocalCNode<Diff<CNodeFreeSlots, U256>>>,
+            LocalCap<LocalCNode<Diff<CNodeFreeSlots, U128>>>,
         ),
         SeL4Error,
     >
     where
-        CNodeFreeSlots: Sub<U256>,
-        Diff<CNodeFreeSlots, U256>: Unsigned,
+        CNodeFreeSlots: Sub<U128>,
+        Diff<CNodeFreeSlots, U128>: Unsigned,
 
         ASIDPoolFreeSlots: Sub<B1>,
         Sub1<ASIDPoolFreeSlots>: Unsigned,
     {
-        let (cnode, dest_cnode) = dest_cnode.reserve_region::<U256>();
+        let (cnode, dest_cnode) = dest_cnode.reserve_region::<U128>();
 
         let (ut14, page_dir_ut, _, _, cnode) = ut16.quarter(cnode)?;
         let (ut12, _, _, _, cnode) = ut14.quarter(cnode)?;
@@ -108,8 +108,8 @@ impl VSpace {
 
         // TODO: the number of pages we reserve here needs to be checked against the
         // size of the binary.
-        let (cnode_slot_reservation_iter, cnode) = cnode.reservation_iter::<U128>();
-        let (code_page_slot_reservation_iter, vspace) = vspace.page_slot_reservation_iter::<U128>();
+        let (cnode_slot_reservation_iter, cnode) = cnode.reservation_iter::<U100>();
+        let (code_page_slot_reservation_iter, vspace) = vspace.page_slot_reservation_iter::<U100>();
 
         for ((page_cap, slot_cnode), page_slot) in boot_info
             .user_image_pages_iter()
@@ -404,6 +404,7 @@ where
 
         registers.sp = stack_pointer;
         registers.pc = function_descriptor as seL4_Word;
+        // TODO - Probably ought to attempt to suspend the thread instead of endlessly yielding
         registers.r14 = (yield_forever as *const fn() -> ()) as seL4_Word;
 
         // TODO - RESTORE - Reserve a guard page after the stack
@@ -426,6 +427,12 @@ where
         };
 
         Ok((ready_thread, vspace, output_cnode))
+    }
+
+    pub(crate) fn identity_ref(
+        &self,
+    ) -> ImmobileIndelibleInertCapabilityReference<AssignedPageDirectory<U0, Role>> {
+        unsafe { ImmobileIndelibleInertCapabilityReference::new(self.page_dir.cptr) }
     }
 }
 

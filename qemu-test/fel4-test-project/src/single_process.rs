@@ -1,3 +1,4 @@
+use super::TopLevelError;
 use ferros::micro_alloc::{self, GetUntyped};
 use ferros::pow::Pow;
 use ferros::userland::{
@@ -8,15 +9,13 @@ use sel4_sys::*;
 use typenum::operator_aliases::Diff;
 use typenum::{U12, U2, U20, U4096, U6};
 
-pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
+pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     #[cfg(test_case = "root_task_runs")]
     {
         debug_println!("\nhello from the root task!\n");
     }
 
-    let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)
-        .expect("Couldn't set up bootstrap allocator");
-
+    let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
     // wrap bootinfo caps
     let root_cnode = root_cnode(&raw_boot_info);
 
@@ -25,48 +24,37 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
         .get_untyped::<U20>()
         .expect("Couldn't find initial untyped");
 
-    let (ut18, _, _, _, root_cnode) = ut20.quarter(root_cnode).expect("quarter");
-    let (ut16, child_cnode_ut, child_vspace_ut, _, root_cnode) =
-        ut18.quarter(root_cnode).expect("quarter");
-    let (ut14, child_thread_ut, _, _, root_cnode) = ut16.quarter(root_cnode).expect("quarter");
-    let (ut12, asid_pool_ut, _, _, root_cnode) = ut14.quarter(root_cnode).expect("quarter");
-    let (ut10, scratch_page_table_ut, _, _, root_cnode) =
-        ut12.quarter(root_cnode).expect("quarter");
-    let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode).expect("quarter");
-    let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode).expect("quarter");
+    let (ut18, _, _, _, root_cnode) = ut20.quarter(root_cnode)?;
+    let (ut16, child_cnode_ut, child_vspace_ut, _, root_cnode) = ut18.quarter(root_cnode)?;
+    let (ut14, child_thread_ut, _, _, root_cnode) = ut16.quarter(root_cnode)?;
+    let (ut12, asid_pool_ut, _, _, root_cnode) = ut14.quarter(root_cnode)?;
+    let (ut10, scratch_page_table_ut, _, _, root_cnode) = ut12.quarter(root_cnode)?;
+    let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode)?;
+    let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode)?;
 
     // wrap the rest of the critical boot info
     let (mut boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
 
-    let (scratch_page_table, root_cnode): (LocalCap<UnmappedPageTable>, _) = scratch_page_table_ut
-        .retype_local(root_cnode)
-        .expect("retype scratch page table");
-    let (mut scratch_page_table, mut boot_info) = boot_info
-        .map_page_table(scratch_page_table)
-        .expect("map scratch page table");
+    let (scratch_page_table, root_cnode): (LocalCap<UnmappedPageTable>, _) =
+        scratch_page_table_ut.retype_local(root_cnode)?;
+    let (mut scratch_page_table, mut boot_info) = boot_info.map_page_table(scratch_page_table)?;
 
     #[cfg(min_params = "true")]
     let (child_cnode, root_cnode, params) = {
-        let (child_cnode, root_cnode) = child_cnode_ut
-            .retype_local_cnode::<_, U12>(root_cnode)
-            .expect("Couldn't retype to child proc cnode");
+        let (child_cnode, root_cnode) = child_cnode_ut.retype_cnode::<_, U12>(root_cnode)?;
 
         (child_cnode, root_cnode, ProcParams { value: 42 })
     };
 
     #[cfg(test_case = "child_process_cap_management")]
     let (child_cnode, root_cnode, params) = {
-        let (child_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) = child_cnode_ut
-            .retype_local_cnode::<_, U12>(root_cnode)
-            .expect("Couldn't retype to child2 proc cnode");
+        let (child_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
+            child_cnode_ut.retype_cnode::<_, U12>(root_cnode)?;
 
-        let (child_ut6, child_cnode) = ut6
-            .move_to_cnode(&root_cnode, child_cnode)
-            .expect("move untyped into child cnode b");
+        let (child_ut6, child_cnode) = ut6.move_to_cnode(&root_cnode, child_cnode)?;
 
-        let (child_cnode_as_child, child_cnode) = child_cnode
-            .generate_self_reference(&root_cnode)
-            .expect("self awareness");
+        let (child_cnode_as_child, child_cnode) =
+            child_cnode.generate_self_reference(&root_cnode)?;
 
         (
             child_cnode,
@@ -79,9 +67,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     };
     #[cfg(test_case = "over_register_size_params")]
     let (child_cnode, root_cnode, params) = {
-        let (child_cnode, root_cnode) = child_cnode_ut
-            .retype_local_cnode::<_, U12>(root_cnode)
-            .expect("Couldn't retype to child proc cnode");
+        let (child_cnode, root_cnode) = child_cnode_ut.retype_cnode::<_, U12>(root_cnode)?;
 
         let mut nums = [0xaaaaaaaa; 140];
         nums[0] = 0xbbbbbbbb;
@@ -92,16 +78,14 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), SeL4Error> {
     let (child_vspace, mut boot_info, root_cnode) =
         VSpace::new(boot_info, child_vspace_ut, root_cnode)?;
 
-    let (child_process, _caller_vspace, root_cnode) = child_vspace
-        .prepare_thread(
-            proc_main,
-            params,
-            child_thread_ut,
-            root_cnode,
-            &mut scratch_page_table,
-            &mut boot_info.page_directory,
-        )
-        .expect("prepare child thread a");
+    let (child_process, _caller_vspace, root_cnode) = child_vspace.prepare_thread(
+        proc_main,
+        params,
+        child_thread_ut,
+        root_cnode,
+        &mut scratch_page_table,
+        &mut boot_info.page_directory,
+    )?;
 
     child_process.start(child_cnode, None, &boot_info.tcb, 255)?;
 

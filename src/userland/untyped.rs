@@ -9,9 +9,7 @@ use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U2, U3};
 
-// TODO - constrain this function to internal use only
-// Currently used in micro_alloc, which is outside of this semi-sub-crate
-pub fn wrap_untyped<BitSize: Unsigned>(
+pub(crate) fn wrap_untyped<BitSize: Unsigned>(
     cptr: usize,
     untyped_desc: &seL4_UntypedDesc,
 ) -> Option<LocalCap<Untyped<BitSize>>> {
@@ -202,7 +200,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
 
     // TODO: the required size of the untyped depends in some way on the child radix, but HOW?
     // answer: it needs 4 more bits, this value is seL4_SlotBits.
-    pub fn retype_local_cnode<FreeSlots: Unsigned, ChildRadix: Unsigned>(
+    pub fn retype_cnode<FreeSlots: Unsigned, ChildRadix: Unsigned>(
         self,
         dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
     ) -> Result<

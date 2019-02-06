@@ -194,6 +194,17 @@ mod tests {
     }
 
     sequential_test! {
+        fn shared_page_queue() {
+            run_qemu_test(
+                "shared_page_queue",
+                Regex::new(".*done producing!.*").unwrap(),
+                Regex::new(".*Root task should never return from main.*").unwrap(),
+                Some(vec![("dual_process", "true")]),
+            );
+        }
+    }
+
+    sequential_test! {
         fn fault_pair() {
             run_qemu_test(
                 "fault_pair",
@@ -201,6 +212,17 @@ mod tests {
                 Regex::new(".*Caught a fault: CapFault\\(CapFault \\{ sender: Badge \\{ inner: 0 \\}, in_receive_phase: false, cap_address: 314159 \\}\\).*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
                 Some(vec![("dual_process", "true")]),
+            );
+        }
+    }
+
+    sequential_test! {
+        fn double_door_backpressure() {
+            run_qemu_test(
+                "double_door_backpressure",
+                Regex::new(".*Final state: State \\{ interrupt_count: 1, queue_e_element_count: 20, queue_e_sum: 190, queue_f_element_count: 20, queue_f_sum: 190 \\}.*").unwrap(),
+                Regex::new(".*Root task should never return from main.*").unwrap(),
+                None,
             );
         }
     }

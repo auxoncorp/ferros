@@ -10,6 +10,7 @@ edition = "2018"
 libsel4-sys = { git = "ssh://git@github.com/auxoncorp/libsel4-sys.git", branch = "master" }
 typenum = "1.10.0"
 generic-array = "0.12.0"
+cross_queue = { path = "./cross_queue" }
 
 [dependencies.arrayvec]
 version = "0.4.10"
