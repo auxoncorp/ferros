@@ -16,4 +16,6 @@ pub enum SeL4Error {
     CNodeMove(u32),
     CNodeDelete(u32),
     IRQControlGet(u32),
+    IRQHandlerSetNotification(u32),
+    IRQHandlerAck(u32),
 }

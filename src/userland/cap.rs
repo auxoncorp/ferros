@@ -198,17 +198,16 @@ impl CopyAliasable for ThreadControlBlock {
 // singleton.
 // The goal of such tracking is to prevent accidental double-binding to a single IRQ
 pub struct IRQControl {
-    pub(crate) known_handled: [bool;255]
+    pub(crate) known_handled: [bool; 256],
 }
 
 impl CapType for IRQControl {}
 
 pub struct IRQHandle {
-    pub(crate) irq: u8
+    pub(crate) irq: u8,
 }
 
-impl CapType for IRQHandle{}
-
+impl CapType for IRQHandle {}
 
 #[derive(Debug)]
 pub struct ASIDControl {}

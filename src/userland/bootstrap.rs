@@ -4,8 +4,8 @@ use core::ops::Sub;
 use crate::pow::Pow;
 use crate::userland::cap::UnassignedPageDirectory;
 use crate::userland::{
-    role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, LocalCap, MappedPage,
-    MappedPageTable, SeL4Error, ThreadControlBlock, UnmappedPageTable, Untyped, IRQControl
+    role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, IRQControl, LocalCap,
+    MappedPage, MappedPageTable, SeL4Error, ThreadControlBlock, UnmappedPageTable, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
@@ -118,9 +118,13 @@ impl BootInfo<paging::BaseASIDPoolFreeSlots, paging::RootTaskPageDirFreeSlots> {
                 },
                 tcb: Cap::wrap_cptr(seL4_CapInitThreadTCB as usize),
                 asid_pool,
-                irq_control: Cap {cptr: seL4_CapIRQControl as usize, cap_data: IRQControl {
-                    known_handled: [false;255]
-                }, _role: PhantomData},
+                irq_control: Cap {
+                    cptr: seL4_CapIRQControl as usize,
+                    cap_data: IRQControl {
+                        known_handled: [false; 256],
+                    },
+                    _role: PhantomData,
+                },
                 user_image_frames_start: bootinfo.userImageFrames.start,
                 user_image_frames_end: bootinfo.userImageFrames.end,
             },

@@ -1,15 +1,15 @@
 use core::cmp;
+use core::marker::PhantomData;
 use core::mem::{self, size_of};
 use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
-    role, AssignedPageDirectory, CNode, CNodeRole, FaultSource,
-    ImmobileIndelibleInertCapabilityReference, LocalCap, MappedPage, SeL4Error, ThreadControlBlock,
-    IRQControl, IRQHandle, Cap
+    role, AssignedPageDirectory, Badge, CNode, CNodeRole, Cap, FaultSource, IRQControl, IRQHandle,
+    ImmobileIndelibleInertCapabilityReference, LocalCap, MappedPage, Notification, SeL4Error,
+    ThreadControlBlock,
 };
 use sel4_sys::*;
-use typenum::{Sub1, Unsigned, U0, B1};
-use core::marker::PhantomData;
+use typenum::{Sub1, Unsigned, B1, U0};
 
 impl LocalCap<ThreadControlBlock> {
     pub(super) fn configure<CNodeFreeSlots: Unsigned, VSpaceRole: CNodeRole>(
@@ -71,18 +71,17 @@ impl From<SeL4Error> for IRQError {
 }
 
 impl LocalCap<IRQControl> {
-    pub fn create_handler<
-        DestRole: CNodeRole,
-        DestFreeSlots:Unsigned>
-    (
-        &mut self, irq: u8,
+    pub fn create_handler<DestRole: CNodeRole, DestFreeSlots: Unsigned>(
+        &mut self,
+        irq: u8,
         dest_cnode: LocalCap<CNode<DestFreeSlots, DestRole>>,
     ) -> Result<
         (
-        Cap<IRQHandle, DestRole>,
-        LocalCap<CNode<Sub1<DestFreeSlots>, DestRole>>
+            Cap<IRQHandle, DestRole>,
+            LocalCap<CNode<Sub1<DestFreeSlots>, DestRole>>,
         ),
-        IRQError>
+        IRQError,
+    >
     where
         DestFreeSlots: Sub<B1>,
         Sub1<DestFreeSlots>: Unsigned,
@@ -95,13 +94,13 @@ impl LocalCap<IRQControl> {
             seL4_IRQControl_Get(
                 self.cptr, // service/authority
                 irq as i32,
-                dest_slot.cptr, //root
-                dest_slot.offset, //index
+                dest_slot.cptr,      //root
+                dest_slot.offset,    //index
                 seL4_WordBits as u8, //depth
             )
         };
         if err != 0 {
-            return Err(IRQError::SeL4Error(SeL4Error::IRQControlGet(err)))
+            return Err(IRQError::SeL4Error(SeL4Error::IRQControlGet(err)));
         }
 
         self.cap_data.known_handled[irq as usize] = true;
@@ -112,12 +111,54 @@ impl LocalCap<IRQControl> {
                 cap_data: IRQHandle { irq },
                 _role: PhantomData,
             },
-            dest_cnode_remainder
-            ))
-
+            dest_cnode_remainder,
+        ))
     }
 }
 
+/// Wrapper around an already-bound-to-a-notification IRQ Handle
+/// Might also be represented as a marker type parameter for IRQHandle
+/// or perhaps as an alternate CapType that IRQHandle transitions into
+/// (like UnmappedPage / MappedPage)
+pub struct IRQAcker<Role: CNodeRole> {
+    // TODO - should we also alias or maintain a reference to the notification?
+    // Maybe only if we want to do error-checking to prevent mismatch of location/process
+    irq_handle: Cap<IRQHandle, Role>,
+}
+
+impl<Role: CNodeRole> Cap<IRQHandle, Role> {
+    pub(crate) fn set_notification(
+        self,
+        notification: &Cap<Notification, Role>,
+    ) -> Result<(IRQAcker<Role>), SeL4Error> {
+        let err = unsafe { seL4_IRQHandler_SetNotification(self.cptr, notification.cptr) };
+        if err != 0 {
+            return Err(SeL4Error::IRQHandlerSetNotification(err));
+        }
+        Ok(IRQAcker { irq_handle: self })
+    }
+}
+
+impl<Role: CNodeRole> IRQAcker<Role> {
+    pub fn ack(&self) -> Result<(), SeL4Error> {
+        let err = unsafe { seL4_IRQHandler_Ack(self.irq_handle.cptr) };
+        if err != 0 {
+            return Err(SeL4Error::IRQHandlerAck(err));
+        }
+        Ok(())
+    }
+}
+
+impl LocalCap<Notification> {
+    /// Blocking wait on a notification
+    pub(crate) fn wait(&self) -> Badge {
+        let mut sender_badge: usize = 0;
+        unsafe {
+            seL4_Wait(self.cptr, &mut sender_badge as *mut usize);
+        };
+        Badge::from(sender_badge)
+    }
+}
 
 /// Set up the target registers and stack to pass the parameter. See
 /// http://infocenter.arm.com/help/topic/com.arm.doc.ihi0042f/IHI0042F_aapcs.pdf
