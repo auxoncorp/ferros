@@ -6,7 +6,7 @@ use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, Set
 use crate::userland::{
     paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNodeRole, Cap, CapRights, ChildCNode,
     FaultSource, ImmobileIndelibleInertCapabilityReference, LocalCNode, LocalCap, MappedPage,
-    MappedPageTable, PhantomCap, SeL4Error, UnassignedPageDirectory, UnmappedPage,
+    MappedPageTable, Notification, PhantomCap, SeL4Error, UnassignedPageDirectory, UnmappedPage,
     UnmappedPageTable, Untyped,
 };
 use generic_array::sequence::Concat;
@@ -20,6 +20,7 @@ pub enum VSpaceError {
     ProcessParameterTooBigForStack,
     ProcessParameterHandoffSizeMismatch,
     SeL4Error(SeL4Error),
+    TCBSetPrio(u32),
 }
 
 impl From<SeL4Error> for VSpaceError {
@@ -415,7 +416,8 @@ where
         let (ipc_buffer, vspace) = vspace.map_page(ipc_buffer)?;
 
         // allocate the thread control block
-        let (tcb, _local_cnode) = tcb_ut.retype_local(local_cnode)?;
+        let (tcb, _local_cnode): (Cap<ThreadControlBlock, _>, _) =
+            tcb_ut.retype_local(local_cnode)?;
 
         let ready_thread = ReadyThread {
             vspace_cptr: unsafe {
@@ -425,6 +427,140 @@ where
             ipc_buffer,
             tcb,
         };
+
+        Ok((ready_thread, vspace, output_cnode))
+    }
+
+    pub fn prepare_and_configure_thread<
+        T: RetypeForSetup,
+        LocalCNodeFreeSlots: Unsigned,
+        ScratchPageTableSlots: Unsigned,
+        LocalPageDirFreeSlots: Unsigned,
+        ChildCSpaceRootFreeSlots: Unsigned,
+    >(
+        self,
+        function_descriptor: extern "C" fn(T) -> (),
+        process_parameter: SetupVer<T>,
+        untyped: LocalCap<Untyped<U14>>,
+        child_cspace: LocalCap<ChildCNode<ChildCSpaceRootFreeSlots>>,
+        fault_source: Option<FaultSource<role::Child>>,
+        local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
+        scratch_page_table: &mut LocalCap<MappedPageTable<ScratchPageTableSlots, role::Local>>,
+        mut local_page_dir: &mut LocalCap<
+            AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>,
+        >,
+        priority_authority: &LocalCap<ThreadControlBlock>,
+    ) -> Result<
+        (
+            ReadyThread<Role>,
+            VSpace<PageDirFreeSlots, Sub1<Sub1<PageTableFreeSlots>>, FilledPageTableCount, Role>,
+            LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U9>>>,
+        ),
+        VSpaceError,
+    >
+    where
+        // TODO - Expect to change this to support subtracting 4 page table slots thanks to guards
+        PageTableFreeSlots: Sub<B1>,
+        Sub1<PageTableFreeSlots>: Unsigned,
+
+        Sub1<PageTableFreeSlots>: Sub<B1>,
+        Sub1<Sub1<PageTableFreeSlots>>: Unsigned,
+
+        LocalCNodeFreeSlots: Sub<U9>,
+        Diff<LocalCNodeFreeSlots, U9>: Unsigned,
+
+        ScratchPageTableSlots: Sub<B1>,
+        Sub1<ScratchPageTableSlots>: Unsigned,
+    {
+        // TODO - parameterize this function with Count in order
+        // take more than one page for the stack. Requires:
+        //   * Use of CNode's reservation_iter
+        //   * Getting a handle on the first page (or few pages?)
+        // for the params-insertion despite iter-use
+        //   * Connecting the Count to the size of the untyped parameter
+        //   * Either an iterator over the split-out untypeds
+        //   * Or a private/internal bulk retype-local
+
+        // TODO - lift these checks to compile-time, as static assertions
+        // Note - This comparison is conservative because technically
+        // we can fit some of the params into available registers.
+        if core::mem::size_of::<SetupVer<T>>() > paging::PageBytes::USIZE {
+            return Err(VSpaceError::ProcessParameterTooBigForStack);
+        }
+        if core::mem::size_of::<SetupVer<T>>() != core::mem::size_of::<T>() {
+            return Err(VSpaceError::ProcessParameterHandoffSizeMismatch);
+        }
+
+        // TODO - RESTORE - Reserve a guard page before the stack
+        //let mut vspace = self.skip_pages::<U1>();
+        let vspace = self;
+        let (local_cnode, output_cnode) = local_cnode.reserve_region::<U9>();
+
+        let (ut12, stack_page_ut, ipc_buffer_ut, _, local_cnode) = untyped.quarter(local_cnode)?;
+        let (_ut10, tcb_ut, _, _, local_cnode) = ut12.quarter(local_cnode)?;
+        let (stack_page, local_cnode): (LocalCap<UnmappedPage>, _) =
+            stack_page_ut.retype_local(local_cnode)?;
+
+        // map the child stack into local memory so we can set it up
+        let ((mut registers, param_size_on_stack), stack_page) = scratch_page_table
+            .temporarily_map_page(stack_page, &mut local_page_dir, |mapped_page| unsafe {
+                setup_initial_stack_and_regs(
+                    &process_parameter as *const SetupVer<T> as *const usize,
+                    core::mem::size_of::<SetupVer<T>>(),
+                    (mapped_page.cap_data.vaddr + (1 << paging::PageBits::USIZE)) as *mut usize,
+                )
+            })?;
+        // Map the stack to the target address space
+        let (stack_page, vspace) = vspace.map_page(stack_page)?;
+        let stack_pointer =
+            stack_page.cap_data.vaddr + (1 << paging::PageBits::USIZE) - param_size_on_stack;
+
+        registers.sp = stack_pointer;
+        registers.pc = function_descriptor as seL4_Word;
+        // TODO - Probably ought to attempt to suspend the thread instead of endlessly yielding
+        registers.r14 = (yield_forever as *const fn() -> ()) as seL4_Word;
+
+        // TODO - RESTORE - Reserve a guard page after the stack
+        //let vspace = self.skip_pages::<U1>();
+
+        // Allocate and map the ipc buffer
+        let (ipc_buffer, local_cnode) = ipc_buffer_ut.retype_local(local_cnode)?;
+        let (ipc_buffer, vspace) = vspace.map_page(ipc_buffer)?;
+
+        // allocate the thread control block
+        let (mut tcb, _local_cnode) = tcb_ut.retype_local(local_cnode)?;
+
+        let ready_thread = ReadyThread {
+            vspace_cptr: unsafe {
+                ImmobileIndelibleInertCapabilityReference::new(vspace.page_dir.cptr)
+            },
+            registers,
+            ipc_buffer,
+            tcb: Cap {
+                cptr: tcb.cptr,
+                cap_data: PhantomCap::phantom_instance(),
+                _role: PhantomData,
+            },
+        };
+
+        tcb.configure(
+            child_cspace,
+            fault_source,
+            unsafe { ImmobileIndelibleInertCapabilityReference::<AssignedPageDirectory<_, role::Child>>::new(vspace.page_dir.cptr) },
+            Cap {
+                cptr: (&ready_thread).ipc_buffer.cptr,
+                cap_data: MappedPage {
+                    vaddr: (&ready_thread).ipc_buffer.cap_data.vaddr,
+                    _role: PhantomData,
+                },
+                _role: PhantomData,
+            },
+        )?;
+
+        let err = unsafe { seL4_TCB_SetPriority(tcb.cptr, priority_authority.cptr, 255 as usize) };
+        if err != 0 {
+            return Err(VSpaceError::SeL4Error(SeL4Error::TCBSetPriority(err)));
+        }
 
         Ok((ready_thread, vspace, output_cnode))
     }
@@ -483,6 +619,54 @@ impl<Role: CNodeRole> ReadyThread<Role> {
             }
         }
 
+        Ok(())
+    }
+
+    pub fn start_configured_thread(
+        self,
+        // TODO: index tcb by priority, so you can't set a higher priority than
+        // the authority (which is a runtime error)
+        priority_authority: &LocalCap<ThreadControlBlock>,
+        priority: u8,
+    ) -> Result<(), SeL4Error> {
+        let mut tcb = self.tcb;
+        let mut regs = self.registers;
+
+        unsafe {
+            let err = seL4_TCB_WriteRegisters(
+                tcb.cptr,
+                0,
+                0,
+                // all the regs
+                core::mem::size_of::<seL4_UserContext>() / core::mem::size_of::<seL4_Word>(),
+                &mut regs,
+            );
+            if err != 0 {
+                return Err(SeL4Error::TCBWriteRegisters(err));
+            }
+
+            // let err = seL4_TCB_SetPriority(tcb.cptr, priority_authority.cptr, priority as usize);
+            // if err != 0 {
+            //     return Err(SeL4Error::TCBSetPriority(err));
+            // }
+
+            let err = seL4_TCB_Resume(tcb.cptr);
+            if err != 0 {
+                return Err(SeL4Error::TCBResume(err));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn bind_notification(
+        &self,
+        notification: &Cap<Notification, Role>,
+    ) -> Result<(), SeL4Error> {
+        let err = unsafe { seL4_TCB_BindNotification(self.tcb.cptr, notification.cptr) };
+        if err != 0 {
+            return Err(SeL4Error::TCBBindNotification(err));
+        }
         Ok(())
     }
 }

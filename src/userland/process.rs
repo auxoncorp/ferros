@@ -86,14 +86,17 @@ impl LocalCap<IRQControl> {
         DestFreeSlots: Sub<B1>,
         Sub1<DestFreeSlots>: Unsigned,
     {
+        // TODO(pittma): Once we have access to `maxIRQ', also check
+        // that `irq <= maxIRQ'.
         if self.cap_data.known_handled[irq as usize] {
             return Err(IRQError::UnavailableIRQ);
         }
         let (dest_cnode_remainder, dest_slot) = dest_cnode.consume_slot();
         let err = unsafe {
-            seL4_IRQControl_Get(
+            seL4_IRQControl_GetTrigger(
                 self.cptr, // service/authority
-                irq as i32,
+                irq as usize,
+                1,
                 dest_slot.cptr,      //root
                 dest_slot.offset,    //index
                 seL4_WordBits as u8, //depth
@@ -128,14 +131,14 @@ pub struct IRQAcker<Role: CNodeRole> {
 
 impl<Role: CNodeRole> Cap<IRQHandle, Role> {
     pub(crate) fn set_notification(
-        self,
+        &self,
         notification: &Cap<Notification, Role>,
-    ) -> Result<(IRQAcker<Role>), SeL4Error> {
+    ) -> Result<(), SeL4Error> {
         let err = unsafe { seL4_IRQHandler_SetNotification(self.cptr, notification.cptr) };
         if err != 0 {
             return Err(SeL4Error::IRQHandlerSetNotification(err));
         }
-        Ok(IRQAcker { irq_handle: self })
+        Ok(())
     }
 }
 

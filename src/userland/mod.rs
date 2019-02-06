@@ -3,6 +3,7 @@ mod cap;
 mod cnode;
 mod error;
 mod ipc;
+mod irq;
 mod multi_consumer;
 pub(crate) mod process;
 mod rights;

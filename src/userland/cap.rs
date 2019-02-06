@@ -70,7 +70,7 @@ pub struct Cap<CT: CapType, Role: CNodeRole> {
     pub cptr: usize,
     // TODO: put this back to pub(super)
     pub(crate) cap_data: CT,
-    pub(super) _role: PhantomData<Role>,
+    pub(crate) _role: PhantomData<Role>,
 }
 
 pub trait CapType: private::SealedCapType {}

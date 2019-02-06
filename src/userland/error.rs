@@ -11,6 +11,7 @@ pub enum SeL4Error {
     CNodeMint(u32),
     TCBWriteRegisters(u32),
     TCBSetPriority(u32),
+    TCBBindNotification(u32),
     TCBResume(u32),
     CNodeMutate(u32),
     CNodeMove(u32),

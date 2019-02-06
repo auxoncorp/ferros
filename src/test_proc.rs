@@ -1,6 +1,7 @@
 use crate::userland::process::IRQAcker;
 use crate::userland::{
-    role, CNodeRole, Cap, Consumer2, Notification, Producer, QueueFullError, RetypeForSetup, Waker,
+    role, CNodeRole, Cap, Consumer2, IRQHandle, Notification, Producer, QueueFullError,
+    RetypeForSetup, Waker,
 };
 use sel4_sys::seL4_Yield;
 use typenum::{U10, U2};
@@ -26,7 +27,7 @@ impl RetypeForSetup for ConsumerParams<role::Local> {
 pub struct ProducerYParams<Role: CNodeRole> {
     pub producer: Producer<Role, Yttrium, U2>,
     pub interrupt_notification: Cap<Notification, Role>,
-    pub acker: IRQAcker<Role>,
+    pub irq: Cap<IRQHandle, Role>,
 }
 
 impl RetypeForSetup for ProducerYParams<role::Local> {
@@ -136,7 +137,7 @@ pub extern "C" fn producer_y_process(p: ProducerYParams<role::Local>) {
     loop {
         let badge = p.interrupt_notification.wait();
         debug_println!("Got an interrupt notification with badge: {:?}", badge);
-        match p.acker.ack() {
+        match p.irq.ack() {
             Ok(_) => (),
             Err(e) => debug_println!("Ack error: {:?}", e),
         }
