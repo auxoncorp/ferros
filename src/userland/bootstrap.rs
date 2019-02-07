@@ -4,7 +4,7 @@ use core::ops::Sub;
 use crate::pow::Pow;
 use crate::userland::cap::UnassignedPageDirectory;
 use crate::userland::{
-    role, untyped_kind, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, IRQControl,
+    memory_kind, role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, IRQControl,
     LocalCap, MappedPage, MappedPageTable, SeL4Error, ThreadControlBlock, UnmappedPageTable,
     Untyped,
 };
@@ -140,7 +140,9 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
     // TODO this doesn't enforce the aliasing constraints we want at the type
     // level. This can be modeled as an array (or other sized thing) once we
     // know how big the user image is.
-    pub fn user_image_pages_iter(&self) -> impl Iterator<Item = LocalCap<MappedPage<role::Local>>> {
+    pub fn user_image_pages_iter(
+        &self,
+    ) -> impl Iterator<Item = LocalCap<MappedPage<role::Local, memory_kind::General>>> {
         let vaddr_iter = (address_space::ProgramStart::USIZE..address_space::ProgramEnd::USIZE)
             .step_by(1 << paging::PageBits::USIZE);
 
@@ -151,6 +153,7 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
                 cap_data: MappedPage {
                     vaddr,
                     _role: PhantomData,
+                    _kind: PhantomData,
                 },
                 _role: PhantomData,
             })
@@ -224,7 +227,7 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
 /// (which is assumed to be a singleton as well)
 /// because there is a lightly-documented seL4 constraint
 /// that limits us to a single ASIDPool per application.
-impl LocalCap<Untyped<U12, untyped_kind::General>> {
+impl LocalCap<Untyped<U12, memory_kind::General>> {
     pub fn retype_asid_pool<FreeSlots: Unsigned>(
         self,
         asid_control: LocalCap<ASIDControl>,

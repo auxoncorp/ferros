@@ -4,10 +4,10 @@ use crate::pow::Pow;
 use crate::userland::cap::ThreadControlBlock;
 use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, SetupVer};
 use crate::userland::{
-    paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNodeRole, Cap, CapRights, ChildCNode,
-    FaultSource, ImmobileIndelibleInertCapabilityReference, LocalCNode, LocalCap, MappedPage,
-    MappedPageTable, PhantomCap, SeL4Error, UnassignedPageDirectory, UnmappedPage,
-    UnmappedPageTable, Untyped,
+    memory_kind, paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNodeRole, Cap,
+    CapRights, ChildCNode, FaultSource, ImmobileIndelibleInertCapabilityReference, LocalCNode,
+    LocalCap, MappedPage, MappedPageTable, MemoryKind, PhantomCap, SeL4Error,
+    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, Untyped,
 };
 use generic_array::sequence::Concat;
 use generic_array::{arr, arr_impl, ArrayLength, GenericArray};
@@ -241,12 +241,12 @@ where
         ))
     }
 
-    pub fn map_page(
+    pub fn map_page<Kind: MemoryKind>(
         self,
-        page: LocalCap<UnmappedPage>,
+        page: LocalCap<UnmappedPage<Kind>>,
     ) -> Result<
         (
-            LocalCap<MappedPage<Role>>,
+            LocalCap<MappedPage<Role, Kind>>,
             VSpace<PageDirFreeSlots, Sub1<PageTableFreeSlots>, FilledPageTableCount, Role>,
         ),
         SeL4Error,
@@ -385,7 +385,7 @@ where
 
         let (ut12, stack_page_ut, ipc_buffer_ut, _, local_cnode) = untyped.quarter(local_cnode)?;
         let (_ut10, tcb_ut, _, _, local_cnode) = ut12.quarter(local_cnode)?;
-        let (stack_page, local_cnode): (LocalCap<UnmappedPage>, _) =
+        let (stack_page, local_cnode): (LocalCap<UnmappedPage<_>>, _) =
             stack_page_ut.retype_local(local_cnode)?;
 
         // map the child stack into local memory so we can set it up
@@ -439,7 +439,7 @@ where
 pub struct ReadyThread<Role: CNodeRole> {
     registers: seL4_UserContext,
     vspace_cptr: ImmobileIndelibleInertCapabilityReference<AssignedPageDirectory<U0, Role>>,
-    ipc_buffer: LocalCap<MappedPage<Role>>,
+    ipc_buffer: LocalCap<MappedPage<Role, memory_kind::General>>,
     tcb: LocalCap<ThreadControlBlock>,
 }
 
@@ -493,10 +493,10 @@ pub struct PageSlot<Role: CNodeRole> {
 }
 
 impl<Role: CNodeRole> PageSlot<Role> {
-    pub fn map_page(
+    pub fn map_page<Kind: MemoryKind>(
         mut self,
-        page: LocalCap<UnmappedPage>,
-    ) -> Result<LocalCap<MappedPage<Role>>, SeL4Error> {
+        page: LocalCap<UnmappedPage<Kind>>,
+    ) -> Result<LocalCap<MappedPage<Role, Kind>>, SeL4Error> {
         let (res, _) = self.page_table.map_page(page, &mut self.page_dir)?;
         Ok(res)
     }
@@ -608,13 +608,13 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<AssignedPageDirectory<FreeSl
 }
 
 impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<MappedPageTable<FreeSlots, Role>> {
-    pub fn map_page<PageDirFreeSlots: Unsigned>(
+    pub fn map_page<PageDirFreeSlots: Unsigned, Kind: MemoryKind>(
         self,
-        page: LocalCap<UnmappedPage>,
+        page: LocalCap<UnmappedPage<Kind>>,
         page_dir: &mut LocalCap<AssignedPageDirectory<PageDirFreeSlots, Role>>,
     ) -> Result<
         (
-            LocalCap<MappedPage<Role>>,
+            LocalCap<MappedPage<Role, Kind>>,
             LocalCap<MappedPageTable<Sub1<FreeSlots>, Role>>,
         ),
         SeL4Error,
@@ -649,6 +649,7 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<MappedPageTable<FreeSlots, R
                 cap_data: MappedPage {
                     vaddr: page_vaddr,
                     _role: PhantomData,
+                    _kind: PhantomData,
                 },
             },
             Cap {
@@ -667,16 +668,16 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<MappedPageTable<FreeSlots, R
     // TODO - Should we restrict this to only be for PageTables in role::Local,
     // since that's mostly the only role that can really meaningfully adjust
     // the content of the page.
-    pub fn temporarily_map_page<PageDirFreeSlots: Unsigned, F, Out>(
+    pub fn temporarily_map_page<PageDirFreeSlots: Unsigned, F, Out, Kind: MemoryKind>(
         &mut self,
-        unmapped_page: LocalCap<UnmappedPage>,
+        unmapped_page: LocalCap<UnmappedPage<Kind>>,
         // TODO - must this page_dir always be the parent of this page table?
         // if so, we should clamp down harder on enforcing this relationship.
         mut page_dir: &mut LocalCap<AssignedPageDirectory<PageDirFreeSlots, Role>>,
         f: F,
-    ) -> Result<(Out, LocalCap<UnmappedPage>), SeL4Error>
+    ) -> Result<(Out, LocalCap<UnmappedPage<Kind>>), SeL4Error>
     where
-        F: Fn(&LocalCap<MappedPage<Role>>) -> Out,
+        F: Fn(&LocalCap<MappedPage<Role, Kind>>) -> Out,
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
     {
@@ -772,8 +773,8 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<MappedPageTable<FreeSlots, R
     }
 }
 
-impl<Role: CNodeRole> LocalCap<MappedPage<Role>> {
-    pub fn unmap(self) -> Result<Cap<UnmappedPage, role::Local>, SeL4Error> {
+impl<Role: CNodeRole, Kind: MemoryKind> LocalCap<MappedPage<Role, Kind>> {
+    pub fn unmap(self) -> Result<Cap<UnmappedPage<Kind>, role::Local>, SeL4Error> {
         let err = unsafe { seL4_ARM_Page_Unmap(self.cptr) };
         if err != 0 {
             return Err(SeL4Error::UnmapPage(err));

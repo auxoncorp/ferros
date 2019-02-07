@@ -3,7 +3,7 @@
 //! that's big enough for the request.
 
 use arrayvec::ArrayVec;
-use crate::userland::{untyped_kind, wrap_untyped, LocalCap, Untyped, UntypedKind};
+use crate::userland::{memory_kind, wrap_untyped, LocalCap, MemoryKind, Untyped};
 use typenum::Unsigned;
 
 use sel4_sys::{seL4_BootInfo, seL4_UntypedDesc};
@@ -67,18 +67,18 @@ impl Allocator {
     }
     pub fn get_untyped<BitSize: Unsigned>(
         &mut self,
-    ) -> Option<LocalCap<Untyped<BitSize, untyped_kind::General>>> {
-        self.find_block::<BitSize, untyped_kind::General>(false, None)
+    ) -> Option<LocalCap<Untyped<BitSize, memory_kind::General>>> {
+        self.find_block::<BitSize, memory_kind::General>(false, None)
     }
 
     pub fn get_device_untyped<BitSize: Unsigned>(
         &mut self,
         physical_address: usize,
-    ) -> Option<LocalCap<Untyped<BitSize, untyped_kind::Device>>> {
-        self.find_block::<BitSize, untyped_kind::Device>(true, Some(physical_address))
+    ) -> Option<LocalCap<Untyped<BitSize, memory_kind::Device>>> {
+        self.find_block::<BitSize, memory_kind::Device>(true, Some(physical_address))
     }
 
-    fn find_block<BitSize: Unsigned, Kind: UntypedKind>(
+    fn find_block<BitSize: Unsigned, Kind: MemoryKind>(
         &mut self,
         device_ok: bool,
         physical_address: Option<usize>,

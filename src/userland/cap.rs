@@ -156,14 +156,14 @@ impl From<Badge> for usize {
 }
 
 #[derive(Debug)]
-pub struct Untyped<BitSize: Unsigned, Kind: UntypedKind = untyped_kind::General> {
+pub struct Untyped<BitSize: Unsigned, Kind: MemoryKind = memory_kind::General> {
     _bit_size: PhantomData<BitSize>,
     _kind: PhantomData<Kind>,
 }
 
-impl<BitSize: Unsigned, Kind: UntypedKind> CapType for Untyped<BitSize, Kind> {}
+impl<BitSize: Unsigned, Kind: MemoryKind> CapType for Untyped<BitSize, Kind> {}
 
-impl<BitSize: Unsigned, Kind: UntypedKind> PhantomCap for Untyped<BitSize, Kind> {
+impl<BitSize: Unsigned, Kind: MemoryKind> PhantomCap for Untyped<BitSize, Kind> {
     fn phantom_instance() -> Self {
         Untyped::<BitSize, Kind> {
             _bit_size: PhantomData::<BitSize>,
@@ -172,22 +172,22 @@ impl<BitSize: Unsigned, Kind: UntypedKind> PhantomCap for Untyped<BitSize, Kind>
     }
 }
 
-impl<BitSize: Unsigned, Kind: UntypedKind> Movable for Untyped<BitSize, Kind> {}
+impl<BitSize: Unsigned, Kind: MemoryKind> Movable for Untyped<BitSize, Kind> {}
 
-impl<BitSize: Unsigned, Kind: UntypedKind> Delible for Untyped<BitSize, Kind> {}
+impl<BitSize: Unsigned, Kind: MemoryKind> Delible for Untyped<BitSize, Kind> {}
 
-pub trait UntypedKind: private::SealedUntypedKind {}
+pub trait MemoryKind: private::SealedMemoryKind {}
 
-pub mod untyped_kind {
-    use super::UntypedKind;
+pub mod memory_kind {
+    use super::MemoryKind;
 
     #[derive(Debug, PartialEq)]
     pub struct General;
-    impl UntypedKind for General {}
+    impl MemoryKind for General {}
 
     #[derive(Debug, PartialEq)]
     pub struct Device;
-    impl UntypedKind for Device {}
+    impl MemoryKind for Device {}
 }
 
 #[derive(Debug)]
@@ -386,42 +386,47 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> CopyAliasable for MappedPageTable<Fre
 }
 
 #[derive(Debug)]
-pub struct UnmappedPage {}
+pub struct UnmappedPage<Kind: MemoryKind> {
+    _kind: PhantomData<Kind>,
+}
 
-impl CapType for UnmappedPage {}
+impl<Kind: MemoryKind> CapType for UnmappedPage<Kind> {}
 
-impl PhantomCap for UnmappedPage {
+impl<Kind: MemoryKind> PhantomCap for UnmappedPage<Kind> {
     fn phantom_instance() -> Self {
-        Self {}
+        UnmappedPage {
+            _kind: PhantomData::<Kind>,
+        }
     }
 }
 
-impl DirectRetype for UnmappedPage {
+impl DirectRetype for UnmappedPage<memory_kind::General> {
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_SmallPageObject as usize
     }
 }
 
-impl CopyAliasable for UnmappedPage {
+impl<Kind: MemoryKind> CopyAliasable for UnmappedPage<Kind> {
     type CopyOutput = Self;
 }
 
 #[derive(Debug)]
-pub struct MappedPage<Role: CNodeRole> {
+pub struct MappedPage<Role: CNodeRole, Kind: MemoryKind> {
     pub(crate) vaddr: usize,
     pub(crate) _role: PhantomData<Role>,
+    pub(crate) _kind: PhantomData<Kind>,
 }
 
-impl<Role: CNodeRole> CapType for MappedPage<Role> {}
+impl<Role: CNodeRole, Kind: MemoryKind> CapType for MappedPage<Role, Kind> {}
 
-impl<Role: CNodeRole> CopyAliasable for MappedPage<Role> {
-    type CopyOutput = UnmappedPage;
+impl<Role: CNodeRole, Kind: MemoryKind> CopyAliasable for MappedPage<Role, Kind> {
+    type CopyOutput = UnmappedPage<Kind>;
 }
 
 impl<FreeSlots: typenum::Unsigned, Role: CNodeRole> CapType for CNode<FreeSlots, Role> {}
 
 mod private {
-    use super::{irq_state, role, untyped_kind, CNodeRole, IRQSetState, UntypedKind};
+    use super::{irq_state, memory_kind, role, CNodeRole, IRQSetState, MemoryKind};
     use typenum::{IsLess, True, Unsigned, U256};
 
     pub trait SealedRole {}
@@ -432,15 +437,12 @@ mod private {
     impl SealedIRQSetState for irq_state::Unset {}
     impl SealedIRQSetState for irq_state::Set {}
 
-    pub trait SealedUntypedKind {}
-    impl SealedUntypedKind for untyped_kind::General {}
-    impl SealedUntypedKind for untyped_kind::Device {}
+    pub trait SealedMemoryKind {}
+    impl SealedMemoryKind for memory_kind::General {}
+    impl SealedMemoryKind for memory_kind::Device {}
 
     pub trait SealedCapType {}
-    impl<BitSize: typenum::Unsigned, Kind: UntypedKind> SealedCapType
-        for super::Untyped<BitSize, Kind>
-    {
-    }
+    impl<BitSize: typenum::Unsigned, Kind: MemoryKind> SealedCapType for super::Untyped<BitSize, Kind> {}
     impl<FreeSlots: typenum::Unsigned, Role: CNodeRole> SealedCapType
         for super::CNode<FreeSlots, Role>
     {
@@ -461,8 +463,8 @@ mod private {
     {
     }
 
-    impl SealedCapType for super::UnmappedPage {}
-    impl<Role: CNodeRole> SealedCapType for super::MappedPage<Role> {}
+    impl<Kind: MemoryKind> SealedCapType for super::UnmappedPage<Kind> {}
+    impl<Role: CNodeRole, Kind: MemoryKind> SealedCapType for super::MappedPage<Role, Kind> {}
     impl SealedCapType for super::IRQControl {}
     impl<IRQ: Unsigned, SetState: IRQSetState> SealedCapType for super::IRQHandler<IRQ, SetState> where
         IRQ: IsLess<U256, Output = True>

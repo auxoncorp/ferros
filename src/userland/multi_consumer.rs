@@ -29,9 +29,9 @@ use crate::userland::cap::Badge;
 use crate::userland::paging::PageBytes;
 use crate::userland::role;
 use crate::userland::{
-    irq_state, CNodeRole, Cap, CapRights, ChildCNode, IRQControl, IRQError, IRQHandler,
-    ImmobileIndelibleInertCapabilityReference, LocalCNode, LocalCap, MappedPage, MappedPageTable,
-    Notification, PhantomCap, SeL4Error, UnmappedPage, Untyped, VSpace,
+    irq_state, memory_kind, CNodeRole, Cap, CapRights, ChildCNode, IRQControl, IRQError,
+    IRQHandler, ImmobileIndelibleInertCapabilityReference, LocalCNode, LocalCap, MappedPage,
+    MappedPageTable, Notification, PhantomCap, SeL4Error, UnmappedPage, Untyped, VSpace,
 };
 use cross_queue::PushError;
 use cross_queue::{ArrayQueue, Slot};
@@ -172,7 +172,7 @@ pub struct ProducerSetup<T, QLen: Unsigned> {
     // Used to verify that the related components agree on the identity of the consumer process
     consumer_vspace_pagedir:
         ImmobileIndelibleInertCapabilityReference<AssignedPageDirectory<U0, role::Child>>,
-    shared_page: LocalCap<UnmappedPage>,
+    shared_page: LocalCap<UnmappedPage<memory_kind::General>>,
     queue_badge: Badge,
     // User-concealed alias'ing happening here.
     // Don't mutate this Cap. Copying/minting is okay.
@@ -782,8 +782,8 @@ fn create_page_filled_with_array_queue<
     local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
 ) -> Result<
     (
-        LocalCap<UnmappedPage>,
-        LocalCap<MappedPage<role::Child>>,
+        LocalCap<UnmappedPage<memory_kind::General>>,
+        LocalCap<MappedPage<role::Child, memory_kind::General>>,
         VSpace<
             ConsumerPageDirFreeSlots,
             Sub1<ConsumerPageTableFreeSlots>,
@@ -814,7 +814,8 @@ where
     if queue_size > PageBytes::USIZE {
         return Err(MultiConsumerError::QueueTooBig);
     }
-    let (shared_page, local_cnode) = shared_page_ut.retype_local::<_, UnmappedPage>(local_cnode)?;
+    let (shared_page, local_cnode) =
+        shared_page_ut.retype_local::<_, UnmappedPage<_>>(local_cnode)?;
     // Put some data in there. Specifically, an `ArrayQueue`.
     let (_, shared_page) =
         local_page_table.temporarily_map_page(shared_page, &mut local_page_dir, |mapped_page| {

@@ -4,9 +4,9 @@ use core::mem::{self, size_of};
 use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
-    irq_state, role, AssignedPageDirectory, Badge, CNode, CNodeRole, Cap, FaultSource, IRQControl,
-    IRQHandler, ImmobileIndelibleInertCapabilityReference, LocalCap, MappedPage, Notification,
-    SeL4Error, ThreadControlBlock,
+    irq_state, memory_kind, role, AssignedPageDirectory, Badge, CNode, CNodeRole, Cap, FaultSource,
+    IRQControl, IRQHandler, ImmobileIndelibleInertCapabilityReference, LocalCap, MappedPage,
+    Notification, SeL4Error, ThreadControlBlock,
 };
 use sel4_sys::*;
 use typenum::{IsLess, Sub1, True, Unsigned, B1, U0, U256};
@@ -19,7 +19,7 @@ impl LocalCap<ThreadControlBlock> {
         vspace_cptr: ImmobileIndelibleInertCapabilityReference<
             AssignedPageDirectory<U0, VSpaceRole>,
         >, // vspace_root,
-        ipc_buffer: LocalCap<MappedPage<VSpaceRole>>,
+        ipc_buffer: LocalCap<MappedPage<VSpaceRole, memory_kind::General>>,
     ) -> Result<(), SeL4Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
         // used by the radix.

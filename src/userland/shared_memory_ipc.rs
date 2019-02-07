@@ -103,7 +103,7 @@ pub mod sync {
             child_cnode_responder.reserve_region::<U2>();
 
         let (shared_page, local_cnode) =
-            shared_page_ut.retype_local::<_, UnmappedPage>(local_cnode)?;
+            shared_page_ut.retype_local::<_, UnmappedPage<_>>(local_cnode)?;
 
         let (caller_shared_page, local_cnode) =
             shared_page.copy_inside_cnode(local_cnode, CapRights::RW)?;
