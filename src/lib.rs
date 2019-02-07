@@ -31,7 +31,7 @@ pub mod userland;
 
 mod test_proc;
 
-use crate::micro_alloc::{Error as AllocError, GetUntyped};
+use crate::micro_alloc::Error as AllocError;
 use crate::userland::{
     role, root_cnode, BootInfo, CNode, Consumer1, IPCError, IRQError, InterruptConsumer, LocalCap,
     MultiConsumerError, Producer, SeL4Error, UnmappedPageTable, VSpace, VSpaceError, Waker,

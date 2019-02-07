@@ -1,5 +1,5 @@
 use super::TopLevelError;
-use ferros::micro_alloc::{self, GetUntyped};
+use ferros::micro_alloc;
 use ferros::pow::Pow;
 use ferros::userland::{
     role, root_cnode, BootInfo, CNode, CNodeRole, Cap, Endpoint, LocalCap, RetypeForSetup,

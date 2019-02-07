@@ -3,7 +3,7 @@
 //! that's big enough for the request.
 
 use arrayvec::ArrayVec;
-use crate::userland::{wrap_untyped, LocalCap, Untyped};
+use crate::userland::{untyped_kind, wrap_untyped, LocalCap, Untyped, UntypedKind};
 use typenum::Unsigned;
 
 use sel4_sys::{seL4_BootInfo, seL4_UntypedDesc};
@@ -65,19 +65,35 @@ impl Allocator {
 
         Ok(Allocator { items })
     }
-}
+    pub fn get_untyped<BitSize: Unsigned>(
+        &mut self,
+    ) -> Option<LocalCap<Untyped<BitSize, untyped_kind::General>>> {
+        self.find_block::<BitSize, untyped_kind::General>(false, None)
+    }
 
-pub trait GetUntyped {
-    fn get_untyped<BitSize: Unsigned>(&mut self) -> Option<LocalCap<Untyped<BitSize>>>;
-}
+    pub fn get_device_untyped<BitSize: Unsigned>(
+        &mut self,
+        physical_address: usize,
+    ) -> Option<LocalCap<Untyped<BitSize, untyped_kind::Device>>> {
+        self.find_block::<BitSize, untyped_kind::Device>(true, Some(physical_address))
+    }
 
-impl GetUntyped for Allocator {
-    fn get_untyped<BitSize: Unsigned>(&mut self) -> Option<LocalCap<Untyped<BitSize>>> {
+    fn find_block<BitSize: Unsigned, Kind: UntypedKind>(
+        &mut self,
+        device_ok: bool,
+        physical_address: Option<usize>,
+    ) -> Option<LocalCap<Untyped<BitSize, Kind>>> {
         // This is very inefficient. But it should only be called a small
         // handful of times on startup.
         for bit_size in BitSize::to_u8()..=MAX_UNTYPED_SIZE_BITS {
             for item in &mut self.items {
-                if item.is_free && !item.is_device() && item.desc.sizeBits == bit_size {
+                if (item.is_free)
+                    && (item.is_device() == device_ok)
+                    && (item.desc.sizeBits == bit_size)
+                    && match physical_address {
+                        Some(a) => item.desc.paddr == a,
+                        None => true,
+                    } {
                     let u = wrap_untyped(item.cptr, item.desc);
                     if u.is_some() {
                         item.is_free = false;

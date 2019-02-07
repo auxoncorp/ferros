@@ -1,6 +1,6 @@
 use super::TopLevelError;
 use core::marker::PhantomData;
-use ferros::micro_alloc::{self, GetUntyped};
+use ferros::micro_alloc;
 use ferros::pow::Pow;
 use ferros::userland::{
     call_channel, role, root_cnode, setup_fault_endpoint_pair, BootInfo, CNode, CNodeRole, Caller,
