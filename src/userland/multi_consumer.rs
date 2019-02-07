@@ -29,25 +29,40 @@ use crate::userland::cap::Badge;
 use crate::userland::paging::PageBytes;
 use crate::userland::role;
 use crate::userland::{
-    CNodeRole, Cap, CapRights, ChildCNode, ImmobileIndelibleInertCapabilityReference, LocalCNode,
-    LocalCap, MappedPage, MappedPageTable, Notification, PhantomCap, SeL4Error, UnmappedPage,
-    Untyped, VSpace,
+    irq_state, CNodeRole, Cap, CapRights, ChildCNode, IRQControl, IRQError, IRQHandler,
+    ImmobileIndelibleInertCapabilityReference, LocalCNode, LocalCap, MappedPage, MappedPageTable,
+    Notification, PhantomCap, SeL4Error, UnmappedPage, Untyped, VSpace,
 };
 use cross_queue::PushError;
 use cross_queue::{ArrayQueue, Slot};
 use generic_array::ArrayLength;
 use sel4_sys::{seL4_Signal, seL4_Wait};
-use typenum::{Diff, IsGreater, Sub1, True, Unsigned, B1, U0, U12, U2, U3, U4};
+use typenum::{Diff, IsGreater, IsLess, Sub1, True, Unsigned, B1, U0, U12, U2, U256, U3, U4};
+
+/// A multi-consumer that consumes interrupt-style notifications
+///
+/// Designed to be handed to a new process as a member of the
+/// initial thread parameters struct (see `VSpace::prepare_thread`).
+pub struct InterruptConsumer<IRQ: Unsigned, Role: CNodeRole>
+where
+    IRQ: IsLess<U256, Output = True>,
+{
+    irq_handler: Cap<IRQHandler<IRQ, irq_state::Set>, Role>,
+    interrupt_badge: Badge,
+    notification: Cap<Notification, Role>,
+}
 
 /// A multi-consumer that consumes interrupt-style notifications and from 1 queue
 ///
 /// Designed to be handed to a new process as a member of the
 /// initial thread parameters struct (see `VSpace::prepare_thread`).
-pub struct Consumer1<Role: CNodeRole, T: Sized + Sync + Send, QLen: Unsigned>
+pub struct Consumer1<Role: CNodeRole, T: Sized + Sync + Send, QLen: Unsigned, IRQ: Unsigned = U0>
 where
+    IRQ: IsLess<U256, Output = True>,
     QLen: IsGreater<U0, Output = True>,
     QLen: ArrayLength<Slot<T>>,
 {
+    irq_handler: Option<Cap<IRQHandler<IRQ, irq_state::Set>, Role>>,
     interrupt_badge: Badge,
     notification: Cap<Notification, Role>,
     queue_badge: Badge,
@@ -58,13 +73,15 @@ where
 ///
 /// Designed to be handed to a new process as a member of the
 /// initial thread parameters struct (see `VSpace::prepare_thread`).
-pub struct Consumer2<Role: CNodeRole, E, ESize: Unsigned, F, FSize: Unsigned>
+pub struct Consumer2<Role: CNodeRole, E, ESize: Unsigned, F, FSize: Unsigned, IRQ: Unsigned = U0>
 where
+    IRQ: IsLess<U256, Output = True>,
     ESize: IsGreater<U0, Output = True>,
     ESize: ArrayLength<Slot<E>>,
     FSize: IsGreater<U0, Output = True>,
     FSize: ArrayLength<Slot<F>>,
 {
+    irq_handler: Option<Cap<IRQHandler<IRQ, irq_state::Set>, Role>>,
     interrupt_badge: Badge,
     notification: Cap<Notification, Role>,
     queues: (
@@ -77,8 +94,17 @@ where
 ///
 /// Designed to be handed to a new process as a member of the
 /// initial thread parameters struct (see `VSpace::prepare_thread`).
-pub struct Consumer3<Role: CNodeRole, E, ESize: Unsigned, F, FSize: Unsigned, G, GSize: Unsigned>
-where
+pub struct Consumer3<
+    Role: CNodeRole,
+    E,
+    ESize: Unsigned,
+    F,
+    FSize: Unsigned,
+    G,
+    GSize: Unsigned,
+    IRQ: Unsigned = U0,
+> where
+    IRQ: IsLess<U256, Output = True>,
     ESize: IsGreater<U0, Output = True>,
     ESize: ArrayLength<Slot<E>>,
     FSize: IsGreater<U0, Output = True>,
@@ -86,6 +112,7 @@ where
     GSize: IsGreater<U0, Output = True>,
     GSize: ArrayLength<Slot<G>>,
 {
+    irq_handler: Option<Cap<IRQHandler<IRQ, irq_state::Set>, Role>>,
     interrupt_badge: Badge,
     notification: Cap<Notification, Role>,
     queues: (
@@ -166,6 +193,76 @@ pub struct WakerSetup {
     // User-concealed alias'ing happening here.
     // Don't mutate this Cap. Copying/minting is okay.
     notification: Cap<Notification, role::Local>,
+}
+
+impl<IRQ: Unsigned> InterruptConsumer<IRQ, role::Child>
+where
+    IRQ: IsLess<U256, Output = True>,
+{
+    pub fn new<ConsumerCNodeFreeSlots: Unsigned, LocalCNodeFreeSlots: Unsigned>(
+        notification_ut: LocalCap<Untyped<U4>>,
+        consumer_cnode: LocalCap<ChildCNode<ConsumerCNodeFreeSlots>>,
+        irq_control: &mut LocalCap<IRQControl>,
+        local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
+    ) -> Result<
+        (
+            InterruptConsumer<IRQ, role::Child>,
+            LocalCap<ChildCNode<Sub1<Sub1<ConsumerCNodeFreeSlots>>>>,
+            LocalCap<LocalCNode<Sub1<Sub1<Sub1<LocalCNodeFreeSlots>>>>>,
+        ),
+        IRQError,
+    >
+    where
+        IRQ: IsLess<U256, Output = True>,
+
+        ConsumerCNodeFreeSlots: Sub<U2>,
+        Diff<ConsumerCNodeFreeSlots, U2>: Unsigned,
+
+        ConsumerCNodeFreeSlots: Sub<B1>,
+        Sub1<ConsumerCNodeFreeSlots>: Unsigned,
+
+        Sub1<ConsumerCNodeFreeSlots>: Sub<B1>,
+        Sub1<Sub1<ConsumerCNodeFreeSlots>>: Unsigned,
+
+        LocalCNodeFreeSlots: Sub<U3>,
+        Diff<LocalCNodeFreeSlots, U3>: Unsigned,
+
+        LocalCNodeFreeSlots: Sub<B1>,
+        Sub1<LocalCNodeFreeSlots>: Unsigned,
+
+        Sub1<LocalCNodeFreeSlots>: Sub<B1>,
+        Sub1<Sub1<LocalCNodeFreeSlots>>: Unsigned,
+
+        Sub1<Sub1<LocalCNodeFreeSlots>>: Sub<B1>,
+        Sub1<Sub1<Sub1<LocalCNodeFreeSlots>>>: Unsigned,
+    {
+        // Make a notification, mint-copy it to establish a badge
+        let (unbadged_notification, local_cnode) =
+            notification_ut.retype_local::<_, Notification>(local_cnode)?;
+        let interrupt_badge = Badge::from(1);
+        let (notification, local_cnode) = unbadged_notification.mint_inside_cnode(
+            local_cnode,
+            CapRights::RWG,
+            interrupt_badge,
+        )?;
+
+        // Make a new IRQHandler, link it to the notification and move both to the child CNode
+        let (irq_handler, local_cnode) = irq_control.create_handler(local_cnode)?;
+        let irq_handler = irq_handler.set_notification(&notification)?;
+        let (irq_handler_in_child, consumer_cnode) =
+            irq_handler.move_to_cnode(&local_cnode, consumer_cnode)?;
+        let (notification_in_child, consumer_cnode) =
+            notification.copy(&local_cnode, consumer_cnode, CapRights::RW)?;
+        Ok((
+            InterruptConsumer {
+                irq_handler: irq_handler_in_child,
+                interrupt_badge: interrupt_badge,
+                notification: notification_in_child,
+            },
+            consumer_cnode,
+            local_cnode,
+        ))
+    }
 }
 
 impl<E: Sized + Sync + Send, ELen: Unsigned> Consumer1<role::Child, E, ELen>
@@ -274,6 +371,7 @@ where
         };
         Ok((
             Consumer1 {
+                irq_handler: None,
                 interrupt_badge,
                 queue_badge,
                 notification: consumer_notification,
@@ -375,6 +473,7 @@ where
         };
         Ok((
             Consumer2 {
+                irq_handler: None,
                 interrupt_badge: self.interrupt_badge,
                 notification: self.notification,
                 queues: (
@@ -490,6 +589,7 @@ where
         };
         Ok((
             Consumer3 {
+                irq_handler: None,
                 interrupt_badge: self.interrupt_badge,
                 notification: self.notification,
                 queues: (
@@ -631,6 +731,48 @@ impl Waker<role::Local> {
     }
 }
 
+impl<IRQ: Unsigned> InterruptConsumer<IRQ, role::Local>
+where
+    IRQ: IsLess<U256, Output = True>,
+{
+    pub fn consume<State, WFn>(self, initial_state: State, waker_fn: WFn) -> !
+    where
+        WFn: Fn(State) -> State,
+    {
+        let mut sender_badge: usize = 0;
+        let mut state = initial_state;
+        // Run an initial ack to clear out interrupt state ahead of waiting
+        match self.irq_handler.ack() {
+            Ok(_) => (),
+            Err(e) => {
+                debug_println!("Ack error in InterruptConsumer::consume setup. {:?}", e);
+                panic!()
+            }
+        };
+        loop {
+            unsafe {
+                seL4_Wait(self.notification.cptr, &mut sender_badge as *mut usize);
+                let current_badge = Badge::from(sender_badge);
+                if self
+                    .interrupt_badge
+                    .are_all_overlapping_bits_set(current_badge)
+                {
+                    state = waker_fn(state);
+                    match self.irq_handler.ack() {
+                        Ok(_) => (),
+                        Err(e) => {
+                            debug_println!("Ack error in InterruptConsumer::consume loop. {:?}", e);
+                            panic!()
+                        }
+                    };
+                } else {
+                    debug_println!("Unexpected badge in InterruptConsumer::consume loop. {:?}", current_badge);
+                    panic!()
+                }
+            }
+        }
+    }
+}
 impl<E: Sized + Sync + Send, QLen: Unsigned> Consumer1<role::Local, E, QLen>
 where
     QLen: IsGreater<U0, Output = True>,
