@@ -1,6 +1,5 @@
 use crate::userland::{
-    irq_state, role, CNodeRole, Cap, Consumer2, IRQHandler, Notification, Producer, QueueFullError,
-    RetypeForSetup, Waker,
+    role, CNodeRole, Consumer2, InterruptConsumer, Producer, QueueFullError, RetypeForSetup, Waker,
 };
 use sel4_sys::seL4_Yield;
 use typenum::{U10, U2, U58};
@@ -25,8 +24,7 @@ impl RetypeForSetup for ConsumerParams<role::Local> {
 
 pub struct ProducerYParams<Role: CNodeRole> {
     pub producer: Producer<Role, Yttrium, U2>,
-    pub interrupt_notification: Cap<Notification, Role>,
-    pub acker: Cap<IRQHandler<U58, irq_state::Set>, Role>,
+    pub interrupt_consumer: InterruptConsumer<U58, Role>,
 }
 
 impl RetypeForSetup for ProducerYParams<role::Local> {
@@ -133,23 +131,40 @@ pub extern "C" fn producer_x_process(p: ProducerXParams<role::Local>) {
 
 pub extern "C" fn producer_y_process(p: ProducerYParams<role::Local>) {
     debug_println!("Inside producer y ");
-    match p.acker.ack() {
-        Ok(_) => (),
-        Err(e) => {
-            debug_println!("Preliminary ack error: {:?}", e);
-            panic!("Naught to do but weep.");
-        }
-    }
-    debug_println!(
-        "Completed a preliminary ack to clear out any extant interrupt state and start waiting"
+    let producer = p.producer;
+    #[derive(Debug)]
+    struct State {
+        interrupt_count: u64,
+        rejection_count: u64,
+    };
+    p.interrupt_consumer.consume(
+        State {
+            interrupt_count: 0,
+            rejection_count: 0,
+        },
+        move |mut state| {
+            debug_println!(
+                "Got a real interrupt notification, let's try producing to the other queue."
+            );
+            let mut y = Yttrium {
+                b: state.interrupt_count,
+            };
+            loop {
+                match producer.send(y) {
+                    Ok(_) => {
+                        break;
+                    }
+                    Err(QueueFullError(rejected_y)) => {
+                        y = rejected_y;
+                        state.rejection_count = state.interrupt_count.saturating_add(1);
+                        unsafe {
+                            seL4_Yield();
+                        }
+                    }
+                }
+            }
+            state.interrupt_count = state.interrupt_count.saturating_add(1);
+            state
+        },
     );
-    loop {
-        let badge = p.interrupt_notification.wait();
-        debug_println!("Got an interrupt notification with badge: {:?}", badge);
-        // TODO - could produce to the multi-consumer queue here
-        match p.acker.ack() {
-            Ok(_) => (),
-            Err(e) => debug_println!("Ack error: {:?}", e),
-        }
-    }
 }
