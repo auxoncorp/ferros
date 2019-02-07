@@ -127,15 +127,23 @@ pub struct IRQAcker<Role: CNodeRole> {
 }
 
 impl<Role: CNodeRole> Cap<IRQHandle, Role> {
-    pub(crate) fn set_notification(
-        self,
-        notification: &Cap<Notification, Role>,
-    ) -> Result<(IRQAcker<Role>), SeL4Error> {
+    pub(crate) fn set_notification<NotifRole: CNodeRole>(
+        &self,
+        notification: &Cap<Notification, NotifRole>,
+    ) -> Result<IRQAcker<Role>, SeL4Error> {
         let err = unsafe { seL4_IRQHandler_SetNotification(self.cptr, notification.cptr) };
         if err != 0 {
             return Err(SeL4Error::IRQHandlerSetNotification(err));
         }
-        Ok(IRQAcker { irq_handle: self })
+        Ok(IRQAcker {
+            irq_handle: Cap {
+                cptr: self.cptr,
+                cap_data: IRQHandle {
+                    irq: self.cap_data.irq,
+                },
+                _role: PhantomData,
+            },
+        })
     }
 }
 

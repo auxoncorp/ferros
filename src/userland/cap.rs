@@ -207,6 +207,8 @@ pub struct IRQHandle {
     pub(crate) irq: u8,
 }
 
+impl Movable for IRQHandle {}
+
 impl CapType for IRQHandle {}
 
 #[derive(Debug)]
@@ -272,6 +274,8 @@ impl DirectRetype for Notification {
         api_object_seL4_NotificationObject as usize
     }
 }
+
+impl Movable for Notification {}
 
 // TODO: It's important that AssignedPageDirectory can never be moved or deleted
 // (or copied, likely), as that leads to ugly cptr aliasing issues that we're

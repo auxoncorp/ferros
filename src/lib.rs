@@ -31,10 +31,13 @@ pub mod userland;
 
 mod test_proc;
 
+use core::mem;
+
 use crate::micro_alloc::{Error as AllocError, GetUntyped};
 use crate::userland::{
-    role, root_cnode, BootInfo, CNode, Consumer1, IPCError, IRQError, LocalCap, MultiConsumerError,
-    Notification, Producer, SeL4Error, UnmappedPageTable, VSpace, VSpaceError, Waker,
+    role, root_cnode, BootInfo, CNode, Consumer1, IPCError, IRQAcker, IRQError, LocalCap,
+    MultiConsumerError, Notification, Producer, SeL4Error, UnmappedPageTable, VSpace, VSpaceError,
+    Waker,
 };
 use sel4_sys::*;
 use typenum::{U12, U20, U4096};
@@ -146,20 +149,22 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         root_cnode,
     )?;
 
+    // let (irq_handler, root_cnode) = (&mut boot_info.irq_control).create_handler(58, root_cnode)?;
+    // let (interrupt_notification, root_cnode) = ut4b.retype_local::<_, Notification>(root_cnode)?;
+    // let acker = irq_handler.set_notification(&interrupt_notification)?;
+
     let (irq_handler, root_cnode) = (&mut boot_info.irq_control).create_handler(58, root_cnode)?;
     let (interrupt_notification, root_cnode) = ut4b.retype_local::<_, Notification>(root_cnode)?;
     let acker = irq_handler.set_notification(&interrupt_notification)?;
-
-    //let (irq_handler, producer_b_cnode) =
-    //    (&mut boot_info.irq_control).create_handler(58, producer_b_cnode)?;
-    //let (interrupt_notification, producer_b_cnode) =
-    //    ut4b.retype_child::<_, Notification>(producer_b_cnode)?;
-    //let acker = irq_handler.bind_notification(&interrupt_notification)?;
-    //let producer_b_params = test_proc::ProducerYParams::<role::Child> {
-    //    producer: producer_b,
-    //    interrupt_notification,
-    //    acker,
-    //};
+    // We don't need the child cap, we already have it inside `acker`.
+    let (_, producer_b_cnode) = irq_handler.move_to_cnode(&root_cnode, producer_b_cnode)?;
+    let (child_interrupt_notification, producer_b_cnode) =
+        interrupt_notification.move_to_cnode(&root_cnode, producer_b_cnode)?;
+    let producer_b_params = test_proc::ProducerYParams::<role::Child> {
+        producer: producer_b,
+        interrupt_notification: child_interrupt_notification,
+        acker: unsafe { mem::transmute(acker) },
+    };
 
     let (waker, waker_cnode) = Waker::new(&waker_setup, waker_cnode, &root_cnode)?;
     let waker_params = test_proc::WakerParams::<role::Child> { waker };
