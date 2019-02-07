@@ -62,7 +62,8 @@ pub trait Movable {}
 
 /// Marker trait for CapType implementing structs that can
 /// be deleted.
-/// TODO - Review all of the CapType structs and apply where necessary
+/// TODO - Delible is presently not used for anything important, and represents
+/// a risk of invalidating key immutability assumptions. Consider removing it.
 pub trait Delible {}
 
 #[derive(Debug)]
@@ -155,22 +156,39 @@ impl From<Badge> for usize {
 }
 
 #[derive(Debug)]
-pub struct Untyped<BitSize: Unsigned> {
+pub struct Untyped<BitSize: Unsigned, Kind: UntypedKind = untyped_kind::General> {
     _bit_size: PhantomData<BitSize>,
+    _kind: PhantomData<Kind>,
 }
 
-impl<BitSize: Unsigned> CapType for Untyped<BitSize> {}
+impl<BitSize: Unsigned, Kind: UntypedKind> CapType for Untyped<BitSize, Kind> {}
 
-impl<BitSize: Unsigned> PhantomCap for Untyped<BitSize> {
+impl<BitSize: Unsigned, Kind: UntypedKind> PhantomCap for Untyped<BitSize, Kind> {
     fn phantom_instance() -> Self {
-        Untyped::<BitSize> {
+        Untyped::<BitSize, Kind> {
             _bit_size: PhantomData::<BitSize>,
+            _kind: PhantomData::<Kind>,
         }
     }
 }
 
-impl<BitSize: Unsigned> Movable for Untyped<BitSize> {}
-impl<BitSize: Unsigned> Delible for Untyped<BitSize> {}
+impl<BitSize: Unsigned, Kind: UntypedKind> Movable for Untyped<BitSize, Kind> {}
+
+impl<BitSize: Unsigned, Kind: UntypedKind> Delible for Untyped<BitSize, Kind> {}
+
+pub trait UntypedKind: private::SealedUntypedKind {}
+
+pub mod untyped_kind {
+    use super::UntypedKind;
+
+    #[derive(Debug, PartialEq)]
+    pub struct General;
+    impl UntypedKind for General {}
+
+    #[derive(Debug, PartialEq)]
+    pub struct Device;
+    impl UntypedKind for Device {}
+}
 
 #[derive(Debug)]
 pub struct ThreadControlBlock {}
@@ -403,7 +421,7 @@ impl<Role: CNodeRole> CopyAliasable for MappedPage<Role> {
 impl<FreeSlots: typenum::Unsigned, Role: CNodeRole> CapType for CNode<FreeSlots, Role> {}
 
 mod private {
-    use super::{irq_state, role, CNodeRole, IRQSetState};
+    use super::{irq_state, role, untyped_kind, CNodeRole, IRQSetState, UntypedKind};
     use typenum::{IsLess, True, Unsigned, U256};
 
     pub trait SealedRole {}
@@ -414,8 +432,15 @@ mod private {
     impl SealedIRQSetState for irq_state::Unset {}
     impl SealedIRQSetState for irq_state::Set {}
 
+    pub trait SealedUntypedKind {}
+    impl SealedUntypedKind for untyped_kind::General {}
+    impl SealedUntypedKind for untyped_kind::Device {}
+
     pub trait SealedCapType {}
-    impl<BitSize: typenum::Unsigned> SealedCapType for super::Untyped<BitSize> {}
+    impl<BitSize: typenum::Unsigned, Kind: UntypedKind> SealedCapType
+        for super::Untyped<BitSize, Kind>
+    {
+    }
     impl<FreeSlots: typenum::Unsigned, Role: CNodeRole> SealedCapType
         for super::CNode<FreeSlots, Role>
     {

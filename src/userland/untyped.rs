@@ -2,17 +2,17 @@ use core::marker::PhantomData;
 use core::ops::Sub;
 use crate::pow::{Pow, _Pow};
 use crate::userland::{
-    role, CNode, Cap, CapType, ChildCNode, ChildCap, DirectRetype, LocalCap, PhantomCap, SeL4Error,
-    Untyped,
+    role, untyped_kind, CNode, Cap, CapType, ChildCNode, ChildCap, DirectRetype, LocalCap,
+    PhantomCap, SeL4Error, Untyped, UntypedKind,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U2, U3};
 
-pub(crate) fn wrap_untyped<BitSize: Unsigned>(
+pub(crate) fn wrap_untyped<BitSize: Unsigned, Kind: UntypedKind>(
     cptr: usize,
     untyped_desc: &seL4_UntypedDesc,
-) -> Option<LocalCap<Untyped<BitSize>>> {
+) -> Option<LocalCap<Untyped<BitSize, Kind>>> {
     if untyped_desc.sizeBits == BitSize::to_u8() {
         Some(Cap {
             cptr,
@@ -24,14 +24,14 @@ pub(crate) fn wrap_untyped<BitSize: Unsigned>(
     }
 }
 
-impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
+impl<BitSize: Unsigned, Kind: UntypedKind> LocalCap<Untyped<BitSize, Kind>> {
     pub fn split<FreeSlots: Unsigned>(
         self,
         dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
     ) -> Result<
         (
-            LocalCap<Untyped<Sub1<BitSize>>>,
-            LocalCap<Untyped<Sub1<BitSize>>>,
+            LocalCap<Untyped<Sub1<BitSize>, Kind>>,
+            LocalCap<Untyped<Sub1<BitSize>, Kind>>,
             LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
         ),
         SeL4Error,
@@ -39,7 +39,6 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
     where
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
-
         BitSize: Sub<B1>,
         Sub1<BitSize>: Unsigned,
     {
@@ -81,10 +80,10 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
         dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
     ) -> Result<
         (
-            LocalCap<Untyped<Diff<BitSize, U2>>>,
-            LocalCap<Untyped<Diff<BitSize, U2>>>,
-            LocalCap<Untyped<Diff<BitSize, U2>>>,
-            LocalCap<Untyped<Diff<BitSize, U2>>>,
+            LocalCap<Untyped<Diff<BitSize, U2>, Kind>>,
+            LocalCap<Untyped<Diff<BitSize, U2>, Kind>>,
+            LocalCap<Untyped<Diff<BitSize, U2>, Kind>>,
+            LocalCap<Untyped<Diff<BitSize, U2>, Kind>>,
             LocalCap<CNode<Sub1<Sub1<Sub1<FreeSlots>>>, role::Local>>,
         ),
         SeL4Error,
@@ -92,16 +91,12 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
     where
         FreeSlots: Sub<U3>,
         Diff<FreeSlots, U3>: Unsigned,
-
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
-
         Sub1<FreeSlots>: Sub<B1>,
         Sub1<Sub1<FreeSlots>>: Unsigned,
-
         Sub1<Sub1<FreeSlots>>: Sub<B1>,
         Sub1<Sub1<Sub1<FreeSlots>>>: Unsigned,
-
         BitSize: Sub<U2>,
         Diff<BitSize, U2>: Unsigned,
     {
@@ -149,7 +144,9 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
             dest_cnode,
         ))
     }
+}
 
+impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, untyped_kind::General>> {
     // TODO add required bits as an associated type for each TargetCapType, require that
     // this untyped is big enough
     pub fn retype_local<FreeSlots: Unsigned, TargetCapType: CapType>(

@@ -40,6 +40,10 @@ impl UntypedItem {
             })
         }
     }
+
+    pub fn is_device(&self) -> bool {
+        self.desc.isDevice == 1
+    }
 }
 
 pub struct Allocator {
@@ -73,7 +77,7 @@ impl GetUntyped for Allocator {
         // handful of times on startup.
         for bit_size in BitSize::to_u8()..=MAX_UNTYPED_SIZE_BITS {
             for item in &mut self.items {
-                if item.is_free && item.desc.sizeBits == bit_size {
+                if item.is_free && !item.is_device() && item.desc.sizeBits == bit_size {
                     let u = wrap_untyped(item.cptr, item.desc);
                     if u.is_some() {
                         item.is_free = false;

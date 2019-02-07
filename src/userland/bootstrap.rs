@@ -4,8 +4,9 @@ use core::ops::Sub;
 use crate::pow::Pow;
 use crate::userland::cap::UnassignedPageDirectory;
 use crate::userland::{
-    role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, IRQControl, LocalCap,
-    MappedPage, MappedPageTable, SeL4Error, ThreadControlBlock, UnmappedPageTable, Untyped,
+    role, untyped_kind, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, IRQControl,
+    LocalCap, MappedPage, MappedPageTable, SeL4Error, ThreadControlBlock, UnmappedPageTable,
+    Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
@@ -223,7 +224,7 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
 /// (which is assumed to be a singleton as well)
 /// because there is a lightly-documented seL4 constraint
 /// that limits us to a single ASIDPool per application.
-impl LocalCap<Untyped<U12>> {
+impl LocalCap<Untyped<U12, untyped_kind::General>> {
     pub fn retype_asid_pool<FreeSlots: Unsigned>(
         self,
         asid_control: LocalCap<ASIDControl>,
