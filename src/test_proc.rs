@@ -1,9 +1,9 @@
-use crate::userland::process::IRQAcker;
 use crate::userland::{
-    role, CNodeRole, Cap, Consumer2, Notification, Producer, QueueFullError, RetypeForSetup, Waker,
+    irq_state, role, CNodeRole, Cap, Consumer2, IRQHandler, Notification, Producer, QueueFullError,
+    RetypeForSetup, Waker,
 };
 use sel4_sys::seL4_Yield;
-use typenum::{U10, U2};
+use typenum::{U10, U2, U58};
 
 #[derive(Debug)]
 pub struct Xenon {
@@ -26,7 +26,7 @@ impl RetypeForSetup for ConsumerParams<role::Local> {
 pub struct ProducerYParams<Role: CNodeRole> {
     pub producer: Producer<Role, Yttrium, U2>,
     pub interrupt_notification: Cap<Notification, Role>,
-    pub acker: IRQAcker<Role>,
+    pub acker: Cap<IRQHandler<U58, irq_state::Set>, Role>,
 }
 
 impl RetypeForSetup for ProducerYParams<role::Local> {
@@ -81,7 +81,7 @@ pub extern "C" fn consumer_process(p: ConsumerParams<role::Local>) {
     p.consumer.consume(
         initial_state,
         |mut state| {
-            debug_println!("Interrupt wakeup happened!");
+            debug_println!("Non-queue multiconsumer wakeup happened!");
             state.interrupt_count = state.interrupt_count.saturating_add(1);
             state.debug_if_finished();
             state
@@ -109,7 +109,7 @@ pub extern "C" fn waker_process(p: WakerParams<role::Local>) {
 }
 
 pub extern "C" fn producer_x_process(p: ProducerXParams<role::Local>) {
-    debug_println!("Inside producer");
+    debug_println!("Inside producer x");
     let mut rejection_count = 0;
     for i in 0..20 {
         let mut x = Xenon { a: i };
@@ -133,31 +133,23 @@ pub extern "C" fn producer_x_process(p: ProducerXParams<role::Local>) {
 
 pub extern "C" fn producer_y_process(p: ProducerYParams<role::Local>) {
     debug_println!("Inside producer y ");
+    match p.acker.ack() {
+        Ok(_) => (),
+        Err(e) => {
+            debug_println!("Preliminary ack error: {:?}", e);
+            panic!("Naught to do but weep.");
+        }
+    }
+    debug_println!(
+        "Completed a preliminary ack to clear out any extant interrupt state and start waiting"
+    );
     loop {
         let badge = p.interrupt_notification.wait();
         debug_println!("Got an interrupt notification with badge: {:?}", badge);
+        // TODO - could produce to the multi-consumer queue here
         match p.acker.ack() {
             Ok(_) => (),
             Err(e) => debug_println!("Ack error: {:?}", e),
         }
     }
-    //let mut rejection_count = 0;
-    //for i in 0..20 {
-    //    let mut y = Yttrium { b: i };
-    //    loop {
-    //        match p.producer.send(y) {
-    //            Ok(_) => {
-    //                break;
-    //            }
-    //            Err(QueueFullError(rejected_y)) => {
-    //                y = rejected_y;
-    //                rejection_count += 1;
-    //                unsafe {
-    //                    seL4_Yield();
-    //                }
-    //            }
-    //        }
-    //    }
-    //}
-    //debug_println!("\n\nProducer rejection count: {}\n\n", rejection_count);
 }

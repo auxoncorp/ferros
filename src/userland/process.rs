@@ -4,12 +4,12 @@ use core::mem::{self, size_of};
 use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
-    role, AssignedPageDirectory, Badge, CNode, CNodeRole, Cap, FaultSource, IRQControl, IRQHandle,
-    ImmobileIndelibleInertCapabilityReference, LocalCap, MappedPage, Notification, SeL4Error,
-    ThreadControlBlock,
+    irq_state, role, AssignedPageDirectory, Badge, CNode, CNodeRole, Cap, FaultSource, IRQControl,
+    IRQHandler, ImmobileIndelibleInertCapabilityReference, LocalCap, MappedPage, Notification,
+    SeL4Error, ThreadControlBlock,
 };
 use sel4_sys::*;
-use typenum::{Sub1, Unsigned, B1, U0};
+use typenum::{IsLess, Sub1, True, Unsigned, B1, U0, U256};
 
 impl LocalCap<ThreadControlBlock> {
     pub(super) fn configure<CNodeFreeSlots: Unsigned, VSpaceRole: CNodeRole>(
@@ -71,13 +71,12 @@ impl From<SeL4Error> for IRQError {
 }
 
 impl LocalCap<IRQControl> {
-    pub fn create_handler<DestRole: CNodeRole, DestFreeSlots: Unsigned>(
+    pub fn create_handler<IRQ: Unsigned, DestRole: CNodeRole, DestFreeSlots: Unsigned>(
         &mut self,
-        irq: u8,
         dest_cnode: LocalCap<CNode<DestFreeSlots, DestRole>>,
     ) -> Result<
         (
-            Cap<IRQHandle, DestRole>,
+            Cap<IRQHandler<IRQ, irq_state::Unset>, DestRole>,
             LocalCap<CNode<Sub1<DestFreeSlots>, DestRole>>,
         ),
         IRQError,
@@ -85,15 +84,17 @@ impl LocalCap<IRQControl> {
     where
         DestFreeSlots: Sub<B1>,
         Sub1<DestFreeSlots>: Unsigned,
+
+        IRQ: IsLess<U256, Output = True>,
     {
-        if self.cap_data.known_handled[irq as usize] {
+        if self.cap_data.known_handled[IRQ::USIZE] {
             return Err(IRQError::UnavailableIRQ);
         }
         let (dest_cnode_remainder, dest_slot) = dest_cnode.consume_slot();
         let err = unsafe {
             seL4_IRQControl_Get(
                 self.cptr, // service/authority
-                irq as i32,
+                IRQ::I32,
                 dest_slot.cptr,      //root
                 dest_slot.offset,    //index
                 seL4_WordBits as u8, //depth
@@ -103,12 +104,15 @@ impl LocalCap<IRQControl> {
             return Err(IRQError::SeL4Error(SeL4Error::IRQControlGet(err)));
         }
 
-        self.cap_data.known_handled[irq as usize] = true;
+        self.cap_data.known_handled[IRQ::USIZE] = true;
 
         Ok((
             Cap {
                 cptr: dest_slot.offset,
-                cap_data: IRQHandle { irq },
+                cap_data: IRQHandler {
+                    _irq: PhantomData,
+                    _set_state: PhantomData,
+                },
                 _role: PhantomData,
             },
             dest_cnode_remainder,
@@ -116,40 +120,35 @@ impl LocalCap<IRQControl> {
     }
 }
 
-/// Wrapper around an already-bound-to-a-notification IRQ Handle
-/// Might also be represented as a marker type parameter for IRQHandle
-/// or perhaps as an alternate CapType that IRQHandle transitions into
-/// (like UnmappedPage / MappedPage)
-pub struct IRQAcker<Role: CNodeRole> {
-    // TODO - should we also alias or maintain a reference to the notification?
-    // Maybe only if we want to do error-checking to prevent mismatch of location/process
-    irq_handle: Cap<IRQHandle, Role>,
-}
-
-impl<Role: CNodeRole> Cap<IRQHandle, Role> {
-    pub(crate) fn set_notification<NotifRole: CNodeRole>(
-        &self,
-        notification: &Cap<Notification, NotifRole>,
-    ) -> Result<IRQAcker<Role>, SeL4Error> {
+impl<IRQ: Unsigned> LocalCap<IRQHandler<IRQ, irq_state::Unset>>
+where
+    IRQ: IsLess<U256, Output = True>,
+{
+    pub(crate) fn set_notification(
+        self,
+        notification: &LocalCap<Notification>,
+    ) -> Result<(LocalCap<IRQHandler<IRQ, irq_state::Set>>), SeL4Error> {
         let err = unsafe { seL4_IRQHandler_SetNotification(self.cptr, notification.cptr) };
         if err != 0 {
             return Err(SeL4Error::IRQHandlerSetNotification(err));
         }
-        Ok(IRQAcker {
-            irq_handle: Cap {
-                cptr: self.cptr,
-                cap_data: IRQHandle {
-                    irq: self.cap_data.irq,
-                },
-                _role: PhantomData,
+        Ok(Cap {
+            cptr: self.cptr,
+            _role: self._role,
+            cap_data: IRQHandler {
+                _irq: self.cap_data._irq,
+                _set_state: PhantomData,
             },
         })
     }
 }
 
-impl<Role: CNodeRole> IRQAcker<Role> {
+impl<IRQ: Unsigned> LocalCap<IRQHandler<IRQ, irq_state::Set>>
+where
+    IRQ: IsLess<U256, Output = True>,
+{
     pub fn ack(&self) -> Result<(), SeL4Error> {
-        let err = unsafe { seL4_IRQHandler_Ack(self.irq_handle.cptr) };
+        let err = unsafe { seL4_IRQHandler_Ack(self.cptr) };
         if err != 0 {
             return Err(SeL4Error::IRQHandlerAck(err));
         }

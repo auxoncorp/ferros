@@ -3,7 +3,7 @@ use core::ops::Sub;
 use crate::userland::{CNode, CapRights, SeL4Error};
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
-use typenum::{Unsigned, B1};
+use typenum::{IsLess, True, Unsigned, B1, U256};
 
 /// Type-level enum indicating the relative location / Capability Pointer addressing
 /// scheme that should be used for the objects parameterized by it.
@@ -203,13 +203,40 @@ pub struct IRQControl {
 
 impl CapType for IRQControl {}
 
-pub struct IRQHandle {
-    pub(crate) irq: u8,
+pub struct IRQHandler<IRQ: Unsigned, SetState: IRQSetState>
+where
+    IRQ: IsLess<U256, Output = True>,
+{
+    pub(crate) _irq: PhantomData<IRQ>,
+    pub(crate) _set_state: PhantomData<SetState>,
 }
 
-impl Movable for IRQHandle {}
+impl<IRQ: Unsigned, SetState: IRQSetState> CapType for IRQHandler<IRQ, SetState> where
+    IRQ: IsLess<U256, Output = True>
+{
+}
 
-impl CapType for IRQHandle {}
+impl<IRQ: Unsigned, SetState: IRQSetState> Movable for IRQHandler<IRQ, SetState> where
+    IRQ: IsLess<U256, Output = True>
+{
+}
+
+/// Whether or not an IRQ Handle has been set to a particular Notification
+pub trait IRQSetState: private::SealedIRQSetState {}
+
+pub mod irq_state {
+    use super::IRQSetState;
+
+    /// Not set to a Notification
+    #[derive(Debug, PartialEq)]
+    pub struct Unset;
+    impl IRQSetState for Unset {}
+
+    /// Set to a Notification
+    #[derive(Debug, PartialEq)]
+    pub struct Set;
+    impl IRQSetState for Set {}
+}
 
 #[derive(Debug)]
 pub struct ASIDControl {}
@@ -274,8 +301,6 @@ impl DirectRetype for Notification {
         api_object_seL4_NotificationObject as usize
     }
 }
-
-impl Movable for Notification {}
 
 // TODO: It's important that AssignedPageDirectory can never be moved or deleted
 // (or copied, likely), as that leads to ugly cptr aliasing issues that we're
@@ -378,11 +403,16 @@ impl<Role: CNodeRole> CopyAliasable for MappedPage<Role> {
 impl<FreeSlots: typenum::Unsigned, Role: CNodeRole> CapType for CNode<FreeSlots, Role> {}
 
 mod private {
-    use super::{role, CNodeRole, Unsigned};
+    use super::{irq_state, role, CNodeRole, IRQSetState};
+    use typenum::{IsLess, True, Unsigned, U256};
 
     pub trait SealedRole {}
     impl SealedRole for role::Local {}
     impl SealedRole for role::Child {}
+
+    pub trait SealedIRQSetState {}
+    impl SealedIRQSetState for irq_state::Unset {}
+    impl SealedIRQSetState for irq_state::Set {}
 
     pub trait SealedCapType {}
     impl<BitSize: typenum::Unsigned> SealedCapType for super::Untyped<BitSize> {}
@@ -409,7 +439,10 @@ mod private {
     impl SealedCapType for super::UnmappedPage {}
     impl<Role: CNodeRole> SealedCapType for super::MappedPage<Role> {}
     impl SealedCapType for super::IRQControl {}
-    impl SealedCapType for super::IRQHandle {}
+    impl<IRQ: Unsigned, SetState: IRQSetState> SealedCapType for super::IRQHandler<IRQ, SetState> where
+        IRQ: IsLess<U256, Output = True>
+    {
+    }
 }
 
 impl<CT: CapType> Cap<CT, role::Local> {

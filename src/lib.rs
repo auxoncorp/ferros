@@ -31,16 +31,14 @@ pub mod userland;
 
 mod test_proc;
 
-use core::mem;
-
 use crate::micro_alloc::{Error as AllocError, GetUntyped};
 use crate::userland::{
-    role, root_cnode, BootInfo, CNode, Consumer1, IPCError, IRQAcker, IRQError, LocalCap,
+    role, root_cnode, BootInfo, CNode, CapRights, Consumer1, IPCError, IRQError, LocalCap,
     MultiConsumerError, Notification, Producer, SeL4Error, UnmappedPageTable, VSpace, VSpaceError,
     Waker,
 };
 use sel4_sys::*;
-use typenum::{U12, U20, U4096};
+use typenum::{U12, U20, U4096, U58};
 
 fn yield_forever() {
     unsafe {
@@ -149,21 +147,18 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         root_cnode,
     )?;
 
-    // let (irq_handler, root_cnode) = (&mut boot_info.irq_control).create_handler(58, root_cnode)?;
-    // let (interrupt_notification, root_cnode) = ut4b.retype_local::<_, Notification>(root_cnode)?;
-    // let acker = irq_handler.set_notification(&interrupt_notification)?;
-
-    let (irq_handler, root_cnode) = (&mut boot_info.irq_control).create_handler(58, root_cnode)?;
+    let (irq_handler, root_cnode) =
+        (&mut boot_info.irq_control).create_handler::<U58, _, _>(root_cnode)?;
     let (interrupt_notification, root_cnode) = ut4b.retype_local::<_, Notification>(root_cnode)?;
-    let acker = irq_handler.set_notification(&interrupt_notification)?;
-    // We don't need the child cap, we already have it inside `acker`.
-    let (_, producer_b_cnode) = irq_handler.move_to_cnode(&root_cnode, producer_b_cnode)?;
+    let irq_handler = irq_handler.set_notification(&interrupt_notification)?;
+    let (irq_handler_in_child, producer_b_cnode) =
+        irq_handler.move_to_cnode(&root_cnode, producer_b_cnode)?;
     let (child_interrupt_notification, producer_b_cnode) =
-        interrupt_notification.move_to_cnode(&root_cnode, producer_b_cnode)?;
+        interrupt_notification.copy(&root_cnode, producer_b_cnode, CapRights::RW)?;
     let producer_b_params = test_proc::ProducerYParams::<role::Child> {
         producer: producer_b,
         interrupt_notification: child_interrupt_notification,
-        acker: unsafe { mem::transmute(acker) },
+        acker: irq_handler_in_child,
     };
 
     let (waker, waker_cnode) = Waker::new(&waker_setup, waker_cnode, &root_cnode)?;
@@ -191,16 +186,16 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
     producer_a_thread.start(producer_a_cnode, None, &boot_info.tcb, 255)?;
 
-    //let (producer_b_thread, _producer_b_vspace, root_cnode) = producer_b_vspace.prepare_thread(
-    //    test_proc::producer_y_process,
-    //    producer_b_params,
-    //    producer_b_thread_ut,
-    //    root_cnode,
-    //    &mut scratch_page_table,
-    //    &mut boot_info.page_directory,
-    //)?;
+    let (producer_b_thread, _producer_b_vspace, root_cnode) = producer_b_vspace.prepare_thread(
+        test_proc::producer_y_process,
+        producer_b_params,
+        producer_b_thread_ut,
+        root_cnode,
+        &mut scratch_page_table,
+        &mut boot_info.page_directory,
+    )?;
 
-    //producer_b_thread.start(producer_b_cnode, None, &boot_info.tcb, 255)?;
+    producer_b_thread.start(producer_b_cnode, None, &boot_info.tcb, 255)?;
 
     let (waker_thread, _waker_vspace, _root_cnode) = waker_vspace.prepare_thread(
         test_proc::waker_process,
