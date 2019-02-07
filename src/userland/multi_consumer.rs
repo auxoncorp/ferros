@@ -183,16 +183,27 @@ pub struct ProducerSetup<T, QLen: Unsigned> {
 
 /// Wrapper around the necessary resources
 /// to trigger a multi-consumer's non-queue-reading
-/// interrupt-oriented wakeup path.
+/// interrupt-like wakeup path.
 pub struct WakerSetup {
-    // Used to verify that the related components agree on the identity of the consumer process
-    consumer_vspace_pagedir:
-        ImmobileIndelibleInertCapabilityReference<AssignedPageDirectory<U0, role::Child>>,
     interrupt_badge: Badge,
 
     // User-concealed alias'ing happening here.
-    // Don't mutate this Cap. Copying/minting is okay.
+    // Don't mutate/delete this Cap. Copying/minting is okay.
     notification: Cap<Notification, role::Local>,
+}
+
+/// Wrapper around the locally-accessible resources
+/// needed to add more features to a `Consumer` instance,
+/// such as adding an additional ingest queue.
+pub struct ConsumerToken {
+    // User-concealed alias'ing happening here.
+    // Don't mutate/delete this Cap. Copying/minting is okay.
+    notification: Cap<Notification, role::Local>,
+
+    // Will be populated if the related consumer has had a shared memory queue associated with it,
+    // and thus validating correct VSpace usage will be relevant
+    consumer_vspace_pagedir:
+        Option<ImmobileIndelibleInertCapabilityReference<AssignedPageDirectory<U0, role::Child>>>,
 }
 
 impl<IRQ: Unsigned> InterruptConsumer<IRQ, role::Child>
@@ -207,6 +218,7 @@ where
     ) -> Result<
         (
             InterruptConsumer<IRQ, role::Child>,
+            ConsumerToken,
             LocalCap<ChildCNode<Sub1<Sub1<ConsumerCNodeFreeSlots>>>>,
             LocalCap<LocalCNode<Sub1<Sub1<Sub1<LocalCNodeFreeSlots>>>>>,
         ),
@@ -259,14 +271,123 @@ where
                 interrupt_badge: interrupt_badge,
                 notification: notification_in_child,
             },
+            ConsumerToken {
+                notification,
+                consumer_vspace_pagedir: None,
+            },
             consumer_cnode,
             local_cnode,
         ))
     }
+
+    pub fn add_queue<
+        E: Sized + Send + Sync,
+        ELen: Unsigned,
+        LocalCNodeFreeSlots: Unsigned,
+        LocalPageDirFreeSlots: Unsigned,
+        LocalPageTableFreeSlots: Unsigned,
+        ConsumerPageDirFreeSlots: Unsigned,
+        ConsumerPageTableFreeSlots: Unsigned,
+        ConsumerFilledPageTableCount: Unsigned,
+    >(
+        self,
+        consumer_token: ConsumerToken,
+        shared_page_ut: LocalCap<Untyped<U12>>,
+        consumer_vspace: VSpace<
+            ConsumerPageDirFreeSlots,
+            ConsumerPageTableFreeSlots,
+            ConsumerFilledPageTableCount,
+            role::Child,
+        >,
+        local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
+        local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
+        local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
+    ) -> Result<
+        (
+            Consumer1<role::Child, E, ELen, IRQ>,
+            ConsumerToken,
+            ProducerSetup<E, ELen>,
+            VSpace<
+                ConsumerPageDirFreeSlots,
+                Sub1<ConsumerPageTableFreeSlots>,
+                ConsumerFilledPageTableCount,
+                role::Child,
+            >,
+            LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U2>>>,
+        ),
+        MultiConsumerError,
+    >
+    where
+        ELen: ArrayLength<Slot<E>>,
+        ELen: IsGreater<U0, Output = True>,
+
+        LocalCNodeFreeSlots: Sub<U2>,
+        Diff<LocalCNodeFreeSlots, U2>: Unsigned,
+
+        LocalPageTableFreeSlots: Sub<B1>,
+        Sub1<LocalPageTableFreeSlots>: Unsigned,
+
+        ConsumerPageTableFreeSlots: Sub<B1>,
+        Sub1<ConsumerPageTableFreeSlots>: Unsigned,
+
+        ConsumerFilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, role::Child>>>,
+    {
+        // The consumer token should not have a vspace associated with it at all yet, since
+        // we have yet to require mapping any memory to it.
+        if let Some(_) = consumer_token.consumer_vspace_pagedir {
+            return Err(MultiConsumerError::ConsumerIdentityMismatch);
+        }
+        let (shared_page, consumer_shared_page, consumer_vspace, remainder_local_cnode) =
+            create_page_filled_with_array_queue::<E, ELen, _, _, _, _, _, _>(
+                shared_page_ut,
+                consumer_vspace,
+                local_page_table,
+                local_page_dir,
+                local_cnode,
+            )?;
+
+        let fresh_queue_badge = Badge::from(self.interrupt_badge.inner << 1);
+        let producer_setup: ProducerSetup<E, ELen> = ProducerSetup {
+            consumer_vspace_pagedir: consumer_vspace.identity_ref(),
+            shared_page,
+            queue_badge: fresh_queue_badge,
+            // Construct a user-inaccessible copy of the local notification
+            // purely for use in producing child-cnode-residing copies.
+            notification: Cap {
+                cptr: consumer_token.notification.cptr,
+                cap_data: PhantomCap::phantom_instance(),
+                _role: PhantomData,
+            },
+            _queue_element_type: PhantomData,
+            _queue_lenth: PhantomData,
+        };
+        Ok((
+            Consumer1 {
+                irq_handler: Some(self.irq_handler),
+                interrupt_badge: self.interrupt_badge,
+                notification: self.notification,
+                queue_badge: fresh_queue_badge,
+                queue: QueueHandle {
+                    shared_queue: consumer_shared_page.cap_data.vaddr,
+                    _role: PhantomData,
+                    _t: PhantomData,
+                    _queue_len: PhantomData,
+                },
+            },
+            ConsumerToken {
+                notification: consumer_token.notification,
+                consumer_vspace_pagedir: Some(consumer_vspace.identity_ref()),
+            },
+            producer_setup,
+            consumer_vspace,
+            remainder_local_cnode,
+        ))
+    }
 }
 
-impl<E: Sized + Sync + Send, ELen: Unsigned> Consumer1<role::Child, E, ELen>
+impl<E: Sized + Sync + Send, ELen: Unsigned, IRQ: Unsigned> Consumer1<role::Child, E, ELen, IRQ>
 where
+    IRQ: IsLess<U256, Output = True>,
     ELen: IsGreater<U0, Output = True>,
     ELen: ArrayLength<Slot<E>>,
 {
@@ -279,8 +400,8 @@ where
         ConsumerPageTableFreeSlots: Unsigned,
         ConsumerFilledPageTableCount: Unsigned,
     >(
-        shared_page_ut: LocalCap<Untyped<U12>>,
         notification_ut: LocalCap<Untyped<U4>>,
+        shared_page_ut: LocalCap<Untyped<U12>>,
         consumer_cnode: LocalCap<ChildCNode<ConsumerCNodeFreeSlots>>,
         consumer_vspace: VSpace<
             ConsumerPageDirFreeSlots,
@@ -293,7 +414,8 @@ where
         local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
     ) -> Result<
         (
-            Consumer1<role::Child, E, ELen>,
+            Consumer1<role::Child, E, ELen, IRQ>,
+            ConsumerToken,
             ProducerSetup<E, ELen>,
             WakerSetup,
             LocalCap<ChildCNode<Sub1<ConsumerCNodeFreeSlots>>>,
@@ -364,8 +486,17 @@ where
             _queue_element_type: PhantomData,
             _queue_lenth: PhantomData,
         };
+        let consumer_token = ConsumerToken {
+            // Construct a user-inaccessible copy of the local notification
+            // purely for use in producing child-cnode-residing copies.
+            notification: Cap {
+                cptr: local_notification.cptr,
+                cap_data: PhantomCap::phantom_instance(),
+                _role: PhantomData,
+            },
+            consumer_vspace_pagedir: Some(consumer_vspace.identity_ref()),
+        };
         let waker_setup = WakerSetup {
-            consumer_vspace_pagedir: consumer_vspace.identity_ref(),
             interrupt_badge: interrupt_badge,
             notification: local_notification,
         };
@@ -382,6 +513,7 @@ where
                     _queue_len: PhantomData,
                 },
             },
+            consumer_token,
             producer_setup,
             waker_setup,
             consumer_cnode,
@@ -401,7 +533,7 @@ where
         ConsumerFilledPageTableCount: Unsigned,
     >(
         self,
-        waker_setup: &WakerSetup,
+        consumer_token: &ConsumerToken,
         shared_page_ut: LocalCap<Untyped<U12>>,
         consumer_vspace: VSpace<
             ConsumerPageDirFreeSlots,
@@ -414,7 +546,7 @@ where
         local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
     ) -> Result<
         (
-            Consumer2<role::Child, E, ELen, F, FLen>,
+            Consumer2<role::Child, E, ELen, F, FLen, IRQ>,
             ProducerSetup<F, FLen>,
             VSpace<
                 ConsumerPageDirFreeSlots,
@@ -441,10 +573,14 @@ where
 
         ConsumerFilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, role::Child>>>,
     {
-        if waker_setup.consumer_vspace_pagedir != consumer_vspace.identity_ref() {
-            // Ensure that the consumer process that the `waker_setup` is wrapping
-            // a notification to is the same process as the one referred to by
-            // the `consumer_vspace` parameter.
+        // Ensure that the consumer process that the `waker_setup` is wrapping
+        // a notification to is the same process as the one referred to by
+        // the `consumer_vspace` parameter.
+        if let Some(ref consumer_token_vspace_pagedir) = consumer_token.consumer_vspace_pagedir {
+            if consumer_token_vspace_pagedir != &consumer_vspace.identity_ref() {
+                return Err(MultiConsumerError::ConsumerIdentityMismatch);
+            }
+        } else {
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
         let (shared_page, consumer_shared_page, consumer_vspace, remainder_local_cnode) =
@@ -464,7 +600,7 @@ where
             // Construct a user-inaccessible copy of the local notification
             // purely for use in producing child-cnode-residing copies.
             notification: Cap {
-                cptr: waker_setup.notification.cptr,
+                cptr: consumer_token.notification.cptr,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
@@ -496,9 +632,15 @@ where
     }
 }
 
-impl<E: Sized + Sync + Send, ELen: Unsigned, F: Sized + Sync + Send, FLen: Unsigned>
-    Consumer2<role::Child, E, ELen, F, FLen>
+impl<
+        E: Sized + Sync + Send,
+        ELen: Unsigned,
+        F: Sized + Sync + Send,
+        FLen: Unsigned,
+        IRQ: Unsigned,
+    > Consumer2<role::Child, E, ELen, F, FLen, IRQ>
 where
+    IRQ: IsLess<U256, Output = True>,
     ELen: IsGreater<U0, Output = True>,
     ELen: ArrayLength<Slot<E>>,
     FLen: IsGreater<U0, Output = True>,
@@ -515,7 +657,7 @@ where
         ConsumerFilledPageTableCount: Unsigned,
     >(
         self,
-        waker_setup: &WakerSetup,
+        consumer_token: &ConsumerToken,
         shared_page_ut: LocalCap<Untyped<U12>>,
         consumer_vspace: VSpace<
             ConsumerPageDirFreeSlots,
@@ -528,7 +670,7 @@ where
         local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
     ) -> Result<
         (
-            Consumer3<role::Child, E, ELen, F, FLen, G, GLen>,
+            Consumer3<role::Child, E, ELen, F, FLen, G, GLen, IRQ>,
             ProducerSetup<F, FLen>,
             VSpace<
                 ConsumerPageDirFreeSlots,
@@ -557,10 +699,14 @@ where
 
         ConsumerFilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, role::Child>>>,
     {
-        if waker_setup.consumer_vspace_pagedir != consumer_vspace.identity_ref() {
-            // Ensure that the consumer process that the `waker_setup` is wrapping
-            // a notification to is the same process as the one referred to by
-            // the `consumer_vspace` parameter.
+        // Ensure that the consumer process that the `waker_setup` is wrapping
+        // a notification to is the same process as the one referred to by
+        // the `consumer_vspace` parameter.
+        if let Some(ref consumer_token_vspace_pagedir) = consumer_token.consumer_vspace_pagedir {
+            if consumer_token_vspace_pagedir != &consumer_vspace.identity_ref() {
+                return Err(MultiConsumerError::ConsumerIdentityMismatch);
+            }
+        } else {
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
         let (shared_page, consumer_shared_page, consumer_vspace, remainder_local_cnode) =
@@ -580,7 +726,7 @@ where
             // Construct a user-inaccessible copy of the local notification
             // purely for use in producing child-cnode-residing copies.
             notification: Cap {
-                cptr: waker_setup.notification.cptr,
+                cptr: consumer_token.notification.cptr,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
@@ -694,7 +840,7 @@ where
 }
 
 /// Wrapper around the necessary capabilities for a given
-/// thread to awaken a multi-consumer to run the "interrupt" path
+/// thread to awaken a multi-consumer to run the "non-queue-reading wakeup" path.
 ///
 /// Designed to be handed to a new process as a member of the
 /// initial thread parameters struct (see `VSpace::prepare_thread`).
@@ -766,7 +912,10 @@ where
                         }
                     };
                 } else {
-                    debug_println!("Unexpected badge in InterruptConsumer::consume loop. {:?}", current_badge);
+                    debug_println!(
+                        "Unexpected badge in InterruptConsumer::consume loop. {:?}",
+                        current_badge
+                    );
                     panic!()
                 }
             }
@@ -787,6 +936,16 @@ where
         let mut state = initial_state;
         let queue: &mut ArrayQueue<E, QLen> =
             unsafe { core::mem::transmute(self.queue.shared_queue as *mut ArrayQueue<E, QLen>) };
+        if let Some(ref irq_handler) = self.irq_handler {
+            // Run an initial ack to clear out interrupt state ahead of waiting
+            match irq_handler.ack() {
+                Ok(_) => (),
+                Err(e) => {
+                    debug_println!("Ack error in InterruptConsumer::consume setup. {:?}", e);
+                    panic!()
+                }
+            };
+        }
         loop {
             unsafe {
                 seL4_Wait(self.notification.cptr, &mut sender_badge as *mut usize);
@@ -796,6 +955,18 @@ where
                     .are_all_overlapping_bits_set(current_badge)
                 {
                     state = waker_fn(state);
+                    if let Some(ref irq_handler) = self.irq_handler {
+                        match irq_handler.ack() {
+                            Ok(_) => (),
+                            Err(e) => {
+                                debug_println!(
+                                    "Ack error in InterruptConsumer::consume loop. {:?}",
+                                    e
+                                );
+                                panic!()
+                            }
+                        };
+                    }
                 }
                 if self.queue_badge.are_all_overlapping_bits_set(current_badge) {
                     for _ in 0..QLen::USIZE.saturating_add(1) {
@@ -839,6 +1010,15 @@ where
         let (badge_f, handle_f) = self.queues.1;
         let queue_f: &mut ArrayQueue<F, FLen> =
             unsafe { core::mem::transmute(handle_f.shared_queue as *mut ArrayQueue<F, FLen>) };
+        if let Some(ref irq_handler) = self.irq_handler {
+            match irq_handler.ack() {
+                Ok(_) => (),
+                Err(e) => {
+                    debug_println!("Ack error in InterruptConsumer::consume setup. {:?}", e);
+                    panic!()
+                }
+            };
+        }
         loop {
             unsafe {
                 seL4_Wait(self.notification.cptr, &mut sender_badge as *mut usize);
@@ -848,6 +1028,18 @@ where
                     .are_all_overlapping_bits_set(current_badge)
                 {
                     state = waker_fn(state);
+                    if let Some(ref irq_handler) = self.irq_handler {
+                        match irq_handler.ack() {
+                            Ok(_) => (),
+                            Err(e) => {
+                                debug_println!(
+                                    "Ack error in InterruptConsumer::consume loop. {:?}",
+                                    e
+                                );
+                                panic!()
+                            }
+                        };
+                    }
                 }
                 if badge_e.are_all_overlapping_bits_set(current_badge) {
                     for _ in 0..ELen::USIZE.saturating_add(1) {
@@ -913,6 +1105,15 @@ where
         let (badge_g, handle_g) = self.queues.2;
         let queue_g: &mut ArrayQueue<G, GLen> =
             unsafe { core::mem::transmute(handle_g.shared_queue as *mut ArrayQueue<G, GLen>) };
+        if let Some(ref irq_handler) = self.irq_handler {
+            match irq_handler.ack() {
+                Ok(_) => (),
+                Err(e) => {
+                    debug_println!("Ack error in InterruptConsumer::consume setup. {:?}", e);
+                    panic!()
+                }
+            };
+        }
         loop {
             unsafe {
                 seL4_Wait(self.notification.cptr, &mut sender_badge as *mut usize);
@@ -922,6 +1123,18 @@ where
                     .are_all_overlapping_bits_set(current_badge)
                 {
                     state = waker_fn(state);
+                    if let Some(ref irq_handler) = self.irq_handler {
+                        match irq_handler.ack() {
+                            Ok(_) => (),
+                            Err(e) => {
+                                debug_println!(
+                                    "Ack error in InterruptConsumer::consume loop. {:?}",
+                                    e
+                                );
+                                panic!()
+                            }
+                        };
+                    }
                 }
                 if badge_e.are_all_overlapping_bits_set(current_badge) {
                     for _ in 0..ELen::USIZE.saturating_add(1) {
