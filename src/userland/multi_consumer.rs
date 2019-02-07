@@ -346,6 +346,7 @@ where
                 local_cnode,
             )?;
 
+        // Assumes we are using the one-hot style for identifying the interrupt badge index
         let fresh_queue_badge = Badge::from(self.interrupt_badge.inner << 1);
         let producer_setup: ProducerSetup<E, ELen> = ProducerSetup {
             consumer_vspace_pagedir: consumer_vspace.identity_ref(),

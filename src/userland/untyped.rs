@@ -105,7 +105,6 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
         BitSize: Sub<U2>,
         Diff<BitSize, U2>: Unsigned,
     {
-        // TODO: use reserve_range here
         let (dest_cnode, dest_slot1) = dest_cnode.consume_slot();
         let (dest_cnode, dest_slot2) = dest_cnode.consume_slot();
         let (dest_cnode, dest_slot3) = dest_cnode.consume_slot();
@@ -128,11 +127,6 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
 
         Ok((
             Cap {
-                cptr: self.cptr,
-                cap_data: PhantomCap::phantom_instance(),
-                _role: PhantomData,
-            },
-            Cap {
                 cptr: dest_slot1.offset,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
@@ -144,6 +138,11 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
             },
             Cap {
                 cptr: dest_slot3.offset,
+                cap_data: PhantomCap::phantom_instance(),
+                _role: PhantomData,
+            },
+            Cap {
+                cptr: self.cptr,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },

@@ -62,19 +62,26 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
     let (waker_vspace, mut boot_info, root_cnode) = VSpace::new(boot_info, waker_ut, root_cnode)?;
 
-    let (consumer, producer_setup_a, waker_setup, consumer_cnode, consumer_vspace, root_cnode) =
-        Consumer1::new(
-            shared_page_ut,
-            ut4a,
-            consumer_cnode,
-            consumer_vspace,
-            &mut scratch_page_table,
-            &mut boot_info.page_directory,
-            root_cnode,
-        )?;
+    let (
+        consumer,
+        consumer_token,
+        producer_setup_a,
+        waker_setup,
+        consumer_cnode,
+        consumer_vspace,
+        root_cnode,
+    ) = Consumer1::new(
+        ut4a,
+        shared_page_ut,
+        consumer_cnode,
+        consumer_vspace,
+        &mut scratch_page_table,
+        &mut boot_info.page_directory,
+        root_cnode,
+    )?;
 
     let (consumer, producer_setup_b, consumer_vspace, root_cnode) = consumer.add_queue(
-        &waker_setup,
+        &consumer_token,
         shared_page_ut_b,
         consumer_vspace,
         &mut scratch_page_table,
