@@ -25,7 +25,7 @@ mod dual_process;
 #[cfg(single_process = "true")]
 mod single_process;
 
-use ferros::micro_alloc::{self, Error as AllocError, GetUntyped};
+use ferros::micro_alloc::{self, Error as AllocError};
 use ferros::pow::Pow;
 use ferros::userland::{
     role, root_cnode, BootInfo, CNode, CNodeRole, Cap, Endpoint, IPCError, LocalCap,

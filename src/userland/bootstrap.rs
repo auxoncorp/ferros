@@ -4,8 +4,9 @@ use core::ops::Sub;
 use crate::pow::Pow;
 use crate::userland::cap::UnassignedPageDirectory;
 use crate::userland::{
-    role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, LocalCap, MappedPage,
-    MappedPageTable, SeL4Error, ThreadControlBlock, UnmappedPageTable, Untyped,
+    memory_kind, role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, IRQControl,
+    LocalCap, MappedPage, MappedPageTable, SeL4Error, ThreadControlBlock, UnmappedPageTable,
+    Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
@@ -80,6 +81,7 @@ pub struct BootInfo<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned> {
     pub page_directory: LocalCap<AssignedPageDirectory<PageDirFreeSlots, role::Local>>,
     pub tcb: LocalCap<ThreadControlBlock>,
     pub asid_pool: LocalCap<ASIDPool<ASIDPoolFreeSlots>>,
+    pub irq_control: LocalCap<IRQControl>,
     user_image_frames_start: usize,
     user_image_frames_end: usize,
 }
@@ -116,7 +118,14 @@ impl BootInfo<paging::BaseASIDPoolFreeSlots, paging::RootTaskPageDirFreeSlots> {
                     },
                 },
                 tcb: Cap::wrap_cptr(seL4_CapInitThreadTCB as usize),
-                asid_pool: asid_pool,
+                asid_pool,
+                irq_control: Cap {
+                    cptr: seL4_CapIRQControl as usize,
+                    cap_data: IRQControl {
+                        known_handled: [false; 256],
+                    },
+                    _role: PhantomData,
+                },
                 user_image_frames_start: bootinfo.userImageFrames.start,
                 user_image_frames_end: bootinfo.userImageFrames.end,
             },
@@ -131,7 +140,9 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
     // TODO this doesn't enforce the aliasing constraints we want at the type
     // level. This can be modeled as an array (or other sized thing) once we
     // know how big the user image is.
-    pub fn user_image_pages_iter(&self) -> impl Iterator<Item = LocalCap<MappedPage<role::Local>>> {
+    pub fn user_image_pages_iter(
+        &self,
+    ) -> impl Iterator<Item = LocalCap<MappedPage<role::Local, memory_kind::General>>> {
         let vaddr_iter = (address_space::ProgramStart::USIZE..address_space::ProgramEnd::USIZE)
             .step_by(1 << paging::PageBits::USIZE);
 
@@ -142,6 +153,7 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
                 cap_data: MappedPage {
                     vaddr,
                     _role: PhantomData,
+                    _kind: PhantomData,
                 },
                 _role: PhantomData,
             })
@@ -170,6 +182,7 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
                 page_directory: page_dir,
                 tcb: self.tcb,
                 asid_pool: self.asid_pool,
+                irq_control: self.irq_control,
                 user_image_frames_start: self.user_image_frames_start,
                 user_image_frames_end: self.user_image_frames_end,
             },
@@ -200,6 +213,7 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
                 page_directory: self.page_directory,
                 tcb: self.tcb,
                 asid_pool: asid_pool,
+                irq_control: self.irq_control,
                 user_image_frames_start: self.user_image_frames_start,
                 user_image_frames_end: self.user_image_frames_end,
             },
@@ -213,7 +227,7 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
 /// (which is assumed to be a singleton as well)
 /// because there is a lightly-documented seL4 constraint
 /// that limits us to a single ASIDPool per application.
-impl LocalCap<Untyped<U12>> {
+impl LocalCap<Untyped<U12, memory_kind::General>> {
     pub fn retype_asid_pool<FreeSlots: Unsigned>(
         self,
         asid_control: LocalCap<ASIDControl>,

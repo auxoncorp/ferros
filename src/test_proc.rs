@@ -1,8 +1,8 @@
 use crate::userland::{
-    role, CNodeRole, Consumer2, Producer, QueueFullError, RetypeForSetup, Waker,
+    role, CNodeRole, Consumer2, InterruptConsumer, Producer, QueueFullError, RetypeForSetup, Waker,
 };
 use sel4_sys::seL4_Yield;
-use typenum::{U10, U2};
+use typenum::{U10, U2, U58};
 
 #[derive(Debug)]
 pub struct Xenon {
@@ -24,6 +24,7 @@ impl RetypeForSetup for ConsumerParams<role::Local> {
 
 pub struct ProducerYParams<Role: CNodeRole> {
     pub producer: Producer<Role, Yttrium, U2>,
+    pub interrupt_consumer: InterruptConsumer<U58, Role>,
 }
 
 impl RetypeForSetup for ProducerYParams<role::Local> {
@@ -78,7 +79,7 @@ pub extern "C" fn consumer_process(p: ConsumerParams<role::Local>) {
     p.consumer.consume(
         initial_state,
         |mut state| {
-            debug_println!("Interrupt wakeup happened!");
+            debug_println!("Non-queue multiconsumer wakeup happened!");
             state.interrupt_count = state.interrupt_count.saturating_add(1);
             state.debug_if_finished();
             state
@@ -106,7 +107,7 @@ pub extern "C" fn waker_process(p: WakerParams<role::Local>) {
 }
 
 pub extern "C" fn producer_x_process(p: ProducerXParams<role::Local>) {
-    debug_println!("Inside producer");
+    debug_println!("Inside producer x");
     let mut rejection_count = 0;
     for i in 0..20 {
         let mut x = Xenon { a: i };
@@ -129,24 +130,41 @@ pub extern "C" fn producer_x_process(p: ProducerXParams<role::Local>) {
 }
 
 pub extern "C" fn producer_y_process(p: ProducerYParams<role::Local>) {
-    debug_println!("Inside producer");
-    let mut rejection_count = 0;
-    for i in 0..20 {
-        let mut y = Yttrium { b: i };
-        loop {
-            match p.producer.send(y) {
-                Ok(_) => {
-                    break;
-                }
-                Err(QueueFullError(rejected_y)) => {
-                    y = rejected_y;
-                    rejection_count += 1;
-                    unsafe {
-                        seL4_Yield();
+    debug_println!("Inside producer y ");
+    let producer = p.producer;
+    #[derive(Debug)]
+    struct State {
+        interrupt_count: u64,
+        rejection_count: u64,
+    };
+    p.interrupt_consumer.consume(
+        State {
+            interrupt_count: 0,
+            rejection_count: 0,
+        },
+        move |mut state| {
+            debug_println!(
+                "Got a real interrupt notification, let's try producing to the other queue."
+            );
+            let mut y = Yttrium {
+                b: state.interrupt_count,
+            };
+            loop {
+                match producer.send(y) {
+                    Ok(_) => {
+                        break;
+                    }
+                    Err(QueueFullError(rejected_y)) => {
+                        y = rejected_y;
+                        state.rejection_count = state.interrupt_count.saturating_add(1);
+                        unsafe {
+                            seL4_Yield();
+                        }
                     }
                 }
             }
-        }
-    }
-    debug_println!("\n\nProducer rejection count: {}\n\n", rejection_count);
+            state.interrupt_count = state.interrupt_count.saturating_add(1);
+            state
+        },
+    );
 }

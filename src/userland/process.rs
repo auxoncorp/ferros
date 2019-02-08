@@ -1,12 +1,15 @@
 use core::cmp;
+use core::marker::PhantomData;
 use core::mem::{self, size_of};
+use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
-    role, AssignedPageDirectory, CNode, CNodeRole, FaultSource,
-    ImmobileIndelibleInertCapabilityReference, LocalCap, MappedPage, SeL4Error, ThreadControlBlock,
+    irq_state, memory_kind, role, AssignedPageDirectory, Badge, CNode, CNodeRole, Cap, FaultSource,
+    IRQControl, IRQHandler, ImmobileIndelibleInertCapabilityReference, LocalCap, MappedPage,
+    Notification, SeL4Error, ThreadControlBlock,
 };
 use sel4_sys::*;
-use typenum::{Unsigned, U0};
+use typenum::{IsLess, Sub1, True, Unsigned, B1, U0, U256};
 
 impl LocalCap<ThreadControlBlock> {
     pub(super) fn configure<CNodeFreeSlots: Unsigned, VSpaceRole: CNodeRole>(
@@ -16,7 +19,7 @@ impl LocalCap<ThreadControlBlock> {
         vspace_cptr: ImmobileIndelibleInertCapabilityReference<
             AssignedPageDirectory<U0, VSpaceRole>,
         >, // vspace_root,
-        ipc_buffer: LocalCap<MappedPage<VSpaceRole>>,
+        ipc_buffer: LocalCap<MappedPage<VSpaceRole, memory_kind::General>>,
     ) -> Result<(), SeL4Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
         // used by the radix.
@@ -55,6 +58,114 @@ pub trait RetypeForSetup: Sized + Send + Sync {
 }
 
 pub type SetupVer<X> = <X as RetypeForSetup>::Output;
+
+#[derive(Debug)]
+pub enum IRQError {
+    UnavailableIRQ,
+    SeL4Error(SeL4Error),
+}
+impl From<SeL4Error> for IRQError {
+    fn from(e: SeL4Error) -> Self {
+        IRQError::SeL4Error(e)
+    }
+}
+
+impl LocalCap<IRQControl> {
+    pub fn create_handler<IRQ: Unsigned, DestRole: CNodeRole, DestFreeSlots: Unsigned>(
+        &mut self,
+        dest_cnode: LocalCap<CNode<DestFreeSlots, DestRole>>,
+    ) -> Result<
+        (
+            Cap<IRQHandler<IRQ, irq_state::Unset>, DestRole>,
+            LocalCap<CNode<Sub1<DestFreeSlots>, DestRole>>,
+        ),
+        IRQError,
+    >
+    where
+        DestFreeSlots: Sub<B1>,
+        Sub1<DestFreeSlots>: Unsigned,
+
+        IRQ: IsLess<U256, Output = True>,
+    {
+        if self.cap_data.known_handled[IRQ::USIZE] {
+            return Err(IRQError::UnavailableIRQ);
+        }
+        let (dest_cnode_remainder, dest_slot) = dest_cnode.consume_slot();
+        let err = unsafe {
+            seL4_IRQControl_Get(
+                self.cptr, // service/authority
+                IRQ::I32,
+                dest_slot.cptr,      //root
+                dest_slot.offset,    //index
+                seL4_WordBits as u8, //depth
+            )
+        };
+        if err != 0 {
+            return Err(IRQError::SeL4Error(SeL4Error::IRQControlGet(err)));
+        }
+
+        self.cap_data.known_handled[IRQ::USIZE] = true;
+
+        Ok((
+            Cap {
+                cptr: dest_slot.offset,
+                cap_data: IRQHandler {
+                    _irq: PhantomData,
+                    _set_state: PhantomData,
+                },
+                _role: PhantomData,
+            },
+            dest_cnode_remainder,
+        ))
+    }
+}
+
+impl<IRQ: Unsigned> LocalCap<IRQHandler<IRQ, irq_state::Unset>>
+where
+    IRQ: IsLess<U256, Output = True>,
+{
+    pub(crate) fn set_notification(
+        self,
+        notification: &LocalCap<Notification>,
+    ) -> Result<(LocalCap<IRQHandler<IRQ, irq_state::Set>>), SeL4Error> {
+        let err = unsafe { seL4_IRQHandler_SetNotification(self.cptr, notification.cptr) };
+        if err != 0 {
+            return Err(SeL4Error::IRQHandlerSetNotification(err));
+        }
+        Ok(Cap {
+            cptr: self.cptr,
+            _role: self._role,
+            cap_data: IRQHandler {
+                _irq: self.cap_data._irq,
+                _set_state: PhantomData,
+            },
+        })
+    }
+}
+
+impl<IRQ: Unsigned> LocalCap<IRQHandler<IRQ, irq_state::Set>>
+where
+    IRQ: IsLess<U256, Output = True>,
+{
+    pub fn ack(&self) -> Result<(), SeL4Error> {
+        let err = unsafe { seL4_IRQHandler_Ack(self.cptr) };
+        if err != 0 {
+            return Err(SeL4Error::IRQHandlerAck(err));
+        }
+        Ok(())
+    }
+}
+
+impl LocalCap<Notification> {
+    /// Blocking wait on a notification
+    pub(crate) fn wait(&self) -> Badge {
+        let mut sender_badge: usize = 0;
+        unsafe {
+            seL4_Wait(self.cptr, &mut sender_badge as *mut usize);
+        };
+        Badge::from(sender_badge)
+    }
+}
 
 /// Set up the target registers and stack to pass the parameter. See
 /// http://infocenter.arm.com/help/topic/com.arm.doc.ihi0042f/IHI0042F_aapcs.pdf

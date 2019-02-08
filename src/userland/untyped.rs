@@ -2,17 +2,17 @@ use core::marker::PhantomData;
 use core::ops::Sub;
 use crate::pow::{Pow, _Pow};
 use crate::userland::{
-    role, CNode, Cap, CapType, ChildCNode, ChildCap, DirectRetype, LocalCap, PhantomCap, SeL4Error,
-    Untyped,
+    memory_kind, role, CNode, Cap, CapType, ChildCNode, ChildCap, DirectRetype, LocalCap,
+    MemoryKind, PhantomCap, SeL4Error, UnmappedPage, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U2, U3};
+use typenum::{Unsigned, B1, U12, U2, U3};
 
-pub(crate) fn wrap_untyped<BitSize: Unsigned>(
+pub(crate) fn wrap_untyped<BitSize: Unsigned, Kind: MemoryKind>(
     cptr: usize,
     untyped_desc: &seL4_UntypedDesc,
-) -> Option<LocalCap<Untyped<BitSize>>> {
+) -> Option<LocalCap<Untyped<BitSize, Kind>>> {
     if untyped_desc.sizeBits == BitSize::to_u8() {
         Some(Cap {
             cptr,
@@ -24,14 +24,14 @@ pub(crate) fn wrap_untyped<BitSize: Unsigned>(
     }
 }
 
-impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
+impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
     pub fn split<FreeSlots: Unsigned>(
         self,
         dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
     ) -> Result<
         (
-            LocalCap<Untyped<Sub1<BitSize>>>,
-            LocalCap<Untyped<Sub1<BitSize>>>,
+            LocalCap<Untyped<Sub1<BitSize>, Kind>>,
+            LocalCap<Untyped<Sub1<BitSize>, Kind>>,
             LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
         ),
         SeL4Error,
@@ -39,7 +39,6 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
     where
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
-
         BitSize: Sub<B1>,
         Sub1<BitSize>: Unsigned,
     {
@@ -81,10 +80,10 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
         dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
     ) -> Result<
         (
-            LocalCap<Untyped<Diff<BitSize, U2>>>,
-            LocalCap<Untyped<Diff<BitSize, U2>>>,
-            LocalCap<Untyped<Diff<BitSize, U2>>>,
-            LocalCap<Untyped<Diff<BitSize, U2>>>,
+            LocalCap<Untyped<Diff<BitSize, U2>, Kind>>,
+            LocalCap<Untyped<Diff<BitSize, U2>, Kind>>,
+            LocalCap<Untyped<Diff<BitSize, U2>, Kind>>,
+            LocalCap<Untyped<Diff<BitSize, U2>, Kind>>,
             LocalCap<CNode<Sub1<Sub1<Sub1<FreeSlots>>>, role::Local>>,
         ),
         SeL4Error,
@@ -92,20 +91,15 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
     where
         FreeSlots: Sub<U3>,
         Diff<FreeSlots, U3>: Unsigned,
-
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
-
         Sub1<FreeSlots>: Sub<B1>,
         Sub1<Sub1<FreeSlots>>: Unsigned,
-
         Sub1<Sub1<FreeSlots>>: Sub<B1>,
         Sub1<Sub1<Sub1<FreeSlots>>>: Unsigned,
-
         BitSize: Sub<U2>,
         Diff<BitSize, U2>: Unsigned,
     {
-        // TODO: use reserve_range here
         let (dest_cnode, dest_slot1) = dest_cnode.consume_slot();
         let (dest_cnode, dest_slot2) = dest_cnode.consume_slot();
         let (dest_cnode, dest_slot3) = dest_cnode.consume_slot();
@@ -128,11 +122,6 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
 
         Ok((
             Cap {
-                cptr: self.cptr,
-                cap_data: PhantomCap::phantom_instance(),
-                _role: PhantomData,
-            },
-            Cap {
                 cptr: dest_slot1.offset,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
@@ -147,10 +136,17 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
+            Cap {
+                cptr: self.cptr,
+                cap_data: PhantomCap::phantom_instance(),
+                _role: PhantomData,
+            },
             dest_cnode,
         ))
     }
+}
 
+impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
     // TODO add required bits as an associated type for each TargetCapType, require that
     // this untyped is big enough
     pub fn retype_local<FreeSlots: Unsigned, TargetCapType: CapType>(
@@ -307,6 +303,59 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize>> {
                 0,                             // depth
                 dest_slot.offset,              // offset
                 1,                             // num_objects
+            )
+        };
+
+        if err != 0 {
+            return Err(SeL4Error::UntypedRetype(err));
+        }
+
+        Ok((
+            Cap {
+                cptr: dest_slot.offset,
+                cap_data: PhantomCap::phantom_instance(),
+                _role: PhantomData,
+            },
+            dest_cnode,
+        ))
+    }
+}
+
+// TODO - associate this size with architecture-specific knowledge of page/frame sizes
+// rather than a U12 directly.
+impl LocalCap<Untyped<U12, memory_kind::Device>> {
+    /// The only thing memory_kind::Device memory can be used to make
+    /// is a page/frame.
+    pub fn retype_device_page<CNodeFreeSlots: Unsigned>(
+        self,
+        dest_cnode: LocalCap<CNode<CNodeFreeSlots, role::Local>>,
+    ) -> Result<
+        (
+            LocalCap<UnmappedPage<memory_kind::Device>>,
+            LocalCap<CNode<Sub1<CNodeFreeSlots>, role::Local>>,
+        ),
+        SeL4Error,
+    >
+    where
+        CNodeFreeSlots: Sub<B1>,
+        Sub1<CNodeFreeSlots>: Unsigned,
+    {
+        // Note that we special case introduce a device page creation function
+        // because the most likely alternative would be complicating the DirectRetype
+        // trait to allow some sort of associated-type matching between the allowable
+        // source Untyped memory kinds and the output cap types.
+        let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
+
+        let err = unsafe {
+            seL4_Untyped_Retype(
+                self.cptr,                    // _service
+                UnmappedPage::sel4_type_id(), // type
+                0,                            // size_bits
+                dest_slot.cptr,               // root
+                0,                            // index
+                0,                            // depth
+                dest_slot.offset,             // offset
+                1,                            // num_objects
             )
         };
 

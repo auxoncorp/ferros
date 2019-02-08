@@ -1,6 +1,6 @@
 use super::TopLevelError;
 use core::marker::PhantomData;
-use ferros::micro_alloc::{self, GetUntyped};
+use ferros::micro_alloc;
 use ferros::pow::Pow;
 use ferros::userland::{
     call_channel, role, root_cnode, setup_fault_endpoint_pair, BootInfo, CNode, CNodeRole, Caller,
@@ -67,16 +67,23 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (consumer_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
             ut16b.retype_cnode::<_, U12>(root_cnode)?;
 
-        let (consumer, producer_setup, waker_setup, consumer_cnode, consumer_vspace, root_cnode) =
-            Consumer1::new(
-                shared_page_ut,
-                ut4,
-                consumer_cnode_local,
-                child_a_vspace,
-                &mut scratch_page_table,
-                &mut boot_info.page_directory,
-                root_cnode,
-            )?;
+        let (
+            consumer,
+            consumer_token,
+            producer_setup,
+            waker_setup,
+            consumer_cnode,
+            consumer_vspace,
+            root_cnode,
+        ) = Consumer1::new(
+            ut4,
+            shared_page_ut,
+            consumer_cnode_local,
+            child_a_vspace,
+            &mut scratch_page_table,
+            &mut boot_info.page_directory,
+            root_cnode,
+        )?;
 
         let consumer_params = ConsumerParams::<role::Child> { consumer };
 

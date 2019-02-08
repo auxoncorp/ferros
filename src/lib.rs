@@ -31,10 +31,10 @@ pub mod userland;
 
 mod test_proc;
 
-use crate::micro_alloc::{Error as AllocError, GetUntyped};
+use crate::micro_alloc::Error as AllocError;
 use crate::userland::{
-    role, root_cnode, BootInfo, CNode, Consumer1, IPCError, LocalCap, MultiConsumerError, Producer,
-    SeL4Error, UnmappedPageTable, VSpace, VSpaceError, Waker,
+    role, root_cnode, BootInfo, CNode, Consumer1, IPCError, IRQError, InterruptConsumer, LocalCap,
+    MultiConsumerError, Producer, SeL4Error, UnmappedPageTable, VSpace, VSpaceError, Waker,
 };
 use sel4_sys::*;
 use typenum::{U12, U20, U4096};
@@ -77,7 +77,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode)?;
     let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode)?;
     let (ut5, _, root_cnode) = ut6.split(root_cnode)?;
-    let (ut4a, _ut4b, root_cnode) = ut5.split(root_cnode)?; // Why two splits? To exercise split.
+    let (ut4a, ut4b, root_cnode) = ut5.split(root_cnode)?; // Why two splits? To exercise split.
 
     // wrap the rest of the critical boot info
     let (boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
@@ -107,19 +107,26 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
     let (waker_vspace, mut boot_info, root_cnode) = VSpace::new(boot_info, waker_ut, root_cnode)?;
 
-    let (consumer, producer_setup_a, waker_setup, consumer_cnode, consumer_vspace, root_cnode) =
-        Consumer1::new(
-            shared_page_ut,
-            ut4a,
-            consumer_cnode,
-            consumer_vspace,
-            &mut scratch_page_table,
-            &mut boot_info.page_directory,
-            root_cnode,
-        )?;
+    let (
+        consumer,
+        consumer_token,
+        producer_setup_a,
+        waker_setup,
+        consumer_cnode,
+        consumer_vspace,
+        root_cnode,
+    ) = Consumer1::new(
+        ut4a,
+        shared_page_ut,
+        consumer_cnode,
+        consumer_vspace,
+        &mut scratch_page_table,
+        &mut boot_info.page_directory,
+        root_cnode,
+    )?;
 
     let (consumer, producer_setup_b, consumer_vspace, root_cnode) = consumer.add_queue(
-        &waker_setup,
+        &consumer_token,
         shared_page_ut_b,
         consumer_vspace,
         &mut scratch_page_table,
@@ -145,8 +152,17 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         producer_b_vspace,
         root_cnode,
     )?;
+
+    let (interrupt_consumer, _interrupt_consumer_token, producer_b_cnode, root_cnode) =
+        InterruptConsumer::new(
+            ut4b,
+            producer_b_cnode,
+            &mut boot_info.irq_control,
+            root_cnode,
+        )?;
     let producer_b_params = test_proc::ProducerYParams::<role::Child> {
         producer: producer_b,
+        interrupt_consumer,
     };
 
     let (waker, waker_cnode) = Waker::new(&waker_setup, waker_cnode, &root_cnode)?;
@@ -203,6 +219,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 enum TopLevelError {
     AllocError(AllocError),
     IPCError(IPCError),
+    IRQError(IRQError),
     MultiConsumerError(MultiConsumerError),
     SeL4Error(SeL4Error),
     VSpaceError(VSpaceError),
@@ -235,5 +252,11 @@ impl From<VSpaceError> for TopLevelError {
 impl From<SeL4Error> for TopLevelError {
     fn from(e: SeL4Error) -> Self {
         TopLevelError::SeL4Error(e)
+    }
+}
+
+impl From<IRQError> for TopLevelError {
+    fn from(e: IRQError) -> Self {
+        TopLevelError::IRQError(e)
     }
 }

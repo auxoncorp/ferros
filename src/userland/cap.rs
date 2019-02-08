@@ -3,7 +3,7 @@ use core::ops::Sub;
 use crate::userland::{CNode, CapRights, SeL4Error};
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
-use typenum::{Unsigned, B1};
+use typenum::{IsLess, True, Unsigned, B1, U256};
 
 /// Type-level enum indicating the relative location / Capability Pointer addressing
 /// scheme that should be used for the objects parameterized by it.
@@ -62,7 +62,8 @@ pub trait Movable {}
 
 /// Marker trait for CapType implementing structs that can
 /// be deleted.
-/// TODO - Review all of the CapType structs and apply where necessary
+/// TODO - Delible is presently not used for anything important, and represents
+/// a risk of invalidating key immutability assumptions. Consider removing it.
 pub trait Delible {}
 
 #[derive(Debug)]
@@ -155,22 +156,39 @@ impl From<Badge> for usize {
 }
 
 #[derive(Debug)]
-pub struct Untyped<BitSize: Unsigned> {
+pub struct Untyped<BitSize: Unsigned, Kind: MemoryKind = memory_kind::General> {
     _bit_size: PhantomData<BitSize>,
+    _kind: PhantomData<Kind>,
 }
 
-impl<BitSize: Unsigned> CapType for Untyped<BitSize> {}
+impl<BitSize: Unsigned, Kind: MemoryKind> CapType for Untyped<BitSize, Kind> {}
 
-impl<BitSize: Unsigned> PhantomCap for Untyped<BitSize> {
+impl<BitSize: Unsigned, Kind: MemoryKind> PhantomCap for Untyped<BitSize, Kind> {
     fn phantom_instance() -> Self {
-        Untyped::<BitSize> {
+        Untyped::<BitSize, Kind> {
             _bit_size: PhantomData::<BitSize>,
+            _kind: PhantomData::<Kind>,
         }
     }
 }
 
-impl<BitSize: Unsigned> Movable for Untyped<BitSize> {}
-impl<BitSize: Unsigned> Delible for Untyped<BitSize> {}
+impl<BitSize: Unsigned, Kind: MemoryKind> Movable for Untyped<BitSize, Kind> {}
+
+impl<BitSize: Unsigned, Kind: MemoryKind> Delible for Untyped<BitSize, Kind> {}
+
+pub trait MemoryKind: private::SealedMemoryKind {}
+
+pub mod memory_kind {
+    use super::MemoryKind;
+
+    #[derive(Debug, PartialEq)]
+    pub struct General;
+    impl MemoryKind for General {}
+
+    #[derive(Debug, PartialEq)]
+    pub struct Device;
+    impl MemoryKind for Device {}
+}
 
 #[derive(Debug)]
 pub struct ThreadControlBlock {}
@@ -191,6 +209,51 @@ impl DirectRetype for ThreadControlBlock {
 
 impl CopyAliasable for ThreadControlBlock {
     type CopyOutput = Self;
+}
+
+// TODO - consider moving IRQ code allocation tracking to compile-time,
+// which may be feasible since we treat IRQControl as a global
+// singleton.
+// The goal of such tracking is to prevent accidental double-binding to a single IRQ
+pub struct IRQControl {
+    pub(crate) known_handled: [bool; 256],
+}
+
+impl CapType for IRQControl {}
+
+pub struct IRQHandler<IRQ: Unsigned, SetState: IRQSetState>
+where
+    IRQ: IsLess<U256, Output = True>,
+{
+    pub(crate) _irq: PhantomData<IRQ>,
+    pub(crate) _set_state: PhantomData<SetState>,
+}
+
+impl<IRQ: Unsigned, SetState: IRQSetState> CapType for IRQHandler<IRQ, SetState> where
+    IRQ: IsLess<U256, Output = True>
+{
+}
+
+impl<IRQ: Unsigned, SetState: IRQSetState> Movable for IRQHandler<IRQ, SetState> where
+    IRQ: IsLess<U256, Output = True>
+{
+}
+
+/// Whether or not an IRQ Handle has been set to a particular Notification
+pub trait IRQSetState: private::SealedIRQSetState {}
+
+pub mod irq_state {
+    use super::IRQSetState;
+
+    /// Not set to a Notification
+    #[derive(Debug, PartialEq)]
+    pub struct Unset;
+    impl IRQSetState for Unset {}
+
+    /// Set to a Notification
+    #[derive(Debug, PartialEq)]
+    pub struct Set;
+    impl IRQSetState for Set {}
 }
 
 #[derive(Debug)]
@@ -323,49 +386,63 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> CopyAliasable for MappedPageTable<Fre
 }
 
 #[derive(Debug)]
-pub struct UnmappedPage {}
+pub struct UnmappedPage<Kind: MemoryKind> {
+    _kind: PhantomData<Kind>,
+}
 
-impl CapType for UnmappedPage {}
+impl<Kind: MemoryKind> CapType for UnmappedPage<Kind> {}
 
-impl PhantomCap for UnmappedPage {
+impl<Kind: MemoryKind> PhantomCap for UnmappedPage<Kind> {
     fn phantom_instance() -> Self {
-        Self {}
+        UnmappedPage {
+            _kind: PhantomData::<Kind>,
+        }
     }
 }
 
-impl DirectRetype for UnmappedPage {
+impl DirectRetype for UnmappedPage<memory_kind::General> {
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_SmallPageObject as usize
     }
 }
 
-impl CopyAliasable for UnmappedPage {
+impl<Kind: MemoryKind> CopyAliasable for UnmappedPage<Kind> {
     type CopyOutput = Self;
 }
 
 #[derive(Debug)]
-pub struct MappedPage<Role: CNodeRole> {
+pub struct MappedPage<Role: CNodeRole, Kind: MemoryKind> {
     pub(crate) vaddr: usize,
     pub(crate) _role: PhantomData<Role>,
+    pub(crate) _kind: PhantomData<Kind>,
 }
 
-impl<Role: CNodeRole> CapType for MappedPage<Role> {}
+impl<Role: CNodeRole, Kind: MemoryKind> CapType for MappedPage<Role, Kind> {}
 
-impl<Role: CNodeRole> CopyAliasable for MappedPage<Role> {
-    type CopyOutput = UnmappedPage;
+impl<Role: CNodeRole, Kind: MemoryKind> CopyAliasable for MappedPage<Role, Kind> {
+    type CopyOutput = UnmappedPage<Kind>;
 }
 
 impl<FreeSlots: typenum::Unsigned, Role: CNodeRole> CapType for CNode<FreeSlots, Role> {}
 
 mod private {
-    use super::{role, CNodeRole, Unsigned};
+    use super::{irq_state, memory_kind, role, CNodeRole, IRQSetState, MemoryKind};
+    use typenum::{IsLess, True, Unsigned, U256};
 
     pub trait SealedRole {}
     impl SealedRole for role::Local {}
     impl SealedRole for role::Child {}
 
+    pub trait SealedIRQSetState {}
+    impl SealedIRQSetState for irq_state::Unset {}
+    impl SealedIRQSetState for irq_state::Set {}
+
+    pub trait SealedMemoryKind {}
+    impl SealedMemoryKind for memory_kind::General {}
+    impl SealedMemoryKind for memory_kind::Device {}
+
     pub trait SealedCapType {}
-    impl<BitSize: typenum::Unsigned> SealedCapType for super::Untyped<BitSize> {}
+    impl<BitSize: typenum::Unsigned, Kind: MemoryKind> SealedCapType for super::Untyped<BitSize, Kind> {}
     impl<FreeSlots: typenum::Unsigned, Role: CNodeRole> SealedCapType
         for super::CNode<FreeSlots, Role>
     {
@@ -386,11 +463,17 @@ mod private {
     {
     }
 
-    impl SealedCapType for super::UnmappedPage {}
-    impl<Role: CNodeRole> SealedCapType for super::MappedPage<Role> {}
+    impl<Kind: MemoryKind> SealedCapType for super::UnmappedPage<Kind> {}
+    impl<Role: CNodeRole, Kind: MemoryKind> SealedCapType for super::MappedPage<Role, Kind> {}
+    impl SealedCapType for super::IRQControl {}
+    impl<IRQ: Unsigned, SetState: IRQSetState> SealedCapType for super::IRQHandler<IRQ, SetState> where
+        IRQ: IsLess<U256, Output = True>
+    {
+    }
 }
 
-impl<CT: CapType> Cap<CT, role::Local> {
+impl<CT: CapType> LocalCap<CT> {
+    /// Copy a capability from one CNode to another CNode
     pub fn copy<SourceFreeSlots: Unsigned, FreeSlots: Unsigned, DestRole: CNodeRole>(
         &self,
         src_cnode: &LocalCap<CNode<SourceFreeSlots, role::Local>>,
@@ -439,6 +522,7 @@ impl<CT: CapType> Cap<CT, role::Local> {
         }
     }
 
+    /// Copy a capability to another slot inside the same CNode
     pub fn copy_inside_cnode<FreeSlots: Unsigned>(
         &self,
         src_and_dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
@@ -486,7 +570,7 @@ impl<CT: CapType> Cap<CT, role::Local> {
         }
     }
 
-    /// Copy a capability while also setting rights and a badge
+    /// Copy a capability to another CNode while also setting rights and a badge
     pub(crate) fn mint<SourceFreeSlots: Unsigned, FreeSlots: Unsigned, DestRole: CNodeRole>(
         &self,
         src_cnode: &LocalCap<CNode<SourceFreeSlots, role::Local>>,
@@ -535,6 +619,57 @@ impl<CT: CapType> Cap<CT, role::Local> {
                     _role: PhantomData,
                 },
                 dest_cnode,
+            ))
+        }
+    }
+
+    /// Copy a capability to another slot inside the same CNode while also setting rights and a badge
+    pub(crate) fn mint_inside_cnode<FreeSlots: Unsigned>(
+        &self,
+        src_and_dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
+        rights: CapRights,
+        badge: Badge,
+    ) -> Result<
+        (
+            LocalCap<CT::CopyOutput>,
+            LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
+        ),
+        SeL4Error,
+    >
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
+        CT: Mintable,
+        CT: CopyAliasable,
+        <CT as CopyAliasable>::CopyOutput: PhantomCap,
+    {
+        let (src_and_dest_cnode, dest_slot) = src_and_dest_cnode.consume_slot();
+
+        let err = unsafe {
+            seL4_CNode_Mint(
+                dest_slot.cptr,      // _service
+                dest_slot.offset,    // index
+                seL4_WordBits as u8, // depth
+                // Since src_cnode is restricted to Root, the cptr must
+                // actually be the slot index
+                src_and_dest_cnode.cptr, // src_root
+                self.cptr,               // src_index
+                seL4_WordBits as u8,     // src_depth
+                rights.into(),           // rights
+                badge.into(),            // badge
+            )
+        };
+
+        if err != 0 {
+            Err(SeL4Error::CNodeMint(err))
+        } else {
+            Ok((
+                Cap {
+                    cptr: dest_slot.offset,
+                    cap_data: PhantomCap::phantom_instance(),
+                    _role: PhantomData,
+                },
+                src_and_dest_cnode,
             ))
         }
     }
