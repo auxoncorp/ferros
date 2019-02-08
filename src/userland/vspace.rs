@@ -1,5 +1,5 @@
 use core::marker::PhantomData;
-use core::ops::{Add, Sub};
+use core::ops::Sub;
 use crate::pow::Pow;
 use crate::userland::cap::ThreadControlBlock;
 use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, SetupVer};
@@ -9,10 +9,8 @@ use crate::userland::{
     LocalCap, MappedPage, MappedPageTable, MemoryKind, PhantomCap, SeL4Error,
     UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, Untyped,
 };
-use generic_array::sequence::Concat;
-use generic_array::{arr, arr_impl, ArrayLength, GenericArray};
 use sel4_sys::*;
-use typenum::operator_aliases::{Diff, Sub1, Sum};
+use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U0, U1, U10, U100, U128, U14, U16, U2, U9};
 
 #[derive(Debug)]
@@ -38,14 +36,10 @@ impl From<SeL4Error> for VSpaceError {
 pub struct VSpace<
     PageDirFreeSlots: Unsigned = U0,
     PageTableFreeSlots: Unsigned = U0,
-    FilledPageTableCount: Unsigned = U0,
     Role: CNodeRole = role::Child,
-> where
-    FilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, Role>>>,
-{
+> {
     page_dir: LocalCap<AssignedPageDirectory<PageDirFreeSlots, Role>>,
     current_page_table: LocalCap<MappedPageTable<PageTableFreeSlots, Role>>,
-    filled_page_tables: GenericArray<LocalCap<MappedPageTable<U0, Role>>, FilledPageTableCount>,
 }
 
 impl VSpace {
@@ -62,7 +56,6 @@ impl VSpace {
             VSpace<
                 Diff<paging::BasePageDirFreeSlots, U2>,
                 paging::BasePageTableFreeSlots,
-                U1, // FilledPageTableCount
                 role::Child,
             >,
             BootInfo<Sub1<ASIDPoolFreeSlots>, BootInfoPageDirFreeSlots>,
@@ -127,14 +120,8 @@ impl VSpace {
     }
 }
 
-impl<
-        PageDirFreeSlots: Unsigned,
-        PageTableFreeSlots: Unsigned,
-        FilledPageTableCount: Unsigned,
-        Role: CNodeRole,
-    > VSpace<PageDirFreeSlots, PageTableFreeSlots, FilledPageTableCount, Role>
-where
-    FilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, Role>>>,
+impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
+    VSpace<PageDirFreeSlots, PageTableFreeSlots, Role>
 {
     // Set up the barest minimal vspace; it will be further initialized to be
     // actually useful in the 'new' constructor. This needs untyped caps for the
@@ -153,12 +140,7 @@ where
         dest_cnode: LocalCap<LocalCNode<CNodeFreeSlots>>,
     ) -> Result<
         (
-            VSpace<
-                Sub1<paging::BasePageDirFreeSlots>,
-                paging::BasePageTableFreeSlots,
-                U0, // FilledPageTableCount
-                role::Child,
-            >,
+            VSpace<Sub1<paging::BasePageDirFreeSlots>, paging::BasePageTableFreeSlots, role::Child>,
             BootInfo<Sub1<ASIDPoolFreeSlots>, BootInfoPageDirFreeSlots>,
             // dest_cnode
             LocalCap<LocalCNode<Diff<CNodeFreeSlots, U2>>>,
@@ -189,7 +171,6 @@ where
             VSpace {
                 page_dir,
                 current_page_table: initial_page_table,
-                filled_page_tables: arr![LocalCap<MappedPageTable<U0, role::Child>>;],
             },
             boot_info,
             dest_cnode,
@@ -202,12 +183,7 @@ where
         dest_cnode: LocalCap<LocalCNode<CNodeFreeSlots>>,
     ) -> Result<
         (
-            VSpace<
-                Sub1<PageDirFreeSlots>,
-                paging::BasePageTableFreeSlots,
-                Sum<FilledPageTableCount, U1>,
-                Role,
-            >,
+            VSpace<Sub1<PageDirFreeSlots>, paging::BasePageTableFreeSlots, Role>,
             LocalCap<LocalCNode<Sub1<CNodeFreeSlots>>>,
         ),
         SeL4Error,
@@ -218,24 +194,18 @@ where
 
         PageTableFreeSlots: Sub<PageTableFreeSlots, Output = U0>,
 
-        FilledPageTableCount: Add<U1>,
-        Sum<FilledPageTableCount, U1>: ArrayLength<LocalCap<MappedPageTable<U0, Role>>>,
-
         CNodeFreeSlots: Sub<B1>,
         Sub1<CNodeFreeSlots>: Unsigned,
     {
         let (new_page_table, dest_cnode): (LocalCap<UnmappedPageTable>, _) =
             new_page_table_ut.retype_local(dest_cnode)?;
         let (new_page_table, page_dir) = self.page_dir.map_page_table(new_page_table)?;
-        let current_page_table = self.current_page_table.skip_remaining_pages();
+        let _former_current_page_table = self.current_page_table.skip_remaining_pages();
 
         Ok((
             VSpace {
                 page_dir: page_dir,
                 current_page_table: new_page_table,
-                filled_page_tables: self
-                    .filled_page_tables
-                    .concat(arr![LocalCap<MappedPageTable<U0, Role>>;current_page_table]),
             },
             dest_cnode,
         ))
@@ -247,7 +217,7 @@ where
     ) -> Result<
         (
             LocalCap<MappedPage<Role, Kind>>,
-            VSpace<PageDirFreeSlots, Sub1<PageTableFreeSlots>, FilledPageTableCount, Role>,
+            VSpace<PageDirFreeSlots, Sub1<PageTableFreeSlots>, Role>,
         ),
         SeL4Error,
     >
@@ -262,14 +232,13 @@ where
             VSpace {
                 page_dir: page_dir,
                 current_page_table: page_table,
-                filled_page_tables: self.filled_page_tables,
             },
         ))
     }
 
     pub(super) fn skip_pages<Count: Unsigned>(
         self,
-    ) -> VSpace<PageDirFreeSlots, Diff<PageTableFreeSlots, Count>, FilledPageTableCount, Role>
+    ) -> VSpace<PageDirFreeSlots, Diff<PageTableFreeSlots, Count>, Role>
     where
         PageTableFreeSlots: Sub<Count>,
         Diff<PageTableFreeSlots, Count>: Unsigned,
@@ -277,7 +246,6 @@ where
         VSpace {
             page_dir: self.page_dir,
             current_page_table: self.current_page_table.skip_pages::<Count>(),
-            filled_page_tables: self.filled_page_tables,
         }
     }
 
@@ -285,7 +253,7 @@ where
         self,
     ) -> (
         impl Iterator<Item = PageSlot<Role>>,
-        VSpace<PageDirFreeSlots, Diff<PageTableFreeSlots, Count>, FilledPageTableCount, Role>,
+        VSpace<PageDirFreeSlots, Diff<PageTableFreeSlots, Count>, Role>,
     )
     where
         PageTableFreeSlots: Sub<Count>,
@@ -340,7 +308,7 @@ where
     ) -> Result<
         (
             ReadyThread<Role>,
-            VSpace<PageDirFreeSlots, Sub1<Sub1<PageTableFreeSlots>>, FilledPageTableCount, Role>,
+            VSpace<PageDirFreeSlots, Sub1<Sub1<PageTableFreeSlots>>, Role>,
             LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U9>>>,
         ),
         VSpaceError,

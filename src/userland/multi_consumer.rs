@@ -288,17 +288,11 @@ where
         LocalPageTableFreeSlots: Unsigned,
         ConsumerPageDirFreeSlots: Unsigned,
         ConsumerPageTableFreeSlots: Unsigned,
-        ConsumerFilledPageTableCount: Unsigned,
     >(
         self,
         consumer_token: ConsumerToken,
         shared_page_ut: LocalCap<Untyped<U12>>,
-        consumer_vspace: VSpace<
-            ConsumerPageDirFreeSlots,
-            ConsumerPageTableFreeSlots,
-            ConsumerFilledPageTableCount,
-            role::Child,
-        >,
+        consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
         local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
         local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
         local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
@@ -307,12 +301,7 @@ where
             Consumer1<role::Child, E, ELen, IRQ>,
             ConsumerToken,
             ProducerSetup<E, ELen>,
-            VSpace<
-                ConsumerPageDirFreeSlots,
-                Sub1<ConsumerPageTableFreeSlots>,
-                ConsumerFilledPageTableCount,
-                role::Child,
-            >,
+            VSpace<ConsumerPageDirFreeSlots, Sub1<ConsumerPageTableFreeSlots>, role::Child>,
             LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U2>>>,
         ),
         MultiConsumerError,
@@ -329,8 +318,6 @@ where
 
         ConsumerPageTableFreeSlots: Sub<B1>,
         Sub1<ConsumerPageTableFreeSlots>: Unsigned,
-
-        ConsumerFilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, role::Child>>>,
     {
         // The consumer token should not have a vspace associated with it at all yet, since
         // we have yet to require mapping any memory to it.
@@ -338,7 +325,7 @@ where
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
         let (shared_page, consumer_shared_page, consumer_vspace, remainder_local_cnode) =
-            create_page_filled_with_array_queue::<E, ELen, _, _, _, _, _, _>(
+            create_page_filled_with_array_queue::<E, ELen, _, _, _, _, _>(
                 shared_page_ut,
                 consumer_vspace,
                 local_page_table,
@@ -399,17 +386,11 @@ where
         ConsumerCNodeFreeSlots: Unsigned,
         ConsumerPageDirFreeSlots: Unsigned,
         ConsumerPageTableFreeSlots: Unsigned,
-        ConsumerFilledPageTableCount: Unsigned,
     >(
         notification_ut: LocalCap<Untyped<U4>>,
         shared_page_ut: LocalCap<Untyped<U12>>,
         consumer_cnode: LocalCap<ChildCNode<ConsumerCNodeFreeSlots>>,
-        consumer_vspace: VSpace<
-            ConsumerPageDirFreeSlots,
-            ConsumerPageTableFreeSlots,
-            ConsumerFilledPageTableCount,
-            role::Child,
-        >,
+        consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
         local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
         local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
         local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
@@ -420,12 +401,7 @@ where
             ProducerSetup<E, ELen>,
             WakerSetup,
             LocalCap<ChildCNode<Sub1<ConsumerCNodeFreeSlots>>>,
-            VSpace<
-                ConsumerPageDirFreeSlots,
-                Sub1<ConsumerPageTableFreeSlots>,
-                ConsumerFilledPageTableCount,
-                role::Child,
-            >,
+            VSpace<ConsumerPageDirFreeSlots, Sub1<ConsumerPageTableFreeSlots>, role::Child>,
             LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U3>>>,
         ),
         MultiConsumerError,
@@ -445,8 +421,6 @@ where
 
         ConsumerPageTableFreeSlots: Sub<B1>,
         Sub1<ConsumerPageTableFreeSlots>: Unsigned,
-
-        ConsumerFilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, role::Child>>>,
     {
         let queue_size = core::mem::size_of::<ArrayQueue<E, ELen>>();
         if queue_size > PageBytes::USIZE {
@@ -454,7 +428,7 @@ where
         }
         let (local_cnode, remainder_local_cnode) = local_cnode.reserve_region::<U3>();
         let (shared_page, consumer_shared_page, consumer_vspace, local_cnode) =
-            create_page_filled_with_array_queue::<E, ELen, _, _, _, _, _, _>(
+            create_page_filled_with_array_queue::<E, ELen, _, _, _, _, _>(
                 shared_page_ut,
                 consumer_vspace,
                 local_page_table,
@@ -531,17 +505,11 @@ where
         LocalPageTableFreeSlots: Unsigned,
         ConsumerPageDirFreeSlots: Unsigned,
         ConsumerPageTableFreeSlots: Unsigned,
-        ConsumerFilledPageTableCount: Unsigned,
     >(
         self,
         consumer_token: &ConsumerToken,
         shared_page_ut: LocalCap<Untyped<U12>>,
-        consumer_vspace: VSpace<
-            ConsumerPageDirFreeSlots,
-            ConsumerPageTableFreeSlots,
-            ConsumerFilledPageTableCount,
-            role::Child,
-        >,
+        consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
         local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
         local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
         local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
@@ -549,12 +517,7 @@ where
         (
             Consumer2<role::Child, E, ELen, F, FLen, IRQ>,
             ProducerSetup<F, FLen>,
-            VSpace<
-                ConsumerPageDirFreeSlots,
-                Sub1<ConsumerPageTableFreeSlots>,
-                ConsumerFilledPageTableCount,
-                role::Child,
-            >,
+            VSpace<ConsumerPageDirFreeSlots, Sub1<ConsumerPageTableFreeSlots>, role::Child>,
             LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U2>>>,
         ),
         MultiConsumerError,
@@ -571,8 +534,6 @@ where
 
         ConsumerPageTableFreeSlots: Sub<B1>,
         Sub1<ConsumerPageTableFreeSlots>: Unsigned,
-
-        ConsumerFilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, role::Child>>>,
     {
         // Ensure that the consumer process that the `waker_setup` is wrapping
         // a notification to is the same process as the one referred to by
@@ -585,7 +546,7 @@ where
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
         let (shared_page, consumer_shared_page, consumer_vspace, remainder_local_cnode) =
-            create_page_filled_with_array_queue::<F, FLen, _, _, _, _, _, _>(
+            create_page_filled_with_array_queue::<F, FLen, _, _, _, _, _>(
                 shared_page_ut,
                 consumer_vspace,
                 local_page_table,
@@ -655,17 +616,11 @@ where
         LocalPageTableFreeSlots: Unsigned,
         ConsumerPageDirFreeSlots: Unsigned,
         ConsumerPageTableFreeSlots: Unsigned,
-        ConsumerFilledPageTableCount: Unsigned,
     >(
         self,
         consumer_token: &ConsumerToken,
         shared_page_ut: LocalCap<Untyped<U12>>,
-        consumer_vspace: VSpace<
-            ConsumerPageDirFreeSlots,
-            ConsumerPageTableFreeSlots,
-            ConsumerFilledPageTableCount,
-            role::Child,
-        >,
+        consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
         local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
         local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
         local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
@@ -673,12 +628,7 @@ where
         (
             Consumer3<role::Child, E, ELen, F, FLen, G, GLen, IRQ>,
             ProducerSetup<F, FLen>,
-            VSpace<
-                ConsumerPageDirFreeSlots,
-                Sub1<ConsumerPageTableFreeSlots>,
-                ConsumerFilledPageTableCount,
-                role::Child,
-            >,
+            VSpace<ConsumerPageDirFreeSlots, Sub1<ConsumerPageTableFreeSlots>, role::Child>,
             LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U2>>>,
         ),
         MultiConsumerError,
@@ -697,8 +647,6 @@ where
 
         ConsumerPageTableFreeSlots: Sub<B1>,
         Sub1<ConsumerPageTableFreeSlots>: Unsigned,
-
-        ConsumerFilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, role::Child>>>,
     {
         // Ensure that the consumer process that the `waker_setup` is wrapping
         // a notification to is the same process as the one referred to by
@@ -711,7 +659,7 @@ where
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
         let (shared_page, consumer_shared_page, consumer_vspace, remainder_local_cnode) =
-            create_page_filled_with_array_queue::<F, FLen, _, _, _, _, _, _>(
+            create_page_filled_with_array_queue::<F, FLen, _, _, _, _, _>(
                 shared_page_ut,
                 consumer_vspace,
                 local_page_table,
@@ -768,15 +716,9 @@ fn create_page_filled_with_array_queue<
     LocalPageTableFreeSlots: Unsigned,
     ConsumerPageDirFreeSlots: Unsigned,
     ConsumerPageTableFreeSlots: Unsigned,
-    ConsumerFilledPageTableCount: Unsigned,
 >(
     shared_page_ut: LocalCap<Untyped<U12>>,
-    consumer_vspace: VSpace<
-        ConsumerPageDirFreeSlots,
-        ConsumerPageTableFreeSlots,
-        ConsumerFilledPageTableCount,
-        role::Child,
-    >,
+    consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
     local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
     mut local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
     local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
@@ -784,12 +726,7 @@ fn create_page_filled_with_array_queue<
     (
         LocalCap<UnmappedPage<memory_kind::General>>,
         LocalCap<MappedPage<role::Child, memory_kind::General>>,
-        VSpace<
-            ConsumerPageDirFreeSlots,
-            Sub1<ConsumerPageTableFreeSlots>,
-            ConsumerFilledPageTableCount,
-            role::Child,
-        >,
+        VSpace<ConsumerPageDirFreeSlots, Sub1<ConsumerPageTableFreeSlots>, role::Child>,
         LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U2>>>,
     ),
     MultiConsumerError,
@@ -806,8 +743,6 @@ where
 
     ConsumerPageTableFreeSlots: Sub<B1>,
     Sub1<ConsumerPageTableFreeSlots>: Unsigned,
-
-    ConsumerFilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, role::Child>>>,
 {
     let (local_cnode, remainder_local_cnode) = local_cnode.reserve_region::<U2>();
     let queue_size = core::mem::size_of::<ArrayQueue<T, QLen>>();
@@ -1180,27 +1115,16 @@ where
         LocalCNodeSlots: Unsigned,
         ChildPageDirSlots: Unsigned,
         ChildPageTableSlots: Unsigned,
-        ChildFilledPageTableCount: Unsigned,
     >(
         setup: &ProducerSetup<T, QLen>,
         child_cnode: LocalCap<ChildCNode<ChildCNodeSlots>>,
-        child_vspace: VSpace<
-            ChildPageDirSlots,
-            ChildPageTableSlots,
-            ChildFilledPageTableCount,
-            role::Child,
-        >,
+        child_vspace: VSpace<ChildPageDirSlots, ChildPageTableSlots, role::Child>,
         local_cnode: LocalCap<LocalCNode<LocalCNodeSlots>>,
     ) -> Result<
         (
             Self,
             LocalCap<ChildCNode<Sub1<ChildCNodeSlots>>>,
-            VSpace<
-                ChildPageDirSlots,
-                Sub1<ChildPageTableSlots>,
-                ChildFilledPageTableCount,
-                role::Child,
-            >,
+            VSpace<ChildPageDirSlots, Sub1<ChildPageTableSlots>, role::Child>,
             LocalCap<LocalCNode<Sub1<LocalCNodeSlots>>>,
         ),
         MultiConsumerError,
@@ -1217,8 +1141,6 @@ where
 
         ChildPageTableSlots: Sub<B1>,
         Sub1<ChildPageTableSlots>: Unsigned,
-
-        ChildFilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, role::Child>>>,
     {
         if setup.consumer_vspace_pagedir == child_vspace.identity_ref() {
             // To simplify reasoning about likely control flow patterns,
