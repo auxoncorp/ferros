@@ -4,12 +4,11 @@ use core::ops::Sub;
 use crate::userland::paging::PageBytes;
 use crate::userland::{
     role, Badge, CNodeRole, Cap, CapRights, ChildCNode, IPCError, LocalCNode, LocalCap,
-    MappedPageTable, Notification, UnmappedPage, Untyped, VSpace,
+    Notification, UnmappedPage, Untyped, VSpace,
 };
-use generic_array::ArrayLength;
 use sel4_sys::{seL4_Signal, seL4_Wait};
 use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U0, U12, U2, U4, U5};
+use typenum::{Unsigned, B1, U12, U2, U4, U5};
 
 pub mod sync {
     use super::*;
@@ -20,10 +19,8 @@ pub mod sync {
         ResponderFreeSlots: Unsigned,
         CallerPageDirFreeSlots: Unsigned,
         CallerPageTableFreeSlots: Unsigned,
-        CallerFilledPageTableCount: Unsigned,
         ResponderPageDirFreeSlots: Unsigned,
         ResponderPageTableFreeSlots: Unsigned,
-        ResponderFilledPageTableCount: Unsigned,
         Req: Send + Sync,
         Rsp: Send + Sync,
     >(
@@ -31,16 +28,10 @@ pub mod sync {
         shared_page_ut: LocalCap<Untyped<U12>>,
         call_notification_ut: LocalCap<Untyped<U4>>,
         response_notification_ut: LocalCap<Untyped<U4>>,
-        caller_vspace: VSpace<
-            CallerPageDirFreeSlots,
-            CallerPageTableFreeSlots,
-            CallerFilledPageTableCount,
-            role::Child,
-        >,
+        caller_vspace: VSpace<CallerPageDirFreeSlots, CallerPageTableFreeSlots, role::Child>,
         responder_vspace: VSpace<
             ResponderPageDirFreeSlots,
             ResponderPageTableFreeSlots,
-            ResponderFilledPageTableCount,
             role::Child,
         >,
         child_cnode_caller: LocalCap<ChildCNode<CallerFreeSlots>>,
@@ -51,18 +42,8 @@ pub mod sync {
             LocalCap<ChildCNode<Diff<ResponderFreeSlots, U2>>>,
             ExtendedCaller<Req, Rsp, role::Child>,
             ExtendedResponder<Req, Rsp, role::Child>,
-            VSpace<
-                CallerPageDirFreeSlots,
-                Sub1<CallerPageTableFreeSlots>,
-                CallerFilledPageTableCount,
-                role::Child,
-            >,
-            VSpace<
-                ResponderPageDirFreeSlots,
-                Sub1<ResponderPageTableFreeSlots>,
-                ResponderFilledPageTableCount,
-                role::Child,
-            >,
+            VSpace<CallerPageDirFreeSlots, Sub1<CallerPageTableFreeSlots>, role::Child>,
+            VSpace<ResponderPageDirFreeSlots, Sub1<ResponderPageTableFreeSlots>, role::Child>,
             LocalCap<LocalCNode<Diff<ScratchFreeSlots, U5>>>,
         ),
         IPCError,
@@ -82,9 +63,6 @@ pub mod sync {
 
         ResponderFreeSlots: Sub<U2>,
         Diff<ResponderFreeSlots, U2>: Unsigned,
-
-        CallerFilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, role::Child>>>,
-        ResponderFilledPageTableCount: ArrayLength<LocalCap<MappedPageTable<U0, role::Child>>>,
     {
         let request_size = core::mem::size_of::<Req>();
         let response_size = core::mem::size_of::<Rsp>();
