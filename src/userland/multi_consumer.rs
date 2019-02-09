@@ -818,9 +818,9 @@ impl<IRQ: Unsigned> InterruptConsumer<IRQ, role::Local>
 where
     IRQ: IsLess<U256, Output = True>,
 {
-    pub fn consume<State, WFn>(self, initial_state: State, waker_fn: WFn) -> !
+    pub fn consume<State, WFn>(self, initial_state: State, mut waker_fn: WFn) -> !
     where
-        WFn: Fn(State) -> State,
+        WFn: FnMut(State) -> State,
     {
         let mut sender_badge: usize = 0;
         let mut state = initial_state;

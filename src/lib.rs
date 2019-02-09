@@ -3,6 +3,7 @@
 // Necessary to mark as not-Send or not-Sync
 #![feature(optin_builtin_traits)]
 #![feature(associated_type_defaults)]
+#![recursion_limit = "128"]
 
 #[cfg(all(feature = "alloc"))]
 #[macro_use]
@@ -11,7 +12,10 @@ extern crate alloc;
 extern crate arrayvec;
 extern crate generic_array;
 extern crate sel4_sys;
+#[macro_use]
 extern crate typenum;
+#[macro_use]
+extern crate registers;
 
 extern crate cross_queue;
 
@@ -23,6 +27,8 @@ pub mod fel4_test;
 
 #[macro_use]
 mod debug;
+
+pub mod drivers;
 
 pub mod micro_alloc;
 pub mod pow;
@@ -36,8 +42,11 @@ use crate::userland::{
     role, root_cnode, BootInfo, CNode, Consumer1, IPCError, IRQError, InterruptConsumer, LocalCap,
     MultiConsumerError, Producer, SeL4Error, UnmappedPageTable, VSpace, VSpaceError, Waker,
 };
+
+use crate::drivers::uart;
+
 use sel4_sys::*;
-use typenum::{U12, U20, U4096};
+use typenum::{U12, U14, U20, U4096, U58};
 
 fn yield_forever() {
     unsafe {
@@ -46,6 +55,8 @@ fn yield_forever() {
         }
     }
 }
+
+const UART1_PADDR: usize = 0x02020000;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     do_run(raw_boot_info).expect("run error");
@@ -63,6 +74,11 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let ut20 = allocator
         .get_untyped::<U20>()
         .expect("initial alloc failure");
+
+    // get the uart device
+    let uart_1_ut = allocator
+        .get_device_untyped::<U14>(UART1_PADDR)
+        .expect("find uart1 device memory");
 
     let (ut18, ut18b, ut18c, _, root_cnode) = ut20.quarter(root_cnode)?;
     let (ut16a, ut16b, ut16c, ut16d, root_cnode) = ut18.quarter(root_cnode)?;
@@ -160,9 +176,18 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             &mut boot_info.irq_control,
             root_cnode,
         )?;
-    let producer_b_params = test_proc::ProducerYParams::<role::Child> {
-        producer: producer_b,
-        interrupt_consumer,
+    // driver process
+    debug_println!("Setting up driver process...");
+
+    // map device pages
+    let (uart_1_ut_a, _, _, _, root_cnode) = uart_1_ut.quarter(root_cnode)?;
+    let (uart_1_page_a, root_cnode) = uart_1_ut_a.retype_device_page(root_cnode)?;
+
+    debug_println!("Mapping uart device pages to driver process...");
+    let (uart_1_page_a, producer_b_vspace) = producer_b_vspace.map_page(uart_1_page_a)?;
+    let uart_params = uart::UartParams::<U58, role::Child> {
+        base_ptr: uart_1_page_a.cap_data.vaddr,
+        consumer: interrupt_consumer,
     };
 
     let (waker, waker_cnode) = Waker::new(&waker_setup, waker_cnode, &root_cnode)?;
@@ -191,8 +216,8 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     producer_a_thread.start(producer_a_cnode, None, &boot_info.tcb, 255)?;
 
     let (producer_b_thread, _producer_b_vspace, root_cnode) = producer_b_vspace.prepare_thread(
-        test_proc::producer_y_process,
-        producer_b_params,
+        uart::run,
+        uart_params,
         producer_b_thread_ut,
         root_cnode,
         &mut scratch_page_table,
