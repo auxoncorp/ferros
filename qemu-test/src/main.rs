@@ -114,113 +114,124 @@ fn run_qemu_test(
 mod tests {
     use super::*;
 
-    sequential_test! {
-        fn test_root_task_runs() {
-            run_qemu_test(
-                "root_task_runs",
-                Regex::new(".*hello from the root task.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                Some(vec![("single_process", "true"),("min_params", "true")]),
-            );
-        }
-    }
+    // sequential_test! {
+    //     fn test_root_task_runs() {
+    //         run_qemu_test(
+    //             "root_task_runs",
+    //             Regex::new(".*hello from the root task.*").unwrap(),
+    //             Regex::new(".*Root task should never return from main.*").unwrap(),
+    //             Some(vec![("single_process", "true"),("min_params", "true")]),
+    //         );
+    //     }
+    // }
+
+    // sequential_test! {
+    //     fn test_process_runs() {
+    //         run_qemu_test(
+    //             "process_runs",
+    //             Regex::new(".*The value inside the process is 42.*").unwrap(),
+    //             Regex::new(".*Root task should never return from main.*").unwrap(),
+    //             Some(vec![("single_process", "true"),("min_params", "true")]),
+    //         );
+    //     }
+    // }
+
+    // sequential_test! {
+    //     fn memory_read_protection() {
+    //         run_qemu_test(
+    //             "memory_read_protection",
+    //             Regex::new(".*vm fault on data.*").unwrap(),
+    //             Regex::new(".*Root task should never return from main.*").unwrap(),
+    //             Some(vec![("single_process", "true"),("min_params", "true")]),
+    //         );
+    //     }
+    // }
+
+    // sequential_test! {
+    //     fn memory_write_protection() {
+    //         run_qemu_test(
+    //             "memory_write_protection",
+    //             Regex::new(".*vm fault on data.*").unwrap(),
+    //             Regex::new(".*Root task should never return from main.*").unwrap(),
+    //             Some(vec![("single_process", "true"),("min_params", "true")]),
+    //         );
+    //     }
+    // }
+
+    // sequential_test! {
+    //     fn child_process_cap_management() {
+    //         run_qemu_test(
+    //             "child_process_cap_management",
+    //             Regex::new(".*Split, retyped, and deleted caps in a child process.*").unwrap(),
+    //             Regex::new(".*Root task should never return from main.*").unwrap(),
+    //             Some(vec![("single_process", "true")]),
+    //         );
+    //     }
+    // }
+
+    // sequential_test! {
+    //     fn over_register_size_params() {
+    //         run_qemu_test(
+    //             "over_register_size_params",
+
+    //             Regex::new(".*The child process saw a first value of bbbbbbbb, a mid value of aaaaaaaa, and a last value of cccccccc.*").unwrap(),
+    //             Regex::new(".*Root task should never return from main.*").unwrap(),
+    //             Some(vec![("single_process", "true")]),
+    //         );
+    //     }
+    // }
+
+    // sequential_test! {
+    //     fn call_and_response_loop() {
+    //         run_qemu_test(
+    //             "call_and_response_loop",
+
+    //             Regex::new(".*Call and response addition finished.*").unwrap(),
+    //             Regex::new(".*Root task should never return from main.*").unwrap(),
+    //             Some(vec![("dual_process", "true")]),
+    //         );
+    //     }
+    // }
+
+    // sequential_test! {
+    //     fn shared_page_queue() {
+    //         run_qemu_test(
+    //             "shared_page_queue",
+    //             Regex::new(".*done producing!.*").unwrap(),
+    //             Regex::new(".*Root task should never return from main.*").unwrap(),
+    //             Some(vec![("dual_process", "true")]),
+    //         );
+    //     }
+    // }
+
+    // sequential_test! {
+    //     fn fault_pair() {
+    //         run_qemu_test(
+    //             "fault_pair",
+
+    //             Regex::new(".*Caught a fault: CapFault\\(CapFault \\{ sender: Badge \\{ inner: 0 \\}, in_receive_phase: false, cap_address: 314159 \\}\\).*").unwrap(),
+    //             Regex::new(".*Root task should never return from main.*").unwrap(),
+    //             Some(vec![("dual_process", "true")]),
+    //         );
+    //     }
+    // }
+
+    // sequential_test! {
+    //     fn double_door_backpressure() {
+    //         run_qemu_test(
+    //             "double_door_backpressure",
+    //             Regex::new(".*Final state: State \\{ interrupt_count: 1, queue_e_element_count: 20, queue_e_sum: 190, queue_f_element_count: 20, queue_f_sum: 190 \\}.*").unwrap(),
+    //             Regex::new(".*Root task should never return from main.*").unwrap(),
+    //             None,
+    //         );
+    //     }
+    // }
 
     sequential_test! {
-        fn test_process_runs() {
+        fn uart() {
             run_qemu_test(
-                "process_runs",
-                Regex::new(".*The value inside the process is 42.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                Some(vec![("single_process", "true"),("min_params", "true")]),
-            );
-        }
-    }
-
-    sequential_test! {
-        fn memory_read_protection() {
-            run_qemu_test(
-                "memory_read_protection",
-                Regex::new(".*vm fault on data.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                Some(vec![("single_process", "true"),("min_params", "true")]),
-            );
-        }
-    }
-
-    sequential_test! {
-        fn memory_write_protection() {
-            run_qemu_test(
-                "memory_write_protection",
-                Regex::new(".*vm fault on data.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                Some(vec![("single_process", "true"),("min_params", "true")]),
-            );
-        }
-    }
-
-    sequential_test! {
-        fn child_process_cap_management() {
-            run_qemu_test(
-                "child_process_cap_management",
-                Regex::new(".*Split, retyped, and deleted caps in a child process.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                Some(vec![("single_process", "true")]),
-            );
-        }
-    }
-
-    sequential_test! {
-        fn over_register_size_params() {
-            run_qemu_test(
-                "over_register_size_params",
-
-                Regex::new(".*The child process saw a first value of bbbbbbbb, a mid value of aaaaaaaa, and a last value of cccccccc.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                Some(vec![("single_process", "true")]),
-            );
-        }
-    }
-
-    sequential_test! {
-        fn call_and_response_loop() {
-            run_qemu_test(
-                "call_and_response_loop",
-
-                Regex::new(".*Call and response addition finished.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                Some(vec![("dual_process", "true")]),
-            );
-        }
-    }
-
-    sequential_test! {
-        fn shared_page_queue() {
-            run_qemu_test(
-                "shared_page_queue",
-                Regex::new(".*done producing!.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                Some(vec![("dual_process", "true")]),
-            );
-        }
-    }
-
-    sequential_test! {
-        fn fault_pair() {
-            run_qemu_test(
-                "fault_pair",
-
-                Regex::new(".*Caught a fault: CapFault\\(CapFault \\{ sender: Badge \\{ inner: 0 \\}, in_receive_phase: false, cap_address: 314159 \\}\\).*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                Some(vec![("dual_process", "true")]),
-            );
-        }
-    }
-
-    sequential_test! {
-        fn double_door_backpressure() {
-            run_qemu_test(
-                "double_door_backpressure",
-                Regex::new(".*Final state: State \\{ interrupt_count: 1, queue_e_element_count: 20, queue_e_sum: 190, queue_f_element_count: 20, queue_f_sum: 190 \\}.*").unwrap(),
+                "uart",
+                Regex::new(".*got char: 1.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
                 None,
             );

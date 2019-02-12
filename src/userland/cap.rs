@@ -417,6 +417,12 @@ pub struct MappedPage<Role: CNodeRole, Kind: MemoryKind> {
     pub(crate) _kind: PhantomData<Kind>,
 }
 
+impl<Kind: MemoryKind> Cap<MappedPage<role::Child, Kind>, role::Local> {
+    pub fn vaddr(&self) -> usize {
+        self.cap_data.vaddr
+    }
+}
+
 impl<Role: CNodeRole, Kind: MemoryKind> CapType for MappedPage<Role, Kind> {}
 
 impl<Role: CNodeRole, Kind: MemoryKind> CopyAliasable for MappedPage<Role, Kind> {

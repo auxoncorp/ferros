@@ -1,12 +1,9 @@
-use core::marker::PhantomData;
-use core::mem;
-
-use typenum::consts::{U1, U256};
+use typenum::consts::U256;
 use typenum::{IsLess, True, Unsigned};
 
-use registers::{ReadOnlyRegister, ReadWriteRegister, WriteOnlyRegister};
+use registers::{ReadOnlyRegister, WriteOnlyRegister};
 
-use crate::userland::{role, CNodeRole, Cap, IRQSetState, InterruptConsumer, RetypeForSetup};
+use crate::userland::{role, CNodeRole, InterruptConsumer, RetypeForSetup};
 
 pub struct UartParams<IRQ: Unsigned + Sync + Send, Role: CNodeRole>
 where
@@ -39,7 +36,7 @@ register! {
     ]
 }
 
-const TX_OFFSET: usize = 1 << 6;
+pub const TX_OFFSET: usize = 1 << 6;
 
 register! {
     UartTX,
@@ -49,7 +46,7 @@ register! {
     ]
 }
 
-const CTL1_OFFSET: usize = 1 << 7;
+pub const CTL1_OFFSET: usize = 1 << 7;
 
 register! {
     UartControl1,
@@ -136,58 +133,23 @@ register! {
 }
 
 pub struct Uart {
-    control1: UartControl1::Register,
+    pub control1: UartControl1::Register,
     // control2: UartControl2::Register,
     // control3: UartControl3::Register,
     // control4: UartControl4::Register,
-    tx: UartTX::Register,
-    rx: UartRX::Register,
+    pub tx: UartTX::Register,
+    pub rx: UartRX::Register,
 }
 
 impl Uart {
-    fn get(&self) -> Option<u8> {
+    pub fn get(&self) -> Option<u8> {
         self.rx
             .get_field(UartRX::Data::Read)
             .map(|field| field.val() as u8)
     }
 
-    fn put(&mut self, data: u8) {
+    pub fn put(&mut self, data: u8) {
         let checked = UartTX::Data::Field::new(data as u32).expect("uart data out of bounds");
         self.tx.modify(checked);
     }
-}
-
-pub extern "C" fn run<IRQ: Unsigned + Sync + Send>(params: UartParams<IRQ, role::Local>)
-where
-    IRQ: IsLess<U256, Output = True>,
-{
-    let mut uart = Uart {
-        control1: UartControl1::Register::new(unsafe {
-            mem::transmute(params.base_ptr + CTL1_OFFSET)
-        }),
-        // control2: UartControl2::Register::new(unsafe {
-        //     mem::transmute(params.base_ptr + CTRL2::Offset)
-        // }),
-        // control3: UartControl3::Register::new(unsafe {
-        //     mem::transmute(params.base_ptr + CTRL3::Offset)
-        // }),
-        // control4: UartControl4::Register::new(unsafe {
-        //     mem::transmute(params.base_ptr + CTRL4::Offset)
-        // }),
-        tx: UartTX::Register::new(unsafe { mem::transmute(params.base_ptr + TX_OFFSET) }),
-        rx: UartRX::Register::new(unsafe { mem::transmute(params.base_ptr) }),
-    };
-
-    debug_println!("enabling recv ready interrupt");
-    uart.control1
-        .modify(UartControl1::RecvReadyInterrupt::Field::checked::<U1>());
-
-    params.consumer.consume((), move |state| {
-        let data = uart.get();
-        debug_println!("{:?}", data);
-        if let Some(d) = data {
-            uart.put(d);
-        }
-        state
-    })
 }
