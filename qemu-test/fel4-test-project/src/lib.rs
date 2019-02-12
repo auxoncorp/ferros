@@ -2,6 +2,7 @@
 
 extern crate cross_queue;
 extern crate ferros;
+extern crate registers;
 extern crate sel4_sys;
 extern crate typenum;
 
@@ -24,15 +25,10 @@ mod double_door_backpressure;
 mod dual_process;
 #[cfg(single_process = "true")]
 mod single_process;
+mod uart;
 
-use ferros::micro_alloc::{self, Error as AllocError};
-use ferros::pow::Pow;
-use ferros::userland::{
-    role, root_cnode, BootInfo, CNode, CNodeRole, Cap, Endpoint, IPCError, LocalCap,
-    MultiConsumerError, RetypeForSetup, SeL4Error, Untyped, VSpaceError,
-};
-use typenum::operator_aliases::Diff;
-use typenum::{U12, U2, U20, U4096, U6};
+use ferros::micro_alloc::Error as AllocError;
+use ferros::userland::{IPCError, IRQError, MultiConsumerError, SeL4Error, VSpaceError};
 
 fn yield_forever() {
     unsafe {
@@ -49,6 +45,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     dual_process::run(raw_boot_info).expect("dual_process run");
     #[cfg(test_case = "double_door_backpressure")]
     double_door_backpressure::run(raw_boot_info).expect("double_door_backpressure run");
+    #[cfg(test_case = "uart")]
+    uart::run(raw_boot_info).expect("uart run");
 
     yield_forever()
 }
@@ -60,6 +58,7 @@ pub enum TopLevelError {
     MultiConsumerError(MultiConsumerError),
     VSpaceError(VSpaceError),
     SeL4Error(SeL4Error),
+    IRQError(IRQError),
 }
 
 impl From<AllocError> for TopLevelError {
@@ -89,5 +88,11 @@ impl From<VSpaceError> for TopLevelError {
 impl From<SeL4Error> for TopLevelError {
     fn from(e: SeL4Error) -> Self {
         TopLevelError::SeL4Error(e)
+    }
+}
+
+impl From<IRQError> for TopLevelError {
+    fn from(e: IRQError) -> Self {
+        TopLevelError::IRQError(e)
     }
 }

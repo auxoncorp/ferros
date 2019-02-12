@@ -3,6 +3,7 @@
 // Necessary to mark as not-Send or not-Sync
 #![feature(optin_builtin_traits)]
 #![feature(associated_type_defaults)]
+#![recursion_limit = "128"]
 
 #[cfg(all(feature = "alloc"))]
 #[macro_use]
@@ -11,7 +12,10 @@ extern crate alloc;
 extern crate arrayvec;
 extern crate generic_array;
 extern crate sel4_sys;
+#[macro_use]
 extern crate typenum;
+#[macro_use]
+extern crate registers;
 
 extern crate cross_queue;
 
@@ -24,6 +28,8 @@ pub mod fel4_test;
 #[macro_use]
 mod debug;
 
+pub mod drivers;
+
 pub mod micro_alloc;
 pub mod pow;
 mod twinkle_types;
@@ -33,9 +39,10 @@ mod test_proc;
 
 use crate::micro_alloc::Error as AllocError;
 use crate::userland::{
-    role, root_cnode, BootInfo, CNode, Consumer1, IPCError, IRQError, InterruptConsumer, LocalCap,
-    MultiConsumerError, Producer, SeL4Error, UnmappedPageTable, VSpace, VSpaceError, Waker,
+    role, root_cnode, BootInfo, CNode, Consumer1, IPCError, IRQError, LocalCap, MultiConsumerError,
+    Producer, SeL4Error, UnmappedPageTable, VSpace, VSpaceError, Waker,
 };
+
 use sel4_sys::*;
 use typenum::{U12, U20, U4096};
 
@@ -65,19 +72,19 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         .expect("initial alloc failure");
 
     let (ut18, ut18b, ut18c, _, root_cnode) = ut20.quarter(root_cnode)?;
-    let (ut16a, ut16b, ut16c, ut16d, root_cnode) = ut18.quarter(root_cnode)?;
+    let (ut16a, ut16b, _, ut16d, root_cnode) = ut18.quarter(root_cnode)?;
     let (ut16e, caller_ut, producer_a_ut, waker_ut, root_cnode) = ut18b.quarter(root_cnode)?;
-    let (ut16i, producer_b_ut, _, _, root_cnode) = ut18c.quarter(root_cnode)?;
+    let (ut16i, _, _, _, root_cnode) = ut18c.quarter(root_cnode)?;
     let (ut14a, consumer_thread_ut, producer_a_thread_ut, waker_thread_ut, root_cnode) =
         ut16e.quarter(root_cnode)?;
-    let (_ut14e, producer_b_thread_ut, _, _, root_cnode) = ut16i.quarter(root_cnode)?;
+    let (_ut14e, _, _, _, root_cnode) = ut16i.quarter(root_cnode)?;
     let (ut12, asid_pool_ut, shared_page_ut, shared_page_ut_b, root_cnode) =
         ut14a.quarter(root_cnode)?;
     let (ut10, scratch_page_table_ut, _, _, root_cnode) = ut12.quarter(root_cnode)?;
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode)?;
     let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode)?;
     let (ut5, _, root_cnode) = ut6.split(root_cnode)?;
-    let (ut4a, ut4b, root_cnode) = ut5.split(root_cnode)?; // Why two splits? To exercise split.
+    let (ut4a, _, root_cnode) = ut5.split(root_cnode)?; // Why two splits? To exercise split.
 
     // wrap the rest of the critical boot info
     let (boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
@@ -92,8 +99,6 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
     let (producer_a_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
         ut16b.retype_cnode::<_, U12>(root_cnode)?;
-    let (producer_b_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
-        ut16c.retype_cnode::<_, U12>(root_cnode)?;
 
     let (waker_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
         ut16d.retype_cnode::<_, U12>(root_cnode)?;
@@ -102,8 +107,6 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let (consumer_vspace, boot_info, root_cnode) = VSpace::new(boot_info, caller_ut, root_cnode)?;
     let (producer_a_vspace, boot_info, root_cnode) =
         VSpace::new(boot_info, producer_a_ut, root_cnode)?;
-    let (producer_b_vspace, boot_info, root_cnode) =
-        VSpace::new(boot_info, producer_b_ut, root_cnode)?;
 
     let (waker_vspace, mut boot_info, root_cnode) = VSpace::new(boot_info, waker_ut, root_cnode)?;
 
@@ -125,7 +128,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         root_cnode,
     )?;
 
-    let (consumer, producer_setup_b, consumer_vspace, root_cnode) = consumer.add_queue(
+    let (consumer, _, consumer_vspace, root_cnode) = consumer.add_queue(
         &consumer_token,
         shared_page_ut_b,
         consumer_vspace,
@@ -144,25 +147,6 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     )?;
     let producer_a_params = test_proc::ProducerXParams::<role::Child> {
         producer: producer_a,
-    };
-
-    let (producer_b, producer_b_cnode, producer_b_vspace, root_cnode) = Producer::new(
-        &producer_setup_b,
-        producer_b_cnode,
-        producer_b_vspace,
-        root_cnode,
-    )?;
-
-    let (interrupt_consumer, _interrupt_consumer_token, producer_b_cnode, root_cnode) =
-        InterruptConsumer::new(
-            ut4b,
-            producer_b_cnode,
-            &mut boot_info.irq_control,
-            root_cnode,
-        )?;
-    let producer_b_params = test_proc::ProducerYParams::<role::Child> {
-        producer: producer_b,
-        interrupt_consumer,
     };
 
     let (waker, waker_cnode) = Waker::new(&waker_setup, waker_cnode, &root_cnode)?;
@@ -189,17 +173,6 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     )?;
 
     producer_a_thread.start(producer_a_cnode, None, &boot_info.tcb, 255)?;
-
-    let (producer_b_thread, _producer_b_vspace, root_cnode) = producer_b_vspace.prepare_thread(
-        test_proc::producer_y_process,
-        producer_b_params,
-        producer_b_thread_ut,
-        root_cnode,
-        &mut scratch_page_table,
-        &mut boot_info.page_directory,
-    )?;
-
-    producer_b_thread.start(producer_b_cnode, None, &boot_info.tcb, 255)?;
 
     let (waker_thread, _waker_vspace, _root_cnode) = waker_vspace.prepare_thread(
         test_proc::waker_process,

@@ -11,4 +11,5 @@ edition = "2015"
 libsel4-sys = { git = "ssh://git@github.com/auxoncorp/libsel4-sys.git", branch = "master" }
 ferros = { path = "../.." }
 cross_queue = { path = "../../cross_queue" }
-typenum = "1.10.0"
+typenum = { git = "ssh://github.com/auxoncorp/typenum.git" }
+registers = { git = "ssh://github.com/auxoncorp/registers.git" }

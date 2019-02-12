@@ -8,8 +8,9 @@ edition = "2018"
 # NOTE: We use a git dependency directly since the git submodules
 # don't currently work when pulled down from crates.io
 libsel4-sys = { git = "ssh://git@github.com/auxoncorp/libsel4-sys.git", branch = "master" }
-typenum = "1.10.0"
-generic-array = "0.12.0"
+typenum = { git = "ssh://github.com/auxoncorp/typenum" }
+registers = { git = "ssh://github.com/auxoncorp/registers" }
+generic-array = { git = "ssh://github.com/auxoncorp/generic-array", branch = "auxon-typenum" }
 cross_queue = { path = "./cross_queue" }
 
 [dependencies.arrayvec]
