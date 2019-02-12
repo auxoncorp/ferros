@@ -46,7 +46,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     #[cfg(test_case = "double_door_backpressure")]
     double_door_backpressure::run(raw_boot_info).expect("double_door_backpressure run");
     #[cfg(test_case = "uart")]
-    uart::run(raw_boot_info).expect("double_door_backpressure run");
+    uart::run(raw_boot_info).expect("uart run");
 
     yield_forever()
 }

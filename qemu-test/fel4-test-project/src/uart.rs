@@ -119,6 +119,8 @@ pub mod uart {
         uart.control1
             .modify(UartControl1::RecvReadyInterrupt::Field::checked::<U1>());
 
+        debug_println!("thou art ready");
+
         params.consumer.consume((), move |state| {
             let data = uart.get();
             if let Some(d) = data {
