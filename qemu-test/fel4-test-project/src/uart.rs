@@ -124,7 +124,7 @@ pub mod uart {
         params.consumer.consume((), move |state| {
             let data = uart.get();
             if let Some(d) = data {
-                debug_println!("got char: {:?}", char::from(d));
+                debug_println!("got byte: {:?}", d);
             }
             state
         })
