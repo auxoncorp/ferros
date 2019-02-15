@@ -1,0 +1,8 @@
+[package]
+name = "secure-element"
+version = "0.1.0"
+authors = ["dan pittman <dan@auxon.io>"]
+edition = "2018"
+
+[dependencies]
+typenum = { git = "ssh://github.com/auxoncorp/typenum" }
