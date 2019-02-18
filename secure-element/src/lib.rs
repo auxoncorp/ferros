@@ -23,6 +23,13 @@ pub struct Command<I: Instruction> {
 pub enum CommandSerializationError {
     /// The command data field content was longer than the maximum supported amount
     TooManyBytesForCommandDataField,
+    /// The expected length of the response body was larger than the
+    /// maximum size available for a data buffer.
+    TooManyBytesRequestedForResponseBody,
+}
+pub enum CommandDeserializationError {
+    // TODO - proper naming
+    MysteriousDeserializationFailure(&'static str),
 }
 
 pub enum CommandSpecificationError {
@@ -39,12 +46,21 @@ pub struct ValueOutOfRange {
 // as broader support for 7816-4 comes into scope.
 pub trait Instruction {
     type Response: Sized;
+
     fn to_instruction_bytes(&'_ self) -> Result<InstructionBytes<'_>, CommandSerializationError>;
+
     fn interpret_response(
         &'_ self,
         instruction_bytes: InstructionBytes<'_>,
-        response_bytes: &[u8],
-    ) -> Self::Response;
+        // Might also need SW1/SW2
+        response_bytes: &mut [u8],
+    ) -> Result<Self::Response, CommandDeserializationError>;
+}
+
+pub struct BufferUnavailableError;
+
+pub trait BufferSource {
+    fn request_buffer(&mut self, len: usize) -> Result<&mut [u8], BufferUnavailableError>;
 }
 
 /// Serialization-oriented representation of the instruction-specific portions of a Command Header [INS, P1, P2, and maybe P3],

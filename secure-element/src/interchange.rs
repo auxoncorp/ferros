@@ -1,8 +1,8 @@
 /// Commands relating to data interchange,
 /// as defined in 7816-4 (2013) section 11
 use super::{
-    CommandSerializationError, CommandSpecificationError, Instruction, InstructionBytes,
-    ValueOutOfRange,
+    CommandDeserializationError, CommandSerializationError, CommandSpecificationError, Instruction,
+    InstructionBytes, ValueOutOfRange,
 };
 use crate::repr::split_u16;
 use crate::ExpectedResponseLength;
@@ -33,8 +33,8 @@ impl Instruction for ReadBinary {
     fn interpret_response(
         &self,
         instruction_bytes: InstructionBytes,
-        response_bytes: &[u8],
-    ) -> Self::Response {
+        response_bytes: &mut [u8],
+    ) -> Result<Self::Response, CommandDeserializationError> {
         match self {
             ReadBinary::ReadCurrentEF(c) => c.interpret_response(instruction_bytes, response_bytes),
             ReadBinary::ReadShortIdentifierEF(c) => {
@@ -100,8 +100,9 @@ impl Instruction for ReadCurrentEF {
     fn interpret_response(
         &self,
         instruction_bytes: InstructionBytes,
-        response_bytes: &[u8],
-    ) -> Self::Response {
+        response_bytes: &mut [u8],
+    ) -> Result<Self::Response, CommandDeserializationError> {
+        // TODO - do something with all those lovely bytes
         unimplemented!()
     }
 }
@@ -117,8 +118,8 @@ impl Instruction for ReadShortIdentifierEF {
     fn interpret_response(
         &self,
         _instruction_bytes: InstructionBytes,
-        _response_bytes: &[u8],
-    ) -> Self::Response {
+        _response_bytes: &mut [u8],
+    ) -> Result<Self::Response, CommandDeserializationError> {
         unimplemented!()
     }
 }
@@ -134,8 +135,8 @@ impl Instruction for ReadShortIdentifierWithDataObjectOffset {
     fn interpret_response(
         &self,
         _instruction_bytes: InstructionBytes,
-        _response_bytes: &[u8],
-    ) -> Self::Response {
+        _response_bytes: &mut [u8],
+    ) -> Result<Self::Response, CommandDeserializationError> {
         unimplemented!()
     }
 }
@@ -151,8 +152,8 @@ impl Instruction for ReadFileIdentifierWithDataObjectOffset {
     fn interpret_response(
         &self,
         _instruction_bytes: InstructionBytes,
-        _response_bytes: &[u8],
-    ) -> Self::Response {
+        _response_bytes: &mut [u8],
+    ) -> Result<Self::Response, CommandDeserializationError> {
         unimplemented!()
     }
 }
@@ -168,8 +169,8 @@ impl Instruction for ReadCurrentEFWithDataObjectOffset {
     fn interpret_response(
         &self,
         _instruction_bytes: InstructionBytes,
-        _response_bytes: &[u8],
-    ) -> Self::Response {
+        _response_bytes: &mut [u8],
+    ) -> Result<Self::Response, CommandDeserializationError> {
         unimplemented!()
     }
 }

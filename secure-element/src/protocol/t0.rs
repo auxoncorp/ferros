@@ -1,5 +1,9 @@
-use super::super::{Command, CommandSerializationError, ExpectedResponseLength, Instruction};
+use super::super::{
+    BufferSource, BufferUnavailableError, Command, CommandDeserializationError,
+    CommandSerializationError, ExpectedResponseLength, Instruction,
+};
 use crate::repr::split_u16;
+use crate::InstructionBytes;
 
 /// Serialization oriented representation of the mandatory portion of a T0 command header
 /// [CLA, INS, P1, P2]
@@ -13,9 +17,13 @@ pub struct TransmissionError;
 pub enum ProtocolError {
     TransmissionError,
     CommandSerializationError(CommandSerializationError),
+    CommandDeserializationError(CommandDeserializationError),
     /// Some intermediate interpretation of the protocol and input state was inconsistent
     InvalidInterpretation,
-    // TODO - more variants
+    InsufficientResponseBuffer,
+    PrematureEndStatusByte(u8),
+    /// We set a fixed maximum on the number of individual procedure byte cycles to run
+    ExceededMaxProcedureByteCycles,
 }
 
 impl From<TransmissionError> for ProtocolError {
@@ -30,6 +38,18 @@ impl From<CommandSerializationError> for ProtocolError {
     }
 }
 
+impl From<CommandDeserializationError> for ProtocolError {
+    fn from(e: CommandDeserializationError) -> Self {
+        ProtocolError::CommandDeserializationError(e)
+    }
+}
+
+impl From<BufferUnavailableError> for ProtocolError {
+    fn from(_: BufferUnavailableError) -> Self {
+        ProtocolError::InsufficientResponseBuffer
+    }
+}
+
 // Half duplex single-byte
 pub trait Connection {
     fn send(&mut self, byte: u8) -> Result<(), TransmissionError>;
@@ -41,9 +61,10 @@ pub struct ProtocolState<C: Connection> {
 }
 
 impl<C: Connection> ProtocolState<C> {
-    pub fn transmit_command<I: Instruction>(
+    pub fn transmit_command<B: BufferSource, I: Instruction>(
         &mut self,
         command: &Command<I>,
+        buffer_source: &mut B,
     ) -> Result<I::Response, ProtocolError> {
         let class_byte = command.class.to_byte();
         self.connection.send(class_byte)?; // CLA
@@ -51,6 +72,7 @@ impl<C: Connection> ProtocolState<C> {
         self.connection.send(i.instruction)?; // INS
         self.connection.send(i.parameter_1)?; // P1
         self.connection.send(i.parameter_2)?; // P2
+
         let (cmd_len_kind, rsp_len_kind) =
             LengthFieldKind::infer_command_response_length_pair_kinds(
                 &i.command_data_field,
@@ -60,14 +82,53 @@ impl<C: Connection> ProtocolState<C> {
             return Err(ProtocolError::InvalidInterpretation);
         }
 
-        let expected_response_len = match (cmd_len_kind, rsp_len_kind) {
-            (LengthFieldKind::None, LengthFieldKind::None) => 0, // ISO 7816-3, 12.1.2, Case 1
+        let leftover_lc_buffer: [u8; 2];
+        let mut leftover_le_buffer: [u8; 2] = [0, 0];
+
+        // Current plan is to send 5 bytes for the command header,
+        // then hand off reference slices to the rest of the command data
+        // to a procedure-byte-driven loop.  The three slices we need are:
+        // Pre-Data Field, Data Field, Post Data Field, really Lc, DF, Le
+        let case_bytes = match (cmd_len_kind, rsp_len_kind) {
+            (LengthFieldKind::None, LengthFieldKind::None) => {
+                // ISO 7816-3, 12.1.2, Case 1
+                // Per 12.2.2 , P3 is encoded as '00'
+                self.connection.send(0)?;
+                CaseAgnosticBytes {
+                    expected_response_len: 0,
+                    leftover_lc_len: &[],
+                    data_field: &[],
+                    leftover_le_len: &[],
+                }
+            }
             (LengthFieldKind::None, LengthFieldKind::Short) => {
                 // ISO 7816-3, 12.1.2, Case 2S
-                send_short_expected_response_length(
-                    &i.expected_response_length,
-                    &mut self.connection,
-                )?
+                if let ExpectedResponseLength::NonZero(r_len) = &i.expected_response_length {
+                    match *r_len {
+                        0 => return Err(ProtocolError::InvalidInterpretation),
+                        256 => {
+                            self.connection.send(0)?; // '0' means the short maximum, 256
+                            CaseAgnosticBytes {
+                                expected_response_len: 256,
+                                leftover_lc_len: &[],
+                                data_field: &[],
+                                leftover_le_len: &[],
+                            }
+                        }
+                        len if len < 256 => {
+                            self.connection.send(len as u8)?;
+                            CaseAgnosticBytes {
+                                expected_response_len: len as usize,
+                                leftover_lc_len: &[],
+                                data_field: &[],
+                                leftover_le_len: &[],
+                            }
+                        }
+                        _ => return Err(ProtocolError::InvalidInterpretation),
+                    }
+                } else {
+                    return Err(ProtocolError::InvalidInterpretation);
+                }
             }
             (LengthFieldKind::None, LengthFieldKind::Extended) => {
                 // ISO 7816-3, 12.1.2, Case 2E
@@ -79,63 +140,156 @@ impl<C: Connection> ProtocolState<C> {
                         // Note that the presence of a leading 0-byte for the expected response length
                         // is present in the 2E case, but *not* in the 4E case
                         self.connection.send(0)?;
-                        let len_halves = split_u16(r_len);
-                        self.connection.send(len_halves[0])?;
-                        self.connection.send(len_halves[1])?;
-
-                        r_len as usize
+                        leftover_le_buffer = split_u16(r_len);
+                        CaseAgnosticBytes {
+                            expected_response_len: r_len as usize,
+                            leftover_lc_len: &[],
+                            data_field: &[],
+                            leftover_le_len: &leftover_le_buffer,
+                        }
                     }
                     ExpectedResponseLength::ExtendedMaximum65536 => {
                         // Note that the presence of a leading 0-byte for the expected response length
                         // is present in the 2E case, but *not* in the 4E case
                         self.connection.send(0)?;
-                        // The following two 0 bytes together mean the maximum, 65536.
-                        self.connection.send(0)?;
-                        self.connection.send(0)?;
-
-                        65_536
+                        CaseAgnosticBytes {
+                            expected_response_len: 65_536,
+                            leftover_lc_len: &[],
+                            data_field: &[],
+                            // The following two 0 bytes together mean the maximum, 65536.
+                            leftover_le_len: &[0, 0],
+                        }
                     }
                 }
             }
             (LengthFieldKind::Short, LengthFieldKind::None) => {
                 // ISO 7816-3, 12.1.2, Case 3S
-                send_short_command_data_field(&i.command_data_field, &mut self.connection)?;
-                0
+                if let Some(cmd_field) = i.command_data_field {
+                    match cmd_field.len() {
+                        0 => return Err(ProtocolError::InvalidInterpretation),
+                        len if len <= 255 => {
+                            self.connection.send(len as u8)?;
+                            CaseAgnosticBytes {
+                                expected_response_len: 0,
+                                leftover_lc_len: &[],
+                                data_field: &cmd_field,
+                                leftover_le_len: &[],
+                            }
+                        }
+                        _ => return Err(ProtocolError::InvalidInterpretation),
+                    }
+                } else {
+                    return Err(ProtocolError::InvalidInterpretation);
+                }
             }
             (LengthFieldKind::Extended, LengthFieldKind::None) => {
                 // ISO 7816-3, 12.1.2, Case 3E
-                send_extended_command_data_field(&i.command_data_field, &mut self.connection)?;
-                0
+                if let Some(cmd_field) = i.command_data_field {
+                    match cmd_field.len() {
+                        0 => return Err(ProtocolError::InvalidInterpretation),
+                        len if len <= core::u16::MAX as usize => {
+                            self.connection.send(0)?;
+                            leftover_lc_buffer = split_u16(len as u16);
+                            CaseAgnosticBytes {
+                                expected_response_len: 0,
+                                leftover_lc_len: &leftover_lc_buffer,
+                                data_field: cmd_field,
+                                leftover_le_len: &[],
+                            }
+                        }
+                        _ => {
+                            return Err(ProtocolError::CommandSerializationError(
+                                CommandSerializationError::TooManyBytesForCommandDataField,
+                            ))
+                        }
+                    }
+                } else {
+                    return Err(ProtocolError::InvalidInterpretation);
+                }
             }
             (LengthFieldKind::Short, LengthFieldKind::Short) => {
                 // ISO 7816-3, 12.1.2, Case 4S
-                send_short_command_data_field(&i.command_data_field, &mut self.connection)?;
-                send_short_expected_response_length(
-                    &i.expected_response_length,
-                    &mut self.connection,
-                )?
+                if let Some(cmd_field) = i.command_data_field {
+                    match cmd_field.len() {
+                        0 => return Err(ProtocolError::InvalidInterpretation),
+                        len if len <= 255 => {
+                            self.connection.send(len as u8)?;
+                            if let ExpectedResponseLength::NonZero(r_len) =
+                                i.expected_response_length
+                            {
+                                match r_len {
+                                    0 => return Err(ProtocolError::InvalidInterpretation),
+                                    256 => {
+                                        CaseAgnosticBytes {
+                                            expected_response_len: 256,
+                                            leftover_lc_len: &[],
+                                            data_field: cmd_field,
+                                            // '0' means the short maximum, 256
+                                            leftover_le_len: &[0],
+                                        }
+                                    }
+                                    rsp_len if rsp_len < 256 => {
+                                        // '0' means the short maximum, 256
+                                        leftover_le_buffer[0] = rsp_len as u8;
+                                        CaseAgnosticBytes {
+                                            expected_response_len: rsp_len as usize,
+                                            leftover_lc_len: &[],
+                                            data_field: cmd_field,
+                                            leftover_le_len: &leftover_le_buffer[..1],
+                                        }
+                                    }
+                                    _ => return Err(ProtocolError::InvalidInterpretation),
+                                }
+                            } else {
+                                return Err(ProtocolError::InvalidInterpretation);
+                            }
+                        }
+                        _ => return Err(ProtocolError::InvalidInterpretation),
+                    }
+                } else {
+                    return Err(ProtocolError::InvalidInterpretation);
+                }
             }
             (LengthFieldKind::Extended, LengthFieldKind::Extended) => {
                 // ISO 7816-3, 12.1.2, Case 4E
-                send_extended_command_data_field(&i.command_data_field, &mut self.connection)?;
-                match i.expected_response_length {
-                    ExpectedResponseLength::None => {
-                        return Err(ProtocolError::InvalidInterpretation)
+                if let Some(cmd_field) = i.command_data_field {
+                    match cmd_field.len() {
+                        0 => return Err(ProtocolError::InvalidInterpretation),
+                        len if len <= core::u16::MAX as usize => {
+                            self.connection.send(0)?;
+                            leftover_lc_buffer = split_u16(len as u16);
+                            match i.expected_response_length {
+                                ExpectedResponseLength::None => {
+                                    return Err(ProtocolError::InvalidInterpretation)
+                                }
+                                ExpectedResponseLength::NonZero(r_len) => {
+                                    leftover_le_buffer = split_u16(r_len);
+                                    CaseAgnosticBytes {
+                                        expected_response_len: r_len as usize,
+                                        leftover_lc_len: &leftover_lc_buffer,
+                                        data_field: cmd_field,
+                                        leftover_le_len: &leftover_le_buffer,
+                                    }
+                                }
+                                ExpectedResponseLength::ExtendedMaximum65536 => {
+                                    CaseAgnosticBytes {
+                                        expected_response_len: 65_536,
+                                        leftover_lc_len: &leftover_lc_buffer,
+                                        data_field: cmd_field,
+                                        // The following two 0 bytes together mean the maximum, 65536.
+                                        leftover_le_len: &[0, 0],
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            return Err(ProtocolError::CommandSerializationError(
+                                CommandSerializationError::TooManyBytesForCommandDataField,
+                            ))
+                        }
                     }
-                    ExpectedResponseLength::NonZero(r_len) => {
-                        let len_halves = split_u16(r_len);
-                        self.connection.send(len_halves[0])?;
-                        self.connection.send(len_halves[1])?;
-
-                        r_len as usize
-                    }
-                    ExpectedResponseLength::ExtendedMaximum65536 => {
-                        // The following two 0 bytes together mean the maximum, 65536.
-                        self.connection.send(0)?;
-                        self.connection.send(0)?;
-
-                        65_536
-                    }
+                } else {
+                    return Err(ProtocolError::InvalidInterpretation);
                 }
             }
             (LengthFieldKind::Short, LengthFieldKind::Extended)
@@ -146,81 +300,279 @@ impl<C: Connection> ProtocolState<C> {
             }
         };
 
-        // TODO - let's listen for some response data!
-        unimplemented!()
+        let response_body = buffer_source.request_buffer(case_bytes.expected_response_len)?;
+        let status_bytes =
+            run_procedure_byte_loop(&mut self.connection, &i, case_bytes, response_body)?;
+        Ok(command.instruction.interpret_response(i, response_body)?)
     }
 }
 
-fn send_short_command_data_field<C: Connection>(
-    command_data_field: &Option<&[u8]>,
+struct CaseAgnosticBytes<'a> {
+    /// Unlike the other fields, this one does not play into the procedure byte loop... probably
+    expected_response_len: usize,
+    leftover_lc_len: &'a [u8],
+    data_field: &'a [u8],
+    leftover_le_len: &'a [u8],
+}
+
+struct StatusBytes {
+    sw1: u8,
+    sw2: u8,
+}
+
+fn run_procedure_byte_loop<C: Connection>(
     connection: &mut C,
-) -> Result<(), ProtocolError> {
-    if let Some(cmd_field) = *command_data_field {
-        match cmd_field.len() {
-            0 => return Err(ProtocolError::InvalidInterpretation),
-            len if len <= 255 => {
-                connection.send(len as u8)?;
-                for b in cmd_field {
-                    connection.send(*b)?; // Actually send the command data field contents
+    instruction_bytes: &InstructionBytes<'_>,
+    case_bytes: CaseAgnosticBytes,
+    response_body_buffer: &mut [u8],
+) -> Result<StatusBytes, ProtocolError> {
+    const SIXTY: u8 = 0b0110_0000; // Hex '60'
+    let is_in_sixties_or_nineties_but_not_sixty =
+        |val: u8| ((val >> 4) == 6u8 && (val << 4) != 0u8) || ((val >> 4) == 9u8);
+
+    #[derive(Debug, PartialEq)]
+    enum Cursor {
+        OnLCBytes(usize),
+        OnCmdDataFieldBytes(usize),
+        OnLEBytes(usize),
+        OnResponseBytes(usize), // ???
+        OnTrailerBytes,
+        Done,
+    }
+    let mut cursor = match (
+        case_bytes.leftover_lc_len.len(),
+        case_bytes.data_field.len(),
+        case_bytes.leftover_le_len.len(),
+    ) {
+        (0, 0, 0) => {
+            if case_bytes.expected_response_len == 0 {
+                Cursor::OnTrailerBytes
+            } else {
+                Cursor::OnResponseBytes(0)
+            }
+        }
+        (0, 0, le) => Cursor::OnLEBytes(0),
+        (0, cdf, _) => Cursor::OnCmdDataFieldBytes(0),
+        (lc, _, _) => Cursor::OnLCBytes(0),
+    };
+
+    if cursor == Cursor::Done {
+        return Err(ProtocolError::InvalidInterpretation);
+    }
+    let ack_all_byte = instruction_bytes.instruction;
+    let ack_single_byte = instruction_bytes.instruction ^ 0b1111_1111;
+
+    // TODO - we may need to be more lax when there are fewer response bytes supplied than the
+    // maximum possible. Alternately, we need to pipe down a parameter that lets us know when
+    // we are dealing with an *absolute expected response length* and a *maximum possible with less allowed response length*
+
+    for i in 0..core::usize::MAX {
+        let current = connection.receive()?;
+        match current {
+            SIXTY => continue,
+            c if is_in_sixties_or_nineties_but_not_sixty(c) => {
+                if cursor == Cursor::OnTrailerBytes {
+                    let sw1 = c;
+                    let sw2 = connection.receive()?;
+                    return interpret_sws(sw1, sw2);
+                } else {
+                    // We don't think we belong here, e.g., because we still think there are more response bytes to come
+                    return Err(ProtocolError::PrematureEndStatusByte(c));
                 }
             }
-            _ => return Err(ProtocolError::InvalidInterpretation),
-        }
-    } else {
-        return Err(ProtocolError::InvalidInterpretation);
-    }
-    Ok(())
-}
-
-fn send_extended_command_data_field<C: Connection>(
-    command_data_field: &Option<&[u8]>,
-    connection: &mut C,
-) -> Result<(), ProtocolError> {
-    if let Some(cmd_field) = *command_data_field {
-        match cmd_field.len() {
-            0 => return Err(ProtocolError::InvalidInterpretation),
-            len if len <= core::u16::MAX as usize => {
-                connection.send(0)?;
-                let len_halves = split_u16(len as u16);
-                connection.send(len_halves[0])?;
-                connection.send(len_halves[1])?;
-                for b in cmd_field {
-                    connection.send(*b)?; // Actually send the command data field contents
+            ack_all_byte => {
+                match cursor {
+                    Cursor::OnLCBytes(i) => {
+                        send_all(connection, &case_bytes.leftover_lc_len[i..])?;
+                        send_all(connection, case_bytes.data_field)?;
+                        send_all(connection, case_bytes.leftover_le_len)?;
+                        for i in 0..case_bytes.expected_response_len {
+                            response_body_buffer[i] = connection.receive()?;
+                        }
+                        cursor = Cursor::OnTrailerBytes;
+                    }
+                    Cursor::OnCmdDataFieldBytes(i) => {
+                        send_all(connection, &case_bytes.data_field[i..])?;
+                        send_all(connection, case_bytes.leftover_le_len)?;
+                        for i in 0..case_bytes.expected_response_len {
+                            response_body_buffer[i] = connection.receive()?;
+                        }
+                        cursor = Cursor::OnTrailerBytes;
+                    }
+                    Cursor::OnLEBytes(i) => {
+                        send_all(connection, &case_bytes.leftover_le_len[i..])?;
+                        for i in 0..case_bytes.expected_response_len {
+                            response_body_buffer[i] = connection.receive()?;
+                        }
+                        cursor = Cursor::OnTrailerBytes;
+                    }
+                    Cursor::OnResponseBytes(initial_index) => {
+                        for i in initial_index..case_bytes.expected_response_len {
+                            response_body_buffer[i] = connection.receive()?;
+                        }
+                        cursor = Cursor::OnTrailerBytes;
+                    }
+                    Cursor::OnTrailerBytes => continue,
+                    Cursor::Done => {
+                        // We don't expect to be getting an ack response after thinking we're done
+                        return Err(ProtocolError::InvalidInterpretation);
+                    }
                 }
             }
-            _ => {
-                return Err(ProtocolError::CommandSerializationError(
-                    CommandSerializationError::TooManyBytesForCommandDataField,
-                ))
+            ack_single_byte => {
+                match cursor {
+                    Cursor::OnLCBytes(i) => {
+                        connection.send(case_bytes.leftover_lc_len[i])?;
+                        cursor = if i + 1 > case_bytes.leftover_lc_len.len() {
+                            match (
+                                case_bytes.data_field.len(),
+                                case_bytes.leftover_le_len.len(),
+                            ) {
+                                (0, 0) => {
+                                    if case_bytes.expected_response_len == 0 {
+                                        Cursor::OnTrailerBytes
+                                    } else {
+                                        Cursor::OnResponseBytes(0)
+                                    }
+                                }
+                                (0, _le) => Cursor::OnLEBytes(0),
+                                (_cdf, _) => Cursor::OnCmdDataFieldBytes(0),
+                            }
+                        } else {
+                            Cursor::OnLCBytes(i + 1)
+                        }
+                    }
+                    Cursor::OnCmdDataFieldBytes(i) => {
+                        connection.send(case_bytes.data_field[i])?;
+                        cursor = if i + 1 > case_bytes.data_field.len() {
+                            if case_bytes.leftover_le_len.len() > 0 {
+                                Cursor::OnLEBytes(0)
+                            } else if case_bytes.expected_response_len == 0 {
+                                Cursor::OnTrailerBytes
+                            } else {
+                                Cursor::OnResponseBytes(0)
+                            }
+                        } else {
+                            Cursor::OnCmdDataFieldBytes(i + 1)
+                        };
+                    }
+                    Cursor::OnLEBytes(i) => {
+                        connection.send(case_bytes.leftover_le_len[i])?;
+                        cursor = if i + 1 > case_bytes.leftover_le_len.len() {
+                            if case_bytes.expected_response_len == 0 {
+                                Cursor::OnTrailerBytes
+                            } else {
+                                Cursor::OnResponseBytes(0)
+                            }
+                        } else {
+                            Cursor::OnLEBytes(i + 1)
+                        };
+                    }
+                    Cursor::OnResponseBytes(i) => {
+                        if i > response_body_buffer.len() {
+                            return Err(ProtocolError::InsufficientResponseBuffer);
+                        }
+                        response_body_buffer[i] = connection.receive()?;
+                        cursor = if i + 1 >= case_bytes.expected_response_len {
+                            Cursor::OnTrailerBytes
+                        } else {
+                            Cursor::OnResponseBytes(i + 1)
+                        }
+                    }
+                    Cursor::OnTrailerBytes => continue,
+                    Cursor::Done => {
+                        // We don't expect to be getting an ack response after thinking we're done
+                        return Err(ProtocolError::InvalidInterpretation);
+                    }
+                }
             }
         }
-    } else {
-        return Err(ProtocolError::InvalidInterpretation);
     }
-    Ok(())
+    Err(ProtocolError::ExceededMaxProcedureByteCycles)
 }
 
-fn send_short_expected_response_length<C: Connection>(
-    expected_response_length: &ExpectedResponseLength,
-    connection: &mut C,
-) -> Result<usize, ProtocolError> {
-    if let ExpectedResponseLength::NonZero(r_len) = expected_response_length {
-        match *r_len {
-            0 => return Err(ProtocolError::InvalidInterpretation),
-            256 => {
-                connection.send(0)?; // '0' means the short maximum, 256
-                Ok(256)
-            }
-            len if len < 256 => {
-                connection.send(len as u8)?;
-                Ok(len as usize)
-            }
-            _ => return Err(ProtocolError::InvalidInterpretation),
-        }
-    } else {
-        return Err(ProtocolError::InvalidInterpretation);
+fn send_all<C: Connection>(connection: &mut C, bytes: &[u8]) -> Result<usize, TransmissionError> {
+    for b in bytes {
+        connection.send(*b)?;
     }
+    Ok(bytes.len())
 }
+
+fn interpret_sws(sw1: u8, sw2: u8) -> Result<StatusBytes, ProtocolError> {
+    // TODO - actually interpret some meaning for these bytes - was there an error or not?
+    Ok(StatusBytes { sw1, sw2 })
+}
+
+//fn send_short_command_data_field<C: Connection>(
+//    command_data_field: &Option<&[u8]>,
+//    connection: &mut C,
+//) -> Result<(), ProtocolError> {
+//    if let Some(cmd_field) = *command_data_field {
+//        match cmd_field.len() {
+//            0 => return Err(ProtocolError::InvalidInterpretation),
+//            len if len <= 255 => {
+//                connection.send(len as u8)?;
+//                for b in cmd_field {
+//                    connection.send(*b)?; // Actually send the command data field contents
+//                }
+//            }
+//            _ => return Err(ProtocolError::InvalidInterpretation),
+//        }
+//    } else {
+//        return Err(ProtocolError::InvalidInterpretation);
+//    }
+//    Ok(())
+//}
+
+//fn send_extended_command_data_field<C: Connection>(
+//    command_data_field: &Option<&[u8]>,
+//    connection: &mut C,
+//) -> Result<(), ProtocolError> {
+//    if let Some(cmd_field) = *command_data_field {
+//        match cmd_field.len() {
+//            0 => return Err(ProtocolError::InvalidInterpretation),
+//            len if len <= core::u16::MAX as usize => {
+//                connection.send(0)?;
+//                let len_halves = split_u16(len as u16);
+//                connection.send(len_halves[0])?;
+//                connection.send(len_halves[1])?;
+//                for b in cmd_field {
+//                    connection.send(*b)?; // Actually send the command data field contents
+//                }
+//            }
+//            _ => {
+//                return Err(ProtocolError::CommandSerializationError(
+//                    CommandSerializationError::TooManyBytesForCommandDataField,
+//                ))
+//            }
+//        }
+//    } else {
+//        return Err(ProtocolError::InvalidInterpretation);
+//    }
+//    Ok(())
+//}
+//
+//fn send_short_expected_response_length<C: Connection>(
+//    expected_response_length: &ExpectedResponseLength,
+//    connection: &mut C,
+//) -> Result<usize, ProtocolError> {
+//    if let ExpectedResponseLength::NonZero(r_len) = expected_response_length {
+//        match *r_len {
+//            0 => return Err(ProtocolError::InvalidInterpretation),
+//            256 => {
+//                connection.send(0)?; // '0' means the short maximum, 256
+//                Ok(256)
+//            }
+//            len if len < 256 => {
+//                connection.send(len as u8)?;
+//                Ok(len as usize)
+//            }
+//            _ => return Err(ProtocolError::InvalidInterpretation),
+//        }
+//    } else {
+//        return Err(ProtocolError::InvalidInterpretation);
+//    }
+//}
 
 #[derive(Copy, Clone)]
 enum LengthFieldKind {
