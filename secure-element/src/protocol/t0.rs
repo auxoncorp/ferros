@@ -14,6 +14,7 @@ pub struct CommandHeader([u8; 4]);
 /// An error occurred in byte transfer down near the physical layer.
 pub struct TransmissionError;
 
+#[derive(Debug, PartialEq)]
 pub enum ProtocolError {
     TransmissionError,
     CommandSerializationError(CommandSerializationError),
@@ -24,6 +25,7 @@ pub enum ProtocolError {
     PrematureEndStatusByte(u8),
     /// We set a fixed maximum on the number of individual procedure byte cycles to run
     ExceededMaxProcedureByteCycles,
+    InvalidStatusBytes(u16),
 }
 
 impl From<TransmissionError> for ProtocolError {
@@ -325,7 +327,7 @@ fn run_procedure_byte_loop<C: Connection>(
     instruction_bytes: &InstructionBytes<'_>,
     case_bytes: CaseAgnosticBytes,
     response_body_buffer: &mut [u8],
-) -> Result<StatusBytes, ProtocolError> {
+) -> Result<Status, ProtocolError> {
     const SIXTY: u8 = 0b0110_0000; // Hex '60'
     let is_in_sixties_or_nineties_but_not_sixty =
         |val: u8| ((val >> 4) == 6u8 && (val << 4) != 0u8) || ((val >> 4) == 9u8);
@@ -498,9 +500,55 @@ fn send_all<C: Connection>(connection: &mut C, bytes: &[u8]) -> Result<usize, Tr
     Ok(bytes.len())
 }
 
-fn interpret_sws(sw1: u8, sw2: u8) -> Result<StatusBytes, ProtocolError> {
-    // TODO - actually interpret some meaning for these bytes - was there an error or not?
-    Ok(StatusBytes { sw1, sw2 })
+#[derive(Debug, PartialEq)]
+enum Status {
+    CompletedNormally,
+    CompletedNormallyWithBytesRemaining(u8),
+    CompletedWithWarningA(u8),
+    CompletedWithWarningB(u8),
+    AbortedWithWrongLen,
+    AbortedWithWrongExpectedLen(u8),
+    BadOrUnimplementedInstruction,
+}
+
+fn interpret_sws(sw1: u8, sw2: u8) -> Result<Status, ProtocolError> {
+    let joined = ((sw1 as u16) << 8) | (sw2 as u16);
+    match joined {
+        0x9000 => Ok(Status::CompletedNormally),
+        0x6700 => Ok(Status::AbortedWithWrongLen),
+        0x6D00 => Ok(Status::BadOrUnimplementedInstruction),
+        j if joined & 0x6100 == 0x6100 => Ok(Status::CompletedNormallyWithBytesRemaining(
+            (!0x6100 & j) as u8,
+        )),
+        j if joined & 0x6200 == 0x6200 => Ok(Status::CompletedWithWarningA((!0x6200 & j) as u8)),
+        j if joined & 0x6300 == 0x6300 => Ok(Status::CompletedWithWarningB((!0x6300 & j) as u8)),
+        j if joined & 0x6C00 == 0x6C00 => {
+            Ok(Status::AbortedWithWrongExpectedLen((!0x6C00 & j) as u8))
+        }
+        _ => Err(ProtocolError::InvalidStatusBytes(joined)),
+    }
+}
+
+#[cfg(test)]
+mod test_sws {
+
+    use super::{interpret_sws, Status};
+
+    #[test]
+    fn test_sws() {
+        assert_eq!(interpret_sws(0x90, 0), Ok(Status::CompletedNormally));
+        assert_eq!(interpret_sws(0x67, 0), Ok(Status::AbortedWithWrongLen));
+        assert_eq!(
+            interpret_sws(0x6D, 0),
+            Ok(Status::BadOrUnimplementedInstruction)
+        );
+        // This case should cover the logic in the other masked-style
+        // cases.
+        assert_eq!(
+            interpret_sws(0x61, 47),
+            Ok(Status::CompletedNormallyWithBytesRemaining(47))
+        );
+    }
 }
 
 //fn send_short_command_data_field<C: Connection>(

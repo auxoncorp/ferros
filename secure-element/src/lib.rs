@@ -20,6 +20,7 @@ pub struct Command<I: Instruction> {
     instruction: I,
 }
 
+#[derive(Debug, PartialEq)]
 pub enum CommandSerializationError {
     /// The command data field content was longer than the maximum supported amount
     TooManyBytesForCommandDataField,
@@ -27,6 +28,8 @@ pub enum CommandSerializationError {
     /// maximum size available for a data buffer.
     TooManyBytesRequestedForResponseBody,
 }
+
+#[derive(Debug, PartialEq)]
 pub enum CommandDeserializationError {
     // TODO - proper naming
     MysteriousDeserializationFailure(&'static str),
