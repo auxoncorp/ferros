@@ -11,7 +11,7 @@ use crate::userland::{
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U0, U1, U10, U100, U128, U14, U16, U2, U9};
+use typenum::{IsLessOrEqual, Unsigned, B1, U0, U1, U10, U100, U128, U14, U16, U2, U9};
 
 #[derive(Debug)]
 pub enum VSpaceError {
@@ -256,6 +256,60 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
             page_dir: self.page_dir,
             current_page_table: self.current_page_table.skip_remaining_pages(),
         }
+    }
+
+    /// Reserve `Count` pages from this VSpace. This can be used to limit the
+    /// type-interaction with a VSpace to a single call, significantly
+    /// simplifying the type signature of a function which takes a VSpace as a
+    /// parameter and then takes pages from it multiple times.
+    pub fn reserve_pages<Count: Unsigned>(
+        self,
+    ) -> (
+        VSpace<PageDirFreeSlots, Count, Role>,
+        VSpace<PageDirFreeSlots, Diff<PageTableFreeSlots, Count>, Role>,
+    )
+    where
+        Count: IsLessOrEqual<PageTableFreeSlots, Output = B1>,
+        PageTableFreeSlots: Sub<Count>,
+        Diff<PageTableFreeSlots, Count>: Unsigned,
+    {
+        (
+            VSpace {
+                page_dir: Cap {
+                    cptr: self.page_dir.cptr,
+                    _role: PhantomData,
+                    cap_data: AssignedPageDirectory {
+                        next_free_slot: self.page_dir.cap_data.next_free_slot,
+                        _free_slots: PhantomData,
+                        _role: PhantomData,
+                    },
+                },
+                current_page_table: Cap {
+                    cptr: self.current_page_table.cptr,
+                    _role: PhantomData,
+                    cap_data: MappedPageTable {
+                        next_free_slot: self.current_page_table.cap_data.next_free_slot,
+                        vaddr: self.current_page_table.cap_data.vaddr,
+                        _free_slots: PhantomData,
+                        _role: PhantomData,
+                    },
+                },
+            },
+            VSpace {
+                page_dir: self.page_dir,
+                current_page_table: Cap {
+                    cptr: self.current_page_table.cptr,
+                    _role: PhantomData,
+                    cap_data: MappedPageTable {
+                        next_free_slot: (self.current_page_table.cap_data.next_free_slot
+                            + Count::to_usize()),
+                        vaddr: self.current_page_table.cap_data.vaddr,
+                        _free_slots: PhantomData,
+                        _role: PhantomData,
+                    },
+                },
+            },
+        )
     }
 
     pub(super) fn page_slot_reservation_iter<Count: Unsigned>(
