@@ -54,7 +54,7 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<CNode<FreeSlots, Role>> {
     /// requested capacity.
     /// TODO - Make this function private-only until we implement a safe way
     /// to expose aliased CNode objects.
-    pub(super) fn reserve_region<Count: Unsigned>(
+    pub fn reserve_region<Count: Unsigned>(
         self,
     ) -> (
         LocalCap<CNode<Count, Role>>,
