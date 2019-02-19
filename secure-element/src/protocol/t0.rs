@@ -500,14 +500,34 @@ fn send_all<C: Connection>(connection: &mut C, bytes: &[u8]) -> Result<usize, Tr
     Ok(bytes.len())
 }
 
+/// This comes from -3 12.2.1 Table 14. It uses the status bytes SW1 &
+/// SW2 to ascribe a status to a command/response exchange.
 #[derive(Debug, PartialEq)]
 enum Status {
+    /// A fixed value of 0x9000.
     CompletedNormally,
+    /// 0x61XY: The process completed successfully, but the card has
+    /// bytes remaining. In cases 1 & 3, the card should not use this
+    /// value.
     CompletedNormallyWithBytesRemaining(u8),
+    /// 0x62XY: The process completed with warning.
+    ///
+    /// ## Note
+    /// The specific meaning of the second byte can found in -4:
+    ///
+    /// > e.g., '6202' to '6280', GET DATA command for transferring a
+    /// > card-originated byte string, see ISO/IEC 7816-4.
     CompletedWithWarningA(u8),
+    /// 0x63XY: TODO(pittma): No clear meaning as to what this one
+    /// means. Maybe in -4?
     CompletedWithWarningB(u8),
+    /// A fixed value of 0x6700.
     AbortedWithWrongLen,
+    /// 0x6CXY: There was an $L\_e$ mismatch. Upon receipt, the
+    /// expected response shall contain a P3 equal to the second byte.
     AbortedWithWrongExpectedLen(u8),
+    /// The given instruction was invalid, or the card does not
+    /// implement it.
     BadOrUnimplementedInstruction,
 }
 
@@ -517,6 +537,14 @@ fn interpret_sws(sw1: u8, sw2: u8) -> Result<Status, ProtocolError> {
         0x9000 => Ok(Status::CompletedNormally),
         0x6700 => Ok(Status::AbortedWithWrongLen),
         0x6D00 => Ok(Status::BadOrUnimplementedInstruction),
+
+        // These cases are intrepreted through masking the first byte:
+        //   1. The match is determined by and-ing with the case's
+        //      mask. If the given value falls within the range, anding
+        //      it with the mask shall produce the mask.
+        //   2. By anding the value with the inverse of the mask, we cancel out
+        //      the first byte, but the on bits in the second byte are carried
+        //      through, leaving a u16 with the value of only the second byte.
         j if joined & 0x6100 == 0x6100 => Ok(Status::CompletedNormallyWithBytesRemaining(
             (!0x6100 & j) as u8,
         )),
@@ -535,18 +563,36 @@ mod test_sws {
     use super::{interpret_sws, Status};
 
     #[test]
-    fn test_sws() {
+    fn test_norm() {
         assert_eq!(interpret_sws(0x90, 0), Ok(Status::CompletedNormally));
+    }
+
+    #[test]
+    fn test_wrong_len() {
         assert_eq!(interpret_sws(0x67, 0), Ok(Status::AbortedWithWrongLen));
+    }
+
+    #[test]
+    fn test_bad_inst() {
         assert_eq!(
             interpret_sws(0x6D, 0),
             Ok(Status::BadOrUnimplementedInstruction)
         );
-        // This case should cover the logic in the other masked-style
-        // cases.
+    }
+
+    #[test]
+    fn test_bytes_remain() {
         assert_eq!(
             interpret_sws(0x61, 47),
             Ok(Status::CompletedNormallyWithBytesRemaining(47))
+        );
+    }
+
+    #[test]
+    fn test_wrong_elen() {
+        assert_eq!(
+            interpret_sws(0x6C, 47),
+            Ok(Status::AbortedWithWrongExpectedLen(47))
         );
     }
 }
