@@ -320,6 +320,10 @@ impl DirectRetype for Notification {
     }
 }
 
+//////////////////////////////////
+// Paging object: PageDirectory //
+//////////////////////////////////
+
 // TODO: It's important that AssignedPageDirectory can never be moved or deleted
 // (or copied, likely), as that leads to ugly cptr aliasing issues that we're
 // not able to detect at compile time. Write compile-tests to ensure that it
@@ -349,6 +353,10 @@ impl DirectRetype for UnassignedPageDirectory {
         _object_seL4_ARM_PageDirectoryObject as usize
     }
 }
+
+//////////////////////////////
+// Paging object: PageTable //
+//////////////////////////////
 
 #[derive(Debug)]
 pub struct UnmappedPageTable {}
@@ -384,6 +392,10 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> CapType for MappedPageTable<FreeSlots
 impl<FreeSlots: Unsigned, Role: CNodeRole> CopyAliasable for MappedPageTable<FreeSlots, Role> {
     type CopyOutput = UnmappedPageTable;
 }
+
+/////////////////////////
+// Paging object: Page //
+/////////////////////////
 
 #[derive(Debug)]
 pub struct UnmappedPage<Kind: MemoryKind> {
@@ -431,6 +443,156 @@ impl<Role: CNodeRole, Kind: MemoryKind> CopyAliasable for MappedPage<Role, Kind>
     type CopyOutput = UnmappedPage<Kind>;
 }
 
+//////////////////////////////
+// Paging object: LargePage //
+//////////////////////////////
+
+#[derive(Debug)]
+pub struct UnmappedLargePage<Kind: MemoryKind> {
+    _kind: PhantomData<Kind>,
+}
+
+impl<Kind: MemoryKind> CapType for UnmappedLargePage<Kind> {}
+
+impl<Kind: MemoryKind> PhantomCap for UnmappedLargePage<Kind> {
+    fn phantom_instance() -> Self {
+        UnmappedLargePage {
+            _kind: PhantomData::<Kind>,
+        }
+    }
+}
+
+impl DirectRetype for UnmappedLargePage<memory_kind::General> {
+    fn sel4_type_id() -> usize {
+        _object_seL4_ARM_LargePageObject as usize
+    }
+}
+
+impl<Kind: MemoryKind> CopyAliasable for UnmappedLargePage<Kind> {
+    type CopyOutput = Self;
+}
+
+#[derive(Debug)]
+pub struct MappedLargePage<Role: CNodeRole, Kind: MemoryKind> {
+    pub(crate) vaddr: usize,
+    pub(crate) _role: PhantomData<Role>,
+    pub(crate) _kind: PhantomData<Kind>,
+}
+
+impl Cap<MappedLargePage<role::Child, memory_kind::Device>, role::Local> {
+    /// `vaddr` allows a parent process to extract the vaddr of a
+    /// device page mapped into a child's VSpace.
+    pub fn vaddr(&self) -> usize {
+        self.cap_data.vaddr
+    }
+}
+
+impl<Role: CNodeRole, Kind: MemoryKind> CapType for MappedLargePage<Role, Kind> {}
+
+impl<Role: CNodeRole, Kind: MemoryKind> CopyAliasable for MappedLargePage<Role, Kind> {
+    type CopyOutput = UnmappedLargePage<Kind>;
+}
+
+//////////////////////////////
+// Paging object: Section //
+//////////////////////////////
+
+#[derive(Debug)]
+pub struct UnmappedSection<Kind: MemoryKind> {
+    _kind: PhantomData<Kind>,
+}
+
+impl<Kind: MemoryKind> CapType for UnmappedSection<Kind> {}
+
+impl<Kind: MemoryKind> PhantomCap for UnmappedSection<Kind> {
+    fn phantom_instance() -> Self {
+        UnmappedSection {
+            _kind: PhantomData::<Kind>,
+        }
+    }
+}
+
+impl DirectRetype for UnmappedSection<memory_kind::General> {
+    fn sel4_type_id() -> usize {
+        _object_seL4_ARM_SectionObject as usize
+    }
+}
+
+impl<Kind: MemoryKind> CopyAliasable for UnmappedSection<Kind> {
+    type CopyOutput = Self;
+}
+
+#[derive(Debug)]
+pub struct MappedSection<Role: CNodeRole, Kind: MemoryKind> {
+    pub(crate) vaddr: usize,
+    pub(crate) _role: PhantomData<Role>,
+    pub(crate) _kind: PhantomData<Kind>,
+}
+
+impl Cap<MappedSection<role::Child, memory_kind::Device>, role::Local> {
+    /// `vaddr` allows a parent process to extract the vaddr of a
+    /// device page mapped into a child's VSpace.
+    pub fn vaddr(&self) -> usize {
+        self.cap_data.vaddr
+    }
+}
+
+impl<Role: CNodeRole, Kind: MemoryKind> CapType for MappedSection<Role, Kind> {}
+
+impl<Role: CNodeRole, Kind: MemoryKind> CopyAliasable for MappedSection<Role, Kind> {
+    type CopyOutput = UnmappedSection<Kind>;
+}
+
+/////////////////////////////////
+// Paging object: SuperSection //
+/////////////////////////////////
+
+#[derive(Debug)]
+pub struct UnmappedSuperSection<Kind: MemoryKind> {
+    _kind: PhantomData<Kind>,
+}
+
+impl<Kind: MemoryKind> CapType for UnmappedSuperSection<Kind> {}
+
+impl<Kind: MemoryKind> PhantomCap for UnmappedSuperSection<Kind> {
+    fn phantom_instance() -> Self {
+        UnmappedSuperSection {
+            _kind: PhantomData::<Kind>,
+        }
+    }
+}
+
+impl DirectRetype for UnmappedSuperSection<memory_kind::General> {
+    fn sel4_type_id() -> usize {
+        _object_seL4_ARM_SuperSectionObject as usize
+    }
+}
+
+impl<Kind: MemoryKind> CopyAliasable for UnmappedSuperSection<Kind> {
+    type CopyOutput = Self;
+}
+
+#[derive(Debug)]
+pub struct MappedSuperSection<Role: CNodeRole, Kind: MemoryKind> {
+    pub(crate) vaddr: usize,
+    pub(crate) _role: PhantomData<Role>,
+    pub(crate) _kind: PhantomData<Kind>,
+}
+
+impl Cap<MappedSuperSection<role::Child, memory_kind::Device>, role::Local> {
+    /// `vaddr` allows a parent process to extract the vaddr of a
+    /// device page mapped into a child's VSpace.
+    pub fn vaddr(&self) -> usize {
+        self.cap_data.vaddr
+    }
+}
+
+impl<Role: CNodeRole, Kind: MemoryKind> CapType for MappedSuperSection<Role, Kind> {}
+
+impl<Role: CNodeRole, Kind: MemoryKind> CopyAliasable for MappedSuperSection<Role, Kind> {
+    type CopyOutput = UnmappedSuperSection<Kind>;
+}
+
 impl<FreeSlots: typenum::Unsigned, Role: CNodeRole> CapType for CNode<FreeSlots, Role> {}
 
 mod private {
@@ -473,6 +635,16 @@ mod private {
 
     impl<Kind: MemoryKind> SealedCapType for super::UnmappedPage<Kind> {}
     impl<Role: CNodeRole, Kind: MemoryKind> SealedCapType for super::MappedPage<Role, Kind> {}
+
+    impl<Kind: MemoryKind> SealedCapType for super::UnmappedLargePage<Kind> {}
+    impl<Role: CNodeRole, Kind: MemoryKind> SealedCapType for super::MappedLargePage<Role, Kind> {}
+
+    impl<Kind: MemoryKind> SealedCapType for super::UnmappedSection<Kind> {}
+    impl<Role: CNodeRole, Kind: MemoryKind> SealedCapType for super::MappedSection<Role, Kind> {}
+
+    impl<Kind: MemoryKind> SealedCapType for super::UnmappedSuperSection<Kind> {}
+    impl<Role: CNodeRole, Kind: MemoryKind> SealedCapType for super::MappedSuperSection<Role, Kind> {}
+
     impl SealedCapType for super::IRQControl {}
     impl<IRQ: Unsigned, SetState: IRQSetState> SealedCapType for super::IRQHandler<IRQ, SetState> where
         IRQ: IsLess<U256, Output = True>

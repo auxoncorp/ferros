@@ -33,12 +33,21 @@ pub fn root_cnode(_bootinfo: &'static seL4_BootInfo) -> LocalCap<CNode<U1024, ro
 pub mod paging {
     use crate::pow::Pow;
     use typenum::operator_aliases::Diff;
-    use typenum::{U1, U1024, U12, U8, U9};
+    use typenum::{U1, U1024, U12, U16, U20, U24, U8, U9};
 
     pub type BaseASIDPoolFreeSlots = U1024;
+
+    // Arm32 address structure
     pub type PageDirectoryBits = U12;
     pub type PageTableBits = U8;
-    pub type PageBits = U12;
+    pub type PageBits = U12; // 4kb
+
+    pub type LargePageBits = U16; // 64 KB
+    pub type SectionBits = U20; // 1 MB
+    pub type SuperSectionBits = U24; // 16 MB
+
+    // PageTableBits + PageBits
+    pub type PageTableTotalBits = U20;
 
     // 0xe00000000 and up is reserved to the kernel; this translates to the last
     // 2^9 (512) pagedir entries.

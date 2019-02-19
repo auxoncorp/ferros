@@ -133,7 +133,6 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
         BootInfoPageDirFreeSlots: Unsigned,
         CNodeFreeSlots: Unsigned,
     >(
-        // TODO: model ASIDPool capacity at the type level
         boot_info: BootInfo<ASIDPoolFreeSlots, BootInfoPageDirFreeSlots>,
         page_dir_ut: LocalCap<Untyped<U14>>,
         page_table_ut: LocalCap<Untyped<U10>>,
