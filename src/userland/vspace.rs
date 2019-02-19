@@ -133,7 +133,6 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
         BootInfoPageDirFreeSlots: Unsigned,
         CNodeFreeSlots: Unsigned,
     >(
-        // TODO: model ASIDPool capacity at the type level
         boot_info: BootInfo<ASIDPoolFreeSlots, BootInfoPageDirFreeSlots>,
         page_dir_ut: LocalCap<Untyped<U14>>,
         page_table_ut: LocalCap<Untyped<U10>>,
@@ -484,6 +483,7 @@ impl<Role: CNodeRole> ReadyThread<Role> {
     }
 }
 
+/// A slot in a page table, where a single page goes
 pub struct PageSlot<Role: CNodeRole> {
     page_table: LocalCap<MappedPageTable<U1, Role>>,
     page_dir: LocalCap<AssignedPageDirectory<U0, Role>>,
