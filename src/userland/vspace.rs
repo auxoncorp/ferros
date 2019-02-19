@@ -248,6 +248,16 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
         }
     }
 
+    pub fn skip_remaining_pages(self) -> VSpace<PageDirFreeSlots, U0, Role>
+    where
+        PageTableFreeSlots: Sub<PageTableFreeSlots, Output = U0>,
+    {
+        VSpace {
+            page_dir: self.page_dir,
+            current_page_table: self.current_page_table.skip_remaining_pages(),
+        }
+    }
+
     pub(super) fn page_slot_reservation_iter<Count: Unsigned>(
         self,
     ) -> (
@@ -818,7 +828,7 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<MappedPageTable<FreeSlots, R
         }
     }
 
-    pub(super) fn skip_remaining_pages(self) -> LocalCap<MappedPageTable<U0, Role>>
+    pub fn skip_remaining_pages(self) -> LocalCap<MappedPageTable<U0, Role>>
     where
         FreeSlots: Sub<FreeSlots, Output = U0>,
     {
