@@ -6,8 +6,8 @@ use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, Set
 use crate::userland::{
     memory_kind, paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNodeRole, Cap,
     CapRights, ChildCNode, FaultSource, ImmobileIndelibleInertCapabilityReference, LocalCNode,
-    LocalCap, MappedPage, MappedPageTable, MemoryKind, PhantomCap, SeL4Error,
-    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, Untyped,
+    LocalCap, MappedPage, MappedPageTable, MappedSuperSection, MemoryKind, PhantomCap, SeL4Error,
+    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, UnmappedSuperSection, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
@@ -133,6 +133,7 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
         BootInfoPageDirFreeSlots: Unsigned,
         CNodeFreeSlots: Unsigned,
     >(
+        // TODO: model ASIDPool capacity at the type level
         boot_info: BootInfo<ASIDPoolFreeSlots, BootInfoPageDirFreeSlots>,
         page_dir_ut: LocalCap<Untyped<U14>>,
         page_table_ut: LocalCap<Untyped<U10>>,
@@ -403,6 +404,35 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
     }
 }
 
+impl<PageDirFreeSlots: Unsigned, Role: CNodeRole> VSpace<PageDirFreeSlots, U0, Role> {
+    /// Map a supersection into this vspace. Consumes 16 pagedir slots. Can only
+    /// be used on a vspace where the current page table is completely consumed;
+    /// call skip_remaining_pages to do this easily.
+    pub fn map_super_section<Kind: MemoryKind>(
+        self,
+        super_section: LocalCap<UnmappedSuperSection<Kind>>,
+    ) -> Result<
+        (
+            LocalCap<MappedSuperSection<Role, Kind>>,
+            VSpace<Diff<PageDirFreeSlots, U16>, U0, Role>,
+        ),
+        SeL4Error,
+    >
+    where
+        PageDirFreeSlots: Sub<U16>,
+        Diff<PageDirFreeSlots, U16>: Unsigned,
+    {
+        let (super_section, page_dir) = self.page_dir.map_super_section(super_section)?;
+
+        Ok((
+            super_section,
+            VSpace {
+                page_dir: page_dir,
+                current_page_table: self.current_page_table,
+            },
+        ))
+    }
+}
 pub struct ReadyThread<Role: CNodeRole> {
     registers: seL4_UserContext,
     vspace_cptr: ImmobileIndelibleInertCapabilityReference<AssignedPageDirectory<U0, Role>>,
@@ -566,6 +596,62 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<AssignedPageDirectory<FreeSl
                 _role: PhantomData,
                 cap_data: AssignedPageDirectory {
                     next_free_slot: self.cap_data.next_free_slot + 1,
+                    _free_slots: PhantomData,
+                    _role: PhantomData,
+                },
+            },
+        ))
+    }
+
+    pub fn map_super_section<Kind: MemoryKind>(
+        self,
+        super_section: LocalCap<UnmappedSuperSection<Kind>>,
+    ) -> Result<
+        (
+            LocalCap<MappedSuperSection<Role, Kind>>,
+            LocalCap<AssignedPageDirectory<Diff<FreeSlots, U16>, Role>>,
+        ),
+        SeL4Error,
+    >
+    where
+        FreeSlots: Sub<U16>,
+        Diff<FreeSlots, U16>: Unsigned,
+    {
+        let super_section_vaddr = self.cap_data.next_free_slot
+            << (paging::PageBits::USIZE + paging::PageTableBits::USIZE);
+
+        let err = unsafe {
+            seL4_ARM_Page_Map(
+                super_section.cptr,
+                self.cptr,
+                super_section_vaddr,
+                CapRights::RW.into(), // rights
+                seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
+                    | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled
+                    // | seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever,
+            )
+        };
+        if err != 0 {
+            return Err(SeL4Error::MapPage(err));
+        }
+
+        Ok((
+            // supersection
+            Cap {
+                cptr: super_section.cptr,
+                _role: PhantomData,
+                cap_data: MappedSuperSection {
+                    vaddr: super_section_vaddr,
+                    _role: PhantomData,
+                    _kind: PhantomData,
+                },
+            },
+            // page_dir
+            Cap {
+                cptr: self.cptr,
+                _role: PhantomData,
+                cap_data: AssignedPageDirectory {
+                    next_free_slot: self.cap_data.next_free_slot + 16,
                     _free_slots: PhantomData,
                     _role: PhantomData,
                 },
