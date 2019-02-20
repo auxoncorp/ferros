@@ -529,9 +529,7 @@ pub struct MappedSection<Role: CNodeRole, Kind: MemoryKind> {
     pub(crate) _kind: PhantomData<Kind>,
 }
 
-impl Cap<MappedSection<role::Child, memory_kind::Device>, role::Local> {
-    /// `vaddr` allows a parent process to extract the vaddr of a
-    /// device page mapped into a child's VSpace.
+impl<Role: CNodeRole, Kind: MemoryKind> LocalCap<MappedSection<Role, Kind>> {
     pub fn vaddr(&self) -> usize {
         self.cap_data.vaddr
     }

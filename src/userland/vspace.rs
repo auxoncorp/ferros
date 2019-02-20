@@ -6,8 +6,8 @@ use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, Set
 use crate::userland::{
     memory_kind, paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNodeRole, Cap,
     CapRights, ChildCNode, FaultSource, ImmobileIndelibleInertCapabilityReference, LocalCNode,
-    LocalCap, MappedPage, MappedPageTable, MappedSuperSection, MemoryKind, PhantomCap, SeL4Error,
-    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, UnmappedSuperSection, Untyped,
+    LocalCap, MappedPage, MappedPageTable, MappedSection, MemoryKind, PhantomCap, SeL4Error,
+    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, UnmappedSection, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
@@ -468,34 +468,80 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
 }
 
 impl<PageDirFreeSlots: Unsigned, Role: CNodeRole> VSpace<PageDirFreeSlots, U0, Role> {
-    /// Map a supersection into this vspace. Consumes 16 pagedir slots. Can only
-    /// be used on a vspace where the current page table is completely consumed;
-    /// call skip_remaining_pages to do this easily.
-    pub fn map_super_section<Kind: MemoryKind>(
+    pub fn next_section_vaddr(&self) -> usize {
+        self.page_dir.cap_data.next_free_slot
+            << (paging::PageBits::USIZE + paging::PageTableBits::USIZE)
+    }
+
+    pub fn map_section<Kind: MemoryKind>(
         self,
-        super_section: LocalCap<UnmappedSuperSection<Kind>>,
+        section: LocalCap<UnmappedSection<Kind>>,
     ) -> Result<
         (
-            LocalCap<MappedSuperSection<Role, Kind>>,
-            VSpace<Diff<PageDirFreeSlots, U16>, U0, Role>,
+            LocalCap<MappedSection<Role, Kind>>,
+            VSpace<Diff<PageDirFreeSlots, U1>, U0, Role>,
         ),
         SeL4Error,
     >
     where
-        PageDirFreeSlots: Sub<U16>,
-        Diff<PageDirFreeSlots, U16>: Unsigned,
+        PageDirFreeSlots: Sub<U1>,
+        Diff<PageDirFreeSlots, U1>: Unsigned,
     {
-        let (super_section, page_dir) = self.page_dir.map_super_section(super_section)?;
+        let (section, page_dir) = self.page_dir.map_section(section)?;
 
         Ok((
-            super_section,
+            section,
             VSpace {
                 page_dir: page_dir,
                 current_page_table: self.current_page_table,
             },
         ))
     }
+
+    pub(super) fn skip_sections<Count: Unsigned>(
+        self,
+    ) -> VSpace<Diff<PageDirFreeSlots, Count>, U0, Role>
+    where
+        PageDirFreeSlots: Sub<Count>,
+        Diff<PageDirFreeSlots, Count>: Unsigned,
+    {
+        VSpace {
+            page_dir: self.page_dir.skip_sections::<Count>(),
+            current_page_table: self.current_page_table,
+        }
+    }
+
+    pub fn section_slot_reservation_iter<Count: Unsigned>(
+        self,
+    ) -> (
+        impl Iterator<Item = SectionSlot<Role>>,
+        VSpace<Diff<PageDirFreeSlots, Count>, U0, Role>,
+    )
+    where
+        PageDirFreeSlots: Sub<Count>,
+        Diff<PageDirFreeSlots, Count>: Unsigned,
+    {
+        let start_slot_num = self.page_dir.cap_data.next_free_slot;
+        let page_dir_cptr = self.page_dir.cptr;
+
+        let iter =
+            (start_slot_num..start_slot_num + Count::USIZE).map(move |slot_num| SectionSlot {
+                page_dir: Cap {
+                    cptr: page_dir_cptr,
+                    _role: PhantomData,
+                    cap_data: AssignedPageDirectory {
+                        // this is unused, but we have to fill it out.
+                        next_free_slot: slot_num,
+                        _free_slots: PhantomData,
+                        _role: PhantomData,
+                    },
+                },
+            });
+
+        (iter, self.skip_sections::<Count>())
+    }
 }
+
 pub struct ReadyThread<Role: CNodeRole> {
     registers: seL4_UserContext,
     vspace_cptr: ImmobileIndelibleInertCapabilityReference<AssignedPageDirectory<U0, Role>>,
@@ -544,6 +590,21 @@ impl<Role: CNodeRole> ReadyThread<Role> {
         }
 
         Ok(())
+    }
+}
+
+/// A slot in a page directory, where a single section goes
+pub struct SectionSlot<Role: CNodeRole> {
+    page_dir: LocalCap<AssignedPageDirectory<U1, Role>>,
+}
+
+impl<Role: CNodeRole> SectionSlot<Role> {
+    pub fn map_section<Kind: MemoryKind>(
+        self,
+        section: LocalCap<UnmappedSection<Kind>>,
+    ) -> Result<LocalCap<MappedSection<Role, Kind>>, SeL4Error> {
+        let (mapped_section, _) = self.page_dir.map_section(section)?;
+        Ok(mapped_section)
     }
 }
 
@@ -667,28 +728,28 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<AssignedPageDirectory<FreeSl
         ))
     }
 
-    pub fn map_super_section<Kind: MemoryKind>(
+    pub fn map_section<Kind: MemoryKind>(
         self,
-        super_section: LocalCap<UnmappedSuperSection<Kind>>,
+        section: LocalCap<UnmappedSection<Kind>>,
     ) -> Result<
         (
-            LocalCap<MappedSuperSection<Role, Kind>>,
-            LocalCap<AssignedPageDirectory<Diff<FreeSlots, U16>, Role>>,
+            LocalCap<MappedSection<Role, Kind>>,
+            LocalCap<AssignedPageDirectory<Diff<FreeSlots, U1>, Role>>,
         ),
         SeL4Error,
     >
     where
-        FreeSlots: Sub<U16>,
-        Diff<FreeSlots, U16>: Unsigned,
+        FreeSlots: Sub<U1>,
+        Diff<FreeSlots, U1>: Unsigned,
     {
-        let super_section_vaddr = self.cap_data.next_free_slot
+        let section_vaddr = self.cap_data.next_free_slot
             << (paging::PageBits::USIZE + paging::PageTableBits::USIZE);
 
         let err = unsafe {
             seL4_ARM_Page_Map(
-                super_section.cptr,
+                section.cptr,
                 self.cptr,
-                super_section_vaddr,
+                section_vaddr,
                 CapRights::RW.into(), // rights
                 seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
                     | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled
@@ -700,12 +761,12 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<AssignedPageDirectory<FreeSl
         }
 
         Ok((
-            // supersection
+            // section
             Cap {
-                cptr: super_section.cptr,
+                cptr: section.cptr,
                 _role: PhantomData,
-                cap_data: MappedSuperSection {
-                    vaddr: super_section_vaddr,
+                cap_data: MappedSection {
+                    vaddr: section_vaddr,
                     _role: PhantomData,
                     _kind: PhantomData,
                 },
@@ -715,12 +776,31 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<AssignedPageDirectory<FreeSl
                 cptr: self.cptr,
                 _role: PhantomData,
                 cap_data: AssignedPageDirectory {
-                    next_free_slot: self.cap_data.next_free_slot + 16,
+                    next_free_slot: self.cap_data.next_free_slot + 1,
                     _free_slots: PhantomData,
                     _role: PhantomData,
                 },
             },
         ))
+    }
+
+    pub(super) fn skip_sections<Count: Unsigned>(
+        self,
+    ) -> LocalCap<AssignedPageDirectory<Diff<FreeSlots, Count>, Role>>
+    where
+        FreeSlots: Sub<Count>,
+        Diff<FreeSlots, Count>: Unsigned,
+    {
+        Cap {
+            cptr: self.cptr,
+            _role: PhantomData,
+
+            cap_data: AssignedPageDirectory {
+                next_free_slot: self.cap_data.next_free_slot + Count::USIZE,
+                _free_slots: PhantomData,
+                _role: PhantomData,
+            },
+        }
     }
 }
 

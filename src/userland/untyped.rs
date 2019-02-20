@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 use core::ops::Sub;
 use crate::pow::{Pow, _Pow};
 use crate::userland::{
-    memory_kind, role, CNode, Cap, CapType, ChildCNode, ChildCap, DirectRetype, LocalCap,
+    memory_kind, role, CNode, Cap, CapRange, CapType, ChildCNode, ChildCap, DirectRetype, LocalCap,
     MemoryKind, PhantomCap, SeL4Error, UnmappedPage, Untyped,
 };
 use sel4_sys::*;
@@ -189,6 +189,53 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
                 cptr: dest_slot.offset,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
+            },
+            dest_cnode,
+        ))
+    }
+
+    // TODO check the ut is big enough, as with retype_local
+    pub fn retype_multi<FreeSlots: Unsigned, TargetCapType: CapType, Count: Unsigned>(
+        self,
+        dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
+    ) -> Result<
+        (
+            CapRange<TargetCapType, role::Local, Count>,
+            LocalCap<CNode<Diff<FreeSlots, Count>, role::Local>>,
+        ),
+        SeL4Error,
+    >
+    where
+        FreeSlots: Sub<Count>,
+        Diff<FreeSlots, Count>: Unsigned,
+        TargetCapType: DirectRetype,
+        TargetCapType: PhantomCap,
+    {
+        let (reservation, dest_cnode) = dest_cnode.reserve_region::<Count>();
+
+        let err = unsafe {
+            seL4_Untyped_Retype(
+                self.cptr,                           // _service
+                TargetCapType::sel4_type_id(),       // type
+                0,                                   // size_bits
+                reservation.cptr,                    // root
+                0,                                   // index
+                0,                                   // depth
+                reservation.cap_data.next_free_slot, // offset
+                Count::USIZE,                        // num_objects
+            )
+        };
+
+        if err != 0 {
+            return Err(SeL4Error::UntypedRetype(err));
+        }
+
+        Ok((
+            CapRange {
+                start_cptr: reservation.cap_data.next_free_slot,
+                _cap_type: PhantomData,
+                _role: PhantomData,
+                _slots: PhantomData,
             },
             dest_cnode,
         ))
