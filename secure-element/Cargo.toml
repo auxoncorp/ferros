@@ -6,3 +6,6 @@ edition = "2018"
 
 [dependencies]
 typenum = { git = "ssh://github.com/auxoncorp/typenum" }
+
+[dev-dependencies]
+proptest = "0.8.7"

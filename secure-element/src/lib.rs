@@ -1,8 +1,13 @@
-#![no_std]
+//#![no_std] // TODO - RESTORE
 // Necessary to use core helpers for splitting unsigned integers into parts
 #![feature(int_to_from_bytes)]
+#![feature(extern_crate_item_prelude)]
 
 extern crate typenum;
+
+#[cfg(test)]
+#[macro_use]
+extern crate std;
 
 pub mod interchange;
 pub mod protocol;
@@ -15,8 +20,13 @@ use typenum::{IsGreaterOrEqual, IsLessOrEqual, Unsigned};
 
 // TODO - expect to be switching to using a trait that also involves
 // dragging meaning out of the response as well
-pub struct Command<I: Instruction> {
-    class: Class,
+pub struct Command<I: Instruction, ClassChannel: Unsigned, ClassChannelExtended: Unsigned>
+where
+    ClassChannel: IsLessOrEqual<U3, Output = True>,
+    ClassChannelExtended: IsLessOrEqual<U19, Output = True>,
+    ClassChannelExtended: IsGreaterOrEqual<U4, Output = True>,
+{
+    class: Class<ClassChannel, ClassChannelExtended>,
     instruction: I,
 }
 
@@ -91,6 +101,7 @@ pub struct InstructionBytes<'a> {
     //response_data_field: Option<&'a mut [u8]>
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ExpectedResponseLength {
     None,
     // TODO - enforce non-zero contents
@@ -99,6 +110,7 @@ pub enum ExpectedResponseLength {
 }
 
 /// Secure messaging indication for command classes
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InterindustrySecureMessaging {
     /// No secure messaging or no indication
     None,
@@ -114,6 +126,7 @@ pub enum InterindustrySecureMessaging {
 
 /// Secure messaging indication for command classes
 /// when a limited amount of options are expressable
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InterindustryExtendedSecureMessaging {
     /// No secure messaging or no indication
     None,
@@ -124,7 +137,7 @@ pub enum InterindustryExtendedSecureMessaging {
 
 /// Application-level representation of the data encoded in
 /// the Command Header's CLA byte
-pub enum Class<Channel: Unsigned = U0, ChannelExtended: Unsigned = U4>
+pub enum Class<Channel: Unsigned, ChannelExtended: Unsigned>
 where
     Channel: IsLessOrEqual<U3, Output = True>,
     ChannelExtended: IsLessOrEqual<U19, Output = True>,
@@ -185,13 +198,13 @@ where
         match self.secure_messaging {
             InterindustrySecureMessaging::None => {}
             InterindustrySecureMessaging::Proprietary => {
-                byte |= 0b0000_01_00;
+                byte |= 0b0000_0100;
             }
             InterindustrySecureMessaging::NotAuthenticated => {
-                byte |= 0b0000_10_00;
+                byte |= 0b0000_1000;
             }
             InterindustrySecureMessaging::Authenticated => {
-                byte |= 0b0000_11_00;
+                byte |= 0b0000_1100;
             }
         }
         byte |= Channel::U8;
@@ -220,4 +233,142 @@ where
         byte |= channel;
         byte
     }
+}
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::collections::hash_set::HashSet;
+    use typenum::{
+        U0, U1, U10, U11, U12, U13, U14, U15, U16, U17, U18, U19, U2, U3, U4, U5, U6, U7, U8, U9,
+    };
+
+    #[test]
+    fn interindustry_to_byte_channel_encoded() {
+        let i0: Interindustry<U0> = Interindustry {
+            is_last: false,
+            secure_messaging: InterindustrySecureMessaging::None,
+            _channel: PhantomData,
+        };
+        assert_eq!(0, extract_last_two_bits(i0.to_byte()));
+
+        let i1: Interindustry<U1> = Interindustry {
+            is_last: false,
+            secure_messaging: InterindustrySecureMessaging::None,
+            _channel: PhantomData,
+        };
+        assert_eq!(1, extract_last_two_bits(i1.to_byte()));
+
+        let i2: Interindustry<U2> = Interindustry {
+            is_last: false,
+            secure_messaging: InterindustrySecureMessaging::None,
+            _channel: PhantomData,
+        };
+        assert_eq!(2, extract_last_two_bits(i2.to_byte()));
+
+        let i3: Interindustry<U3> = Interindustry {
+            is_last: false,
+            secure_messaging: InterindustrySecureMessaging::None,
+            _channel: PhantomData,
+        };
+        assert_eq!(3, extract_last_two_bits(i3.to_byte()));
+    }
+
+    fn extract_last_two_bits(a: u8) -> u8 {
+        let b = a << 6;
+        b >> 6
+    }
+
+    fn extract_last_four_bits(a: u8) -> u8 {
+        let b = a << 4;
+        b >> 4
+    }
+    const INVALID_CLASS_BYTE: u8 = 0xFF;
+
+    #[test]
+    fn exhaustive_interindustry_to_byte_valid_and_distinct() {
+        let mut extant_values = HashSet::new();
+
+        fn assert_valid_class_byte<C: Unsigned>(
+            extant_values: &mut HashSet<u8>,
+            is_last: bool,
+            secure_messaging: InterindustrySecureMessaging,
+        ) where
+            C: IsLessOrEqual<U3, Output = True>,
+        {
+            let i: Interindustry<C> = Interindustry {
+                is_last: is_last,
+                secure_messaging: secure_messaging,
+                _channel: PhantomData,
+            };
+            assert!(extant_values.insert(i.to_byte()));
+            assert_ne!(INVALID_CLASS_BYTE, i.to_byte());
+            assert_eq!(C::U8, extract_last_two_bits(i.to_byte()));
+        }
+
+        for b in [true, false].iter() {
+            for ism in [
+                InterindustrySecureMessaging::None,
+                InterindustrySecureMessaging::Authenticated,
+                InterindustrySecureMessaging::NotAuthenticated,
+                InterindustrySecureMessaging::Proprietary,
+            ]
+            .iter()
+            {
+                assert_valid_class_byte::<U0>(&mut extant_values, *b, *ism);
+                assert_valid_class_byte::<U1>(&mut extant_values, *b, *ism);
+                assert_valid_class_byte::<U2>(&mut extant_values, *b, *ism);
+                assert_valid_class_byte::<U3>(&mut extant_values, *b, *ism);
+            }
+        }
+    }
+
+    #[test]
+    fn exhaustive_interindustry_extended_to_byte_valid_and_distinct() {
+        let mut extant_values = HashSet::new();
+
+        fn assert_valid_class_byte<C: Unsigned>(
+            extant_values: &mut HashSet<u8>,
+            is_last: bool,
+            secure_messaging: InterindustryExtendedSecureMessaging,
+        ) where
+            C: IsLessOrEqual<U19, Output = True>,
+            C: IsGreaterOrEqual<U4, Output = True>,
+        {
+            let i: InterindustryExtended<C> = InterindustryExtended {
+                is_last: is_last,
+                secure_messaging: secure_messaging,
+                _channel: PhantomData,
+            };
+            assert!(extant_values.insert(i.to_byte()));
+            assert_ne!(INVALID_CLASS_BYTE, i.to_byte());
+            assert_eq!(C::U8, extract_last_four_bits(i.to_byte()) + 4); // Add 4 to account for encoded offset
+        }
+
+        for b in [true, false].iter() {
+            for ism in [
+                InterindustryExtendedSecureMessaging::None,
+                InterindustryExtendedSecureMessaging::NotAuthenticated,
+            ]
+            .iter()
+            {
+                assert_valid_class_byte::<U4>(&mut extant_values, *b, *ism);
+                assert_valid_class_byte::<U5>(&mut extant_values, *b, *ism);
+                assert_valid_class_byte::<U6>(&mut extant_values, *b, *ism);
+                assert_valid_class_byte::<U7>(&mut extant_values, *b, *ism);
+                assert_valid_class_byte::<U8>(&mut extant_values, *b, *ism);
+                assert_valid_class_byte::<U9>(&mut extant_values, *b, *ism);
+                assert_valid_class_byte::<U10>(&mut extant_values, *b, *ism);
+                assert_valid_class_byte::<U11>(&mut extant_values, *b, *ism);
+                assert_valid_class_byte::<U12>(&mut extant_values, *b, *ism);
+                assert_valid_class_byte::<U13>(&mut extant_values, *b, *ism);
+                assert_valid_class_byte::<U14>(&mut extant_values, *b, *ism);
+                assert_valid_class_byte::<U15>(&mut extant_values, *b, *ism);
+                assert_valid_class_byte::<U16>(&mut extant_values, *b, *ism);
+                assert_valid_class_byte::<U17>(&mut extant_values, *b, *ism);
+                assert_valid_class_byte::<U18>(&mut extant_values, *b, *ism);
+                assert_valid_class_byte::<U19>(&mut extant_values, *b, *ism);
+            }
+        }
+    }
+
 }

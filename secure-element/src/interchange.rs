@@ -66,9 +66,9 @@ impl ReadCurrentEF {
         if current_ef_offset > MAX_OFFSET {
             Err(CommandSpecificationError::ValueOutOfRange(
                 ValueOutOfRange {
-                    found_value: current_ef_offset as u64,
+                    found_value: u64::from(current_ef_offset),
                     min_value: 0,
-                    max_value: MAX_OFFSET as u64,
+                    max_value: u64::from(MAX_OFFSET),
                 },
             ))
         } else {
