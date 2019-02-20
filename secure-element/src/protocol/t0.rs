@@ -4,9 +4,7 @@ use super::super::{
 };
 use core::fmt::Debug;
 use crate::repr::split_u16;
-use crate::Class;
 use crate::InstructionBytes;
-use typenum::{IsGreaterOrEqual, IsLessOrEqual, True, Unsigned, U0, U19, U3, U4};
 
 /// An error occurred in byte transfer down near the physical layer.
 pub struct TransmissionError;
@@ -78,21 +76,11 @@ where
 }
 
 impl<C: Connection> ProtocolState<C> {
-    pub fn transmit_command<
-        B: BufferSource,
-        I: Instruction,
-        ClassChannel: Unsigned,
-        ClassChannelExtended: Unsigned,
-    >(
+    pub fn transmit_command<B: BufferSource, I: Instruction>(
         &mut self,
-        command: &Command<I, ClassChannel, ClassChannelExtended>,
+        command: &Command<I>,
         buffer_source: &mut B,
-    ) -> Result<I::Response, ProtocolError>
-    where
-        ClassChannel: IsLessOrEqual<U3, Output = True>,
-        ClassChannelExtended: IsLessOrEqual<U19, Output = True>,
-        ClassChannelExtended: IsGreaterOrEqual<U4, Output = True>,
-    {
+    ) -> Result<I::Response, ProtocolError> {
         // Send 5 bytes for the command header
         // at this top level, then hand off reference slices to the rest of the command data
         // to a procedure-byte-driven loop.
@@ -811,13 +799,9 @@ impl From<(LengthFieldKind, LengthFieldKind)> for APDUCase {
 #[cfg(test)]
 mod test_protocol {
     use super::*;
-    use core::marker::PhantomData;
-    use crate::{
-        Interindustry, InterindustryExtendedSecureMessaging, InterindustrySecureMessaging,
-    };
+    use crate::{Class, Interindustry, InterindustrySecureMessaging};
     use std::collections::VecDeque;
     use std::vec::Vec;
-    use typenum::{U2, U4};
 
     struct TinyBufferSource {
         buffer: [u8; 256],
@@ -911,12 +895,11 @@ mod test_protocol {
             command_data_field: None,
             expected_response_length: ExpectedResponseLength::None,
         };
-        let class = Class::Interindustry(Interindustry::<U2> {
-            is_last: true,
-            secure_messaging: InterindustrySecureMessaging::None,
-            _channel: PhantomData,
-        });
-        let command = Command::<DynamicInstruction, U2, U4> { class, instruction };
+        let class = Class::Interindustry(
+            Interindustry::new(true, InterindustrySecureMessaging::None, 2)
+                .expect("Invalid class channel"),
+        );
+        let command = Command::<DynamicInstruction> { class, instruction };
         let mut buffer_source = TinyBufferSource::new();
         let response = ps
             .transmit_command(&command, &mut buffer_source)
@@ -943,12 +926,11 @@ mod test_protocol {
             command_data_field: None,
             expected_response_length: ExpectedResponseLength::NonZero(3),
         };
-        let class = Class::Interindustry(Interindustry::<U2> {
-            is_last: true,
-            secure_messaging: InterindustrySecureMessaging::None,
-            _channel: PhantomData,
-        });
-        let command = Command::<DynamicInstruction, U2, U4> { class, instruction };
+        let class = Class::Interindustry(
+            Interindustry::new(true, InterindustrySecureMessaging::None, 2)
+                .expect("Invalid class channel"),
+        );
+        let command = Command::<DynamicInstruction> { class, instruction };
         let mut buffer_source = TinyBufferSource::new();
         let result = ps.transmit_command(&command, &mut buffer_source);
         println!("PS: {:?}", ps);

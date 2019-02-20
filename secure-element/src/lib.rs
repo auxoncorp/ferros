@@ -3,8 +3,6 @@
 #![feature(int_to_from_bytes)]
 #![feature(extern_crate_item_prelude)]
 
-extern crate typenum;
-
 #[cfg(test)]
 #[macro_use]
 extern crate std;
@@ -13,20 +11,10 @@ pub mod interchange;
 pub mod protocol;
 pub(crate) mod repr;
 
-use core::marker::PhantomData;
-
-use typenum::consts::{True, U0, U19, U3, U4};
-use typenum::{IsGreaterOrEqual, IsLessOrEqual, Unsigned};
-
 // TODO - expect to be switching to using a trait that also involves
 // dragging meaning out of the response as well
-pub struct Command<I: Instruction, ClassChannel: Unsigned, ClassChannelExtended: Unsigned>
-where
-    ClassChannel: IsLessOrEqual<U3, Output = True>,
-    ClassChannelExtended: IsLessOrEqual<U19, Output = True>,
-    ClassChannelExtended: IsGreaterOrEqual<U4, Output = True>,
-{
-    class: Class<ClassChannel, ClassChannelExtended>,
+pub struct Command<I: Instruction> {
+    class: Class,
     instruction: I,
 }
 
@@ -137,59 +125,46 @@ pub enum InterindustryExtendedSecureMessaging {
 
 /// Application-level representation of the data encoded in
 /// the Command Header's CLA byte
-pub enum Class<Channel: Unsigned, ChannelExtended: Unsigned>
-where
-    Channel: IsLessOrEqual<U3, Output = True>,
-    ChannelExtended: IsLessOrEqual<U19, Output = True>,
-    ChannelExtended: IsGreaterOrEqual<U4, Output = True>,
-{
+#[derive(Debug, PartialEq)]
+pub enum Class {
     Proprietary,
-    Interindustry(Interindustry<Channel>),
-    InterindustryExtended(InterindustryExtended<ChannelExtended>),
+    Interindustry(Interindustry),
+    InterindustryExtended(InterindustryExtended),
 }
 
-pub struct Interindustry<Channel: Unsigned>
-where
-    Channel: IsLessOrEqual<U3, Output = True>,
-{
+#[derive(Debug, PartialEq)]
+pub struct Interindustry {
     // The command is the last or only command of a chain
     is_last: bool,
     secure_messaging: InterindustrySecureMessaging,
     // Logical channel number from zero to three
-    _channel: PhantomData<Channel>,
+    channel: u8,
 }
 
-pub struct InterindustryExtended<Channel: Unsigned>
-where
-    Channel: IsLessOrEqual<U19, Output = True>,
-    Channel: IsGreaterOrEqual<U4, Output = True>,
-{
-    // The command is the last or only command of a chain
-    is_last: bool,
-    secure_messaging: InterindustryExtendedSecureMessaging,
-    // Logical channel number from four to nineteen
-    _channel: PhantomData<Channel>,
-}
+/// The channel selected was out of bounds
+/// For Interindustry classes, 0 <= channel <= 3
+/// For Interindustry extended classes, 4 <= channel <= 19
+#[derive(Debug, PartialEq)]
+pub struct InvalidChannelError;
 
-impl<Channel: Unsigned, ChannelExtended: Unsigned> Class<Channel, ChannelExtended>
-where
-    Channel: IsLessOrEqual<U3, Output = True>,
-    ChannelExtended: IsLessOrEqual<U19, Output = True>,
-    ChannelExtended: IsGreaterOrEqual<U4, Output = True>,
-{
-    pub fn to_byte(&self) -> u8 {
-        match self {
-            Class::Proprietary => 0b1000_0000,
-            Class::Interindustry(i) => i.to_byte(),
-            Class::InterindustryExtended(i) => i.to_byte(),
+impl Interindustry {
+    /// channel must be between 0 and 3, inclusive.
+    pub fn new(
+        is_last: bool,
+        secure_messaging: InterindustrySecureMessaging,
+        channel: u8,
+    ) -> Result<Self, InvalidChannelError> {
+        if channel > 3 {
+            return Err(InvalidChannelError);
         }
+        Ok(Interindustry {
+            is_last,
+            secure_messaging,
+            channel,
+        })
     }
-}
 
-impl<Channel: Unsigned> Interindustry<Channel>
-where
-    Channel: IsLessOrEqual<U3, Output = True>,
-{
+    /// Convert to single-byte CLA representation according to ISO 7816-3 and 7816-4
     pub fn to_byte(&self) -> u8 {
         let mut byte = 0b0000_0000;
         if self.is_last {
@@ -207,16 +182,41 @@ where
                 byte |= 0b0000_1100;
             }
         }
-        byte |= Channel::U8;
+        // Because channel is 0..=3 as maintained by the constructor,
+        // we think it fits in the last two bits and does not
+        // interfere with any other bits. Clear out other bits just to be safe.
+        let channel = self.channel & 0b0000_0011;
+        byte |= channel;
         byte
     }
 }
 
-impl<ChannelExtended: Unsigned> InterindustryExtended<ChannelExtended>
-where
-    ChannelExtended: IsLessOrEqual<U19, Output = True>,
-    ChannelExtended: IsGreaterOrEqual<U4, Output = True>,
-{
+#[derive(Debug, PartialEq)]
+pub struct InterindustryExtended {
+    // The command is the last or only command of a chain
+    is_last: bool,
+    secure_messaging: InterindustryExtendedSecureMessaging,
+    // Logical channel number from four to nineteen, inclusive
+    channel: u8,
+}
+impl InterindustryExtended {
+    /// channel must be between 4 and 19, inclusive.
+    pub fn new(
+        is_last: bool,
+        secure_messaging: InterindustryExtendedSecureMessaging,
+        channel: u8,
+    ) -> Result<Self, InvalidChannelError> {
+        if channel < 4 || channel > 19 {
+            return Err(InvalidChannelError);
+        }
+        Ok(InterindustryExtended {
+            is_last,
+            secure_messaging,
+            channel,
+        })
+    }
+
+    /// Convert to single-byte CLA representation according to ISO 7816-3 and 7816-4
     pub fn to_byte(&self) -> u8 {
         let mut byte = 0b0100_0000;
         match self.secure_messaging {
@@ -228,49 +228,46 @@ where
         if self.is_last {
             byte |= 0b0001_0000;
         }
-        // Offset channel by 4 to allow fitting into 4 bits
-        let channel = ChannelExtended::U8 - 4u8;
+        // Offset channel by -4 because in this mode, counting starts at 4,
+        // and we want to fit into only 4 bits.
+        let channel = self.channel - 4u8;
+        // Because channel is between 4 and 19 (as maintained by the constructor),
+        // its range of options can be represented by 4 bits.
+        // Clear out the remaining bits just to be safe.
+        let channel = channel & 0b0000_1111;
         byte |= channel;
         byte
     }
 }
+
+impl Class {
+    pub fn to_byte(&self) -> u8 {
+        match self {
+            Class::Proprietary => 0b1000_0000,
+            Class::Interindustry(i) => i.to_byte(),
+            Class::InterindustryExtended(i) => i.to_byte(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
     use std::collections::hash_set::HashSet;
-    use typenum::{
-        U0, U1, U10, U11, U12, U13, U14, U15, U16, U17, U18, U19, U2, U3, U4, U5, U6, U7, U8, U9,
-    };
 
     #[test]
     fn interindustry_to_byte_channel_encoded() {
-        let i0: Interindustry<U0> = Interindustry {
-            is_last: false,
-            secure_messaging: InterindustrySecureMessaging::None,
-            _channel: PhantomData,
-        };
-        assert_eq!(0, extract_last_two_bits(i0.to_byte()));
+        for c in 0..=3 {
+            let i: Interindustry = Interindustry::new(false, InterindustrySecureMessaging::None, c)
+                .expect("should selected a valid channel in 0..=3");
+            assert_eq!(c, extract_last_two_bits(i.to_byte()));
+        }
+    }
 
-        let i1: Interindustry<U1> = Interindustry {
-            is_last: false,
-            secure_messaging: InterindustrySecureMessaging::None,
-            _channel: PhantomData,
-        };
-        assert_eq!(1, extract_last_two_bits(i1.to_byte()));
-
-        let i2: Interindustry<U2> = Interindustry {
-            is_last: false,
-            secure_messaging: InterindustrySecureMessaging::None,
-            _channel: PhantomData,
-        };
-        assert_eq!(2, extract_last_two_bits(i2.to_byte()));
-
-        let i3: Interindustry<U3> = Interindustry {
-            is_last: false,
-            secure_messaging: InterindustrySecureMessaging::None,
-            _channel: PhantomData,
-        };
-        assert_eq!(3, extract_last_two_bits(i3.to_byte()));
+    #[test]
+    fn interindustry_invalid_channel() {
+        let r = Interindustry::new(false, InterindustrySecureMessaging::None, 4);
+        assert_eq!(Err(InvalidChannelError), r);
     }
 
     fn extract_last_two_bits(a: u8) -> u8 {
@@ -288,24 +285,24 @@ mod test {
     fn exhaustive_interindustry_to_byte_valid_and_distinct() {
         let mut extant_values = HashSet::new();
 
-        fn assert_valid_class_byte<C: Unsigned>(
+        fn assert_valid_class_byte(
             extant_values: &mut HashSet<u8>,
             is_last: bool,
             secure_messaging: InterindustrySecureMessaging,
-        ) where
-            C: IsLessOrEqual<U3, Output = True>,
-        {
-            let i: Interindustry<C> = Interindustry {
-                is_last: is_last,
-                secure_messaging: secure_messaging,
-                _channel: PhantomData,
-            };
+            channel: u8,
+        ) {
+            let i: Interindustry =
+                Interindustry::new(is_last, secure_messaging, channel).expect("Invalid channel");
             assert!(extant_values.insert(i.to_byte()));
             assert_ne!(INVALID_CLASS_BYTE, i.to_byte());
-            assert_eq!(C::U8, extract_last_two_bits(i.to_byte()));
+            assert_eq!(
+                channel,
+                extract_last_two_bits(i.to_byte()),
+                "Extracted channel should match input channel"
+            );
         }
 
-        for b in [true, false].iter() {
+        for is_last in [true, false].iter() {
             for ism in [
                 InterindustrySecureMessaging::None,
                 InterindustrySecureMessaging::Authenticated,
@@ -314,10 +311,9 @@ mod test {
             ]
             .iter()
             {
-                assert_valid_class_byte::<U0>(&mut extant_values, *b, *ism);
-                assert_valid_class_byte::<U1>(&mut extant_values, *b, *ism);
-                assert_valid_class_byte::<U2>(&mut extant_values, *b, *ism);
-                assert_valid_class_byte::<U3>(&mut extant_values, *b, *ism);
+                for channel in 0..=3 {
+                    assert_valid_class_byte(&mut extant_values, *is_last, *ism, channel);
+                }
             }
         }
     }
@@ -326,47 +322,41 @@ mod test {
     fn exhaustive_interindustry_extended_to_byte_valid_and_distinct() {
         let mut extant_values = HashSet::new();
 
-        fn assert_valid_class_byte<C: Unsigned>(
+        fn assert_valid_class_byte(
             extant_values: &mut HashSet<u8>,
             is_last: bool,
             secure_messaging: InterindustryExtendedSecureMessaging,
-        ) where
-            C: IsLessOrEqual<U19, Output = True>,
-            C: IsGreaterOrEqual<U4, Output = True>,
-        {
-            let i: InterindustryExtended<C> = InterindustryExtended {
-                is_last: is_last,
-                secure_messaging: secure_messaging,
-                _channel: PhantomData,
-            };
-            assert!(extant_values.insert(i.to_byte()));
-            assert_ne!(INVALID_CLASS_BYTE, i.to_byte());
-            assert_eq!(C::U8, extract_last_four_bits(i.to_byte()) + 4); // Add 4 to account for encoded offset
+            channel: u8,
+        ) {
+            let i: InterindustryExtended =
+                InterindustryExtended::new(is_last, secure_messaging, channel)
+                    .expect("Invalid channel");
+            assert!(
+                extant_values.insert(i.to_byte()),
+                "Should not add duplicate classes"
+            );
+            assert_ne!(
+                INVALID_CLASS_BYTE,
+                i.to_byte(),
+                "CLA should not match the explicitly forbidden value"
+            );
+            assert_eq!(
+                channel,
+                extract_last_four_bits(i.to_byte()) + 4,
+                "Extracted channel should match input channel"
+            ); // Add 4 to account for encoded offset
         }
 
-        for b in [true, false].iter() {
+        for is_last in [true, false].iter() {
             for ism in [
                 InterindustryExtendedSecureMessaging::None,
                 InterindustryExtendedSecureMessaging::NotAuthenticated,
             ]
             .iter()
             {
-                assert_valid_class_byte::<U4>(&mut extant_values, *b, *ism);
-                assert_valid_class_byte::<U5>(&mut extant_values, *b, *ism);
-                assert_valid_class_byte::<U6>(&mut extant_values, *b, *ism);
-                assert_valid_class_byte::<U7>(&mut extant_values, *b, *ism);
-                assert_valid_class_byte::<U8>(&mut extant_values, *b, *ism);
-                assert_valid_class_byte::<U9>(&mut extant_values, *b, *ism);
-                assert_valid_class_byte::<U10>(&mut extant_values, *b, *ism);
-                assert_valid_class_byte::<U11>(&mut extant_values, *b, *ism);
-                assert_valid_class_byte::<U12>(&mut extant_values, *b, *ism);
-                assert_valid_class_byte::<U13>(&mut extant_values, *b, *ism);
-                assert_valid_class_byte::<U14>(&mut extant_values, *b, *ism);
-                assert_valid_class_byte::<U15>(&mut extant_values, *b, *ism);
-                assert_valid_class_byte::<U16>(&mut extant_values, *b, *ism);
-                assert_valid_class_byte::<U17>(&mut extant_values, *b, *ism);
-                assert_valid_class_byte::<U18>(&mut extant_values, *b, *ism);
-                assert_valid_class_byte::<U19>(&mut extant_values, *b, *ism);
+                for channel in 4..=19 {
+                    assert_valid_class_byte(&mut extant_values, *is_last, *ism, channel);
+                }
             }
         }
     }
