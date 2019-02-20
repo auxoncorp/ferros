@@ -176,7 +176,7 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
         ))
     }
 
-    pub(super) fn next_page_table<CNodeFreeSlots: Unsigned>(
+    pub fn next_page_table<CNodeFreeSlots: Unsigned>(
         self,
         new_page_table_ut: LocalCap<Untyped<U10>>,
         dest_cnode: LocalCap<LocalCNode<CNodeFreeSlots>>,
