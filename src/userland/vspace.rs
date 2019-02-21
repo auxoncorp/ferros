@@ -1046,7 +1046,7 @@ impl<Role: CNodeRole, Kind: MemoryKind> LocalCap<MappedPage<Role, Kind>> {
     }
 }
 
-fn yield_forever() {
+pub fn yield_forever() -> ! {
     unsafe {
         loop {
             seL4_Yield();
