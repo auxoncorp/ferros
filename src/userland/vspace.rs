@@ -1,17 +1,20 @@
 use core::marker::PhantomData;
-use core::ops::Sub;
+use core::ops::{Add, Sub};
 use crate::pow::Pow;
 use crate::userland::cap::ThreadControlBlock;
 use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, SetupVer};
 use crate::userland::{
-    memory_kind, paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNodeRole, Cap,
-    CapRights, ChildCNode, FaultSource, ImmobileIndelibleInertCapabilityReference, LocalCNode,
-    LocalCap, MappedPage, MappedPageTable, MappedSection, MemoryKind, PhantomCap, SeL4Error,
-    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, UnmappedSection, Untyped,
+    address_space, memory_kind, paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNodeRole,
+    Cap, CapRange, CapRights, ChildCNode, FaultSource, ImmobileIndelibleInertCapabilityReference,
+    LocalCNode, LocalCap, MappedPage, MappedPageTable, MappedSection, MemoryKind, PhantomCap,
+    SeL4Error, UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, UnmappedSection, Untyped,
 };
 use sel4_sys::*;
-use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{IsLessOrEqual, Unsigned, B1, U0, U1, U10, U100, U128, U14, U16, U2, U9};
+use typenum::operator_aliases::{Diff, Prod, Sub1, Sum};
+use typenum::{
+    IsLessOrEqual, UInt, UTerm, Unsigned, B0, B1, U0, U1, U10, U100, U128, U14, U15, U16, U17, U2,
+    U5, U6, U8, U9,
+};
 
 #[derive(Debug)]
 pub enum VSpaceError {
@@ -42,6 +45,10 @@ pub struct VSpace<
     current_page_table: LocalCap<MappedPageTable<PageTableFreeSlots, Role>>,
 }
 
+type NewVSpaceCNodeSlots = Sum<Sum<paging::CodePageTableCount, paging::CodePageCount>, U16>;
+#[rustfmt::skip]
+type NewVSpaceCNodeSlotsNormalized = UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B1>, B0>, B0>, B0>, B0>, B0>, B0>, B0>, B1>, B0>, B1>, B0>, B0>, B0>, B0>;
+
 impl VSpace {
     pub fn new<
         ASIDPoolFreeSlots: Unsigned,
@@ -49,73 +56,102 @@ impl VSpace {
         BootInfoPageDirFreeSlots: Unsigned,
     >(
         boot_info: BootInfo<ASIDPoolFreeSlots, BootInfoPageDirFreeSlots>,
-        ut16: LocalCap<Untyped<U16>>,
+        ut17: LocalCap<Untyped<U17>>,
         dest_cnode: LocalCap<LocalCNode<CNodeFreeSlots>>,
     ) -> Result<
         (
             VSpace<
-                Diff<paging::BasePageDirFreeSlots, U2>,
+                Diff<paging::BasePageDirFreeSlots, Sum<paging::CodePageTableCount, U1>>,
                 paging::BasePageTableFreeSlots,
                 role::Child,
             >,
             BootInfo<Sub1<ASIDPoolFreeSlots>, BootInfoPageDirFreeSlots>,
             // dest_cnode
-            LocalCap<LocalCNode<Diff<CNodeFreeSlots, U128>>>,
+            LocalCap<LocalCNode<Diff<CNodeFreeSlots, NewVSpaceCNodeSlots>>>,
         ),
         SeL4Error,
     >
     where
-        CNodeFreeSlots: Sub<U128>,
-        Diff<CNodeFreeSlots, U128>: Unsigned,
+        paging::CodePageTableCount: Add<U1>,
+        Sum<paging::CodePageTableCount, U1>: Unsigned,
+
+        paging::BasePageTableFreeSlots: Sub<Sum<paging::CodePageTableCount, U1>>,
+        Diff<paging::BasePageTableFreeSlots, Sum<paging::CodePageTableCount, U1>>: Unsigned,
+
+        paging::CodePageTableCount: Add<paging::CodePageCount>,
+        Sum<paging::CodePageTableCount, paging::CodePageCount>: Unsigned,
+
+        // because of https://github.com/rust-lang/rust/issues/20775, we need to
+        // write this trait bound as a fully normalized term
+        CNodeFreeSlots: Sub<NewVSpaceCNodeSlotsNormalized>,
+        Diff<CNodeFreeSlots, NewVSpaceCNodeSlots>: Unsigned,
 
         ASIDPoolFreeSlots: Sub<B1>,
         Sub1<ASIDPoolFreeSlots>: Unsigned,
     {
-        let (cnode, dest_cnode) = dest_cnode.reserve_region::<U128>();
+        let (cnode, dest_cnode) = dest_cnode.reserve_region::<NewVSpaceCNodeSlots>();
 
+        let (ut16, page_tables_ut, cnode) = ut17.split(cnode)?;
         let (ut14, page_dir_ut, _, _, cnode) = ut16.quarter(cnode)?;
         let (ut12, _, _, _, cnode) = ut14.quarter(cnode)?;
-        let (ut10, initial_page_table_ut, second_page_table_ut, _, cnode) = ut12.quarter(cnode)?;
-        let (ut8, _, _, _, cnode) = ut10.quarter(cnode)?;
-        let (ut6, _, _, _, cnode) = ut8.quarter(cnode)?;
-        let (_, _, _, _, cnode) = ut6.quarter(cnode)?;
+        let (ut10, initial_page_table_ut, _, _, cnode) = ut12.quarter(cnode)?;
 
-        let (vspace, boot_info, cnode) =
-            Self::internal_new_child(boot_info, page_dir_ut, initial_page_table_ut, cnode)?;
+        // allocate and assign the page directory
+        let (page_dir, cnode): (LocalCap<UnassignedPageDirectory>, _) =
+            page_dir_ut.retype_local(cnode)?;
+        let (page_dir, boot_info) = boot_info.assign_minimal_page_dir(page_dir)?;
 
-        ////////////////////////////////////////
-        // Map in the code (user image) pages //
-        ////////////////////////////////////////
+        // Allocate and map the user image paging structures. This happens
+        // first, so it starts at address 0, which is where the code expects to
+        // live.
 
-        // Do this immediately after assigning the page directory because it has
-        // to be the first page table; that's the portion of the address space
-        // where the program expects to find itself.
-        //
-        // TODO: This limits us to a megabyte of code. If we want to allow more,
-        // we need more than one page table here.
-        // let (code_page_table, page_dir) = page_dir.map_page_table(code_page_table)?;
+        // Allocate the maximum number of page tables we could possibly need,
+        // and reserve that many slots in the page directory.
+        let (page_tables, cnode): (
+            CapRange<UnmappedPageTable, role::Local, paging::CodePageTableCount>,
+            _,
+        ) = page_tables_ut.retype_multi(cnode)?;
 
-        // munge the code page table so the first page gets mapped to 0x00010000
-        // TODO: can we do this as skip_until_addr::<0x10000>() instead?
-        let vspace = vspace.skip_pages::<U16>();
+        let (page_dir_slot_reservation_iter, mut page_dir) =
+            page_dir.reservation_iter::<paging::CodePageTableCount>();
 
-        // TODO: the number of pages we reserve here needs to be checked against the
-        // size of the binary.
-        let (cnode_slot_reservation_iter, cnode) = cnode.reservation_iter::<U100>();
-        let (code_page_slot_reservation_iter, vspace) = vspace.page_slot_reservation_iter::<U100>();
-
-        for ((page_cap, slot_cnode), page_slot) in boot_info
-            .user_image_pages_iter()
-            .zip(cnode_slot_reservation_iter)
-            .zip(code_page_slot_reservation_iter)
+        for ((pt, page_dir_slot), _) in page_tables
+            .iter()
+            .zip(page_dir_slot_reservation_iter)
+            // Zipping with an iterator over the page tables from bootinfo limits
+            // the iteration to the number of page tables that are actually needed.
+            .zip(boot_info.user_image_page_tables_iter())
         {
-            let (copied_page_cap, _) = page_cap.copy(&cnode, slot_cnode, CapRights::R)?;
-            let _mapped_page = page_slot.map_page(copied_page_cap)?;
+            let _mapped_pt = page_dir_slot.map_page_table(pt)?;
         }
 
-        // Let the user start with a fresh page table since we have plenty of
-        // unused CNode and Untyped capacity hanging around in here.
-        let (vspace, _cnode) = vspace.next_page_table(second_page_table_ut, cnode)?;
+        // map pages
+        let (cnode_slot_reservation_iter, cnode) =
+            cnode.reservation_iter::<paging::CodePageCount>();
+
+        for (page_cap, slot_cnode) in boot_info
+            .user_image_pages_iter()
+            .zip(cnode_slot_reservation_iter)
+        {
+            let (copied_page_cap, _) = page_cap.copy(&cnode, slot_cnode, CapRights::R)?;
+            // Use map_page_direct instead of a VSpace so we don't have to keep
+            // track of bulk allocations which cross page table boundaries at
+            // the type level.
+            let mapped_page = page_dir.map_page_direct(
+                copied_page_cap,
+                page_cap.cap_data.vaddr,
+                CapRights::RW,
+            )?;
+        }
+
+        let (initial_page_table, cnode): (LocalCap<UnmappedPageTable>, _) =
+            initial_page_table_ut.retype_local(cnode)?;
+        let (initial_page_table, page_dir) = page_dir.map_page_table(initial_page_table)?;
+        let vspace = VSpace {
+            page_dir: page_dir,
+            current_page_table: initial_page_table,
+        };
+
         Ok((vspace, boot_info, dest_cnode))
     }
 }
@@ -123,59 +159,6 @@ impl VSpace {
 impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
     VSpace<PageDirFreeSlots, PageTableFreeSlots, Role>
 {
-    // Set up the barest minimal vspace; it will be further initialized to be
-    // actually useful in the 'new' constructor. This needs untyped caps for the
-    // page dir and page table storage, two cnode slots to retype them with, and
-    // will consume 1 ASID to assign the page dir and 1 slot from the page dir
-    // to map in the initial page table.
-    fn internal_new_child<
-        ASIDPoolFreeSlots: Unsigned,
-        BootInfoPageDirFreeSlots: Unsigned,
-        CNodeFreeSlots: Unsigned,
-    >(
-        boot_info: BootInfo<ASIDPoolFreeSlots, BootInfoPageDirFreeSlots>,
-        page_dir_ut: LocalCap<Untyped<U14>>,
-        page_table_ut: LocalCap<Untyped<U10>>,
-        dest_cnode: LocalCap<LocalCNode<CNodeFreeSlots>>,
-    ) -> Result<
-        (
-            VSpace<Sub1<paging::BasePageDirFreeSlots>, paging::BasePageTableFreeSlots, role::Child>,
-            BootInfo<Sub1<ASIDPoolFreeSlots>, BootInfoPageDirFreeSlots>,
-            // dest_cnode
-            LocalCap<LocalCNode<Diff<CNodeFreeSlots, U2>>>,
-        ),
-        SeL4Error,
-    >
-    where
-        CNodeFreeSlots: Sub<U2>,
-        Diff<CNodeFreeSlots, U2>: Unsigned,
-
-        ASIDPoolFreeSlots: Sub<B1>,
-        Sub1<ASIDPoolFreeSlots>: Unsigned,
-    {
-        let (cnode, dest_cnode) = dest_cnode.reserve_region::<U2>();
-
-        // allocate the page dir and initial page table
-        let (page_dir, cnode): (LocalCap<UnassignedPageDirectory>, _) =
-            page_dir_ut.retype_local(cnode)?;
-
-        let (initial_page_table, _cnode): (LocalCap<UnmappedPageTable>, _) =
-            page_table_ut.retype_local(cnode)?;
-
-        // assign the page dir and map in the initial page table.
-        let (page_dir, boot_info) = boot_info.assign_minimal_page_dir(page_dir)?;
-        let (initial_page_table, page_dir) = page_dir.map_page_table(initial_page_table)?;
-
-        Ok((
-            VSpace {
-                page_dir,
-                current_page_table: initial_page_table,
-            },
-            boot_info,
-            dest_cnode,
-        ))
-    }
-
     pub fn next_page_table<CNodeFreeSlots: Unsigned>(
         self,
         new_page_table_ut: LocalCap<Untyped<U10>>,
@@ -511,10 +494,10 @@ impl<PageDirFreeSlots: Unsigned, Role: CNodeRole> VSpace<PageDirFreeSlots, U0, R
         }
     }
 
-    pub fn section_slot_reservation_iter<Count: Unsigned>(
+    pub fn page_dir_slot_reservation_iter<Count: Unsigned>(
         self,
     ) -> (
-        impl Iterator<Item = SectionSlot<Role>>,
+        impl Iterator<Item = PageDirSlot<Role>>,
         VSpace<Diff<PageDirFreeSlots, Count>, U0, Role>,
     )
     where
@@ -525,7 +508,7 @@ impl<PageDirFreeSlots: Unsigned, Role: CNodeRole> VSpace<PageDirFreeSlots, U0, R
         let page_dir_cptr = self.page_dir.cptr;
 
         let iter =
-            (start_slot_num..start_slot_num + Count::USIZE).map(move |slot_num| SectionSlot {
+            (start_slot_num..start_slot_num + Count::USIZE).map(move |slot_num| PageDirSlot {
                 page_dir: Cap {
                     cptr: page_dir_cptr,
                     _role: PhantomData,
@@ -593,18 +576,26 @@ impl<Role: CNodeRole> ReadyThread<Role> {
     }
 }
 
-/// A slot in a page directory, where a single section goes
-pub struct SectionSlot<Role: CNodeRole> {
+/// A slot in a page directory, where a single section or page table goes
+pub struct PageDirSlot<Role: CNodeRole> {
     page_dir: LocalCap<AssignedPageDirectory<U1, Role>>,
 }
 
-impl<Role: CNodeRole> SectionSlot<Role> {
+impl<Role: CNodeRole> PageDirSlot<Role> {
     pub fn map_section<Kind: MemoryKind>(
         self,
         section: LocalCap<UnmappedSection<Kind>>,
     ) -> Result<LocalCap<MappedSection<Role, Kind>>, SeL4Error> {
         let (mapped_section, _) = self.page_dir.map_section(section)?;
         Ok(mapped_section)
+    }
+
+    pub fn map_page_table(
+        self,
+        page_table: LocalCap<UnmappedPageTable>,
+    ) -> Result<LocalCap<MappedPageTable<paging::BasePageTableFreeSlots, Role>>, SeL4Error> {
+        let (mapped_page_table, _) = self.page_dir.map_page_table(page_table)?;
+        Ok(mapped_page_table)
     }
 }
 
@@ -671,6 +662,36 @@ impl<FreeSlots: Unsigned> LocalCap<ASIDPool<FreeSlots>> {
 
 // vspace related capability operations
 impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<AssignedPageDirectory<FreeSlots, Role>> {
+    pub fn reservation_iter<Count: Unsigned>(
+        self,
+    ) -> (
+        impl Iterator<Item = PageDirSlot<Role>>,
+        LocalCap<AssignedPageDirectory<Diff<FreeSlots, Count>, Role>>,
+    )
+    where
+        FreeSlots: Sub<Count>,
+        Diff<FreeSlots, Count>: Unsigned,
+    {
+        let start_slot_num = self.cap_data.next_free_slot;
+        let page_dir_cptr = self.cptr;
+
+        let iter =
+            (start_slot_num..start_slot_num + Count::USIZE).map(move |slot_num| PageDirSlot {
+                page_dir: Cap {
+                    cptr: page_dir_cptr,
+                    _role: PhantomData,
+                    cap_data: AssignedPageDirectory {
+                        // this is unused, but we have to fill it out.
+                        next_free_slot: slot_num,
+                        _free_slots: PhantomData,
+                        _role: PhantomData,
+                    },
+                },
+            });
+
+        (iter, self.skip_sections::<Count>())
+    }
+
     pub fn map_page_table(
         self,
         page_table: LocalCap<UnmappedPageTable>,
@@ -782,6 +803,47 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<AssignedPageDirectory<FreeSl
                 },
             },
         ))
+    }
+
+    /// Map the given page, assuming that the appropriate paging structures for
+    /// the target vaddr have already been set up.
+    pub(crate) fn map_page_direct<Kind: MemoryKind>(
+        &mut self,
+        page: LocalCap<UnmappedPage<Kind>>,
+        vaddr: usize,
+        rights: CapRights,
+    ) -> Result<LocalCap<MappedPage<Role, Kind>>, SeL4Error>
+    where
+        FreeSlots: Sub<U1>,
+        Diff<FreeSlots, U1>: Unsigned,
+    {
+        let err = unsafe {
+            seL4_ARM_Page_Map(
+                page.cptr,
+                self.cptr,
+                vaddr,
+                rights.into(),
+                seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
+                    | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled
+                    // | seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever,
+            )
+        };
+        if err != 0 {
+            return Err(SeL4Error::MapPage(err));
+        }
+
+        Ok(
+            // Page
+            Cap {
+                cptr: page.cptr,
+                _role: PhantomData,
+                cap_data: MappedPage {
+                    vaddr: vaddr,
+                    _role: PhantomData,
+                    _kind: PhantomData,
+                },
+            },
+        )
     }
 
     pub(super) fn skip_sections<Count: Unsigned>(

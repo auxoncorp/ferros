@@ -72,12 +72,13 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         .expect("initial alloc failure");
 
     let (ut18, ut18b, ut18c, _, root_cnode) = ut20.quarter(root_cnode)?;
-    let (ut16a, ut16b, _, ut16d, root_cnode) = ut18.quarter(root_cnode)?;
-    let (ut16e, caller_ut, producer_a_ut, waker_ut, root_cnode) = ut18b.quarter(root_cnode)?;
-    let (ut16i, _, _, _, root_cnode) = ut18c.quarter(root_cnode)?;
+
+    let (ut16a, ut16b, ut16c, ut16d, root_cnode) = ut18.quarter(root_cnode)?;
+    let (caller_ut, producer_a_ut, root_cnode) = ut18b.split(root_cnode)?;
+    let (waker_ut, _, root_cnode) = ut18c.split(root_cnode)?;
+
     let (ut14a, consumer_thread_ut, producer_a_thread_ut, waker_thread_ut, root_cnode) =
-        ut16e.quarter(root_cnode)?;
-    let (_ut14e, _, _, _, root_cnode) = ut16i.quarter(root_cnode)?;
+        ut16c.quarter(root_cnode)?;
     let (ut12, asid_pool_ut, shared_page_ut, shared_page_ut_b, root_cnode) =
         ut14a.quarter(root_cnode)?;
     let (ut10, scratch_page_table_ut, _, _, root_cnode) = ut12.quarter(root_cnode)?;

@@ -9,21 +9,27 @@ use crate::userland::{
     Untyped,
 };
 use sel4_sys::*;
-use typenum::operator_aliases::Sub1;
-use typenum::{Unsigned, B1, U1024, U12};
+use typenum::operator_aliases::{Diff, Prod, Sub1};
+use typenum::{Unsigned, B1, U0, U1024, U12, U19};
 
-// TODO: how many slots are there really? We should be able to know this at build
-// time.
-// Answer: The radix is 19, and there are 12 initial caps. But there are also a bunch
+// The root CNode radix is 19. Conservatively set aside 2^12 (the default root
+// cnode size) for system use. TODO: verify at build time that this is enough /
+// compute a better number
+type RootCNodeSize = Pow<U19>;
+type SystemProvidedCapCount = Pow<U12>;
+type RootCNodeAvailableSlots = Diff<RootCNodeSize, SystemProvidedCapCount>;
+
 // of random things in the bootinfo.
 // TODO: ideally, this should only be callable once in the process. Is that possible?
-pub fn root_cnode(_bootinfo: &'static seL4_BootInfo) -> LocalCap<CNode<U1024, role::Local>> {
+pub fn root_cnode(
+    bootinfo: &'static seL4_BootInfo,
+) -> LocalCap<CNode<RootCNodeAvailableSlots, role::Local>> {
     Cap {
         cptr: seL4_CapInitThreadCNode as usize,
         _role: PhantomData,
         cap_data: CNode {
             radix: 19,
-            next_free_slot: 1000, // TODO: look at the bootinfo to determine the real value
+            next_free_slot: bootinfo.empty.start,
             _free_slots: PhantomData,
             _role: PhantomData,
         },
@@ -32,8 +38,8 @@ pub fn root_cnode(_bootinfo: &'static seL4_BootInfo) -> LocalCap<CNode<U1024, ro
 
 pub mod paging {
     use crate::pow::Pow;
-    use typenum::operator_aliases::Diff;
-    use typenum::{U1, U1024, U12, U16, U20, U24, U8, U9};
+    use typenum::operator_aliases::{Diff, Prod};
+    use typenum::{U1, U1024, U12, U16, U20, U24, U6, U8, U9};
 
     pub type BaseASIDPoolFreeSlots = U1024;
 
@@ -49,15 +55,19 @@ pub mod paging {
     // PageTableBits + PageBits
     pub type PageTableTotalBits = U20;
 
+    pub type CodePageTableBits = U6;
+    pub type CodePageTableCount = Pow<CodePageTableBits>; // 64 page tables == 64 mb
+    pub type CodePageCount = Prod<CodePageTableCount, BasePageTableFreeSlots>; // 2^14
+
     // 0xe00000000 and up is reserved to the kernel; this translates to the last
     // 2^9 (512) pagedir entries.
     pub type BasePageDirFreeSlots = Diff<Pow<PageDirectoryBits>, Pow<U9>>;
 
     pub type BasePageTableFreeSlots = Pow<PageTableBits>;
 
-    // The first page table is already mapped for the root task, for the user
-    // image. (which also reserves 64k for the root task's stack)
-    pub type RootTaskReservedPageDirSlots = U1;
+    // The first N page tables are already mapped for the user image in the root
+    // task. (which also reserves 64k for the root task's stack)
+    pub type RootTaskReservedPageDirSlots = CodePageTableCount;
 
     pub type RootTaskPageDirFreeSlots = Diff<BasePageDirFreeSlots, RootTaskReservedPageDirSlots>;
 
@@ -68,17 +78,11 @@ pub mod paging {
 pub mod address_space {
     use crate::pow::Pow;
     use typenum::operator_aliases::Sum;
-    use typenum::{U0, U16, U20, U29, U30, U31};
+    use typenum::{U0, U100, U16, U20, U29, U30, U31, U64};
 
     // TODO this is a magic numbers we got from inspecting the binary.
     /// 0x00010000
     pub type ProgramStart = Pow<U16>;
-
-    pub type ProgramStartPageTableSlot = U0;
-
-    // TODO calculate the real one
-    /// 0x00080000 - the end of the range of the first page table
-    pub type ProgramEnd = Pow<U20>;
 
     /// 0xe0000000
     pub type KernelReservedStart = Sum<Pow<U31>, Sum<Pow<U30>, Pow<U29>>>;
@@ -93,6 +97,8 @@ pub struct BootInfo<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned> {
     pub irq_control: LocalCap<IRQControl>,
     user_image_frames_start: usize,
     user_image_frames_end: usize,
+    user_image_paging_start: usize,
+    user_image_paging_end: usize,
 }
 
 impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned> !Send
@@ -137,6 +143,8 @@ impl BootInfo<paging::BaseASIDPoolFreeSlots, paging::RootTaskPageDirFreeSlots> {
                 },
                 user_image_frames_start: bootinfo.userImageFrames.start,
                 user_image_frames_end: bootinfo.userImageFrames.end,
+                user_image_paging_start: bootinfo.userImagePaging.start,
+                user_image_paging_end: bootinfo.userImagePaging.end,
             },
             dest_cnode,
         )
@@ -146,13 +154,36 @@ impl BootInfo<paging::BaseASIDPoolFreeSlots, paging::RootTaskPageDirFreeSlots> {
 impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
     BootInfo<ASIDPoolFreeSlots, PageDirFreeSlots>
 {
+    pub fn user_image_page_tables_iter(
+        &self,
+    ) -> impl Iterator<Item = LocalCap<MappedPageTable<U0, role::Local>>> {
+        // TODO break out 100
+        let vaddr_iter = (0..100).map(|slot_num| slot_num << paging::PageTableTotalBits::USIZE);
+
+        (self.user_image_paging_start..self.user_image_paging_end)
+            .zip(vaddr_iter)
+            .map(|(cptr, vaddr)| Cap {
+                cptr,
+                cap_data: MappedPageTable {
+                    vaddr,
+                    next_free_slot: 0,
+                    _role: PhantomData,
+                    _free_slots: PhantomData,
+                },
+                _role: PhantomData,
+            })
+    }
+
     // TODO this doesn't enforce the aliasing constraints we want at the type
     // level. This can be modeled as an array (or other sized thing) once we
     // know how big the user image is.
     pub fn user_image_pages_iter(
         &self,
     ) -> impl Iterator<Item = LocalCap<MappedPage<role::Local, memory_kind::General>>> {
-        let vaddr_iter = (address_space::ProgramStart::USIZE..address_space::ProgramEnd::USIZE)
+        // Iterate over the entire address space's page addresses, starting at
+        // ProgramStart. This is truncated to the number of actual pages in the
+        // user image by zipping it with the range of frame cptrs below.
+        let vaddr_iter = (address_space::ProgramStart::USIZE..core::usize::MAX)
             .step_by(1 << paging::PageBits::USIZE);
 
         (self.user_image_frames_start..self.user_image_frames_end)
@@ -194,6 +225,8 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
                 irq_control: self.irq_control,
                 user_image_frames_start: self.user_image_frames_start,
                 user_image_frames_end: self.user_image_frames_end,
+                user_image_paging_start: self.user_image_paging_start,
+                user_image_paging_end: self.user_image_paging_end,
             },
         ))
     }
@@ -225,6 +258,8 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
                 irq_control: self.irq_control,
                 user_image_frames_start: self.user_image_frames_start,
                 user_image_frames_end: self.user_image_frames_end,
+                user_image_paging_start: self.user_image_paging_start,
+                user_image_paging_end: self.user_image_paging_end,
             },
         ))
     }
