@@ -1125,6 +1125,15 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<MappedPageTable<FreeSlots, R
 }
 
 impl<Role: CNodeRole, Kind: MemoryKind> LocalCap<MappedPage<Role, Kind>> {
+    pub fn physical_address(self) -> Result<usize, SeL4Error> {
+        let getaddr_t = unsafe { seL4_ARM_Page_GetAddress(self.cptr) };
+        if getaddr_t.error != 0 {
+            return Err(SeL4Error::GetPageAddr(getaddr_t.error as u32));
+        }
+
+        Ok(getaddr_t.paddr)
+    }
+
     pub fn unmap(self) -> Result<Cap<UnmappedPage<Kind>, role::Local>, SeL4Error> {
         let err = unsafe { seL4_ARM_Page_Unmap(self.cptr) };
         if err != 0 {
@@ -1135,6 +1144,17 @@ impl<Role: CNodeRole, Kind: MemoryKind> LocalCap<MappedPage<Role, Kind>> {
             cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         })
+    }
+}
+
+impl<Role: CNodeRole, Kind: MemoryKind> LocalCap<MappedSection<Role, Kind>> {
+    pub fn physical_address(self) -> Result<usize, SeL4Error> {
+        let getaddr_t = unsafe { seL4_ARM_Page_GetAddress(self.cptr) };
+        if getaddr_t.error != 0 {
+            return Err(SeL4Error::GetPageAddr(getaddr_t.error as u32));
+        }
+
+        Ok(getaddr_t.paddr)
     }
 }
 
