@@ -222,6 +222,33 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
         ))
     }
 
+    pub fn map_device_page<Kind: MemoryKind>(
+        self,
+        page: LocalCap<UnmappedPage<Kind>>,
+    ) -> Result<
+        (
+            LocalCap<MappedPage<Role, Kind>>,
+            VSpace<PageDirFreeSlots, Sub1<PageTableFreeSlots>, Role>,
+        ),
+        SeL4Error,
+    >
+    where
+        PageTableFreeSlots: Sub<B1>,
+        Sub1<PageTableFreeSlots>: Unsigned,
+    {
+        let mut page_dir = self.page_dir;
+        let (mapped_page, page_table) = self
+            .current_page_table
+            .map_device_page(page, &mut page_dir)?;
+        Ok((
+            mapped_page,
+            VSpace {
+                page_dir: page_dir,
+                current_page_table: page_table,
+            },
+        ))
+    }
+
     pub(super) fn skip_pages<Count: Unsigned>(
         self,
     ) -> VSpace<PageDirFreeSlots, Diff<PageTableFreeSlots, Count>, Role>
@@ -909,7 +936,51 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<MappedPageTable<FreeSlots, R
     pub fn map_page<PageDirFreeSlots: Unsigned, Kind: MemoryKind>(
         self,
         page: LocalCap<UnmappedPage<Kind>>,
+        mut page_dir: &mut LocalCap<AssignedPageDirectory<PageDirFreeSlots, Role>>,
+    ) -> Result<
+        (
+            LocalCap<MappedPage<Role, Kind>>,
+            LocalCap<MappedPageTable<Sub1<FreeSlots>, Role>>,
+        ),
+        SeL4Error,
+    >
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
+    {
+        self.internal_map_page(
+            page,
+            &mut page_dir,
+            CapRights::RW,
+            seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
+                | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled,
+        )
+    }
+
+    pub fn map_device_page<PageDirFreeSlots: Unsigned, Kind: MemoryKind>(
+        self,
+        page: LocalCap<UnmappedPage<Kind>>,
+        mut page_dir: &mut LocalCap<AssignedPageDirectory<PageDirFreeSlots, Role>>,
+    ) -> Result<
+        (
+            LocalCap<MappedPage<Role, Kind>>,
+            LocalCap<MappedPageTable<Sub1<FreeSlots>, Role>>,
+        ),
+        SeL4Error,
+    >
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
+    {
+        self.internal_map_page(page, &mut page_dir, CapRights::RW, 0)
+    }
+
+    fn internal_map_page<PageDirFreeSlots: Unsigned, Kind: MemoryKind>(
+        self,
+        page: LocalCap<UnmappedPage<Kind>>,
         page_dir: &mut LocalCap<AssignedPageDirectory<PageDirFreeSlots, Role>>,
+        rights: CapRights,
+        attrs: u32,
     ) -> Result<
         (
             LocalCap<MappedPage<Role, Kind>>,
@@ -925,17 +996,7 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<MappedPageTable<FreeSlots, R
             self.cap_data.vaddr + (self.cap_data.next_free_slot << paging::PageBits::USIZE);
 
         let err = unsafe {
-            seL4_ARM_Page_Map(
-                page.cptr,
-                page_dir.cptr,
-                page_vaddr,
-                CapRights::RW.into(), // rights
-                // TODO: JON! What do we write here? The default (according to
-                // sel4_ appears to be pageCachable | parityEnabled)
-                seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
-                    | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled
-                    // | seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever,
-            )
+            seL4_ARM_Page_Map(page.cptr, page_dir.cptr, page_vaddr, rights.into(), attrs)
         };
         if err != 0 {
             return Err(SeL4Error::MapPage(err));
