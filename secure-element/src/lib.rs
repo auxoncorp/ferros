@@ -11,8 +11,6 @@ pub mod interchange;
 pub mod protocol;
 pub(crate) mod repr;
 
-// TODO - expect to be switching to using a trait that also involves
-// dragging meaning out of the response as well
 pub struct Command<I: Instruction> {
     class: Class,
     instruction: I,
@@ -46,26 +44,18 @@ pub struct ValueOutOfRange {
 // TODO - Add implementations from the command set in 7816-4 Table 4.1
 // as broader support for 7816-4 comes into scope.
 pub trait Instruction {
-    type Response: Sized;
-
     fn to_instruction_bytes(&'_ self) -> Result<InstructionBytes<'_>, CommandSerializationError>;
-
-    fn interpret_response(
-        &'_ self,
-        instruction_bytes: InstructionBytes<'_>,
-        // Might also need SW1/SW2
-        response_bytes: &mut [u8],
-    ) -> Result<Self::Response, CommandDeserializationError>;
 }
 
+#[derive(Debug, PartialEq)]
 pub struct BufferUnavailableError;
 
 pub trait BufferSource {
     fn request_buffer(&mut self, len: usize) -> Result<&mut [u8], BufferUnavailableError>;
 }
 
-/// Serialization-oriented representation of the instruction-specific portions of a Command Header [INS, P1, P2, and maybe P3],
-/// as well as the associated command data bytes
+/// Serialization-oriented representation of the instruction-specific (read: non-CLAss) portions of a Command Header [INS, P1, P2],
+/// as well as the associated command data bytes and an expected-response-length hint.
 pub struct InstructionBytes<'a> {
     /// INS
     instruction: u8,
@@ -85,8 +75,6 @@ pub struct InstructionBytes<'a> {
     /// Le. Length expected for the response data, specified separate from the response data field slice length
     /// because... probably... sometimes... they diverge from direct interpretation. E.G. 0 has specialized meaning..
     expected_response_length: ExpectedResponseLength,
-    // TODO - resolve
-    //response_data_field: Option<&'a mut [u8]>
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

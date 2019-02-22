@@ -1,6 +1,6 @@
 use super::super::{
-    BufferSource, BufferUnavailableError, Command, CommandDeserializationError,
-    CommandSerializationError, ExpectedResponseLength, Instruction,
+    BufferUnavailableError, Command, CommandDeserializationError, CommandSerializationError,
+    ExpectedResponseLength, Instruction,
 };
 use core::fmt::Debug;
 use crate::repr::split_u16;
@@ -76,76 +76,140 @@ where
 }
 
 impl<C: Connection> ProtocolState<C> {
-    pub fn transmit_command<B: BufferSource, I: Instruction>(
+    pub fn transmit_command<'b, I: Instruction>(
         &mut self,
         command: &Command<I>,
-        buffer_source: &mut B,
-    ) -> Result<I::Response, ProtocolError> {
+        response_body_buffer: &'b mut [u8],
+    ) -> Result<(&'b [u8], StatusCompleted), ProtocolError> {
+        self.transmit_serialized_command(&serialize(command)?, response_body_buffer)
+    }
+    pub fn transmit_serialized_command<'b>(
+        &mut self,
+        serialized: &SerializedCommandT0<'_>,
+        response_body_buffer: &'b mut [u8],
+    ) -> Result<(&'b [u8], StatusCompleted), ProtocolError> {
         // Send 5 bytes for the command header
         // at this top level, then hand off reference slices to the rest of the command data
         // to a procedure-byte-driven loop.
-        let class_byte = command.class.to_byte();
-        self.connection.send(class_byte)?; // CLA
-        let i = command.instruction.to_instruction_bytes()?;
-        self.connection.send(i.instruction)?; // INS
-        self.connection.send(i.parameter_1)?; // P1
-        self.connection.send(i.parameter_2)?; // P2
+        self.connection.send(serialized.cla)?; // CLA
+        self.connection.send(serialized.ins)?; // INS
+        self.connection.send(serialized.p1)?; // P1
+        self.connection.send(serialized.p2)?; // P2
+        self.connection.send(serialized.p3)?; // Final byte in the 5-byte command header
 
-        // P3's contents are highly case-specific
-        let (cmd_len_kind, rsp_len_kind) =
-            LengthFieldKind::infer_command_response_length_pair_kinds(
-                &i.command_data_field,
-                &i.expected_response_length,
-            );
-        if APDUCase::from((cmd_len_kind, rsp_len_kind)) == APDUCase::Invalid {
-            return Err(ProtocolError::InvalidInterpretation);
-        }
-
-        let mut leftover_lc_buffer: [u8; 2] = [0, 0];
-        let mut leftover_le_buffer: [u8; 2] = [0, 0];
-
-        let case_agnostic: Agnostic = compute_case_agnostic_transfer_plan(
-            &i,
-            cmd_len_kind,
-            rsp_len_kind,
-            &mut leftover_lc_buffer,
-            &mut leftover_le_buffer,
-        )?;
-        self.connection.send(case_agnostic.p3)?; // Final byte in the 5-byte command header
-
-        let response_body = buffer_source.request_buffer(case_agnostic.expected_response_len)?;
-        let _status = run_procedure_byte_loop(
-            &mut self.connection,
-            command.class.to_byte(),
-            &i,
-            &case_agnostic,
-            response_body,
-        )?;
-        // TODO - consider whether to pass StatusCompleted content (since it may contain warning data)
-        // to the response-interpretation layer
-        Ok(command.instruction.interpret_response(i, response_body)?)
+        let status =
+            run_procedure_byte_loop(&mut self.connection, &serialized, response_body_buffer)?;
+        // TODO - take a subslice of response_body_buffer based on the actual amount of bytes received...
+        Ok((response_body_buffer, status))
     }
 }
 
-/// Track data that is expected to be transferred for a command,
-/// represented in a way that is case-agnostic.
+/// An internal, intermediate structue during command serialization.
+///
+/// Track mostly-post-command-header data that is expected to be transferred for a command
+/// as part of the procedure byte loop, represented in a way that is case-agnostic.
 struct Agnostic<'a> {
     /// Unlike the other fields, this one does not play into the procedure byte loop,
     /// as it represents the fifth byte of the command header and is sent before the procedure loop.
     p3: u8,
+
+    // This field is for internal decision-making,
+    // and is not directly transmitted
     expected_response_len: usize,
-    leftover_lc_len: &'a [u8],
+
+    lc_buffer: [u8; 2],
+    lc_buffer_len: usize,
+
     data_field: &'a [u8],
-    leftover_le_len: &'a [u8],
+
+    le_buffer: [u8; 2],
+    le_buffer_len: usize,
+}
+
+pub struct SerializedCommandT0<'a> {
+    // Mandatory command header fields
+    cla: u8,
+    ins: u8,
+    p1: u8,
+    p2: u8,
+    /// This may be (part of) Lc or (part of) Le or an empty marker
+    p3: u8,
+
+    /// Any remaining bytes relevant to Lc not already encoded in p3 or intentionally absent
+    lc_buffer: [u8; 2],
+    lc_buffer_len: usize,
+
+    command_data_field: &'a [u8],
+
+    // Any remaining bytes relevant to Le not already encoded in p3 or intentionally absent
+    le_buffer: [u8; 2],
+    le_buffer_len: usize,
+
+    // This field is for internal decision-making,
+    // and is not directly transmitted
+    expected_response_len: usize,
+}
+impl<'a> SerializedCommandT0<'a> {
+    pub fn leftover_lc_len(&self) -> &[u8] {
+        &self.lc_buffer[..self.lc_buffer_len]
+    }
+
+    pub fn leftover_le_len(&self) -> &[u8] {
+        &self.le_buffer[..self.le_buffer_len]
+    }
+
+    pub fn expected_response_len(&self) -> usize {
+        self.expected_response_len
+    }
+}
+
+pub fn serialize<'a, I: Instruction>(
+    c: &'a Command<I>,
+) -> Result<SerializedCommandT0<'a>, ProtocolError> {
+    let cla = c.class.to_byte();
+    let instruction: &'a Instruction = &c.instruction;
+    let ins_bytes: InstructionBytes<'a> = instruction.to_instruction_bytes()?;
+    let ins = ins_bytes.instruction;
+    let p1 = ins_bytes.parameter_1;
+    let p2 = ins_bytes.parameter_2;
+
+    let (cmd_len_kind, rsp_len_kind) = LengthFieldKind::infer_command_response_length_pair_kinds(
+        &ins_bytes.command_data_field,
+        ins_bytes.expected_response_length,
+    );
+
+    let Agnostic {
+        p3,
+        expected_response_len,
+        lc_buffer,
+        lc_buffer_len,
+        data_field,
+        le_buffer,
+        le_buffer_len,
+    } = compute_case_agnostic_transfer_plan(&ins_bytes, cmd_len_kind, rsp_len_kind)?;
+
+    Ok(SerializedCommandT0 {
+        cla,
+        ins,
+        p1,
+        p2,
+        p3,
+        lc_buffer,
+        lc_buffer_len,
+        command_data_field: data_field,
+        le_buffer,
+        le_buffer_len,
+        expected_response_len,
+    })
 }
 
 fn compute_case_agnostic_transfer_plan<'a>(
-    i: &'a InstructionBytes,
+    i: &InstructionBytes<'a>,
     cmd_len_kind: LengthFieldKind,
     rsp_len_kind: LengthFieldKind,
-    leftover_lc_buffer: &'a mut [u8; 2],
-    leftover_le_buffer: &'a mut [u8; 2],
 ) -> Result<Agnostic<'a>, ProtocolError> {
+    let mut lc_buffer: [u8; 2] = [0, 0];
+    let mut le_buffer: [u8; 2] = [0, 0];
     let agnostic = match (cmd_len_kind, rsp_len_kind) {
         (LengthFieldKind::None, LengthFieldKind::None) => {
             // ISO 7816-3, 12.1.2, Case 1
@@ -153,9 +217,11 @@ fn compute_case_agnostic_transfer_plan<'a>(
             Agnostic {
                 p3: 0,
                 expected_response_len: 0,
-                leftover_lc_len: &[],
+                lc_buffer,
+                lc_buffer_len: 0,
                 data_field: &[],
-                leftover_le_len: &[],
+                le_buffer,
+                le_buffer_len: 0,
             }
         }
         (LengthFieldKind::None, LengthFieldKind::Short) => {
@@ -167,17 +233,21 @@ fn compute_case_agnostic_transfer_plan<'a>(
                         Agnostic {
                             p3: 0, // '0' means the short maximum, 256
                             expected_response_len: 256,
-                            leftover_lc_len: &[],
+                            lc_buffer,
+                            lc_buffer_len: 0,
                             data_field: &[],
-                            leftover_le_len: &[],
+                            le_buffer,
+                            le_buffer_len: 0,
                         }
                     }
                     len if len < 256 => Agnostic {
                         p3: len as u8,
                         expected_response_len: len as usize,
-                        leftover_lc_len: &[],
+                        lc_buffer,
+                        lc_buffer_len: 0,
                         data_field: &[],
-                        leftover_le_len: &[],
+                        le_buffer,
+                        le_buffer_len: 0,
                     },
                     _ => return Err(ProtocolError::InvalidInterpretation),
                 }
@@ -193,27 +263,30 @@ fn compute_case_agnostic_transfer_plan<'a>(
                     // Note that the presence of a leading 0-byte for the expected response length
                     // is present in the 2E case, but *not* in the 4E case
                     let p3 = 0;
-                    let rsp_len_halves = split_u16(r_len);
-                    leftover_le_buffer[0] = rsp_len_halves[0];
-                    leftover_le_buffer[1] = rsp_len_halves[1];
+                    le_buffer = split_u16(r_len);
                     Agnostic {
                         p3,
                         expected_response_len: r_len as usize,
-                        leftover_lc_len: &[],
+                        lc_buffer,
+                        lc_buffer_len: 0,
                         data_field: &[],
-                        leftover_le_len: &leftover_le_buffer[..],
+                        le_buffer,
+                        le_buffer_len: 2,
                     }
                 }
                 ExpectedResponseLength::ExtendedMaximum65536 => {
                     // Note that the presence of a leading 0-byte for the expected response length
                     // is present in the 2E case, but *not* in the 4E case
+                    // The following two 0 bytes together mean the maximum, 65536.
+                    le_buffer = [0, 0];
                     Agnostic {
                         p3: 0,
                         expected_response_len: 65_536,
-                        leftover_lc_len: &[],
+                        lc_buffer,
+                        lc_buffer_len: 0,
                         data_field: &[],
-                        // The following two 0 bytes together mean the maximum, 65536.
-                        leftover_le_len: &[0, 0],
+                        le_buffer,
+                        le_buffer_len: 2,
                     }
                 }
             }
@@ -226,9 +299,11 @@ fn compute_case_agnostic_transfer_plan<'a>(
                     len if len <= 255 => Agnostic {
                         p3: len as u8,
                         expected_response_len: 0,
-                        leftover_lc_len: &[],
+                        lc_buffer,
+                        lc_buffer_len: 0,
                         data_field: &cmd_field,
-                        leftover_le_len: &[],
+                        le_buffer,
+                        le_buffer_len: 0,
                     },
                     _ => return Err(ProtocolError::InvalidInterpretation),
                 }
@@ -243,15 +318,15 @@ fn compute_case_agnostic_transfer_plan<'a>(
                     0 => return Err(ProtocolError::InvalidInterpretation),
                     len if len <= core::u16::MAX as usize => {
                         let p3 = 0;
-                        let cmd_len_halves = split_u16(len as u16);
-                        leftover_lc_buffer[0] = cmd_len_halves[0];
-                        leftover_lc_buffer[1] = cmd_len_halves[1];
+                        lc_buffer = split_u16(len as u16);
                         Agnostic {
                             p3,
                             expected_response_len: 0,
-                            leftover_lc_len: &leftover_lc_buffer[..],
+                            lc_buffer,
+                            lc_buffer_len: 2,
                             data_field: cmd_field,
-                            leftover_le_len: &[],
+                            le_buffer,
+                            le_buffer_len: 0,
                         }
                     }
                     _ => {
@@ -269,29 +344,36 @@ fn compute_case_agnostic_transfer_plan<'a>(
             if let Some(cmd_field) = i.command_data_field {
                 match cmd_field.len() {
                     0 => return Err(ProtocolError::InvalidInterpretation),
-                    len if len <= 255 => {
-                        let p3 = len as u8;
+                    cmd_len if cmd_len <= 255 => {
+                        let p3 = cmd_len as u8;
                         if let ExpectedResponseLength::NonZero(r_len) = i.expected_response_length {
                             match r_len {
                                 0 => return Err(ProtocolError::InvalidInterpretation),
                                 256 => {
+                                    // '0' means the short maximum, 256
+                                    le_buffer[0] = 0;
                                     Agnostic {
                                         p3,
                                         expected_response_len: 256,
-                                        leftover_lc_len: &[],
+                                        lc_buffer,
+                                        lc_buffer_len: 0,
                                         data_field: cmd_field,
-                                        // '0' means the short maximum, 256
-                                        leftover_le_len: &[0],
+                                        le_buffer,
+                                        // Only need to send a single byte here in short mode
+                                        le_buffer_len: 1,
                                     }
                                 }
                                 rsp_len if rsp_len < 256 => {
-                                    leftover_le_buffer[0] = rsp_len as u8;
+                                    le_buffer[0] = rsp_len as u8;
                                     Agnostic {
                                         p3,
                                         expected_response_len: rsp_len as usize,
-                                        leftover_lc_len: &[],
+                                        lc_buffer,
+                                        lc_buffer_len: 0,
                                         data_field: cmd_field,
-                                        leftover_le_len: &leftover_le_buffer[..1],
+                                        le_buffer,
+                                        // Only need to send a single byte here in short mode
+                                        le_buffer_len: 1,
                                     }
                                 }
                                 _ => return Err(ProtocolError::InvalidInterpretation),
@@ -311,35 +393,37 @@ fn compute_case_agnostic_transfer_plan<'a>(
             if let Some(cmd_field) = i.command_data_field {
                 match cmd_field.len() {
                     0 => return Err(ProtocolError::InvalidInterpretation),
-                    len if len <= core::u16::MAX as usize => {
+                    cmd_len if cmd_len <= core::u16::MAX as usize => {
                         let p3 = 0;
-                        let cmd_len_halves = split_u16(len as u16);
-                        leftover_lc_buffer[0] = cmd_len_halves[0];
-                        leftover_lc_buffer[1] = cmd_len_halves[1];
+                        lc_buffer = split_u16(cmd_len as u16);
                         match i.expected_response_length {
                             ExpectedResponseLength::None => {
                                 return Err(ProtocolError::InvalidInterpretation)
                             }
                             ExpectedResponseLength::NonZero(r_len) => {
-                                let rsp_len_halves = split_u16(r_len);
-                                leftover_le_buffer[0] = rsp_len_halves[0];
-                                leftover_le_buffer[1] = rsp_len_halves[1];
+                                le_buffer = split_u16(r_len);
                                 Agnostic {
                                     p3,
                                     expected_response_len: r_len as usize,
-                                    leftover_lc_len: &leftover_lc_buffer[..],
+                                    lc_buffer,
+                                    lc_buffer_len: 2,
                                     data_field: cmd_field,
-                                    leftover_le_len: &leftover_le_buffer[..],
+                                    le_buffer,
+                                    le_buffer_len: 2,
                                 }
                             }
                             ExpectedResponseLength::ExtendedMaximum65536 => {
+                                // The following two 0 bytes together mean the maximum, 65536.
+                                le_buffer[0] = 0;
+                                le_buffer[1] = 0;
                                 Agnostic {
                                     p3,
                                     expected_response_len: 65_536,
-                                    leftover_lc_len: &leftover_lc_buffer[..],
+                                    lc_buffer,
+                                    lc_buffer_len: 2,
                                     data_field: cmd_field,
-                                    // The following two 0 bytes together mean the maximum, 65536.
-                                    leftover_le_len: &[0, 0],
+                                    le_buffer,
+                                    le_buffer_len: 2,
                                 }
                             }
                         }
@@ -366,9 +450,7 @@ fn compute_case_agnostic_transfer_plan<'a>(
 
 fn run_procedure_byte_loop<C: Connection>(
     connection: &mut C,
-    class_byte: u8,
-    instruction_bytes: &InstructionBytes<'_>,
-    agnostic: &Agnostic,
+    agnostic: &SerializedCommandT0,
     response_body_buffer: &mut [u8],
 ) -> Result<StatusCompleted, ProtocolError> {
     const HEXTY: u8 = 0b0110_0000; // Hex '60'
@@ -400,9 +482,9 @@ fn run_procedure_byte_loop<C: Connection>(
     }
 
     let mut cursor = match (
-        agnostic.leftover_lc_len.len(),
-        agnostic.data_field.len(),
-        agnostic.leftover_le_len.len(),
+        agnostic.lc_buffer_len,
+        agnostic.command_data_field.len(),
+        agnostic.le_buffer_len,
     ) {
         (0, 0, 0) => {
             if agnostic.expected_response_len == 0 {
@@ -419,8 +501,8 @@ fn run_procedure_byte_loop<C: Connection>(
     if cursor == Cursor::Done {
         return Err(ProtocolError::InvalidInterpretation);
     }
-    let ack_all_byte = instruction_bytes.instruction;
-    let ack_single_byte = instruction_bytes.instruction ^ 0b1111_1111;
+    let ack_all_byte = agnostic.ins;
+    let ack_single_byte = agnostic.ins ^ 0b1111_1111;
     let ack_all_byte_chaining = 0xC0;
     let ack_single_byte_chaining = 0xC0 ^ 0b1111_1111;
 
@@ -447,7 +529,7 @@ fn run_procedure_byte_loop<C: Connection>(
                         StatusCompleted::NormallyWithBytesRemaining(bytes_remaining) => {
                             // Response chaining, per 7816-4 5.3.4. Send GET RESPONSE command
                             // TODO - If bytes_remaining < 255, should we make a copy of the class and toggle the `is_last` flag? before sending?
-                            connection.send(class_byte)?; // CLA
+                            connection.send(agnostic.cla)?; // CLA
                             connection.send(0xC0)?; // INS
                             connection.send(0x0)?; // P1
                             connection.send(0x0)?; // P2
@@ -466,9 +548,9 @@ fn run_procedure_byte_loop<C: Connection>(
             {
                 match cursor {
                     Cursor::OnLCBytes(i) => {
-                        send_all(connection, &agnostic.leftover_lc_len[i..])?;
-                        send_all(connection, agnostic.data_field)?;
-                        send_all(connection, agnostic.leftover_le_len)?;
+                        send_all(connection, &agnostic.leftover_lc_len()[i..])?;
+                        send_all(connection, agnostic.command_data_field)?;
+                        send_all(connection, agnostic.leftover_le_len())?;
                         for slot in response_body_buffer
                             .iter_mut()
                             .take(agnostic.expected_response_len)
@@ -480,8 +562,8 @@ fn run_procedure_byte_loop<C: Connection>(
                         cursor = Cursor::OnTrailerBytes(agnostic.expected_response_len, false);
                     }
                     Cursor::OnCmdDataFieldBytes(i) => {
-                        send_all(connection, &agnostic.data_field[i..])?;
-                        send_all(connection, agnostic.leftover_le_len)?;
+                        send_all(connection, &agnostic.command_data_field[i..])?;
+                        send_all(connection, agnostic.leftover_le_len())?;
                         for slot in response_body_buffer
                             .iter_mut()
                             .take(agnostic.expected_response_len)
@@ -493,7 +575,7 @@ fn run_procedure_byte_loop<C: Connection>(
                         cursor = Cursor::OnTrailerBytes(agnostic.expected_response_len, false);
                     }
                     Cursor::OnLEBytes(i) => {
-                        send_all(connection, &agnostic.leftover_le_len[i..])?;
+                        send_all(connection, &agnostic.leftover_le_len()[i..])?;
                         for slot in response_body_buffer
                             .iter_mut()
                             .take(agnostic.expected_response_len)
@@ -527,9 +609,9 @@ fn run_procedure_byte_loop<C: Connection>(
             {
                 match cursor {
                     Cursor::OnLCBytes(i) => {
-                        connection.send(agnostic.leftover_lc_len[i])?;
-                        cursor = if i + 1 > agnostic.leftover_lc_len.len() {
-                            match (agnostic.data_field.len(), agnostic.leftover_le_len.len()) {
+                        connection.send(agnostic.leftover_lc_len()[i])?;
+                        cursor = if i + 1 > agnostic.lc_buffer_len {
+                            match (agnostic.command_data_field.len(), agnostic.le_buffer_len) {
                                 (0, 0) => {
                                     if agnostic.expected_response_len == 0 {
                                         Cursor::OnTrailerBytes(0, false)
@@ -545,9 +627,9 @@ fn run_procedure_byte_loop<C: Connection>(
                         }
                     }
                     Cursor::OnCmdDataFieldBytes(i) => {
-                        connection.send(agnostic.data_field[i])?;
-                        cursor = if i + 1 > agnostic.data_field.len() {
-                            if !agnostic.leftover_le_len.is_empty() {
+                        connection.send(agnostic.command_data_field[i])?;
+                        cursor = if i + 1 > agnostic.command_data_field.len() {
+                            if agnostic.le_buffer_len > 0 {
                                 Cursor::OnLEBytes(0)
                             } else if agnostic.expected_response_len == 0 {
                                 Cursor::OnTrailerBytes(0, false)
@@ -559,8 +641,8 @@ fn run_procedure_byte_loop<C: Connection>(
                         };
                     }
                     Cursor::OnLEBytes(i) => {
-                        connection.send(agnostic.leftover_le_len[i])?;
-                        cursor = if i + 1 > agnostic.leftover_le_len.len() {
+                        connection.send(agnostic.leftover_le_len()[i])?;
+                        cursor = if i + 1 > agnostic.le_buffer_len {
                             if agnostic.expected_response_len == 0 {
                                 Cursor::OnTrailerBytes(0, false)
                             } else {
@@ -606,7 +688,7 @@ fn send_all<C: Connection>(connection: &mut C, bytes: &[u8]) -> Result<usize, Tr
 /// This comes from -3 12.2.1 Table 14. It uses the status bytes SW1 &
 /// SW2 to ascribe a status to a command/response exchange.
 #[derive(Debug, PartialEq)]
-enum StatusCompleted {
+pub enum StatusCompleted {
     /// A fixed value of 0x9000.
     Normally,
     /// 0x61XY: The process completed successfully, but the card has
@@ -723,14 +805,14 @@ enum LengthFieldKind {
 impl LengthFieldKind {
     fn infer_command_response_length_pair_kinds(
         command_data_field: &Option<&[u8]>,
-        expected_response_length: &ExpectedResponseLength,
+        expected_response_length: ExpectedResponseLength,
     ) -> (LengthFieldKind, LengthFieldKind) {
         match (command_data_field, expected_response_length) {
             (None, ExpectedResponseLength::None) => (LengthFieldKind::None, LengthFieldKind::None), // Case 1
             (None, ExpectedResponseLength::ExtendedMaximum65536) => {
                 (LengthFieldKind::None, LengthFieldKind::Extended)
             } // Case 2E
-            (None, ExpectedResponseLength::NonZero(rsp_len)) => match *rsp_len {
+            (None, ExpectedResponseLength::NonZero(rsp_len)) => match rsp_len {
                 0 => (LengthFieldKind::None, LengthFieldKind::None), // Case 1
                 r_len if r_len > 0 && r_len <= 256 => {
                     (LengthFieldKind::None, LengthFieldKind::Short)
@@ -751,7 +833,7 @@ impl LengthFieldKind {
                 }
             }
             (Some(cmd_field), ExpectedResponseLength::NonZero(rsp_len)) => {
-                match (cmd_field.len(), *rsp_len) {
+                match (cmd_field.len(), rsp_len) {
                     (0, 0) => (LengthFieldKind::None, LengthFieldKind::None), // Case 1
                     (0, r_len) if r_len > 0 && r_len <= 256 => {
                         (LengthFieldKind::None, LengthFieldKind::Short)
@@ -799,7 +881,7 @@ impl From<(LengthFieldKind, LengthFieldKind)> for APDUCase {
 #[cfg(test)]
 mod test_protocol {
     use super::*;
-    use crate::{Class, Interindustry, InterindustrySecureMessaging};
+    use crate::{BufferSource, Class, Interindustry, InterindustrySecureMessaging};
     use std::collections::VecDeque;
     use std::vec::Vec;
 
@@ -832,8 +914,6 @@ mod test_protocol {
     }
 
     impl<'a> Instruction for DynamicInstruction<'a> {
-        type Response = usize;
-
         fn to_instruction_bytes(
             &'_ self,
         ) -> Result<InstructionBytes<'_>, CommandSerializationError> {
@@ -844,18 +924,6 @@ mod test_protocol {
                 command_data_field: self.command_data_field,
                 expected_response_length: self.expected_response_length,
             })
-        }
-
-        fn interpret_response(
-            &self,
-            instruction_bytes: InstructionBytes,
-            response_bytes: &mut [u8],
-        ) -> Result<Self::Response, CommandDeserializationError> {
-            let mut sum: usize = 0;
-            for b in response_bytes {
-                sum = sum.saturating_add(usize::from(*b))
-            }
-            Ok(sum)
         }
     }
 
@@ -900,11 +968,17 @@ mod test_protocol {
                 .expect("Invalid class channel"),
         );
         let command = Command::<DynamicInstruction> { class, instruction };
+        let serialized = serialize(&command).expect("Serialization troubles");
         let mut buffer_source = TinyBufferSource::new();
-        let response = ps
-            .transmit_command(&command, &mut buffer_source)
-            .expect("We're trying to stay on the happpy path here");
-        assert_eq!(0, response);
+        let resp_size = serialized.expected_response_len();
+        let response_buffer = buffer_source
+            .request_buffer(resp_size)
+            .expect("Unable to get a response buffer");
+        let (output_buffer, status) = ps
+            .transmit_command(&command, response_buffer)
+            .expect("We're trying to stay on the happy path here");
+        assert!(output_buffer.is_empty());
+        assert_eq!(StatusCompleted::Normally, status);
     }
 
     #[test]
@@ -931,11 +1005,18 @@ mod test_protocol {
                 .expect("Invalid class channel"),
         );
         let command = Command::<DynamicInstruction> { class, instruction };
+        let serialized = serialize(&command).expect("Serialization troubles");
         let mut buffer_source = TinyBufferSource::new();
-        let result = ps.transmit_command(&command, &mut buffer_source);
+        // TODO - get real response size from instruction
+        let resp_size = serialized.expected_response_len();
+        let response_buffer = buffer_source
+            .request_buffer(resp_size)
+            .expect("Unable to get a response buffer");
+        let result = ps.transmit_serialized_command(&serialized, response_buffer);
         println!("PS: {:?}", ps);
-        let response = result.expect("Stay on the sunny side");
-        assert_eq!(6, response);
+        let (output_buffer, status) = result.expect("Stay on the sunny side");
+        assert_eq!(StatusCompleted::Normally, status);
+        assert_eq!(6u8, output_buffer.into_iter().sum());
     }
 
 }

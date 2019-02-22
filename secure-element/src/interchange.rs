@@ -1,54 +1,29 @@
 /// Commands relating to data interchange,
 /// as defined in 7816-4 (2013) section 11
 use super::{
-    CommandDeserializationError, CommandSerializationError, CommandSpecificationError, Instruction,
+    CommandSerializationError, CommandSpecificationError, ExpectedResponseLength, Instruction,
     InstructionBytes, ValueOutOfRange,
 };
 use crate::repr::split_u16;
-use crate::ExpectedResponseLength;
 
 /// The READ BINARY command, see section 11.2.2 and 11.2.3 of 7816-4,
 /// Has 'B0' and 'B1' INS options, with further... interesting... subvariants
 pub enum ReadBinary {
     ReadCurrentEF(ReadCurrentEF),
-    ReadShortIdentifierEF(ReadShortIdentifierEF),
-    ReadShortIdentifierWithDataObjectOffset(ReadShortIdentifierWithDataObjectOffset),
-    ReadFileIdentifierWithDataObjectOffset(ReadFileIdentifierWithDataObjectOffset),
-    ReadCurrentEFWithDataObjectOffset(ReadCurrentEFWithDataObjectOffset),
+    ReadShortIdentifierEF,
+    ReadShortIdentifierWithDataObjectOffset,
+    ReadFileIdentifierWithDataObjectOffset,
+    ReadCurrentEFWithDataObjectOffset,
 }
 
 impl Instruction for ReadBinary {
-    type Response = ();
-
     fn to_instruction_bytes(&'_ self) -> Result<InstructionBytes<'_>, CommandSerializationError> {
         match self {
             ReadBinary::ReadCurrentEF(c) => c.to_instruction_bytes(),
-            ReadBinary::ReadShortIdentifierEF(c) => c.to_instruction_bytes(),
-            ReadBinary::ReadShortIdentifierWithDataObjectOffset(c) => c.to_instruction_bytes(),
-            ReadBinary::ReadFileIdentifierWithDataObjectOffset(c) => c.to_instruction_bytes(),
-            ReadBinary::ReadCurrentEFWithDataObjectOffset(c) => c.to_instruction_bytes(),
-        }
-    }
-
-    fn interpret_response(
-        &self,
-        instruction_bytes: InstructionBytes,
-        response_bytes: &mut [u8],
-    ) -> Result<Self::Response, CommandDeserializationError> {
-        match self {
-            ReadBinary::ReadCurrentEF(c) => c.interpret_response(instruction_bytes, response_bytes),
-            ReadBinary::ReadShortIdentifierEF(c) => {
-                c.interpret_response(instruction_bytes, response_bytes)
-            }
-            ReadBinary::ReadShortIdentifierWithDataObjectOffset(c) => {
-                c.interpret_response(instruction_bytes, response_bytes)
-            }
-            ReadBinary::ReadFileIdentifierWithDataObjectOffset(c) => {
-                c.interpret_response(instruction_bytes, response_bytes)
-            }
-            ReadBinary::ReadCurrentEFWithDataObjectOffset(c) => {
-                c.interpret_response(instruction_bytes, response_bytes)
-            }
+            ReadBinary::ReadShortIdentifierEF => unimplemented!(),
+            ReadBinary::ReadShortIdentifierWithDataObjectOffset => unimplemented!(),
+            ReadBinary::ReadFileIdentifierWithDataObjectOffset => unimplemented!(),
+            ReadBinary::ReadCurrentEFWithDataObjectOffset => unimplemented!(),
         }
     }
 }
@@ -72,19 +47,15 @@ impl ReadCurrentEF {
                 },
             ))
         } else {
-            Ok(ReadCurrentEF { current_ef_offset })
+            Ok(ReadCurrentEF {
+                current_ef_offset,
+                //buffer: [0u8; 256] ,
+            })
         }
     }
-
-    // TODO - CLEANUP
-    //pub fn current_ef_offset(&self) -> u16 {
-    //    self.current_ef_offset
-    //}
 }
 
 impl Instruction for ReadCurrentEF {
-    type Response = ();
-
     fn to_instruction_bytes(&self) -> Result<InstructionBytes, CommandSerializationError> {
         // B0 and bit b8 of P1 is 0, then the rest of P1-P2 encodes a 15-bit offset in the current EF
         let offset_halves = split_u16(self.current_ef_offset);
@@ -95,82 +66,5 @@ impl Instruction for ReadCurrentEF {
             command_data_field: None,
             expected_response_length: ExpectedResponseLength::ExtendedMaximum65536,
         })
-    }
-
-    fn interpret_response(
-        &self,
-        instruction_bytes: InstructionBytes,
-        response_bytes: &mut [u8],
-    ) -> Result<Self::Response, CommandDeserializationError> {
-        // TODO - do something with all those lovely bytes
-        unimplemented!()
-    }
-}
-
-pub struct ReadShortIdentifierEF {}
-impl Instruction for ReadShortIdentifierEF {
-    type Response = ();
-
-    fn to_instruction_bytes(&self) -> Result<InstructionBytes, CommandSerializationError> {
-        unimplemented!()
-    }
-
-    fn interpret_response(
-        &self,
-        _instruction_bytes: InstructionBytes,
-        _response_bytes: &mut [u8],
-    ) -> Result<Self::Response, CommandDeserializationError> {
-        unimplemented!()
-    }
-}
-
-pub struct ReadShortIdentifierWithDataObjectOffset {}
-impl Instruction for ReadShortIdentifierWithDataObjectOffset {
-    type Response = ();
-
-    fn to_instruction_bytes(&self) -> Result<InstructionBytes, CommandSerializationError> {
-        unimplemented!()
-    }
-
-    fn interpret_response(
-        &self,
-        _instruction_bytes: InstructionBytes,
-        _response_bytes: &mut [u8],
-    ) -> Result<Self::Response, CommandDeserializationError> {
-        unimplemented!()
-    }
-}
-
-pub struct ReadFileIdentifierWithDataObjectOffset {}
-impl Instruction for ReadFileIdentifierWithDataObjectOffset {
-    type Response = ();
-
-    fn to_instruction_bytes(&self) -> Result<InstructionBytes, CommandSerializationError> {
-        unimplemented!()
-    }
-
-    fn interpret_response(
-        &self,
-        _instruction_bytes: InstructionBytes,
-        _response_bytes: &mut [u8],
-    ) -> Result<Self::Response, CommandDeserializationError> {
-        unimplemented!()
-    }
-}
-
-pub struct ReadCurrentEFWithDataObjectOffset {}
-impl Instruction for ReadCurrentEFWithDataObjectOffset {
-    type Response = ();
-
-    fn to_instruction_bytes(&self) -> Result<InstructionBytes, CommandSerializationError> {
-        unimplemented!()
-    }
-
-    fn interpret_response(
-        &self,
-        _instruction_bytes: InstructionBytes,
-        _response_bytes: &mut [u8],
-    ) -> Result<Self::Response, CommandDeserializationError> {
-        unimplemented!()
     }
 }
