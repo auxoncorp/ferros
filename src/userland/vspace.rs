@@ -9,12 +9,15 @@ use crate::userland::{
     LocalCNode, LocalCap, MappedPage, MappedPageTable, MappedSection, MemoryKind, PhantomCap,
     SeL4Error, UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, UnmappedSection, Untyped,
 };
+use generic_array::{ArrayLength, GenericArray};
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Prod, Sub1, Sum};
 use typenum::{
     IsLessOrEqual, UInt, UTerm, Unsigned, B0, B1, U0, U1, U10, U100, U128, U14, U15, U16, U17, U2,
-    U5, U6, U8, U9,
+    U32, U5, U6, U8, U9,
 };
+
+use core::iter::FromIterator;
 
 #[derive(Debug)]
 pub enum VSpaceError {
@@ -252,7 +255,6 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
         VSpace<PageDirFreeSlots, Diff<PageTableFreeSlots, Count>, Role>,
     )
     where
-        Count: IsLessOrEqual<PageTableFreeSlots, Output = B1>,
         PageTableFreeSlots: Sub<Count>,
         Diff<PageTableFreeSlots, Count>: Unsigned,
     {
@@ -336,6 +338,46 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
         (iter, self.skip_pages::<Count>())
     }
 
+    pub fn map_pages<Kind: MemoryKind, PageCount: Unsigned>(
+        self,
+        unmapped_pages: CapRange<UnmappedPage<Kind>, role::Local, PageCount>,
+    ) -> Result<
+        (
+            GenericArray<LocalCap<MappedPage<Role, Kind>>, PageCount>,
+            VSpace<PageDirFreeSlots, Diff<PageTableFreeSlots, PageCount>, Role>,
+        ),
+        SeL4Error,
+    >
+    where
+        PageTableFreeSlots: Sub<PageCount>,
+        Diff<PageTableFreeSlots, PageCount>: Unsigned,
+        PageCount: ArrayLength<LocalCap<MappedPage<Role, Kind>>>,
+    {
+        let (slot_iter, new_self) = self.page_slot_reservation_iter::<PageCount>();
+
+        let mapped_pages = unmapped_pages
+            .iter()
+            .zip(slot_iter)
+            .map(|(page, slot)| slot.map_page(page))
+            // GenericArray::from_iter will panic if the sizes are different,
+            // but they are the same.
+            .collect::<Result<GenericArray<_, PageCount>, _>>()?;
+
+        Ok((mapped_pages, new_self))
+    }
+}
+
+// TODO - Consider making this a parameter of prepare_thread.
+type StackPageCount = U16;
+
+// TODO these are bigger than they need to be
+type PrepareThreadCNodeSlots = U32;
+type PrepareThreadPageTableSlots = U32;
+type PrepareThreadScratchPages = U16;
+
+impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
+    VSpace<PageDirFreeSlots, PageTableFreeSlots, Role>
+{
     pub fn prepare_thread<
         T: RetypeForSetup,
         LocalCNodeFreeSlots: Unsigned,
@@ -345,7 +387,7 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
         self,
         function_descriptor: extern "C" fn(T) -> (),
         process_parameter: SetupVer<T>,
-        untyped: LocalCap<Untyped<U14>>,
+        ut17: LocalCap<Untyped<U17>>,
         local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
         scratch_page_table: &mut LocalCap<MappedPageTable<ScratchPageTableSlots, role::Local>>,
         mut local_page_dir: &mut LocalCap<
@@ -354,75 +396,74 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
     ) -> Result<
         (
             ReadyThread<Role>,
-            VSpace<PageDirFreeSlots, Sub1<Sub1<PageTableFreeSlots>>, Role>,
-            LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U9>>>,
+            VSpace<PageDirFreeSlots, Diff<PageTableFreeSlots, PrepareThreadPageTableSlots>, Role>,
+            LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, PrepareThreadCNodeSlots>>>,
         ),
         VSpaceError,
     >
     where
-        // TODO - Expect to change this to support subtracting 4 page table slots thanks to guards
-        PageTableFreeSlots: Sub<B1>,
-        Sub1<PageTableFreeSlots>: Unsigned,
+        PageTableFreeSlots: Sub<PrepareThreadPageTableSlots>,
+        Diff<PageTableFreeSlots, PrepareThreadPageTableSlots>: Unsigned,
 
-        Sub1<PageTableFreeSlots>: Sub<B1>,
-        Sub1<Sub1<PageTableFreeSlots>>: Unsigned,
+        // PrepareThreadPageTableSlots: Cmp<PageTableFreeSlots>,
+        LocalCNodeFreeSlots: Sub<PrepareThreadCNodeSlots>,
+        Diff<LocalCNodeFreeSlots, PrepareThreadCNodeSlots>: Unsigned,
 
-        LocalCNodeFreeSlots: Sub<U9>,
-        Diff<LocalCNodeFreeSlots, U9>: Unsigned,
-
-        ScratchPageTableSlots: Sub<B1>,
-        Sub1<ScratchPageTableSlots>: Unsigned,
+        ScratchPageTableSlots: Sub<PrepareThreadScratchPages>,
+        Diff<ScratchPageTableSlots, PrepareThreadScratchPages>: Unsigned,
     {
-        // TODO - parameterize this function with Count in order
-        // take more than one page for the stack. Requires:
-        //   * Use of CNode's reservation_iter
-        //   * Getting a handle on the first page (or few pages?)
-        // for the params-insertion despite iter-use
-        //   * Connecting the Count to the size of the untyped parameter
-        //   * Either an iterator over the split-out untypeds
-        //   * Or a private/internal bulk retype-local
-
         // TODO - lift these checks to compile-time, as static assertions
         // Note - This comparison is conservative because technically
         // we can fit some of the params into available registers.
-        if core::mem::size_of::<SetupVer<T>>() > paging::PageBytes::USIZE {
+        if core::mem::size_of::<SetupVer<T>>() > (StackPageCount::USIZE * paging::PageBytes::USIZE)
+        {
             return Err(VSpaceError::ProcessParameterTooBigForStack);
         }
         if core::mem::size_of::<SetupVer<T>>() != core::mem::size_of::<T>() {
             return Err(VSpaceError::ProcessParameterHandoffSizeMismatch);
         }
 
-        // TODO - RESTORE - Reserve a guard page before the stack
-        //let mut vspace = self.skip_pages::<U1>();
-        let vspace = self;
-        let (local_cnode, output_cnode) = local_cnode.reserve_region::<U9>();
+        // reserve resources for internal use
+        let (vspace, output_vspace) = self.reserve_pages::<PrepareThreadPageTableSlots>();
+        let (local_cnode, output_cnode) = local_cnode.reserve_region::<PrepareThreadCNodeSlots>();
 
-        let (ut12, stack_page_ut, ipc_buffer_ut, _, local_cnode) = untyped.quarter(local_cnode)?;
+        // retypes
+        let (ut16, stack_pages_ut, local_cnode) = ut17.split(local_cnode)?;
+        let (ut14, _, _, _, local_cnode) = ut16.quarter(local_cnode)?;
+        let (ut12, ipc_buffer_ut, _, _, local_cnode) = ut14.quarter(local_cnode)?;
         let (_ut10, tcb_ut, _, _, local_cnode) = ut12.quarter(local_cnode)?;
-        let (stack_page, local_cnode): (LocalCap<UnmappedPage<_>>, _) =
-            stack_page_ut.retype_local(local_cnode)?;
+        let (stack_pages, local_cnode): (
+            CapRange<UnmappedPage<memory_kind::General>, role::Local, StackPageCount>,
+            _,
+        ) = stack_pages_ut.retype_multi(local_cnode)?;
+
+        // Reserve a guard page before the stack
+        let vspace = vspace.skip_pages::<U1>();
 
         // map the child stack into local memory so we can set it up
-        let ((mut registers, param_size_on_stack), stack_page) = scratch_page_table
-            .temporarily_map_page(stack_page, &mut local_page_dir, |mapped_page| unsafe {
+        let ((mut registers, param_size_on_stack), stack_pages) = scratch_page_table
+            .temporarily_map_pages(stack_pages, &mut local_page_dir, |mapped_pages| unsafe {
                 setup_initial_stack_and_regs(
                     &process_parameter as *const SetupVer<T> as *const usize,
                     core::mem::size_of::<SetupVer<T>>(),
-                    (mapped_page.cap_data.vaddr + (1 << paging::PageBits::USIZE)) as *mut usize,
+                    (mapped_pages[StackPageCount::USIZE - 1].cap_data.vaddr
+                        + (1 << paging::PageBits::USIZE)) as *mut usize,
                 )
             })?;
+
         // Map the stack to the target address space
-        let (stack_page, vspace) = vspace.map_page(stack_page)?;
-        let stack_pointer =
-            stack_page.cap_data.vaddr + (1 << paging::PageBits::USIZE) - param_size_on_stack;
+        let (mapped_stack_pages, vspace) = vspace.map_pages(stack_pages)?;
+        let stack_pointer = mapped_stack_pages[StackPageCount::USIZE - 1].cap_data.vaddr
+            + (1 << paging::PageBits::USIZE)
+            - param_size_on_stack;
 
         registers.sp = stack_pointer;
         registers.pc = function_descriptor as seL4_Word;
         // TODO - Probably ought to attempt to suspend the thread instead of endlessly yielding
-        registers.r14 = (yield_forever as *const fn() -> ()) as seL4_Word;
+        registers.r14 = (yield_forever as *const fn() -> !) as seL4_Word;
 
-        // TODO - RESTORE - Reserve a guard page after the stack
-        //let vspace = self.skip_pages::<U1>();
+        // Reserve a guard page after the stack
+        let vspace = vspace.skip_pages::<U1>();
 
         // Allocate and map the ipc buffer
         let (ipc_buffer, local_cnode) = ipc_buffer_ut.retype_local(local_cnode)?;
@@ -440,7 +481,7 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
             tcb,
         };
 
-        Ok((ready_thread, vspace, output_cnode))
+        Ok((ready_thread, output_vspace, output_cnode))
     }
 
     pub(crate) fn identity_ref(
@@ -600,6 +641,7 @@ impl<Role: CNodeRole> PageDirSlot<Role> {
 }
 
 /// A slot in a page table, where a single page goes
+// TODO: This should be named PageTableSlot, for consistency.
 pub struct PageSlot<Role: CNodeRole> {
     page_table: LocalCap<MappedPageTable<U1, Role>>,
     page_dir: LocalCap<AssignedPageDirectory<U0, Role>>,
@@ -812,11 +854,7 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<AssignedPageDirectory<FreeSl
         page: LocalCap<UnmappedPage<Kind>>,
         vaddr: usize,
         rights: CapRights,
-    ) -> Result<LocalCap<MappedPage<Role, Kind>>, SeL4Error>
-    where
-        FreeSlots: Sub<U1>,
-        Diff<FreeSlots, U1>: Unsigned,
-    {
+    ) -> Result<LocalCap<MappedPage<Role, Kind>>, SeL4Error> {
         let err = unsafe {
             seL4_ARM_Page_Map(
                 page.cptr,
@@ -961,6 +999,60 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<MappedPageTable<FreeSlots, R
         Ok((res, unmapped_page))
     }
 
+    // TODO - Should we restrict this to only be for PageTables in role::Local,
+    // since that's mostly the only role that can really meaningfully adjust
+    // the content of the page.
+    pub fn temporarily_map_pages<
+        PageDirFreeSlots: Unsigned,
+        F,
+        Out,
+        Kind: MemoryKind,
+        PageCount: Unsigned,
+    >(
+        &mut self,
+        unmapped_pages: CapRange<UnmappedPage<Kind>, role::Local, PageCount>,
+        // TODO - must this page_dir always be the parent of this page table?
+        // if so, we should clamp down harder on enforcing this relationship.
+        mut page_dir: &mut LocalCap<AssignedPageDirectory<PageDirFreeSlots, Role>>,
+        f: F,
+    ) -> Result<(Out, CapRange<UnmappedPage<Kind>, role::Local, PageCount>), SeL4Error>
+    where
+        F: Fn(&GenericArray<LocalCap<MappedPage<Role, Kind>>, PageCount>) -> Out,
+        FreeSlots: Sub<PageCount>,
+        Diff<FreeSlots, PageCount>: Unsigned,
+        // PageCount: ArrayLength<LocalCap<UnmappedPage<Kind>>>,
+        PageCount: ArrayLength<LocalCap<MappedPage<Role, Kind>>>,
+    {
+        // Keep a copy of the caprange to return after it's been consumed by mapping
+        let unmapped_pages_copy = CapRange {
+            start_cptr: unmapped_pages.start_cptr,
+            _cap_type: PhantomData,
+            _role: PhantomData,
+            _slots: PhantomData,
+        };
+
+        // Use page_dir.map_page_direct to avoid altering the type of page_dir.
+        // We know from the type constraints that the pages will fit
+
+        let vaddr_iter = (self.cap_data.vaddr..core::usize::MAX).step_by(paging::PageBytes::USIZE);
+
+        // this will panic if the sizes are different, but they are the same.
+        let mapped_pages = unmapped_pages
+            .iter()
+            .zip(vaddr_iter)
+            .map(|(page, vaddr)| page_dir.map_page_direct(page, vaddr, CapRights::RW))
+            .collect::<Result<GenericArray<_, PageCount>, _>>()?;
+
+        // let (mapped_pages, _) = temp_page_table.map_pages(unmapped_pages, &mut page_dir)?;
+        let res = f(&mapped_pages);
+
+        for p in mapped_pages {
+            p.unmap()?;
+        }
+
+        Ok((res, unmapped_pages_copy))
+    }
+
     pub fn unmap(self) -> Result<Cap<UnmappedPageTable, role::Local>, SeL4Error> {
         let err = unsafe { seL4_ARM_PageTable_Unmap(self.cptr) };
         if err != 0 {
@@ -976,7 +1068,7 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<MappedPageTable<FreeSlots, R
     pub(super) fn reservation_iter<Count: Unsigned>(
         self,
     ) -> (
-        impl Iterator<Item = LocalCap<MappedPageTable<U1, Role>>>,
+        impl ExactSizeIterator<Item = LocalCap<MappedPageTable<U1, Role>>>,
         LocalCap<MappedPageTable<Diff<FreeSlots, Count>, Role>>,
     )
     where
