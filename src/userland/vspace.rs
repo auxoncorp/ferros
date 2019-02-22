@@ -136,7 +136,8 @@ impl VSpace {
             .user_image_pages_iter()
             .zip(cnode_slot_reservation_iter)
         {
-            let (copied_page_cap, _) = page_cap.copy(&cnode, slot_cnode, CapRights::R)?;
+            // This is RW so that mutable global variables can be used
+            let (copied_page_cap, _) = page_cap.copy(&cnode, slot_cnode, CapRights::RW)?;
             // Use map_page_direct instead of a VSpace so we don't have to keep
             // track of bulk allocations which cross page table boundaries at
             // the type level.
