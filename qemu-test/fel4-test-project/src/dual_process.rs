@@ -25,11 +25,14 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         .get_untyped::<U20>()
         .expect("Couldn't find initial untyped");
 
-    let (ut18, ut18b, _, _, root_cnode) = ut20.quarter(root_cnode)?;
-    let (ut16a, ut16b, child_a_vspace_ut, child_b_vspace_ut, root_cnode) =
-        ut18.quarter(root_cnode)?;
+    let (ut18, ut18b, child_a_ut18, child_b_ut18, root_cnode) = ut20.quarter(root_cnode)?;
+
+    let (child_a_vspace_ut, child_a_thread_ut, root_cnode) = child_a_ut18.split(root_cnode)?;
+    let (child_b_vspace_ut, child_b_thread_ut, root_cnode) = child_b_ut18.split(root_cnode)?;
+
+    let (ut16a, ut16b, _, _, root_cnode) = ut18.quarter(root_cnode)?;
     let (ut16e, _, _, _, root_cnode) = ut18b.quarter(root_cnode)?;
-    let (ut14, child_a_thread_ut, child_b_thread_ut, _, root_cnode) = ut16e.quarter(root_cnode)?;
+    let (ut14, _, _, _, root_cnode) = ut16e.quarter(root_cnode)?;
     let (ut12, asid_pool_ut, shared_page_ut, _, root_cnode) = ut14.quarter(root_cnode)?;
     let (ut10, scratch_page_table_ut, _, _, root_cnode) = ut12.quarter(root_cnode)?;
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode)?;

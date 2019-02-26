@@ -1,6 +1,6 @@
 use sel4_sys::*;
 
-use typenum::consts::{U12, U14, U18, U58};
+use typenum::consts::{U12, U14, U18, U58, U20};
 
 use ferros::drivers::uart::UartParams;
 use ferros::micro_alloc;
@@ -20,15 +20,15 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     //   2. Scratch page table:                         10
     //   3. For any processes:
     //     a. Root Cnode (CSpace) (U12 + U4 for Radix): 16
-    //     b. VSpace:                                   16
-    //     c. Thread (Stack, fault ep, &c.)             14
+    //     b. VSpace:                                   17
+    //     c. Thread (Stack, fault ep, &c.)             17
     //   4. A notification for the interrupt             4
     // ---------------------------------------------------
-    // Start with:                                      18
+    // Start with:                                      20
 
     // Find an untyped of size 18 bits (256k / 0.25m).
-    let untyped_18 = allocator
-        .get_untyped::<U18>()
+    let untyped_20 = allocator
+        .get_untyped::<U20>()
         .expect("initial alloc failure");
 
     // The UART1 region is 4 pages i.e. 14 bits.
@@ -37,9 +37,12 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         .get_device_untyped::<U14>(UART1_PADDR)
         .expect("find uart1 device memory");
 
-    let (uart1_cspace_untyped, uart1_vspace_untyped, untyped_16, _, root_cnode) =
-        untyped_18.quarter(root_cnode)?;
-    let (uart1_thread_untyped, untyped_14, _, _, root_cnode) = untyped_16.quarter(root_cnode)?;
+
+    let (untyped_18, uart1_ut18, _, _, root_cnode) = untyped_20.quarter(root_cnode)?;
+    let (uart1_vspace_untyped, uart1_thread_untyped, root_cnode) = uart1_ut18.split(root_cnode)?;
+
+    let (uart1_cspace_untyped, untyped_16, _, _, root_cnode) = untyped_18.quarter(root_cnode)?;
+    let (untyped_14, _, _, _, root_cnode) = untyped_16.quarter(root_cnode)?;
     let (asid_pool_untyped, untyped_12, _, _, root_cnode) = untyped_14.quarter(root_cnode)?;
     let (scratch_page_table_untyped, untyped_10, _, _, root_cnode) =
         untyped_12.quarter(root_cnode)?;
