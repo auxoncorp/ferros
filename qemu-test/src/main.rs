@@ -113,11 +113,9 @@ fn run_qemu_test<F>(
                     .expect("couldn't read line from simulate process");
                 println!("{}", line);
 
-                if !ready_fired {
-                    if rl.is_match(&line) {
-                        rl_func();
-                        ready_fired = true;
-                    }
+                if !ready_fired && rl.is_match(&line) {
+                    rl_func();
+                    ready_fired = true;
                 }
 
                 if pass_line.is_match(&line) {
@@ -289,6 +287,9 @@ mod tests {
 
     sequential_test! {
         fn uart() {
+            use std::net::TcpStream;
+            use std::io::Write;
+
             let mut custom_sim = Command::new("qemu-system-arm");
             custom_sim.current_dir("fel4-test-project")
                 .args(&["-machine", "sabrelite",
@@ -301,20 +302,12 @@ mod tests {
                         "-initrd", "artifacts/debug/feL4img"]);
             run_qemu_test(
                 "uart",
-                Regex::new(".*got char: '1'.*").unwrap(),
+                Regex::new(".*got byte: 1.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
                 Some((Regex::new(".*thou art ready.*").unwrap(),
                 || {
-                    let charfile = "/tmp/cargo-qemu-test-charfile";
-                    {
-                        let mut char_fd = File::create("/tmp/cargo-qemu-test-charfile").expect("create temp file");
-                        char_fd.write_all(b"1").expect("write char to file");
-                    }
-                    let _ = Command::new("nc")
-                        .stdin(File::open(charfile).expect("open temp file for stdin"))
-                        .arg("-N").arg("localhost").arg("8888").output().expect("nc run");
-
-                    fs::remove_file(charfile).expect("removing temp file");
+                    let mut stream = TcpStream::connect("localhost:8888").expect("connect stream");
+                    stream.write(&[1]).expect("write stream");
                 })),
                 Some(custom_sim),
                 None,
