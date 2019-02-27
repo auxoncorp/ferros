@@ -127,8 +127,10 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (responder_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
             ut16b.retype_cnode::<_, U12>(root_cnode)?;
 
-        let (caller_cnode_local, responder_cnode_local, caller, responder, root_cnode) =
-            call_channel(root_cnode, ut4, caller_cnode_local, responder_cnode_local)?;
+        let (ipc_setup, responder, responder_cnode_local, root_cnode) =
+            call_channel(ut4, responder_cnode_local, root_cnode)?;
+
+        let (caller, caller_cnode_local) = ipc_setup.create_caller(caller_cnode_local)?;
 
         let (caller_cnode_child, caller_cnode_local) =
             caller_cnode_local.generate_self_reference(&root_cnode)?;
