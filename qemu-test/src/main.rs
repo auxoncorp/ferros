@@ -295,7 +295,7 @@ mod tests {
                 .args(&["-machine", "sabrelite",
                         "-nographic",
                         "-s",
-                        "-serial", "telnet:0.0.0.0:8888,server,nowait",
+                        "-serial", "tcp:localhost:8888,server,nowait,nodelay",
                         "-serial", "mon:stdio",
                         "-m", "size=1024M",
                         "-kernel", "artifacts/debug/kernel",
