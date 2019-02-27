@@ -417,9 +417,9 @@ pub struct Responder<Req: Sized, Rsp: Sized, Role: CNodeRole> {
 }
 
 impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
-    pub fn reply_recv<F>(self, f: F) -> Result<Rsp, IPCError>
+    pub fn reply_recv<F>(self, mut f: F) -> Result<Rsp, IPCError>
     where
-        F: Fn(&Req) -> (Rsp),
+        F: FnMut(&Req) -> (Rsp),
     {
         self.reply_recv_with_state((), move |req, state| (f(req), state))
     }
@@ -427,10 +427,10 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
     pub fn reply_recv_with_state<F, State>(
         self,
         initial_state: State,
-        f: F,
+        mut f: F,
     ) -> Result<Rsp, IPCError>
     where
-        F: Fn(&Req, State) -> (Rsp, State),
+        F: FnMut(&Req, State) -> (Rsp, State),
     {
         // Can safely use unchecked_new because we check sizing during the creation of Responder
         let mut ipc_buffer = unsafe { IPCBuffer::unchecked_new() };
