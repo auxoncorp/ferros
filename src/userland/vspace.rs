@@ -592,6 +592,66 @@ impl<PageDirFreeSlots: Unsigned, Role: CNodeRole> VSpace<PageDirFreeSlots, U0, R
 
         (iter, self.skip_sections::<Count>())
     }
+
+    /// Map the given page tables. Reserve all the pages in them. Return an slot
+    /// iterator over their page slots.
+    pub fn page_block_reservation_iter<PageTableCount: Unsigned>(
+        self,
+        page_tables: CapRange<UnmappedPageTable, role::Local, PageTableCount>,
+    ) -> Result<
+        (
+            impl Iterator<Item = PageSlot<Role>>,
+            VSpace<Diff<PageDirFreeSlots, PageTableCount>, U0, Role>,
+        ),
+        SeL4Error,
+    >
+    where
+        PageDirFreeSlots: Sub<PageTableCount>,
+        Diff<PageDirFreeSlots, PageTableCount>: Unsigned,
+        PageTableCount:
+            ArrayLength<LocalCap<MappedPageTable<paging::BasePageTableFreeSlots, Role>>>,
+    {
+        // map all the page tables
+        let (page_dir_slot_iter, vspace) = self.page_dir_slot_reservation_iter::<PageTableCount>();
+        let mapped_page_tables = page_tables
+            .iter()
+            .zip(page_dir_slot_iter)
+            .map(|(pt, pd_slot)| pd_slot.map_page_table(pt))
+            .collect::<Result<GenericArray<_, PageTableCount>, _>>()?;
+
+        let pd_cptr = vspace.page_dir.cptr;
+        let page_slot_iter = mapped_page_tables.into_iter().flat_map(move |pt| {
+            // debug_println!("Mapped page table to {:#08x}", pt.cap_data.vaddr);
+
+            let pd_cptr = pd_cptr;
+            let pt_cptr = pt.cptr;
+            let pt_vaddr = pt.cap_data.vaddr;
+            (0..256).map(move |slot_num| PageSlot {
+                page_dir: Cap {
+                    cptr: pd_cptr,
+                    _role: PhantomData,
+                    cap_data: AssignedPageDirectory {
+                        // this is unused, but we have to fill it out.
+                        next_free_slot: core::usize::MAX,
+                        _free_slots: PhantomData,
+                        _role: PhantomData,
+                    },
+                },
+                page_table: Cap {
+                    cptr: pt_cptr,
+                    _role: PhantomData,
+                    cap_data: MappedPageTable {
+                        next_free_slot: slot_num,
+                        vaddr: pt_vaddr,
+                        _free_slots: PhantomData,
+                        _role: PhantomData,
+                    },
+                },
+            })
+        });
+
+        Ok((page_slot_iter, vspace))
+    }
 }
 
 pub struct ReadyThread<Role: CNodeRole> {
@@ -681,6 +741,22 @@ impl<Role: CNodeRole> PageSlot<Role> {
         page: LocalCap<UnmappedPage<Kind>>,
     ) -> Result<LocalCap<MappedPage<Role, Kind>>, SeL4Error> {
         let (res, _) = self.page_table.map_page(page, &mut self.page_dir)?;
+        Ok(res)
+    }
+
+    pub fn map_device_page<Kind: MemoryKind>(
+        mut self,
+        page: LocalCap<UnmappedPage<Kind>>,
+    ) -> Result<LocalCap<MappedPage<Role, Kind>>, SeL4Error> {
+        let (res, _) = self.page_table.map_device_page(page, &mut self.page_dir)?;
+        Ok(res)
+    }
+
+    pub fn map_dma_page<Kind: MemoryKind>(
+        mut self,
+        page: LocalCap<UnmappedPage<Kind>>,
+    ) -> Result<LocalCap<MappedPage<Role, Kind>>, SeL4Error> {
+        let (res, _) = self.page_table.map_dma_page(page, &mut self.page_dir)?;
         Ok(res)
     }
 }
@@ -975,6 +1051,31 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<MappedPageTable<FreeSlots, R
         self.internal_map_page(page, &mut page_dir, CapRights::RW, 0)
     }
 
+    pub fn map_dma_page<PageDirFreeSlots: Unsigned, Kind: MemoryKind>(
+        self,
+        page: LocalCap<UnmappedPage<Kind>>,
+        mut page_dir: &mut LocalCap<AssignedPageDirectory<PageDirFreeSlots, Role>>,
+    ) -> Result<
+        (
+            LocalCap<MappedPage<Role, Kind>>,
+            LocalCap<MappedPageTable<Sub1<FreeSlots>, Role>>,
+        ),
+        SeL4Error,
+    >
+    where
+        FreeSlots: Sub<B1>,
+        Sub1<FreeSlots>: Unsigned,
+    {
+        let (res, pt) = self.internal_map_page(page, &mut page_dir, CapRights::RW, 0)?;
+
+        let err = unsafe { seL4_ARM_Page_CleanInvalidate_Data(res.cptr, 0, 0x1000) };
+        if err != 0 {
+            return Err(SeL4Error::PageCleanInvalidateData(err));
+        }
+
+        return Ok((res, pt));
+    }
+
     fn internal_map_page<PageDirFreeSlots: Unsigned, Kind: MemoryKind>(
         self,
         page: LocalCap<UnmappedPage<Kind>>,
@@ -1001,6 +1102,9 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<MappedPageTable<FreeSlots, R
         if err != 0 {
             return Err(SeL4Error::MapPage(err));
         }
+
+        // debug_println!("Mapped page to {:#10x} in page_dir {}", page_vaddr, page_dir.cptr);
+
         Ok((
             Cap {
                 cptr: page.cptr,
