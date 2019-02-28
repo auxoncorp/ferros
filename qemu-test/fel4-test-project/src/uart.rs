@@ -155,39 +155,86 @@ pub mod uart {
         ]
     }
 
-    struct Uart {
-        control1: UartControl1::Register,
-        tx: UartTX::Register,
+    register! {
+        UartControl2,
+        RW,
+        Fields [
+            SoftwareReset      WIDTH(U1) OFFSET(U0),
+            RxEnable           WIDTH(U1) OFFSET(U1),
+            TxEnable           WIDTH(U1) OFFSET(U2),
+            AgingTimer         WIDTH(U1) OFFSET(U3),
+            ReqSendInterrupt   WIDTH(U1) OFFSET(U4),
+            WordSize           WIDTH(U1) OFFSET(U5),
+            TwoStopBits        WIDTH(U1) OFFSET(U6),
+            ParityOddEven      WIDTH(U1) OFFSET(U7),
+            ParityEnable       WIDTH(U1) OFFSET(U8),
+            RequestToSendEdge  WIDTH(U2) OFFSET(U9),
+            Escape             WIDTH(U1) OFFSET(U11),
+            ClearToSend        WIDTH(U1) OFFSET(U12),
+            ClearToSendControl WIDTH(U1) OFFSET(U13),
+            IgnoreRTS          WIDTH(U1) OFFSET(U14),
+            EscapeInterrupt    WIDTH(U1) OFFSET(U15)
+        ]
+    }
+
+    #[repr(C)]
+    struct UartBlock {
         rx: UartRX::Register,
+        _padding1: [u32; 15],
+        tx: UartTX::Register,
+        _padding2: [u32; 15],
+        control1: UartControl1::Register,
+        control2: UartControl2::Register,
+    }
+
+    struct Uart {
+        addr: u32,
     }
 
     impl Uart {
         fn get(&self) -> Option<u8> {
-            self.rx
-                .get_field(UartRX::Data::Read)
-                .map(|field| field.val() as u8)
+            let ub = self.addr as *mut UartBlock;
+            unsafe {
+                (*ub)
+                    .rx
+                    .get_field(UartRX::Data::Read)
+                    .map(|field| field.val() as u8)
+            }
         }
 
         fn put(&mut self, data: u8) {
             let checked = UartTX::Data::Field::new(data as u32).expect("uart data out of bounds");
-            self.tx.modify(checked);
+            let ub = self.addr as *mut UartBlock;
+            unsafe { (*ub).tx.modify(checked) };
         }
     }
+
+    use core::ptr;
 
     pub extern "C" fn run<IRQ: Unsigned + Sync + Send>(params: UartParams<IRQ, role::Local>)
     where
         IRQ: IsLess<U256, Output = True>,
     {
         let mut uart = Uart {
-            control1: UartControl1::Register::new(unsafe {
-                mem::transmute(params.base_ptr + CTL1_OFFSET)
-            }),
-            tx: UartTX::Register::new(unsafe { mem::transmute(params.base_ptr + TX_OFFSET) }),
-            rx: UartRX::Register::new(unsafe { mem::transmute(params.base_ptr) }),
+            addr: params.base_ptr as u32,
         };
 
-        uart.control1
-            .modify(UartControl1::RecvReadyInterrupt::Field::checked::<U1>());
+        let ub = uart.addr as *mut UartBlock;
+
+        unsafe {
+            // Writing a 0 to the SoftwareReset field causes the
+            // hardware to reset. In order for us to not reset the
+            // UART with any write to control register 2, we need to
+            // set this field to 1. After that, any modify call will
+            // put a 1 back in this field, avoiding the triggering
+            // of a reset.
+            (*ub)
+                .control2
+                .modify(UartControl2::SoftwareReset::Field::checked::<U1>());
+            (*ub)
+                .control1
+                .modify(UartControl1::RecvReadyInterrupt::Field::checked::<U1>());
+        }
 
         debug_println!("thou art ready");
 
