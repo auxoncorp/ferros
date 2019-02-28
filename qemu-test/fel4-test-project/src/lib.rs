@@ -1,9 +1,12 @@
 #![no_std]
+#![recursion_limit = "128"]
 
 extern crate cross_queue;
 extern crate ferros;
+#[macro_use]
 extern crate registers;
 extern crate sel4_sys;
+#[macro_use]
 extern crate typenum;
 
 use sel4_sys::*;
