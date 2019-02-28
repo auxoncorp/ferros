@@ -8,8 +8,8 @@ use ferros::userland::{
     Responder, RetypeForSetup, SeL4Error, UnmappedPageTable, Untyped, VSpace,
 };
 use sel4_sys::*;
-use typenum::operator_aliases::Diff;
-use typenum::{U100, U12, U2, U20, U4096, U6};
+use typenum::{Diff, U1, U100, U12, U2, U20, U3, U4096, U6};
+type U4095 = Diff<U4096, U1>;
 
 use sel4_sys::seL4_Yield;
 
@@ -64,10 +64,10 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         child_fault_source_b,
         root_cnode,
     ) = {
-        let (producer_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
+        let (producer_cnode_local, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
             ut16a.retype_cnode::<_, U12>(root_cnode)?;
 
-        let (consumer_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
+        let (consumer_cnode_local, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
             ut16b.retype_cnode::<_, U12>(root_cnode)?;
 
         let (
@@ -121,10 +121,10 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         child_fault_source_b,
         root_cnode,
     ) = {
-        let (caller_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
+        let (caller_cnode_local, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
             ut16a.retype_cnode::<_, U12>(root_cnode)?;
 
-        let (responder_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
+        let (responder_cnode_local, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
             ut16b.retype_cnode::<_, U12>(root_cnode)?;
 
         let (ipc_setup, responder, responder_cnode_local, root_cnode) =
@@ -153,56 +153,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             responder_params,
             responder_cnode_local,
             None,
-            root_cnode,
-        )
-    };
-    #[cfg(test_case = "fault_pair")]
-    let (
-        child_params_a,
-        proc_cnode_local_a,
-        child_fault_source_a,
-        child_params_b,
-        proc_cnode_local_b,
-        child_fault_source_b,
-        root_cnode,
-    ) = {
-        let (fault_source_cnode_local, root_cnode): (
-            LocalCap<CNode<U4096, role::Child>>,
-            _,
-        ) = ut16a.retype_cnode::<_, U12>(root_cnode)?;
-
-        let (fault_sink_cnode_local, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
-            ut16b.retype_cnode::<_, U12>(root_cnode)?;
-
-        let (
-            fault_source_cnode_local,
-            fault_sink_cnode_local,
-            fault_source,
-            fault_sink,
-            root_cnode,
-        ) = setup_fault_endpoint_pair(
-            root_cnode,
-            ut4,
-            fault_source_cnode_local,
-            fault_sink_cnode_local,
-        )?;
-        // self-reference must come last because it seals our ability to add more capabilities
-        // from the current thread's perspective
-        let (_caller_cnode_child, caller_cnode_local) =
-            fault_source_cnode_local.generate_self_reference(&root_cnode)?;
-        let (_responder_cnode_child, responder_cnode_local) =
-            fault_sink_cnode_local.generate_self_reference(&root_cnode)?;
-
-        let caller_params = MischiefMakerParams { _role: PhantomData };
-
-        let responder_params = MischiefDetectorParams::<role::Child> { fault_sink };
-        (
-            caller_params,
-            caller_cnode_local,
-            None,
-            responder_params,
-            responder_cnode_local,
-            Some(fault_source),
             root_cnode,
         )
     };
@@ -252,7 +202,7 @@ pub struct AdditionResponse {
 
 #[derive(Debug)]
 pub struct CallerParams<Role: CNodeRole> {
-    pub my_cnode: Cap<CNode<Diff<Pow<U12>, U2>, Role>, Role>,
+    pub my_cnode: Cap<CNode<Diff<Pow<U12>, U3>, Role>, Role>,
     pub caller: Caller<AdditionRequest, AdditionResponse, Role>,
 }
 
@@ -262,7 +212,7 @@ impl RetypeForSetup for CallerParams<role::Local> {
 
 #[derive(Debug)]
 pub struct ResponderParams<Role: CNodeRole> {
-    pub my_cnode: Cap<CNode<Diff<Pow<U12>, U2>, Role>, Role>,
+    pub my_cnode: Cap<CNode<Diff<Pow<U12>, U3>, Role>, Role>,
     pub responder: Responder<AdditionRequest, AdditionResponse, Role>,
 }
 
@@ -381,42 +331,4 @@ pub extern "C" fn child_proc_b(p: ResponderParams<role::Local>) {
             (AdditionResponse { sum: req.a + req.b }, state + 1)
         })
         .expect("Could not set up a reply_recv");
-}
-
-#[derive(Debug)]
-pub struct MischiefMakerParams<Role: CNodeRole> {
-    pub _role: PhantomData<Role>,
-}
-
-impl RetypeForSetup for MischiefMakerParams<role::Local> {
-    type Output = MischiefMakerParams<role::Child>;
-}
-
-#[derive(Debug)]
-pub struct MischiefDetectorParams<Role: CNodeRole> {
-    pub fault_sink: FaultSink<Role>,
-}
-
-impl RetypeForSetup for MischiefDetectorParams<role::Local> {
-    type Output = MischiefDetectorParams<role::Child>;
-}
-
-#[cfg(test_case = "fault_pair")]
-pub extern "C" fn child_proc_a(_p: MischiefMakerParams<role::Local>) {
-    debug_println!("Inside fault_source_proc");
-    debug_println!("\nAttempting to cause a cap fault");
-    unsafe {
-        seL4_Send(
-            314159, // bogus cptr to nonexistent endpoint
-            seL4_MessageInfo_new(0, 0, 0, 0),
-        )
-    }
-    debug_println!("This is after the capability fault inducing code, and should not be printed.");
-}
-
-#[cfg(test_case = "fault_pair")]
-pub extern "C" fn child_proc_b(p: MischiefDetectorParams<role::Local>) {
-    debug_println!("Inside fault_sink_proc");
-    let fault = p.fault_sink.wait_for_fault();
-    debug_println!("Caught a fault: {:?}", fault);
 }

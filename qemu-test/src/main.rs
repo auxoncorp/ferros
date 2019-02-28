@@ -7,7 +7,6 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use rexpect::process::signal::Signal;
 use rexpect::session::spawn_command;
-use std::fs::{self, File};
 use std::io::{self, Write};
 use std::process::Command;
 use std::sync::Mutex;
@@ -267,7 +266,7 @@ mod tests {
                 Regex::new(".*Root task should never return from main.*").unwrap(),
                 None,
                 None,
-                Some(vec![("dual_process", "true")]),
+                None,
             );
         }
     }

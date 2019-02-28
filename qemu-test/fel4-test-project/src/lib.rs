@@ -26,6 +26,7 @@ macro_rules! debug_println {
 mod double_door_backpressure;
 #[cfg(dual_process = "true")]
 mod dual_process;
+mod fault_pair;
 #[cfg(single_process = "true")]
 mod single_process;
 mod uart;
@@ -50,6 +51,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     double_door_backpressure::run(raw_boot_info).expect("double_door_backpressure run");
     #[cfg(test_case = "uart")]
     uart::run(raw_boot_info).expect("uart run");
+    #[cfg(test_case = "fault_pair")]
+    fault_pair::run(raw_boot_info).expect("fault_pair run");
 
     yield_forever()
 }

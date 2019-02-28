@@ -7,7 +7,7 @@ use crate::userland::{
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U12, U2, U3};
+use typenum::{Unsigned, B1, U1, U12, U2, U3};
 
 pub(crate) fn wrap_untyped<BitSize: Unsigned, Kind: MemoryKind>(
     cptr: usize,
@@ -248,7 +248,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
     ) -> Result<
         (
-            LocalCap<CNode<Pow<ChildRadix>, role::Child>>,
+            LocalCap<CNode<Diff<Pow<ChildRadix>, U1>, role::Child>>,
             LocalCap<CNode<Diff<FreeSlots, U2>, role::Local>>,
         ),
         SeL4Error,
@@ -258,6 +258,9 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         Diff<FreeSlots, U2>: Unsigned,
         ChildRadix: _Pow,
         Pow<ChildRadix>: Unsigned,
+
+        Pow<ChildRadix>: Sub<U1>,
+        Diff<Pow<ChildRadix>, U1>: Unsigned,
     {
         let (reserved_slots, output_dest_cnode) = dest_cnode.reserve_region::<U2>();
         let (reserved_slots, scratch_slot) = reserved_slots.consume_slot();
@@ -313,7 +316,8 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
                 _role: PhantomData,
                 cap_data: CNode {
                     radix: ChildRadix::to_u8(),
-                    next_free_slot: 0,
+                    // We start with the next free slot at 1 in order to "reserve" the 0-indexed slot for "null"
+                    next_free_slot: 1,
                     _free_slots: PhantomData,
                     _role: PhantomData,
                 },

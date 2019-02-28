@@ -44,7 +44,8 @@ use crate::userland::{
 };
 
 use sel4_sys::*;
-use typenum::{U12, U20, U4096};
+use typenum::{Diff, U1, U12, U20, U4096};
+type U4095 = Diff<U4096, U1>;
 
 fn yield_forever() {
     unsafe {
@@ -96,13 +97,13 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         scratch_page_table_ut.retype_local(root_cnode)?;
     let (mut scratch_page_table, boot_info) = boot_info.map_page_table(scratch_page_table)?;
 
-    let (consumer_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
+    let (consumer_cnode, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
         ut16a.retype_cnode::<_, U12>(root_cnode)?;
 
-    let (producer_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
+    let (producer_cnode, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
         ut16b.retype_cnode::<_, U12>(root_cnode)?;
 
-    let (waker_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
+    let (waker_cnode, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
         ut16d.retype_cnode::<_, U12>(root_cnode)?;
 
     // vspace setup

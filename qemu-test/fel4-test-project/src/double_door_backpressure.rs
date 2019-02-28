@@ -5,23 +5,24 @@ use ferros::userland::{
     QueueFullError, RetypeForSetup, UnmappedPageTable, VSpace, Waker,
 };
 use sel4_sys::{seL4_BootInfo, seL4_Yield, DebugOutHandle};
-use typenum::{U10, U12, U2, U20, U4096};
+use typenum::{Diff, U1, U10, U12, U2, U20, U21, U4096};
+type U4095 = Diff<U4096, U1>;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     // wrap all untyped memory
     let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
 
+    debug_println!("Allocator State: {:?}", allocator);
+
     // wrap root CNode for safe usage
     let root_cnode = root_cnode(&raw_boot_info);
 
-    // find an untyped of size 20 bits (1 meg)
-    let ut20 = allocator
-        .get_untyped::<U20>()
+    // find an untyped of size 21 bits
+    let ut21 = allocator
+        .get_untyped::<U21>()
         .expect("initial alloc failure");
 
-    let ut20b = allocator
-        .get_untyped::<U20>()
-        .expect("initial alloc failure");
+    let (ut20, ut20b, root_cnode) = ut21.split(root_cnode)?;
 
     let (consumer_ut18, producer_a_ut18, producer_b_ut18, waker_ut18, root_cnode) =
         ut20.quarter(root_cnode)?;
@@ -54,14 +55,14 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         scratch_page_table_ut.retype_local(root_cnode)?;
     let (mut scratch_page_table, boot_info) = boot_info.map_page_table(scratch_page_table)?;
 
-    let (consumer_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
+    let (consumer_cnode, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
         consumer_cnode_ut.retype_cnode::<_, U12>(root_cnode)?;
 
-    let (producer_a_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
+    let (producer_a_cnode, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
         producer_a_cnode_ut.retype_cnode::<_, U12>(root_cnode)?;
-    let (producer_b_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
+    let (producer_b_cnode, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
         producer_b_cnode_ut.retype_cnode::<_, U12>(root_cnode)?;
-    let (waker_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
+    let (waker_cnode, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
         waker_cnode_ut.retype_cnode::<_, U12>(root_cnode)?;
 
     // vspace setup

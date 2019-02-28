@@ -1,6 +1,6 @@
 use sel4_sys::*;
 
-use typenum::consts::{U12, U14, U18, U58, U20};
+use typenum::consts::{U12, U14, U18, U20, U58};
 
 use ferros::drivers::uart::UartParams;
 use ferros::micro_alloc;
@@ -36,7 +36,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let uart1_base_untyped = allocator
         .get_device_untyped::<U14>(UART1_PADDR)
         .expect("find uart1 device memory");
-
 
     let (untyped_18, uart1_ut18, _, _, root_cnode) = untyped_20.quarter(root_cnode)?;
     let (uart1_vspace_untyped, uart1_thread_untyped, root_cnode) = uart1_ut18.split(root_cnode)?;
