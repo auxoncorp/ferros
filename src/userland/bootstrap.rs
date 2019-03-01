@@ -38,7 +38,7 @@ pub fn root_cnode(
 
 pub mod paging {
     use crate::pow::Pow;
-    use typenum::operator_aliases::{Diff, Prod};
+    use typenum::operator_aliases::{Diff, Prod, Sum};
     use typenum::{U1, U1024, U12, U16, U20, U24, U6, U8, U9};
 
     pub type BaseASIDPoolFreeSlots = U1024;
@@ -65,9 +65,17 @@ pub mod paging {
 
     pub type BasePageTableFreeSlots = Pow<PageTableBits>;
 
+    // The root task has a stack size configurable by the fel4.toml
+    // in the `[fel4.executable]` table's `root-task-stack-bytes` property.
+    // This configuration is turned into a generated Rust type that implements
+    // `typenum::Unsigned` in the `build.rs` file.
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/ROOT_TASK_STACK_PAGE_TABLE_COUNT"
+    ));
     // The first N page tables are already mapped for the user image in the root
-    // task. (which also reserves 64k for the root task's stack)
-    pub type RootTaskReservedPageDirSlots = CodePageTableCount;
+    // task. Add in the stack-reserved page tables (minimum of 1 more)
+    pub type RootTaskReservedPageDirSlots = Sum<CodePageTableCount, RootTaskStackPageTableCount>;
 
     pub type RootTaskPageDirFreeSlots = Diff<BasePageDirFreeSlots, RootTaskReservedPageDirSlots>;
 

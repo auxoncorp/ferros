@@ -208,7 +208,7 @@ _sel4_start:
     .bss
     .align  8
 _stack_bottom:
-    .space  65536
+    .space  2097152
 _stack_top:
 "###
 );
