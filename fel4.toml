@@ -4,6 +4,9 @@ target-specs-path = "target_specs"
 target = "armv7-sel4-fel4"
 platform = "sabre"
 
+[fel4.executable]
+root-task-stack-bytes = 2097152
+
 [x86_64-sel4-fel4]
 BuildWithCommonSimulationSettings = true
 KernelOptimisation = "-O2"
