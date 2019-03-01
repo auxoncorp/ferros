@@ -5,29 +5,42 @@ use ferros::userland::{
     QueueFullError, RetypeForSetup, UnmappedPageTable, VSpace, Waker,
 };
 use sel4_sys::{seL4_BootInfo, seL4_Yield, DebugOutHandle};
-use typenum::{U10, U12, U2, U20, U4096};
+use typenum::{Diff, U1, U10, U12, U2, U20, U21, U4096};
+type U4095 = Diff<U4096, U1>;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     // wrap all untyped memory
     let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
 
+    debug_println!("Allocator State: {:?}", allocator);
+
     // wrap root CNode for safe usage
     let root_cnode = root_cnode(&raw_boot_info);
 
-    // find an untyped of size 20 bits (1 meg)
-    let ut20 = allocator
-        .get_untyped::<U20>()
+    // find an untyped of size 21 bits
+    let ut21 = allocator
+        .get_untyped::<U21>()
         .expect("initial alloc failure");
 
-    let (ut18, ut18b, ut18c, _, root_cnode) = ut20.quarter(root_cnode)?;
-    let (ut16a, ut16b, ut16c, ut16d, root_cnode) = ut18.quarter(root_cnode)?;
-    let (ut16e, caller_ut, producer_a_ut, waker_ut, root_cnode) = ut18b.quarter(root_cnode)?;
-    let (ut16i, producer_b_ut, _, _, root_cnode) = ut18c.quarter(root_cnode)?;
-    let (ut14a, consumer_thread_ut, producer_a_thread_ut, waker_thread_ut, root_cnode) =
-        ut16e.quarter(root_cnode)?;
-    let (_ut14e, producer_b_thread_ut, _, _, root_cnode) = ut16i.quarter(root_cnode)?;
+    let (ut20, ut20b, root_cnode) = ut21.split(root_cnode)?;
+
+    let (consumer_ut18, producer_a_ut18, producer_b_ut18, waker_ut18, root_cnode) =
+        ut20.quarter(root_cnode)?;
+
+    let (consumer_ut, consumer_thread_ut, root_cnode) = consumer_ut18.split(root_cnode)?;
+    let (producer_a_ut, producer_a_thread_ut, root_cnode) = producer_a_ut18.split(root_cnode)?;
+    let (producer_b_ut, producer_b_thread_ut, root_cnode) = producer_b_ut18.split(root_cnode)?;
+    let (waker_ut, waker_thread_ut, root_cnode) = waker_ut18.split(root_cnode)?;
+
+    let (ut18, ut18b, _, _, root_cnode) = ut20b.quarter(root_cnode)?;
+
+    let (consumer_cnode_ut, producer_a_cnode_ut, producer_b_cnode_ut, waker_cnode_ut, root_cnode) =
+        ut18b.quarter(root_cnode)?;
+
+    let (ut16, _, _, _, root_cnode) = ut18.quarter(root_cnode)?;
+    let (ut14, _, _, _, root_cnode) = ut16.quarter(root_cnode)?;
     let (ut12, asid_pool_ut, shared_page_ut, shared_page_ut_b, root_cnode) =
-        ut14a.quarter(root_cnode)?;
+        ut14.quarter(root_cnode)?;
     let (ut10, scratch_page_table_ut, _, _, root_cnode) = ut12.quarter(root_cnode)?;
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode)?;
     let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode)?;
@@ -42,19 +55,18 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         scratch_page_table_ut.retype_local(root_cnode)?;
     let (mut scratch_page_table, boot_info) = boot_info.map_page_table(scratch_page_table)?;
 
-    let (consumer_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
-        ut16a.retype_cnode::<_, U12>(root_cnode)?;
+    let (consumer_cnode, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
+        consumer_cnode_ut.retype_cnode::<_, U12>(root_cnode)?;
 
-    let (producer_a_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
-        ut16b.retype_cnode::<_, U12>(root_cnode)?;
-    let (producer_b_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
-        ut16c.retype_cnode::<_, U12>(root_cnode)?;
-
-    let (waker_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
-        ut16d.retype_cnode::<_, U12>(root_cnode)?;
+    let (producer_a_cnode, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
+        producer_a_cnode_ut.retype_cnode::<_, U12>(root_cnode)?;
+    let (producer_b_cnode, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
+        producer_b_cnode_ut.retype_cnode::<_, U12>(root_cnode)?;
+    let (waker_cnode, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
+        waker_cnode_ut.retype_cnode::<_, U12>(root_cnode)?;
 
     // vspace setup
-    let (consumer_vspace, boot_info, root_cnode) = VSpace::new(boot_info, caller_ut, root_cnode)?;
+    let (consumer_vspace, boot_info, root_cnode) = VSpace::new(boot_info, consumer_ut, root_cnode)?;
     let (producer_a_vspace, boot_info, root_cnode) =
         VSpace::new(boot_info, producer_a_ut, root_cnode)?;
     let (producer_b_vspace, boot_info, root_cnode) =

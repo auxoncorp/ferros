@@ -6,8 +6,8 @@ use ferros::userland::{
     SeL4Error, UnmappedPageTable, Untyped, VSpace,
 };
 use sel4_sys::*;
-use typenum::operator_aliases::Diff;
-use typenum::{U12, U2, U20, U4096, U6};
+use typenum::{Diff, U1, U12, U2, U20, U3, U4096, U6};
+type U4095 = Diff<U4096, U1>;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     #[cfg(test_case = "root_task_runs")]
@@ -24,9 +24,10 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         .get_untyped::<U20>()
         .expect("Couldn't find initial untyped");
 
-    let (ut18, _, _, _, root_cnode) = ut20.quarter(root_cnode)?;
-    let (ut16, child_cnode_ut, child_vspace_ut, _, root_cnode) = ut18.quarter(root_cnode)?;
-    let (ut14, child_thread_ut, _, _, root_cnode) = ut16.quarter(root_cnode)?;
+    let (ut18, ut18b, _, _, root_cnode) = ut20.quarter(root_cnode)?;
+    let (child_vspace_ut, child_thread_ut, root_cnode) = ut18b.split(root_cnode)?;
+    let (ut16, child_cnode_ut, _, _, root_cnode) = ut18.quarter(root_cnode)?;
+    let (ut14, _, _, _, root_cnode) = ut16.quarter(root_cnode)?;
     let (ut12, asid_pool_ut, _, _, root_cnode) = ut14.quarter(root_cnode)?;
     let (ut10, scratch_page_table_ut, _, _, root_cnode) = ut12.quarter(root_cnode)?;
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode)?;
@@ -48,7 +49,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
     #[cfg(test_case = "child_process_cap_management")]
     let (child_cnode, root_cnode, params) = {
-        let (child_cnode, root_cnode): (LocalCap<CNode<U4096, role::Child>>, _) =
+        let (child_cnode, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
             child_cnode_ut.retype_cnode::<_, U12>(root_cnode)?;
 
         let (child_ut6, child_cnode) = ut6.move_to_cnode(&root_cnode, child_cnode)?;
@@ -136,7 +137,7 @@ pub extern "C" fn proc_main(_params: ProcParams) {
 
 #[derive(Debug)]
 pub struct CapManagementParams<Role: CNodeRole> {
-    pub my_cnode: Cap<CNode<Diff<Pow<U12>, U2>, Role>, Role>,
+    pub my_cnode: Cap<CNode<Diff<Pow<U12>, U3>, Role>, Role>,
     pub data_source: Cap<Untyped<U6>, Role>,
 }
 

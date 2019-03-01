@@ -1,5 +1,6 @@
 mod bootstrap;
 mod cap;
+mod cap_range;
 mod cnode;
 mod error;
 mod ipc;
@@ -12,6 +13,7 @@ mod vspace;
 
 pub use crate::userland::bootstrap::*;
 pub use crate::userland::cap::*;
+pub use crate::userland::cap_range::*;
 pub use crate::userland::cnode::*;
 pub use crate::userland::error::*;
 pub use crate::userland::ipc::*;

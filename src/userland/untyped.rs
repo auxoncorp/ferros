@@ -2,12 +2,12 @@ use core::marker::PhantomData;
 use core::ops::Sub;
 use crate::pow::{Pow, _Pow};
 use crate::userland::{
-    memory_kind, role, CNode, Cap, CapType, ChildCNode, ChildCap, DirectRetype, LocalCap,
+    memory_kind, role, CNode, Cap, CapRange, CapType, ChildCNode, ChildCap, DirectRetype, LocalCap,
     MemoryKind, PhantomCap, SeL4Error, UnmappedPage, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U12, U2, U3};
+use typenum::{Unsigned, B1, U1, U12, U2, U3};
 
 pub(crate) fn wrap_untyped<BitSize: Unsigned, Kind: MemoryKind>(
     cptr: usize,
@@ -194,6 +194,53 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         ))
     }
 
+    // TODO check the ut is big enough, as with retype_local
+    pub fn retype_multi<FreeSlots: Unsigned, TargetCapType: CapType, Count: Unsigned>(
+        self,
+        dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
+    ) -> Result<
+        (
+            CapRange<TargetCapType, role::Local, Count>,
+            LocalCap<CNode<Diff<FreeSlots, Count>, role::Local>>,
+        ),
+        SeL4Error,
+    >
+    where
+        FreeSlots: Sub<Count>,
+        Diff<FreeSlots, Count>: Unsigned,
+        TargetCapType: DirectRetype,
+        TargetCapType: PhantomCap,
+    {
+        let (reservation, dest_cnode) = dest_cnode.reserve_region::<Count>();
+
+        let err = unsafe {
+            seL4_Untyped_Retype(
+                self.cptr,                           // _service
+                TargetCapType::sel4_type_id(),       // type
+                0,                                   // size_bits
+                reservation.cptr,                    // root
+                0,                                   // index
+                0,                                   // depth
+                reservation.cap_data.next_free_slot, // offset
+                Count::USIZE,                        // num_objects
+            )
+        };
+
+        if err != 0 {
+            return Err(SeL4Error::UntypedRetype(err));
+        }
+
+        Ok((
+            CapRange {
+                start_cptr: reservation.cap_data.next_free_slot,
+                _cap_type: PhantomData,
+                _role: PhantomData,
+                _slots: PhantomData,
+            },
+            dest_cnode,
+        ))
+    }
+
     // TODO: the required size of the untyped depends in some way on the child radix, but HOW?
     // answer: it needs 4 more bits, this value is seL4_SlotBits.
     pub fn retype_cnode<FreeSlots: Unsigned, ChildRadix: Unsigned>(
@@ -201,7 +248,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
     ) -> Result<
         (
-            LocalCap<CNode<Pow<ChildRadix>, role::Child>>,
+            LocalCap<CNode<Diff<Pow<ChildRadix>, U1>, role::Child>>,
             LocalCap<CNode<Diff<FreeSlots, U2>, role::Local>>,
         ),
         SeL4Error,
@@ -211,6 +258,9 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         Diff<FreeSlots, U2>: Unsigned,
         ChildRadix: _Pow,
         Pow<ChildRadix>: Unsigned,
+
+        Pow<ChildRadix>: Sub<U1>,
+        Diff<Pow<ChildRadix>, U1>: Unsigned,
     {
         let (reserved_slots, output_dest_cnode) = dest_cnode.reserve_region::<U2>();
         let (reserved_slots, scratch_slot) = reserved_slots.consume_slot();
@@ -266,7 +316,8 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
                 _role: PhantomData,
                 cap_data: CNode {
                     radix: ChildRadix::to_u8(),
-                    next_free_slot: 0,
+                    // We start with the next free slot at 1 in order to "reserve" the 0-indexed slot for "null"
+                    next_free_slot: 1,
                     _free_slots: PhantomData,
                     _role: PhantomData,
                 },

@@ -1,12 +1,12 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
 use crate::userland::{
-    role, Badge, CNodeRole, Cap, CapRights, ChildCNode, ChildCap, Endpoint, LocalCNode, LocalCap,
-    SeL4Error, Untyped,
+    role, Badge, CNode, CNodeRole, Cap, CapRights, ChildCNode, ChildCap, Endpoint, LocalCNode,
+    LocalCap, SeL4Error, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U4};
+use typenum::{Unsigned, B1, U0, U4};
 
 #[derive(Debug)]
 pub enum IPCError {
@@ -28,63 +28,104 @@ pub enum FaultManagementError {
     SelfFaultHandlingForbidden,
 }
 
+pub struct IpcSetup<Req, Rsp> {
+    endpoint: LocalCap<Endpoint>,
+    // Alias the cnode, but only so we can copy out of it
+    endpoint_cnode: LocalCap<LocalCNode<U0>>,
+    _req: PhantomData<Req>,
+    _rsp: PhantomData<Rsp>,
+}
+
 /// Fastpath call channel -> given some memory capacity and two child cnodes,
-/// create an endpoint locally, copy it to both child cnodes (with the appropriate permissions)
-/// and produce two objects out, one for calling, one for receiving-and-responding
+/// create an endpoint locally, copy it to the responder process cnode, and return an
+/// IpcSetup to allow connecting callers.
 pub fn call_channel<
-    ScratchFreeSlots: Unsigned,
-    ChildAFreeSlots: Unsigned,
-    ChildBFreeSlots: Unsigned,
+    LocalFreeSlots: Unsigned,
+    ResponderFreeSlots: Unsigned,
     Req: Send + Sync,
     Rsp: Send + Sync,
 >(
-    local_cnode: LocalCap<LocalCNode<ScratchFreeSlots>>,
     untyped: LocalCap<Untyped<U4>>,
-    child_cnode_caller: LocalCap<ChildCNode<ChildAFreeSlots>>,
-    child_cnode_responder: LocalCap<ChildCNode<ChildBFreeSlots>>,
+    // child_cnode_caller: LocalCap<ChildCNode<ChildAFreeSlots>>,
+    child_cnode: LocalCap<ChildCNode<ResponderFreeSlots>>,
+    local_cnode: LocalCap<LocalCNode<LocalFreeSlots>>,
 ) -> Result<
     (
-        LocalCap<ChildCNode<Sub1<ChildAFreeSlots>>>,
-        LocalCap<ChildCNode<Sub1<ChildBFreeSlots>>>,
-        Caller<Req, Rsp, role::Child>,
+        IpcSetup<Req, Rsp>,
         Responder<Req, Rsp, role::Child>,
-        LocalCap<LocalCNode<Sub1<ScratchFreeSlots>>>,
+        LocalCap<ChildCNode<Sub1<ResponderFreeSlots>>>,
+        LocalCap<LocalCNode<Sub1<LocalFreeSlots>>>,
     ),
     IPCError,
 >
 where
-    ScratchFreeSlots: Sub<B1>,
-    Diff<ScratchFreeSlots, B1>: Unsigned,
-    ChildAFreeSlots: Sub<B1>,
-    Sub1<ChildAFreeSlots>: Unsigned,
-    ChildBFreeSlots: Sub<B1>,
-    Sub1<ChildBFreeSlots>: Unsigned,
+    LocalFreeSlots: Sub<B1>,
+    Diff<LocalFreeSlots, B1>: Unsigned,
+    ResponderFreeSlots: Sub<B1>,
+    Sub1<ResponderFreeSlots>: Unsigned,
 {
     let _ = IPCBuffer::<Req, Rsp>::new()?; // Check buffer fits Req and Rsp
     let (local_endpoint, local_cnode): (LocalCap<Endpoint>, _) =
         untyped.retype_local(local_cnode)?;
-    let (child_endpoint_caller, child_cnode_caller) =
-        local_endpoint.copy(&local_cnode, child_cnode_caller, CapRights::RWG)?;
-    let (child_endpoint_responder, child_cnode_responder) =
-        local_endpoint.copy(&local_cnode, child_cnode_responder, CapRights::RW)?;
+    let (child_endpoint, child_cnode) =
+        local_endpoint.copy(&local_cnode, child_cnode, CapRights::RW)?;
 
     Ok((
-        child_cnode_caller,
-        child_cnode_responder,
-        Caller {
-            endpoint: child_endpoint_caller,
+        IpcSetup {
+            endpoint: local_endpoint,
+            endpoint_cnode: Cap {
+                cptr: local_cnode.cptr,
+                _role: PhantomData,
+                cap_data: CNode {
+                    radix: local_cnode.cap_data.radix,
+                    next_free_slot: 0,
+                    _free_slots: PhantomData,
+                    _role: PhantomData,
+                },
+            },
             _req: PhantomData,
             _rsp: PhantomData,
-            _role: PhantomData,
         },
         Responder {
-            endpoint: child_endpoint_responder,
+            endpoint: child_endpoint,
             _req: PhantomData,
             _rsp: PhantomData,
             _role: PhantomData,
         },
+        child_cnode,
         local_cnode,
     ))
+}
+
+impl<Req, Rsp> IpcSetup<Req, Rsp> {
+    pub fn create_caller<CallerFreeSlots: Unsigned>(
+        &self,
+        child_cnode: LocalCap<ChildCNode<CallerFreeSlots>>,
+    ) -> Result<
+        (
+            Caller<Req, Rsp, role::Child>,
+            LocalCap<ChildCNode<Sub1<CallerFreeSlots>>>,
+        ),
+        IPCError,
+    >
+    where
+        CallerFreeSlots: Sub<B1>,
+        Sub1<CallerFreeSlots>: Unsigned,
+    {
+        let (child_endpoint, child_cnode) =
+            self.endpoint
+                .copy(&self.endpoint_cnode, child_cnode, CapRights::RWG)?;
+
+        Ok((
+            Caller {
+                endpoint: child_endpoint,
+                _req: PhantomData,
+                _rsp: PhantomData,
+                _role: PhantomData,
+            },
+            child_cnode,
+        ))
+    }
 }
 
 #[derive(Debug)]
@@ -376,9 +417,9 @@ pub struct Responder<Req: Sized, Rsp: Sized, Role: CNodeRole> {
 }
 
 impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
-    pub fn reply_recv<F>(self, f: F) -> Result<Rsp, IPCError>
+    pub fn reply_recv<F>(self, mut f: F) -> Result<Rsp, IPCError>
     where
-        F: Fn(&Req) -> (Rsp),
+        F: FnMut(&Req) -> (Rsp),
     {
         self.reply_recv_with_state((), move |req, state| (f(req), state))
     }
@@ -386,10 +427,10 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
     pub fn reply_recv_with_state<F, State>(
         self,
         initial_state: State,
-        f: F,
+        mut f: F,
     ) -> Result<Rsp, IPCError>
     where
-        F: Fn(&Req, State) -> (Rsp, State),
+        F: FnMut(&Req, State) -> (Rsp, State),
     {
         // Can safely use unchecked_new because we check sizing during the creation of Responder
         let mut ipc_buffer = unsafe { IPCBuffer::unchecked_new() };

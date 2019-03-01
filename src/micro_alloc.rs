@@ -7,6 +7,7 @@ use crate::userland::{memory_kind, wrap_untyped, LocalCap, MemoryKind, Untyped};
 use typenum::Unsigned;
 
 use sel4_sys::{seL4_BootInfo, seL4_UntypedDesc};
+use core::fmt::{Debug, Formatter, Error as FmtError};
 
 pub const MIN_UNTYPED_SIZE_BITS: u8 = 4;
 pub const MAX_UNTYPED_SIZE_BITS: u8 = 32;
@@ -18,6 +19,26 @@ struct UntypedItem {
     cptr: usize,
     desc: &'static seL4_UntypedDesc,
     is_free: bool,
+}
+
+impl Debug for UntypedItem {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError> {
+        f.write_str("UntypedItem { cptr: ")?;
+        self.cptr.fmt(f)?;
+        f.write_str(", desc: seL4UntypedDesc { paddr: ")?;
+        self.desc.paddr.fmt(f)?;
+        f.write_str(", padding1: ")?;
+        self.desc.padding1.fmt(f)?;
+        f.write_str(", padding2: ")?;
+        self.desc.padding2.fmt(f)?;
+        f.write_str(", sizeBits: ")?;
+        self.desc.sizeBits.fmt(f)?;
+        f.write_str(", isDevice: ")?;
+        self.desc.isDevice.fmt(f)?;
+        f.write_str(" }, is_free: ")?;
+        self.is_free.fmt(f)?;
+        f.write_str(" }")
+    }
 }
 
 #[derive(Debug)]
@@ -48,6 +69,17 @@ impl UntypedItem {
 
 pub struct Allocator {
     items: ArrayVec<[UntypedItem; MAX_INIT_UNTYPED_ITEMS]>,
+}
+
+impl Debug for Allocator {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError> {
+        f.write_str("Allocator { items:")?;
+        for i in &self.items {
+            f.write_str("\n  ")?;
+            i.fmt(f)?;
+        }
+        f.write_str("\n }")
+    }
 }
 
 impl Allocator {
