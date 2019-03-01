@@ -77,7 +77,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     };
 
     let (child_vspace, mut boot_info, root_cnode) =
-        VSpace::new(boot_info, child_vspace_ut, root_cnode)?;
+        VSpace::new::<_, _, _, U1>(boot_info, child_vspace_ut, root_cnode, None)?;
 
     let (child_process, _caller_vspace, root_cnode) = child_vspace.prepare_thread(
         proc_main,

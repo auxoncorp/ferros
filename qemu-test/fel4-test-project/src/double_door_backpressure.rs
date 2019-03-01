@@ -66,13 +66,14 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         waker_cnode_ut.retype_cnode::<_, U12>(root_cnode)?;
 
     // vspace setup
-    let (consumer_vspace, boot_info, root_cnode) = VSpace::new(boot_info, consumer_ut, root_cnode)?;
+    let (consumer_vspace, boot_info, root_cnode) =
+        VSpace::new::<_, _, _, U1>(boot_info, consumer_ut, root_cnode, None)?;
     let (producer_a_vspace, boot_info, root_cnode) =
-        VSpace::new(boot_info, producer_a_ut, root_cnode)?;
+        VSpace::new::<_, _, _, U1>(boot_info, producer_a_ut, root_cnode, None)?;
     let (producer_b_vspace, boot_info, root_cnode) =
-        VSpace::new(boot_info, producer_b_ut, root_cnode)?;
-
-    let (waker_vspace, mut boot_info, root_cnode) = VSpace::new(boot_info, waker_ut, root_cnode)?;
+        VSpace::new::<_, _, _, U1>(boot_info, producer_b_ut, root_cnode, None)?;
+    let (waker_vspace, mut boot_info, root_cnode) =
+        VSpace::new::<_, _, _, U1>(boot_info, waker_ut, root_cnode, None)?;
 
     let (
         consumer,

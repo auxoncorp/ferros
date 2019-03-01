@@ -48,9 +48,9 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let (mut scratch_page_table, mut boot_info) = boot_info.map_page_table(scratch_page_table)?;
 
     let (child_a_vspace, mut boot_info, root_cnode) =
-        VSpace::new(boot_info, child_a_vspace_ut, root_cnode)?;
+        VSpace::new::<_, _, _, U1>(boot_info, child_a_vspace_ut, root_cnode, None)?;
     let (child_b_vspace, mut boot_info, root_cnode) =
-        VSpace::new(boot_info, child_b_vspace_ut, root_cnode)?;
+        VSpace::new::<_, _, _, U1>(boot_info, child_b_vspace_ut, root_cnode, None)?;
 
     #[cfg(test_case = "shared_page_queue")]
     let (
