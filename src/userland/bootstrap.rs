@@ -82,6 +82,8 @@ pub mod paging {
 
     // Useful for constant comparison to data structure size_of results
     pub type PageBytes = Pow<PageBits>;
+
+    pub const USIZE_PER_PAGE: usize = 4096_usize / core::mem::size_of::<usize>();
 }
 
 pub mod address_space {

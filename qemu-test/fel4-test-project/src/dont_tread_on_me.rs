@@ -49,13 +49,13 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     debug_println!("proc 2 cspace retyped");
 
     let (proc1_vspace, mut boot_info, root_cnode) =
-        VSpace::new::<_, _, _, U1>(boot_info, proc1_vspace_ut, root_cnode, None)?;
+        VSpace::new(boot_info, proc1_vspace_ut, root_cnode)?;
     debug_println!("proc 1 vspace exists");
-    let (proc2_vspace, mut boot_info, root_cnode) = VSpace::new(
+    let (proc2_vspace, mut boot_info, root_cnode) = VSpace::new_with_writable_user_image(
         boot_info,
         proc2_vspace_ut,
+        (&mut scratch_page_table, ui_ut),
         root_cnode,
-        Some((&mut scratch_page_table, ui_ut)),
     )?;
     debug_println!("proc 2 vspace exists");
 

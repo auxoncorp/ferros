@@ -59,7 +59,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let (uart1_cnode, root_cnode) = uart1_cspace_untyped.retype_cnode::<_, U12>(root_cnode)?;
 
     let (uart1_vspace, mut boot_info, root_cnode) =
-        VSpace::new::<_, _, _, U1>(boot_info, uart1_vspace_untyped, root_cnode, None)?;
+        VSpace::new(boot_info, uart1_vspace_untyped, root_cnode)?;
 
     let (interrupt_consumer, _, uart1_cnode, root_cnode) = InterruptConsumer::new(
         notification_untyped,
