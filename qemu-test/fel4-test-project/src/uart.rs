@@ -1,6 +1,6 @@
 use sel4_sys::*;
 
-use typenum::consts::{U1, U12, U14, U18, U20, U58};
+use typenum::consts::{U12, U14, U20, U58};
 
 use ferros::drivers::uart::UartParams;
 use ferros::micro_alloc;
@@ -94,8 +94,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
 pub mod uart {
 
-    use core::mem;
-
     use sel4_sys::*;
 
     use ferros::drivers::uart::UartParams;
@@ -120,8 +118,6 @@ pub mod uart {
         ]
     }
 
-    const TX_OFFSET: usize = 1 << 6;
-
     register! {
         UartTX,
         WO,
@@ -129,8 +125,6 @@ pub mod uart {
             Data WIDTH(U8) OFFSET(U0)
         ]
     }
-
-    const CTL1_OFFSET: usize = 1 << 7;
 
     register! {
         UartControl1,
@@ -208,13 +202,11 @@ pub mod uart {
         }
     }
 
-    use core::ptr;
-
     pub extern "C" fn run<IRQ: Unsigned + Sync + Send>(params: UartParams<IRQ, role::Local>)
     where
         IRQ: IsLess<U256, Output = True>,
     {
-        let mut uart = Uart {
+        let uart = Uart {
             addr: params.base_ptr as u32,
         };
 

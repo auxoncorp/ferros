@@ -1,17 +1,13 @@
 use super::TopLevelError;
 use core::marker::PhantomData;
 use ferros::micro_alloc;
-use ferros::pow::Pow;
 use ferros::userland::{
-    call_channel, role, root_cnode, setup_fault_endpoint_pair, BootInfo, CNode, CNodeRole, Caller,
-    Cap, Consumer1, Endpoint, FaultSink, LocalCap, Producer, ProducerSetup, QueueFullError,
-    Responder, RetypeForSetup, SeL4Error, UnmappedPageTable, Untyped, VSpace,
+    role, root_cnode, setup_fault_endpoint_pair, BootInfo, CNode, CNodeRole, FaultSink, LocalCap,
+    RetypeForSetup, UnmappedPageTable, VSpace,
 };
 use sel4_sys::*;
-use typenum::{Diff, U1, U100, U12, U2, U20, U3, U4096, U6};
+use typenum::{Diff, U1, U12, U20, U4096};
 type U4095 = Diff<U4096, U1>;
-
-use sel4_sys::seL4_Yield;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     // wrap all untyped memory
@@ -33,7 +29,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let (ut16a, ut16b, _, _, root_cnode) = ut18.quarter(root_cnode)?;
     let (ut16e, _, _, _, root_cnode) = ut18b.quarter(root_cnode)?;
     let (ut14, _, _, _, root_cnode) = ut16e.quarter(root_cnode)?;
-    let (ut12, asid_pool_ut, shared_page_ut, _, root_cnode) = ut14.quarter(root_cnode)?;
+    let (ut12, asid_pool_ut, _, _, root_cnode) = ut14.quarter(root_cnode)?;
     let (ut10, scratch_page_table_ut, _, _, root_cnode) = ut12.quarter(root_cnode)?;
     let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode)?;
     let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode)?;
@@ -44,9 +40,9 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
     let (scratch_page_table, root_cnode): (LocalCap<UnmappedPageTable>, _) =
         scratch_page_table_ut.retype_local(root_cnode)?;
-    let (mut scratch_page_table, mut boot_info) = boot_info.map_page_table(scratch_page_table)?;
+    let (mut scratch_page_table, boot_info) = boot_info.map_page_table(scratch_page_table)?;
 
-    let (child_a_vspace, mut boot_info, root_cnode) =
+    let (child_a_vspace, boot_info, root_cnode) =
         VSpace::new(boot_info, child_a_vspace_ut, root_cnode)?;
     let (child_b_vspace, mut boot_info, root_cnode) =
         VSpace::new(boot_info, child_b_vspace_ut, root_cnode)?;
@@ -78,7 +74,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         255,
     )?;
 
-    let (fault_handler_process, _caller_vspace, root_cnode) = child_b_vspace.prepare_thread(
+    let (fault_handler_process, _, _) = child_b_vspace.prepare_thread(
         fault_handler_proc,
         fault_handler_params,
         child_b_thread_ut,

@@ -5,7 +5,7 @@
 use ferros::micro_alloc;
 use ferros::userland::{call_channel, root_cnode, BootInfo, VSpace};
 
-use typenum::consts::{U1, U12, U27};
+use typenum::consts::{U12, U27};
 
 use sel4_sys::{seL4_BootInfo, DebugOutHandle};
 
@@ -48,7 +48,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let (proc2_cspace, root_cnode) = proc2_cspace_ut.retype_cnode::<_, U12>(root_cnode)?;
     debug_println!("proc 2 cspace retyped");
 
-    let (proc1_vspace, mut boot_info, root_cnode) =
+    let (proc1_vspace, boot_info, root_cnode) =
         VSpace::new(boot_info, proc1_vspace_ut, root_cnode)?;
     debug_println!("proc 1 vspace exists");
     let (proc2_vspace, mut boot_info, root_cnode) = VSpace::new_with_writable_user_image(

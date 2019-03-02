@@ -5,7 +5,7 @@ use ferros::userland::{
     QueueFullError, RetypeForSetup, UnmappedPageTable, VSpace, Waker,
 };
 use sel4_sys::{seL4_BootInfo, seL4_Yield, DebugOutHandle};
-use typenum::{Diff, U1, U10, U12, U2, U20, U21, U4096};
+use typenum::{Diff, U1, U10, U12, U2, U21, U4096};
 type U4095 = Diff<U4096, U1>;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
