@@ -199,7 +199,7 @@ impl VSpace {
         let (ut16, page_tables_ut, cnode) = ut17.split(cnode)?;
         let (ut14, page_dir_ut, _, _, cnode) = ut16.quarter(cnode)?;
         let (ut12, _, _, _, cnode) = ut14.quarter(cnode)?;
-        let (ut10, initial_page_table_ut, _, _, cnode) = ut12.quarter(cnode)?;
+        let (initial_page_table_ut, _, _, _, cnode) = ut12.quarter(cnode)?;
 
         // allocate and assign the page directory
         let (page_dir, cnode): (LocalCap<UnassignedPageDirectory>, _) =
@@ -302,7 +302,7 @@ impl VSpace {
             }
         };
 
-        let (initial_page_table, cnode): (LocalCap<UnmappedPageTable>, _) =
+        let (initial_page_table, _): (LocalCap<UnmappedPageTable>, _) =
             initial_page_table_ut.retype_local(cnode)?;
         let (initial_page_table, page_dir) = page_dir.map_page_table(initial_page_table)?;
         let vspace = VSpace {
@@ -1333,7 +1333,7 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<MappedPageTable<FreeSlots, R
         unmapped_pages: CapRange<UnmappedPage<Kind>, role::Local, PageCount>,
         // TODO - must this page_dir always be the parent of this page table?
         // if so, we should clamp down harder on enforcing this relationship.
-        mut page_dir: &mut LocalCap<AssignedPageDirectory<PageDirFreeSlots, Role>>,
+        page_dir: &mut LocalCap<AssignedPageDirectory<PageDirFreeSlots, Role>>,
         f: F,
     ) -> Result<(Out, CapRange<UnmappedPage<Kind>, role::Local, PageCount>), SeL4Error>
     where

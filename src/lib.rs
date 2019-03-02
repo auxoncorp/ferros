@@ -11,11 +11,9 @@ extern crate alloc;
 
 extern crate arrayvec;
 extern crate generic_array;
-extern crate sel4_sys;
-#[macro_use]
-extern crate typenum;
-#[macro_use]
 extern crate registers;
+extern crate sel4_sys;
+extern crate typenum;
 
 extern crate cross_queue;
 
@@ -35,17 +33,14 @@ pub mod pow;
 mod twinkle_types;
 pub mod userland;
 
-mod test_proc;
-
 use crate::micro_alloc::Error as AllocError;
 use crate::userland::{
-    call_channel, role, root_cnode, BootInfo, CNode, Consumer1, IPCError, IRQError, LocalCap,
-    MultiConsumerError, Producer, SeL4Error, UnmappedPageTable, VSpace, VSpaceError, Waker,
+    call_channel, root_cnode, BootInfo, IPCError, IRQError, MultiConsumerError, SeL4Error, VSpace,
+    VSpaceError,
 };
 
 use sel4_sys::*;
-use typenum::{Diff, U1, U12, U27, U4096};
-type U4095 = Diff<U4096, U1>;
+use typenum::{U12, U27};
 
 fn yield_forever() {
     unsafe {
@@ -97,7 +92,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let (proc2_cspace, root_cnode) = proc2_cspace_ut.retype_cnode::<_, U12>(root_cnode)?;
     debug_println!("proc 2 cspace retyped");
 
-    let (proc1_vspace, mut boot_info, root_cnode) =
+    let (proc1_vspace, boot_info, root_cnode) =
         VSpace::new(boot_info, proc1_vspace_ut, root_cnode)?;
     debug_println!("proc 1 vspace exists");
     let (proc2_vspace, mut boot_info, root_cnode) = VSpace::new_with_writable_user_image(

@@ -1,8 +1,6 @@
 use typenum::consts::U256;
 use typenum::{IsLess, True, Unsigned};
 
-use registers::{ReadOnlyRegister, WriteOnlyRegister};
-
 use crate::userland::{role, CNodeRole, InterruptConsumer, RetypeForSetup};
 
 pub struct UartParams<IRQ: Unsigned + Sync + Send, Role: CNodeRole>

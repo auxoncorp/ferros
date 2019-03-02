@@ -158,7 +158,7 @@ where
 
 impl LocalCap<Notification> {
     /// Blocking wait on a notification
-    pub(crate) fn wait(&self) -> Badge {
+    pub fn wait(&self) -> Badge {
         let mut sender_badge: usize = 0;
         unsafe {
             seL4_Wait(self.cptr, &mut sender_badge as *mut usize);

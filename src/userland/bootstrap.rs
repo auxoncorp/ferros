@@ -9,8 +9,8 @@ use crate::userland::{
     Untyped,
 };
 use sel4_sys::*;
-use typenum::operator_aliases::{Diff, Prod, Sub1};
-use typenum::{Unsigned, B1, U0, U1024, U12, U19};
+use typenum::operator_aliases::{Diff, Sub1};
+use typenum::{Unsigned, B1, U0, U12, U19};
 
 // The root CNode radix is 19. Conservatively set aside 2^12 (the default root
 // cnode size) for system use. TODO: verify at build time that this is enough /
@@ -39,7 +39,7 @@ pub fn root_cnode(
 pub mod paging {
     use crate::pow::Pow;
     use typenum::operator_aliases::{Diff, Prod};
-    use typenum::{Sum, U1, U1024, U12, U16, U20, U24, U26, U6, U8, U9};
+    use typenum::{Sum, U1024, U12, U16, U20, U24, U26, U6, U8, U9};
 
     pub type BaseASIDPoolFreeSlots = U1024;
 
@@ -89,7 +89,7 @@ pub mod paging {
 pub mod address_space {
     use crate::pow::Pow;
     use typenum::operator_aliases::Sum;
-    use typenum::{U0, U100, U16, U20, U29, U30, U31, U64};
+    use typenum::{U16, U29, U30, U31};
 
     // TODO this is a magic numbers we got from inspecting the binary.
     /// 0x00010000
