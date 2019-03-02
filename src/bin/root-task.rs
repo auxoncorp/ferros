@@ -58,7 +58,7 @@ pub mod sel4_config {
     pub const KernelOptimisation: &'static str = "-O2";
     pub const KernelPrinting: bool = true;
     pub const KernelResetChunkBits: &'static str = "8";
-    pub const KernelRetypeFanOutLimit: &'static str = "256";
+    pub const KernelRetypeFanOutLimit: &'static str = "16384";
     pub const KernelRootCNodeSizeBits: &'static str = "19";
     pub const KernelStackBits: &'static str = "12";
     pub const KernelTimeSlice: &'static str = "5";

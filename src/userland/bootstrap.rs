@@ -38,8 +38,8 @@ pub fn root_cnode(
 
 pub mod paging {
     use crate::pow::Pow;
-    use typenum::operator_aliases::{Diff, Prod, Sum};
-    use typenum::{U1, U1024, U12, U16, U20, U24, U6, U8, U9};
+    use typenum::operator_aliases::{Diff, Prod};
+    use typenum::{Sum, U1, U1024, U12, U16, U20, U24, U26, U6, U8, U9};
 
     pub type BaseASIDPoolFreeSlots = U1024;
 
@@ -58,6 +58,7 @@ pub mod paging {
     pub type CodePageTableBits = U6;
     pub type CodePageTableCount = Pow<CodePageTableBits>; // 64 page tables == 64 mb
     pub type CodePageCount = Prod<CodePageTableCount, BasePageTableFreeSlots>; // 2^14
+    pub type TotalCodeSizeBits = U26;
 
     // 0xe00000000 and up is reserved to the kernel; this translates to the last
     // 2^9 (512) pagedir entries.
@@ -81,6 +82,8 @@ pub mod paging {
 
     // Useful for constant comparison to data structure size_of results
     pub type PageBytes = Pow<PageBits>;
+
+    pub const USIZE_PER_PAGE: usize = 4096_usize / core::mem::size_of::<usize>();
 }
 
 pub mod address_space {

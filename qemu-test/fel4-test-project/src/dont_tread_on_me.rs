@@ -1,66 +1,17 @@
-#![no_std]
-#![cfg_attr(feature = "alloc", feature(alloc))]
-// Necessary to mark as not-Send or not-Sync
-#![feature(optin_builtin_traits)]
-#![feature(associated_type_defaults)]
-#![recursion_limit = "128"]
+//! A test verifying that, should a process need a writable copy of
+//! the user image, that such a write cannot affect another process'
+//! copy of the user image.
 
-#[cfg(all(feature = "alloc"))]
-#[macro_use]
-extern crate alloc;
+use ferros::micro_alloc;
+use ferros::userland::{call_channel, root_cnode, BootInfo, VSpace};
 
-extern crate arrayvec;
-extern crate generic_array;
-extern crate sel4_sys;
-#[macro_use]
-extern crate typenum;
-#[macro_use]
-extern crate registers;
+use typenum::consts::{U1, U12, U27};
 
-extern crate cross_queue;
+use sel4_sys::{seL4_BootInfo, DebugOutHandle};
 
-#[cfg(all(feature = "test"))]
-extern crate proptest;
+use super::TopLevelError;
 
-#[cfg(feature = "test")]
-pub mod fel4_test;
-
-#[macro_use]
-mod debug;
-
-pub mod drivers;
-
-pub mod micro_alloc;
-pub mod pow;
-mod twinkle_types;
-pub mod userland;
-
-mod test_proc;
-
-use crate::micro_alloc::Error as AllocError;
-use crate::userland::{
-    call_channel, role, root_cnode, BootInfo, CNode, Consumer1, IPCError, IRQError, LocalCap,
-    MultiConsumerError, Producer, SeL4Error, UnmappedPageTable, VSpace, VSpaceError, Waker,
-};
-
-use sel4_sys::*;
-use typenum::{Diff, U1, U12, U27, U4096};
-type U4095 = Diff<U4096, U1>;
-
-fn yield_forever() {
-    unsafe {
-        loop {
-            seL4_Yield();
-        }
-    }
-}
-
-pub fn run(raw_boot_info: &'static seL4_BootInfo) {
-    do_run(raw_boot_info).expect("run error");
-    yield_forever();
-}
-
-fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
+pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
     let root_cnode = root_cnode(&raw_boot_info);
 
@@ -146,7 +97,7 @@ fn to_be_changed() {
 }
 
 pub mod proc1 {
-    use crate::userland::{role, CNodeRole, Responder, RetypeForSetup};
+    use ferros::userland::{role, CNodeRole, Responder, RetypeForSetup};
 
     use super::to_be_changed;
 
@@ -170,7 +121,7 @@ pub mod proc1 {
 
 pub mod proc2 {
     use core::ptr;
-    use crate::userland::{role, CNodeRole, Caller, RetypeForSetup};
+    use ferros::userland::{role, CNodeRole, Caller, RetypeForSetup};
 
     use super::to_be_changed;
 
@@ -191,51 +142,5 @@ pub mod proc2 {
             .cllr
             .blocking_call(&())
             .expect("blocking call blew up");
-    }
-}
-
-#[derive(Debug)]
-enum TopLevelError {
-    AllocError(AllocError),
-    IPCError(IPCError),
-    IRQError(IRQError),
-    MultiConsumerError(MultiConsumerError),
-    SeL4Error(SeL4Error),
-    VSpaceError(VSpaceError),
-}
-
-impl From<AllocError> for TopLevelError {
-    fn from(e: AllocError) -> Self {
-        TopLevelError::AllocError(e)
-    }
-}
-
-impl From<IPCError> for TopLevelError {
-    fn from(e: IPCError) -> Self {
-        TopLevelError::IPCError(e)
-    }
-}
-
-impl From<MultiConsumerError> for TopLevelError {
-    fn from(e: MultiConsumerError) -> Self {
-        TopLevelError::MultiConsumerError(e)
-    }
-}
-
-impl From<VSpaceError> for TopLevelError {
-    fn from(e: VSpaceError) -> Self {
-        TopLevelError::VSpaceError(e)
-    }
-}
-
-impl From<SeL4Error> for TopLevelError {
-    fn from(e: SeL4Error) -> Self {
-        TopLevelError::SeL4Error(e)
-    }
-}
-
-impl From<IRQError> for TopLevelError {
-    fn from(e: IRQError) -> Self {
-        TopLevelError::IRQError(e)
     }
 }

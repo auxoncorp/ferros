@@ -313,4 +313,17 @@ mod tests {
             );
         }
     }
+
+    sequential_test! {
+        fn dont_tread_on_me() {
+            run_qemu_test::<fn()>(
+                "dont_tread_on_me",
+                Regex::new(".*not changed at all.*").unwrap(),
+                Regex::new(".*Root task should never return from main.*").unwrap(),
+                None,
+                None,
+                None,
+            );
+        }
+    }
 }

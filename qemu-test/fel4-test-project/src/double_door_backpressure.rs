@@ -71,7 +71,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         VSpace::new(boot_info, producer_a_ut, root_cnode)?;
     let (producer_b_vspace, boot_info, root_cnode) =
         VSpace::new(boot_info, producer_b_ut, root_cnode)?;
-
     let (waker_vspace, mut boot_info, root_cnode) = VSpace::new(boot_info, waker_ut, root_cnode)?;
 
     let (

@@ -1,6 +1,6 @@
 use sel4_sys::*;
 
-use typenum::consts::{U12, U14, U18, U20, U58};
+use typenum::consts::{U1, U12, U14, U18, U20, U58};
 
 use ferros::drivers::uart::UartParams;
 use ferros::micro_alloc;

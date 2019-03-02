@@ -1,23 +1,20 @@
 use core::marker::PhantomData;
+use core::mem;
 use core::ops::{Add, Sub};
+
 use crate::pow::Pow;
 use crate::userland::cap::ThreadControlBlock;
 use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, SetupVer};
 use crate::userland::{
-    address_space, memory_kind, paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNodeRole,
-    Cap, CapRange, CapRights, ChildCNode, FaultSource, ImmobileIndelibleInertCapabilityReference,
-    LocalCNode, LocalCap, MappedPage, MappedPageTable, MappedSection, MemoryKind, PhantomCap,
-    SeL4Error, UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, UnmappedSection, Untyped,
+    memory_kind, paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNodeRole, Cap, CapRange,
+    CapRights, ChildCNode, FaultSource, ImmobileIndelibleInertCapabilityReference, LocalCNode,
+    LocalCap, MappedPage, MappedPageTable, MappedSection, MemoryKind, PhantomCap, SeL4Error,
+    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, UnmappedSection, Untyped,
 };
 use generic_array::{ArrayLength, GenericArray};
 use sel4_sys::*;
-use typenum::operator_aliases::{Diff, Prod, Sub1, Sum};
-use typenum::{
-    IsLessOrEqual, UInt, UTerm, Unsigned, B0, B1, U0, U1, U10, U100, U128, U14, U15, U16, U17, U2,
-    U32, U5, U6, U8, U9,
-};
-
-use core::iter::FromIterator;
+use typenum::operator_aliases::{Diff, Sub1, Sum};
+use typenum::{UInt, UTerm, Unsigned, B0, B1, U0, U1, U10, U16, U17, U32};
 
 #[derive(Debug)]
 pub enum VSpaceError {
@@ -92,6 +89,111 @@ impl VSpace {
         ASIDPoolFreeSlots: Sub<B1>,
         Sub1<ASIDPoolFreeSlots>: Unsigned,
     {
+        VSpace::new_internal::<_, _, _, U1>(boot_info, ut17, None, dest_cnode)
+    }
+
+    pub fn new_with_writable_user_image<
+        ASIDPoolFreeSlots: Unsigned,
+        CNodeFreeSlots: Unsigned,
+        BootInfoPageDirFreeSlots: Unsigned,
+        ScratchPageTableSlots: Unsigned,
+    >(
+        boot_info: BootInfo<ASIDPoolFreeSlots, BootInfoPageDirFreeSlots>,
+        ut17: LocalCap<Untyped<U17>>,
+        code_untyped_and_scratch_pt: (
+            &mut LocalCap<MappedPageTable<ScratchPageTableSlots, role::Local>>,
+            LocalCap<Untyped<paging::TotalCodeSizeBits>>,
+        ),
+        dest_cnode: LocalCap<LocalCNode<CNodeFreeSlots>>,
+    ) -> Result<
+        (
+            VSpace<
+                Diff<paging::BasePageDirFreeSlots, Sum<paging::CodePageTableCount, U1>>,
+                paging::BasePageTableFreeSlots,
+                role::Child,
+            >,
+            BootInfo<Sub1<ASIDPoolFreeSlots>, BootInfoPageDirFreeSlots>,
+            // dest_cnode
+            LocalCap<LocalCNode<Diff<CNodeFreeSlots, NewVSpaceCNodeSlots>>>,
+        ),
+        SeL4Error,
+    >
+    where
+        paging::CodePageTableCount: Add<U1>,
+        Sum<paging::CodePageTableCount, U1>: Unsigned,
+
+        paging::BasePageTableFreeSlots: Sub<Sum<paging::CodePageTableCount, U1>>,
+        Diff<paging::BasePageTableFreeSlots, Sum<paging::CodePageTableCount, U1>>: Unsigned,
+
+        paging::CodePageTableCount: Add<paging::CodePageCount>,
+        Sum<paging::CodePageTableCount, paging::CodePageCount>: Unsigned,
+
+        // because of https://github.com/rust-lang/rust/issues/20775, we need to
+        // write this trait bound as a fully normalized term
+        CNodeFreeSlots: Sub<NewVSpaceCNodeSlotsNormalized>,
+        Diff<CNodeFreeSlots, NewVSpaceCNodeSlots>: Unsigned,
+
+        ASIDPoolFreeSlots: Sub<B1>,
+        Sub1<ASIDPoolFreeSlots>: Unsigned,
+
+        ScratchPageTableSlots: Sub<B1>,
+        Sub1<ScratchPageTableSlots>: Unsigned,
+    {
+        VSpace::new_internal(
+            boot_info,
+            ut17,
+            Some(code_untyped_and_scratch_pt),
+            dest_cnode,
+        )
+    }
+
+    fn new_internal<
+        ASIDPoolFreeSlots: Unsigned,
+        CNodeFreeSlots: Unsigned,
+        BootInfoPageDirFreeSlots: Unsigned,
+        ScratchPageTableSlots: Unsigned,
+    >(
+        boot_info: BootInfo<ASIDPoolFreeSlots, BootInfoPageDirFreeSlots>,
+        ut17: LocalCap<Untyped<U17>>,
+        code_untyped_and_scratch_pt: Option<(
+            &mut LocalCap<MappedPageTable<ScratchPageTableSlots, role::Local>>,
+            LocalCap<Untyped<paging::TotalCodeSizeBits>>,
+        )>,
+        dest_cnode: LocalCap<LocalCNode<CNodeFreeSlots>>,
+    ) -> Result<
+        (
+            VSpace<
+                Diff<paging::BasePageDirFreeSlots, Sum<paging::CodePageTableCount, U1>>,
+                paging::BasePageTableFreeSlots,
+                role::Child,
+            >,
+            BootInfo<Sub1<ASIDPoolFreeSlots>, BootInfoPageDirFreeSlots>,
+            // dest_cnode
+            LocalCap<LocalCNode<Diff<CNodeFreeSlots, NewVSpaceCNodeSlots>>>,
+        ),
+        SeL4Error,
+    >
+    where
+        paging::CodePageTableCount: Add<U1>,
+        Sum<paging::CodePageTableCount, U1>: Unsigned,
+
+        paging::BasePageTableFreeSlots: Sub<Sum<paging::CodePageTableCount, U1>>,
+        Diff<paging::BasePageTableFreeSlots, Sum<paging::CodePageTableCount, U1>>: Unsigned,
+
+        paging::CodePageTableCount: Add<paging::CodePageCount>,
+        Sum<paging::CodePageTableCount, paging::CodePageCount>: Unsigned,
+
+        // because of https://github.com/rust-lang/rust/issues/20775, we need to
+        // write this trait bound as a fully normalized term
+        CNodeFreeSlots: Sub<NewVSpaceCNodeSlotsNormalized>,
+        Diff<CNodeFreeSlots, NewVSpaceCNodeSlots>: Unsigned,
+
+        ASIDPoolFreeSlots: Sub<B1>,
+        Sub1<ASIDPoolFreeSlots>: Unsigned,
+
+        ScratchPageTableSlots: Sub<B1>,
+        Sub1<ScratchPageTableSlots>: Unsigned,
+    {
         let (cnode, dest_cnode) = dest_cnode.reserve_region::<NewVSpaceCNodeSlots>();
 
         let (ut16, page_tables_ut, cnode) = ut17.split(cnode)?;
@@ -102,7 +204,7 @@ impl VSpace {
         // allocate and assign the page directory
         let (page_dir, cnode): (LocalCap<UnassignedPageDirectory>, _) =
             page_dir_ut.retype_local(cnode)?;
-        let (page_dir, boot_info) = boot_info.assign_minimal_page_dir(page_dir)?;
+        let (page_dir, mut boot_info) = boot_info.assign_minimal_page_dir(page_dir)?;
 
         // Allocate and map the user image paging structures. This happens
         // first, so it starts at address 0, which is where the code expects to
@@ -128,25 +230,77 @@ impl VSpace {
             let _mapped_pt = page_dir_slot.map_page_table(pt)?;
         }
 
-        // map pages
-        let (cnode_slot_reservation_iter, cnode) =
-            cnode.reservation_iter::<paging::CodePageCount>();
+        // Here we determine whether or not this bergeoning process
+        // needs writable access to the user image (e.g., for global
+        // variables). We're signalled to this by the presence of a
+        // scratch page table and a 26-bit untyped in which we can
+        // retype into pages to hold the user image.
+        let cnode = match code_untyped_and_scratch_pt {
+            Some((scratch_page_table, code_ut)) => {
+                // First, retype the untyped into `CodePageCount`
+                // pages.
+                let (fresh_pages, cnode): (
+                    CapRange<
+                        UnmappedPage<memory_kind::General>,
+                        role::Local,
+                        paging::CodePageCount,
+                    >,
+                    _,
+                ) = code_ut.retype_multi(cnode)?;
+                // Then, zip up the pages with `boot_info`'s copy of the usage image.
+                for (ui_page, fresh_page) in
+                    boot_info.user_image_pages_iter().zip(fresh_pages.iter())
+                {
+                    // Temporarily map the new page and copy the data
+                    // from `boot_info` to the new page.
+                    let (_, fresh_unmapped_page) = scratch_page_table.temporarily_map_page(
+                        fresh_page,
+                        &mut boot_info.page_directory,
+                        |temp_mapped_page| {
+                            unsafe {
+                                *(mem::transmute::<usize, *mut [usize; paging::USIZE_PER_PAGE]>(
+                                    temp_mapped_page.cap_data.vaddr,
+                                )) = *(mem::transmute::<
+                                    usize,
+                                    *const [usize; paging::USIZE_PER_PAGE],
+                                >(ui_page.cap_data.vaddr))
+                            };
+                        },
+                    )?;
+                    // Finally, map that page into the target vspace
+                    // /at the same virtual address/. This is where
+                    // the code is expected to be.
+                    let _ = page_dir.map_page_direct(
+                        fresh_unmapped_page,
+                        ui_page.cap_data.vaddr,
+                        CapRights::RW,
+                    )?;
+                }
+                cnode
+            }
+            None => {
+                // map pages
+                let (cnode_slot_reservation_iter, cnode) =
+                    cnode.reservation_iter::<paging::CodePageCount>();
 
-        for (page_cap, slot_cnode) in boot_info
-            .user_image_pages_iter()
-            .zip(cnode_slot_reservation_iter)
-        {
-            // This is RW so that mutable global variables can be used
-            let (copied_page_cap, _) = page_cap.copy(&cnode, slot_cnode, CapRights::RW)?;
-            // Use map_page_direct instead of a VSpace so we don't have to keep
-            // track of bulk allocations which cross page table boundaries at
-            // the type level.
-            let mapped_page = page_dir.map_page_direct(
-                copied_page_cap,
-                page_cap.cap_data.vaddr,
-                CapRights::RW,
-            )?;
-        }
+                for (page_cap, slot_cnode) in boot_info
+                    .user_image_pages_iter()
+                    .zip(cnode_slot_reservation_iter)
+                {
+                    // This is RW so that mutable global variables can be used
+                    let (copied_page_cap, _) = page_cap.copy(&cnode, slot_cnode, CapRights::R)?;
+                    // Use map_page_direct instead of a VSpace so we don't have to keep
+                    // track of bulk allocations which cross page table boundaries at
+                    // the type level.
+                    let _ = page_dir.map_page_direct(
+                        copied_page_cap,
+                        page_cap.cap_data.vaddr,
+                        CapRights::R,
+                    )?;
+                }
+                cnode
+            }
+        };
 
         let (initial_page_table, cnode): (LocalCap<UnmappedPageTable>, _) =
             initial_page_table_ut.retype_local(cnode)?;
