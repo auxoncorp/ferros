@@ -39,7 +39,7 @@ pub fn root_cnode(
 pub mod paging {
     use crate::pow::Pow;
     use typenum::operator_aliases::{Diff, Prod};
-    use typenum::{U1, U1024, U12, U16, U20, U24, U26, U6, U8, U9};
+    use typenum::{Sum, U1, U1024, U12, U16, U20, U24, U26, U6, U8, U9};
 
     pub type BaseASIDPoolFreeSlots = U1024;
 

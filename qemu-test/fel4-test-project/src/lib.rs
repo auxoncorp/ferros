@@ -23,6 +23,7 @@ macro_rules! debug_println {
     ($fmt:expr, $($arg:tt)*) => (debug_print!(concat!($fmt, "\n"), $($arg)*));
 }
 
+mod dont_tread_on_me;
 mod double_door_backpressure;
 #[cfg(dual_process = "true")]
 mod dual_process;
@@ -53,6 +54,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     uart::run(raw_boot_info).expect("uart run");
     #[cfg(test_case = "fault_pair")]
     fault_pair::run(raw_boot_info).expect("fault_pair run");
+    #[cfg(test_case = "dont_tread_on_me")]
+    dont_tread_on_me::run(raw_boot_info).expect("dont_tread_on_me");
 
     yield_forever()
 }
