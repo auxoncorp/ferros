@@ -1,9 +1,9 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
-use crate::userland::{CNode, CapRights, SeL4Error};
+use crate::userland::{paging, CNode, CapRights, SeL4Error};
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
-use typenum::{IsLess, True, Unsigned, B1, U256};
+use typenum::{IsLess, True, Unsigned, B1, U10, U12, U14, U256, U4};
 
 /// Type-level enum indicating the relative location / Capability Pointer addressing
 /// scheme that should be used for the objects parameterized by it.
@@ -25,6 +25,7 @@ pub mod role {
 /// this type of capability can be generated directly
 /// from retyping an Untyped
 pub trait DirectRetype {
+    type SizeBits: Unsigned;
     // TODO - find out where the actual size of the fixed-size objects are specified in seL4-land
     // and pipe them through to the implementations of this trait as an associated type parameter,
     // selected either through `cfg` attributes or reference to `build.rs` generated code that inspects
@@ -202,6 +203,7 @@ impl PhantomCap for ThreadControlBlock {
 }
 
 impl DirectRetype for ThreadControlBlock {
+    type SizeBits = U10;
     fn sel4_type_id() -> usize {
         api_object_seL4_TCBObject as usize
     }
@@ -292,6 +294,7 @@ impl CopyAliasable for Endpoint {
 impl Mintable for Endpoint {}
 
 impl DirectRetype for Endpoint {
+    type SizeBits = U4;
     fn sel4_type_id() -> usize {
         api_object_seL4_EndpointObject as usize
     }
@@ -315,6 +318,7 @@ impl CopyAliasable for Notification {
 impl Mintable for Notification {}
 
 impl DirectRetype for Notification {
+    type SizeBits = U4;
     fn sel4_type_id() -> usize {
         api_object_seL4_NotificationObject as usize
     }
@@ -349,6 +353,7 @@ impl PhantomCap for UnassignedPageDirectory {
 }
 
 impl DirectRetype for UnassignedPageDirectory {
+    type SizeBits = U14;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_PageDirectoryObject as usize
     }
@@ -374,6 +379,7 @@ impl CopyAliasable for UnmappedPageTable {
 }
 
 impl DirectRetype for UnmappedPageTable {
+    type SizeBits = U10;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_PageTableObject as usize
     }
@@ -413,6 +419,7 @@ impl<Kind: MemoryKind> PhantomCap for UnmappedPage<Kind> {
 }
 
 impl DirectRetype for UnmappedPage<memory_kind::General> {
+    type SizeBits = paging::PageBits;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_SmallPageObject as usize
     }
@@ -463,6 +470,7 @@ impl<Kind: MemoryKind> PhantomCap for UnmappedLargePage<Kind> {
 }
 
 impl DirectRetype for UnmappedLargePage<memory_kind::General> {
+    type SizeBits = crate::userland::paging::LargePageBits;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_LargePageObject as usize
     }
@@ -513,6 +521,7 @@ impl<Kind: MemoryKind> PhantomCap for UnmappedSection<Kind> {
 }
 
 impl DirectRetype for UnmappedSection<memory_kind::General> {
+    type SizeBits = crate::userland::paging::SectionBits;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_SectionObject as usize
     }
@@ -561,6 +570,7 @@ impl<Kind: MemoryKind> PhantomCap for UnmappedSuperSection<Kind> {
 }
 
 impl DirectRetype for UnmappedSuperSection<memory_kind::General> {
+    type SizeBits = crate::userland::paging::SuperSectionBits;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_SuperSectionObject as usize
     }

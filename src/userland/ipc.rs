@@ -1,12 +1,13 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
+use crate::userland::cap::DirectRetype;
 use crate::userland::{
     role, Badge, CNode, CNodeRole, Cap, CapRights, ChildCNode, ChildCap, Endpoint, LocalCNode,
     LocalCap, SeL4Error, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U0, U4};
+use typenum::{Unsigned, B1, U0};
 
 #[derive(Debug)]
 pub enum IPCError {
@@ -45,8 +46,7 @@ pub fn call_channel<
     Req: Send + Sync,
     Rsp: Send + Sync,
 >(
-    untyped: LocalCap<Untyped<U4>>,
-    // child_cnode_caller: LocalCap<ChildCNode<ChildAFreeSlots>>,
+    untyped: LocalCap<Untyped<<Endpoint as DirectRetype>::SizeBits>>,
     child_cnode: LocalCap<ChildCNode<ResponderFreeSlots>>,
     local_cnode: LocalCap<LocalCNode<LocalFreeSlots>>,
 ) -> Result<
@@ -489,7 +489,7 @@ pub struct FaultSinkSetup {
 impl FaultSinkSetup {
     pub fn new<ScratchFreeSlots: Unsigned, FaultSinkChildFreeSlots: Unsigned>(
         local_cnode: LocalCap<LocalCNode<ScratchFreeSlots>>,
-        untyped: LocalCap<Untyped<U4>>,
+        untyped: LocalCap<Untyped<<Endpoint as DirectRetype>::SizeBits>>,
         child_cnode_fault_sink: LocalCap<ChildCNode<FaultSinkChildFreeSlots>>,
     ) -> (
         Self,
@@ -566,7 +566,7 @@ pub fn setup_fault_endpoint_pair<
     FaultSinkChildFreeSlots: Unsigned,
 >(
     local_cnode: LocalCap<LocalCNode<ScratchFreeSlots>>,
-    untyped: LocalCap<Untyped<U4>>,
+    untyped: LocalCap<Untyped<<Endpoint as DirectRetype>::SizeBits>>,
     child_cnode_fault_source: LocalCap<ChildCNode<FaultSourceChildFreeSlots>>,
     child_cnode_fault_sink: LocalCap<ChildCNode<FaultSinkChildFreeSlots>>,
 ) -> Result<

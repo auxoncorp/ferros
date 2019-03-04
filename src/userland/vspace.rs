@@ -6,10 +6,11 @@ use crate::pow::Pow;
 use crate::userland::cap::ThreadControlBlock;
 use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, SetupVer};
 use crate::userland::{
-    memory_kind, paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNodeRole, Cap, CapRange,
-    CapRights, ChildCNode, FaultSource, ImmobileIndelibleInertCapabilityReference, LocalCNode,
-    LocalCap, MappedPage, MappedPageTable, MappedSection, MemoryKind, PhantomCap, SeL4Error,
-    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, UnmappedSection, Untyped,
+    address_space, memory_kind, paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNodeRole,
+    Cap, CapRange, CapRights, ChildCNode, DirectRetype, FaultSource,
+    ImmobileIndelibleInertCapabilityReference, LocalCNode, LocalCap, MappedPage, MappedPageTable,
+    MappedSection, MemoryKind, PhantomCap, SeL4Error, UnassignedPageDirectory, UnmappedPage,
+    UnmappedPageTable, UnmappedSection, Untyped,
 };
 use generic_array::{ArrayLength, GenericArray};
 use sel4_sys::*;
@@ -319,7 +320,7 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
 {
     pub fn next_page_table<CNodeFreeSlots: Unsigned>(
         self,
-        new_page_table_ut: LocalCap<Untyped<U10>>,
+        new_page_table_ut: LocalCap<Untyped<<UnmappedPageTable as DirectRetype>::SizeBits>>,
         dest_cnode: LocalCap<LocalCNode<CNodeFreeSlots>>,
     ) -> Result<
         (

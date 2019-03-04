@@ -45,7 +45,6 @@ use crate::userland::{
 
 use sel4_sys::*;
 use typenum::{Diff, U1, U12, U27, U4096};
-type U4095 = Diff<U4096, U1>;
 
 fn yield_forever() {
     unsafe {

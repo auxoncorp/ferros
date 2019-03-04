@@ -1,13 +1,19 @@
 use core::marker::PhantomData;
-use core::ops::Sub;
+use core::ops::{Add, Mul, Sub};
 use crate::pow::{Pow, _Pow};
 use crate::userland::{
-    memory_kind, role, CNode, Cap, CapRange, CapType, ChildCNode, ChildCap, DirectRetype, LocalCap,
-    MemoryKind, PhantomCap, SeL4Error, UnmappedPage, Untyped,
+    memory_kind, paging, role, CNode, Cap, CapRange, CapType, ChildCNode, ChildCap, DirectRetype,
+    LocalCap, MemoryKind, PhantomCap, SeL4Error, UnmappedPage, Untyped,
 };
 use sel4_sys::*;
-use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U1, U12, U2, U3};
+use typenum::operator_aliases::{Diff, Prod, Sub1, Sum};
+use typenum::{IsGreaterOrEqual, IsLessOrEqual, True, Unsigned, B1, U1, U12, U2, U3, U4};
+
+// The seL4 kernel's maximum amount of retypes per system call is configurable
+// in the fel4.toml, particularly by the KernelRetypeFanOutLimit property.
+// This configuration is turned into a generated Rust type of the same name
+// that implements `typenum::Unsigned` in the `build.rs` file.
+include!(concat!(env!("OUT_DIR"), "/KERNEL_RETYPE_FAN_OUT_LIMIT"));
 
 pub(crate) fn wrap_untyped<BitSize: Unsigned, Kind: MemoryKind>(
     cptr: usize,
@@ -147,8 +153,6 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
 }
 
 impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
-    // TODO add required bits as an associated type for each TargetCapType, require that
-    // this untyped is big enough
     pub fn retype_local<FreeSlots: Unsigned, TargetCapType: CapType>(
         self,
         dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
@@ -164,6 +168,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         Sub1<FreeSlots>: Unsigned,
         TargetCapType: DirectRetype,
         TargetCapType: PhantomCap,
+        BitSize: IsGreaterOrEqual<TargetCapType::SizeBits, Output = True>,
     {
         let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
 
@@ -194,7 +199,6 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         ))
     }
 
-    // TODO check the ut is big enough, as with retype_local
     pub fn retype_multi<FreeSlots: Unsigned, TargetCapType: CapType, Count: Unsigned>(
         self,
         dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
@@ -208,8 +212,22 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
     where
         FreeSlots: Sub<Count>,
         Diff<FreeSlots, Count>: Unsigned,
+        Count: IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
+
         TargetCapType: DirectRetype,
         TargetCapType: PhantomCap,
+
+        BitSize: _Pow,
+        Pow<BitSize>: Unsigned,
+
+        <TargetCapType as DirectRetype>::SizeBits: _Pow,
+        Pow<<TargetCapType as DirectRetype>::SizeBits>: Mul<Count>,
+        Prod<Pow<<TargetCapType as DirectRetype>::SizeBits>, Count>: Unsigned,
+
+        Pow<BitSize>: IsGreaterOrEqual<
+            Prod<Pow<<TargetCapType as DirectRetype>::SizeBits>, Count>,
+            Output = True,
+        >,
     {
         let (reservation, dest_cnode) = dest_cnode.reserve_region::<Count>();
 
@@ -241,8 +259,6 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         ))
     }
 
-    // TODO: the required size of the untyped depends in some way on the child radix, but HOW?
-    // answer: it needs 4 more bits, this value is seL4_SlotBits.
     pub fn retype_cnode<FreeSlots: Unsigned, ChildRadix: Unsigned>(
         self,
         dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
@@ -261,6 +277,10 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
 
         Pow<ChildRadix>: Sub<U1>,
         Diff<Pow<ChildRadix>, U1>: Unsigned,
+
+        ChildRadix: Add<U4>,
+        Sum<ChildRadix, U4>: Unsigned,
+        BitSize: IsGreaterOrEqual<Sum<ChildRadix, U4>>,
     {
         let (reserved_slots, output_dest_cnode) = dest_cnode.reserve_region::<U2>();
         let (reserved_slots, scratch_slot) = reserved_slots.consume_slot();
@@ -341,6 +361,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         Sub1<FreeSlots>: Unsigned,
         TargetCapType: DirectRetype,
         TargetCapType: PhantomCap,
+        BitSize: IsGreaterOrEqual<TargetCapType::SizeBits, Output = True>,
     {
         let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
 
@@ -372,9 +393,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
     }
 }
 
-// TODO - associate this size with architecture-specific knowledge of page/frame sizes
-// rather than a U12 directly.
-impl LocalCap<Untyped<U12, memory_kind::Device>> {
+impl LocalCap<Untyped<paging::PageBits, memory_kind::Device>> {
     /// The only thing memory_kind::Device memory can be used to make
     /// is a page/frame.
     pub fn retype_device_page<CNodeFreeSlots: Unsigned>(

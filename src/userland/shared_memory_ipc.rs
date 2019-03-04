@@ -3,12 +3,12 @@ use core::ops::Sub;
 
 use crate::userland::paging::PageBytes;
 use crate::userland::{
-    role, Badge, CNodeRole, Cap, CapRights, ChildCNode, IPCError, LocalCNode, LocalCap,
-    Notification, UnmappedPage, Untyped, VSpace,
+    memory_kind, role, Badge, CNodeRole, Cap, CapRights, ChildCNode, DirectRetype, IPCError,
+    LocalCNode, LocalCap, Notification, UnmappedPage, Untyped, VSpace,
 };
 use sel4_sys::{seL4_Signal, seL4_Wait};
 use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U12, U2, U4, U5};
+use typenum::{Unsigned, B1, U2, U5};
 
 pub mod sync {
     use super::*;
@@ -25,9 +25,11 @@ pub mod sync {
         Rsp: Send + Sync,
     >(
         local_cnode: LocalCap<LocalCNode<ScratchFreeSlots>>,
-        shared_page_ut: LocalCap<Untyped<U12>>,
-        call_notification_ut: LocalCap<Untyped<U4>>,
-        response_notification_ut: LocalCap<Untyped<U4>>,
+        shared_page_ut: LocalCap<
+            Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
+        >,
+        call_notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
+        response_notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
         caller_vspace: VSpace<CallerPageDirFreeSlots, CallerPageTableFreeSlots, role::Child>,
         responder_vspace: VSpace<
             ResponderPageDirFreeSlots,

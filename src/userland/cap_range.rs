@@ -1,10 +1,7 @@
 use core::marker::PhantomData;
-use typenum::{Unsigned, B1, U12, U2, U3};
+use typenum::Unsigned;
 
-use crate::userland::{
-    memory_kind, role, CNode, CNodeRole, Cap, CapType, ChildCNode, ChildCap, DirectRetype,
-    LocalCap, MemoryKind, PhantomCap, SeL4Error, UnmappedPage, Untyped,
-};
+use crate::userland::{CNodeRole, Cap, CapType, PhantomCap};
 
 pub struct CapRange<CT: CapType + PhantomCap, Role: CNodeRole, Slots: Unsigned> {
     pub(crate) start_cptr: usize,
