@@ -29,15 +29,16 @@ use crate::userland::cap::Badge;
 use crate::userland::paging::PageBytes;
 use crate::userland::role;
 use crate::userland::{
-    irq_state, memory_kind, CNodeRole, Cap, CapRights, ChildCNode, IRQControl, IRQError,
-    IRQHandler, ImmobileIndelibleInertCapabilityReference, LocalCNode, LocalCap, MappedPage,
-    MappedPageTable, Notification, PhantomCap, SeL4Error, UnmappedPage, Untyped, VSpace,
+    irq_state, memory_kind, CNodeRole, Cap, CapRights, ChildCNode, DirectRetype, IRQControl,
+    IRQError, IRQHandler, ImmobileIndelibleInertCapabilityReference, LocalCNode, LocalCap,
+    MappedPage, MappedPageTable, Notification, PhantomCap, SeL4Error, UnmappedPage, Untyped,
+    VSpace,
 };
 use cross_queue::PushError;
 use cross_queue::{ArrayQueue, Slot};
 use generic_array::ArrayLength;
 use sel4_sys::{seL4_Signal, seL4_Wait};
-use typenum::{Diff, IsGreater, IsLess, Sub1, True, Unsigned, B1, U0, U12, U2, U256, U3, U4};
+use typenum::{Diff, IsGreater, IsLess, Sub1, True, Unsigned, B1, U0, U2, U256, U3};
 
 /// A multi-consumer that consumes interrupt-style notifications
 ///
@@ -211,7 +212,7 @@ where
     IRQ: IsLess<U256, Output = True>,
 {
     pub fn new<ConsumerCNodeFreeSlots: Unsigned, LocalCNodeFreeSlots: Unsigned>(
-        notification_ut: LocalCap<Untyped<U4>>,
+        notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
         consumer_cnode: LocalCap<ChildCNode<ConsumerCNodeFreeSlots>>,
         irq_control: &mut LocalCap<IRQControl>,
         local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
@@ -291,7 +292,9 @@ where
     >(
         self,
         consumer_token: ConsumerToken,
-        shared_page_ut: LocalCap<Untyped<U12>>,
+        shared_page_ut: LocalCap<
+            Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
+        >,
         consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
         local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
         local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
@@ -387,8 +390,10 @@ where
         ConsumerPageDirFreeSlots: Unsigned,
         ConsumerPageTableFreeSlots: Unsigned,
     >(
-        notification_ut: LocalCap<Untyped<U4>>,
-        shared_page_ut: LocalCap<Untyped<U12>>,
+        notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
+        shared_page_ut: LocalCap<
+            Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
+        >,
         consumer_cnode: LocalCap<ChildCNode<ConsumerCNodeFreeSlots>>,
         consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
         local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
@@ -508,7 +513,9 @@ where
     >(
         self,
         consumer_token: &ConsumerToken,
-        shared_page_ut: LocalCap<Untyped<U12>>,
+        shared_page_ut: LocalCap<
+            Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
+        >,
         consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
         local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
         local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
@@ -619,7 +626,9 @@ where
     >(
         self,
         consumer_token: &ConsumerToken,
-        shared_page_ut: LocalCap<Untyped<U12>>,
+        shared_page_ut: LocalCap<
+            Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
+        >,
         consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
         local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
         local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
@@ -717,7 +726,9 @@ fn create_page_filled_with_array_queue<
     ConsumerPageDirFreeSlots: Unsigned,
     ConsumerPageTableFreeSlots: Unsigned,
 >(
-    shared_page_ut: LocalCap<Untyped<U12>>,
+    shared_page_ut: LocalCap<
+        Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
+    >,
     consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
     local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
     mut local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
