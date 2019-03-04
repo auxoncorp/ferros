@@ -59,7 +59,7 @@ let (ut16, _, _, _, root_cnode) = ut18.quarter(root_cnode)?;
 let (ut14, _, _, _, root_cnode) = ut18.quarter(root_cnode)?;
 
 // Create a page table seL4 kernel object and return a capability pointer to it.
-// Here we use a variable bidning type annotation and Rust's type system can figure out
+// Here we use a variable binding type annotation and Rust's type system can figure out
 // if the Untyped instance used has enough capacity to represent this particular
 // kernel object.
 let (root_page_table, root_cnode): (LocalCap<UnmappedPageTable>, _) =
@@ -87,7 +87,7 @@ context.
 
 `ferros` solves these problems by tracking capabilities with a smart pointer type, `Cap`.
 
-`Cap` pointers are parameterized at the type level by the exact kernel object they point at,
+`Cap` pointers are parameterized at the type level by the kernel object kind they point at,
 as well as by whether the pointer is valid in the local execution context (or in the context
 of a child process); e.g. `Cap<Endpoint, Local>` , `Cap<Notification, Child>`
 
@@ -98,7 +98,7 @@ The `ferros` APIs
 
 seL4 offers several resources worth tracking -- available free slots in a `CNode`, raw memory
 in `Untyped` instances, the portions of virtual memory space yet unclaimed, and so
-forth. `ferros` makes an effort to track these resources at compile time.
+forth. `ferros` tracks these resources at compile time.
 
 `CNode`s have a self-explanatory `FreeSlots` type parameter, `Untyped`s have a `BitSize` type parameter
 that shows how many bits of memory they could store, and `VSpace`'s `PageDirFreeSlots`
@@ -106,7 +106,7 @@ and `PageTableFreeSlots` params collaborate to show which portions of virtual ad
 have yet to be claimed or mapped.
 
 Whenever a function needs to take some subset of resources from these objects,
-the function consumes the structure whole and returns a variant instance of that object
+the function consumes the object as a whole and returns an instance of that object
 with the necessary type parameters decremented to track the resources expended. If a resource
 container's contents aren't sufficient to a given task at hand, the developer will experience
 a compile time failure (as opposed to a runtime one).
@@ -119,4 +119,4 @@ by making correct usage mandatory during design and development.
 Atop the basic building blocks of capability creation and storage, `ferros` provides higher-level
 primitives for creating fully isolated subprocesses (see `vspace.rs`) as well as several
 options for well-typed synchronous and asynchronous communication between processes
-(see 'multi_consumer.rs', `ipc.rs`, and `shared_memory_ipc.rs`).
+(see `multi_consumer.rs`, `ipc.rs`, and `shared_memory_ipc.rs`).
