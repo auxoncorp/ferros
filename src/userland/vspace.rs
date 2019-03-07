@@ -50,6 +50,18 @@ type NewVSpaceCNodeSlots = Sum<Sum<paging::CodePageTableCount, paging::CodePageC
 #[rustfmt::skip]
 type NewVSpaceCNodeSlotsNormalized = UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B1>, B0>, B0>, B0>, B0>, B0>, B0>, B0>, B1>, B0>, B1>, B0>, B0>, B0>, B0>;
 
+pub enum VSpaceCreateOptions<'a, ScratchPageTableSlots: Unsigned> {
+    MapWholeImageReadOnly,
+    CopyWholeImageReadWrite {
+        scratch_page_table: &'a mut LocalCap<MappedPageTable<ScratchPageTableSlots, role::Local>>,
+        code_ut: LocalCap<Untyped<paging::TotalCodeSizeBits>>,
+    },
+    MapImagePageRangeReadOnly {
+        start_page: usize,
+        page_count: usize,
+    },
+}
+
 impl VSpace {
     pub fn new<
         ASIDPoolFreeSlots: Unsigned,
@@ -90,7 +102,12 @@ impl VSpace {
         ASIDPoolFreeSlots: Sub<B1>,
         Sub1<ASIDPoolFreeSlots>: Unsigned,
     {
-        VSpace::new_internal::<_, _, _, U1>(boot_info, ut17, None, dest_cnode)
+        VSpace::new_with_opts::<_, _, _, U1>(
+            boot_info,
+            ut17,
+            VSpaceCreateOptions::MapWholeImageReadOnly,
+            dest_cnode,
+        )
     }
 
     pub fn new_with_writable_user_image<
@@ -140,15 +157,18 @@ impl VSpace {
         ScratchPageTableSlots: Sub<B1>,
         Sub1<ScratchPageTableSlots>: Unsigned,
     {
-        VSpace::new_internal(
+        VSpace::new_with_opts(
             boot_info,
             ut17,
-            Some(code_untyped_and_scratch_pt),
+            VSpaceCreateOptions::CopyWholeImageReadWrite {
+                scratch_page_table: code_untyped_and_scratch_pt.0,
+                code_ut: code_untyped_and_scratch_pt.1,
+            },
             dest_cnode,
         )
     }
 
-    fn new_internal<
+    pub fn new_with_opts<
         ASIDPoolFreeSlots: Unsigned,
         CNodeFreeSlots: Unsigned,
         BootInfoPageDirFreeSlots: Unsigned,
@@ -156,10 +176,7 @@ impl VSpace {
     >(
         boot_info: BootInfo<ASIDPoolFreeSlots, BootInfoPageDirFreeSlots>,
         ut17: LocalCap<Untyped<U17>>,
-        code_untyped_and_scratch_pt: Option<(
-            &mut LocalCap<MappedPageTable<ScratchPageTableSlots, role::Local>>,
-            LocalCap<Untyped<paging::TotalCodeSizeBits>>,
-        )>,
+        opts: VSpaceCreateOptions<ScratchPageTableSlots>,
         dest_cnode: LocalCap<LocalCNode<CNodeFreeSlots>>,
     ) -> Result<
         (
@@ -231,13 +248,12 @@ impl VSpace {
             let _mapped_pt = page_dir_slot.map_page_table(pt)?;
         }
 
-        // Here we determine whether or not this bergeoning process
-        // needs writable access to the user image (e.g., for global
-        // variables). We're signalled to this by the presence of a
-        // scratch page table and a 26-bit untyped in which we can
-        // retype into pages to hold the user image.
-        let cnode = match code_untyped_and_scratch_pt {
-            Some((scratch_page_table, code_ut)) => {
+        use self::VSpaceCreateOptions::*;
+        let cnode = match opts {
+            CopyWholeImageReadWrite {
+                scratch_page_table,
+                code_ut,
+            } => {
                 // First, retype the untyped into `CodePageCount`
                 // pages.
                 let (fresh_pages, cnode): (
@@ -279,13 +295,40 @@ impl VSpace {
                 }
                 cnode
             }
-            None => {
+            MapWholeImageReadOnly => {
                 // map pages
                 let (cnode_slot_reservation_iter, cnode) =
                     cnode.reservation_iter::<paging::CodePageCount>();
 
                 for (page_cap, slot_cnode) in boot_info
                     .user_image_pages_iter()
+                    .zip(cnode_slot_reservation_iter)
+                {
+                    // This is RW so that mutable global variables can be used
+                    let (copied_page_cap, _) = page_cap.copy(&cnode, slot_cnode, CapRights::R)?;
+                    // Use map_page_direct instead of a VSpace so we don't have to keep
+                    // track of bulk allocations which cross page table boundaries at
+                    // the type level.
+                    let _ = page_dir.map_page_direct(
+                        copied_page_cap,
+                        page_cap.cap_data.vaddr,
+                        CapRights::R,
+                    )?;
+                }
+                cnode
+            }
+            MapImagePageRangeReadOnly {
+                start_page,
+                page_count,
+            } => {
+                // map pages
+                let (cnode_slot_reservation_iter, cnode) =
+                    cnode.reservation_iter::<paging::CodePageCount>();
+
+                for (page_cap, slot_cnode) in boot_info
+                    .user_image_pages_iter()
+                    .skip(start_page)
+                    .take(page_count)
                     .zip(cnode_slot_reservation_iter)
                 {
                     // This is RW so that mutable global variables can be used
