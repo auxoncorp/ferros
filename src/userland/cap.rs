@@ -156,6 +156,10 @@ impl From<Badge> for usize {
     }
 }
 
+/////////////
+// Untyped //
+/////////////
+
 #[derive(Debug)]
 pub struct Untyped<BitSize: Unsigned, Kind: MemoryKind = memory_kind::General> {
     _bit_size: PhantomData<BitSize>,
@@ -191,6 +195,10 @@ pub mod memory_kind {
     impl MemoryKind for Device {}
 }
 
+////////////////////////
+// ThreadControlBlock //
+////////////////////////
+
 #[derive(Debug)]
 pub struct ThreadControlBlock {}
 
@@ -212,6 +220,36 @@ impl DirectRetype for ThreadControlBlock {
 impl CopyAliasable for ThreadControlBlock {
     type CopyOutput = Self;
 }
+
+//////////
+// VCPU //
+//////////
+
+#[derive(Debug)]
+pub struct VCPU {}
+
+impl CapType for VCPU {}
+
+impl PhantomCap for VCPU {
+    fn phantom_instance() -> Self {
+        Self {}
+    }
+}
+
+impl DirectRetype for VCPU {
+    type SizeBits = U12;
+    fn sel4_type_id() -> usize {
+        _object_seL4_ARM_VCPUObject as usize
+    }
+}
+
+impl CopyAliasable for VCPU {
+    type CopyOutput = Self;
+}
+
+////////////////
+// IRQControl //
+////////////////
 
 // TODO - consider moving IRQ code allocation tracking to compile-time,
 // which may be feasible since we treat IRQControl as a global
@@ -258,6 +296,10 @@ pub mod irq_state {
     impl IRQSetState for Set {}
 }
 
+/////////////////
+// ASIDControl //
+/////////////////
+
 #[derive(Debug)]
 pub struct ASIDControl {}
 
@@ -275,6 +317,10 @@ pub struct ASIDPool<FreeSlots: Unsigned> {
 }
 
 impl<FreeSlots: Unsigned> CapType for ASIDPool<FreeSlots> {}
+
+//////////////
+// Endpoint //
+//////////////
 
 #[derive(Debug)]
 pub struct Endpoint {}
@@ -299,6 +345,10 @@ impl DirectRetype for Endpoint {
         api_object_seL4_EndpointObject as usize
     }
 }
+
+//////////////////
+// Notification //
+//////////////////
 
 #[derive(Debug)]
 pub struct Notification {}
@@ -626,6 +676,7 @@ mod private {
     {
     }
     impl SealedCapType for super::ThreadControlBlock {}
+    impl SealedCapType for super::VCPU {}
     impl SealedCapType for super::Endpoint {}
     impl SealedCapType for super::Notification {}
     impl SealedCapType for super::ASIDControl {}
