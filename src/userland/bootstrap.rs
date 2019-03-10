@@ -10,7 +10,7 @@ use crate::userland::{
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U0, U12, U19};
+use typenum::*;
 
 // The root CNode radix is 19. Conservatively set aside 2^12 (the default root
 // cnode size) for system use. TODO: verify at build time that this is enough /
@@ -39,13 +39,13 @@ pub fn root_cnode(
 pub mod paging {
     use crate::pow::Pow;
     use typenum::operator_aliases::{Diff, Prod, Sum};
-    use typenum::{Unsigned, U1024, U12, U16, U20, U24, U26, U6, U8, U9};
+    use typenum::*;
 
     pub type BaseASIDPoolFreeSlots = U1024;
 
     // Arm32 address structure
     pub type PageDirectoryBits = U12;
-    pub type PageTableBits = U8;
+    pub type PageTableBits = U9;
     pub type PageBits = U12; // 4kb
 
     pub type LargePageBits = U16; // 64 KB
@@ -53,10 +53,10 @@ pub mod paging {
     pub type SuperSectionBits = U24; // 16 MB
 
     // PageTableBits + PageBits
-    pub type PageTableTotalBits = U20;
+    pub type PageTableTotalBits = U21;
 
-    pub type CodePageTableBits = U6;
-    pub type CodePageTableCount = Pow<CodePageTableBits>; // 64 page tables == 64 mb
+    pub type CodePageTableBits = U5;
+    pub type CodePageTableCount = Pow<CodePageTableBits>; // 32 page tables == 64 mb
     pub type CodePageCount = Prod<CodePageTableCount, BasePageTableFreeSlots>; // 2^14
     pub type TotalCodeSizeBits = U26;
 

@@ -429,7 +429,7 @@ impl CopyAliasable for UnmappedPageTable {
 }
 
 impl DirectRetype for UnmappedPageTable {
-    type SizeBits = U10;
+    type SizeBits = U12;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_PageTableObject as usize
     }

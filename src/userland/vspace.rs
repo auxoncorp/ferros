@@ -15,7 +15,7 @@ use crate::userland::{
 use generic_array::{ArrayLength, GenericArray};
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1, Sum};
-use typenum::{UInt, UTerm, Unsigned, B0, B1, U0, U1, U10, U16, U17, U32};
+use typenum::*;
 
 #[derive(Debug)]
 pub enum VSpaceError {
@@ -48,7 +48,7 @@ pub struct VSpace<
 
 type NewVSpaceCNodeSlots = Sum<Sum<paging::CodePageTableCount, paging::CodePageCount>, U16>;
 #[rustfmt::skip]
-type NewVSpaceCNodeSlotsNormalized = UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B1>, B0>, B0>, B0>, B0>, B0>, B0>, B0>, B1>, B0>, B1>, B0>, B0>, B0>, B0>;
+type NewVSpaceCNodeSlotsNormalized = UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B1>, B0>, B0>, B0>, B0>, B0>, B0>, B0>, B0>, B1>, B1>, B0>, B0>, B0>, B0>;
 
 pub enum VSpaceCreateOptions<'a, ScratchPageTableSlots: Unsigned> {
     MapWholeImageReadOnly,
@@ -69,7 +69,7 @@ impl VSpace {
         BootInfoPageDirFreeSlots: Unsigned,
     >(
         boot_info: BootInfo<ASIDPoolFreeSlots, BootInfoPageDirFreeSlots>,
-        ut17: LocalCap<Untyped<U17>>,
+        ut19: LocalCap<Untyped<U19>>,
         dest_cnode: LocalCap<LocalCNode<CNodeFreeSlots>>,
     ) -> Result<
         (
@@ -104,7 +104,7 @@ impl VSpace {
     {
         VSpace::new_with_opts::<_, _, _, U1>(
             boot_info,
-            ut17,
+            ut19,
             VSpaceCreateOptions::MapWholeImageReadOnly,
             dest_cnode,
         )
@@ -117,7 +117,7 @@ impl VSpace {
         ScratchPageTableSlots: Unsigned,
     >(
         boot_info: BootInfo<ASIDPoolFreeSlots, BootInfoPageDirFreeSlots>,
-        ut17: LocalCap<Untyped<U17>>,
+        ut19: LocalCap<Untyped<U19>>,
         code_untyped_and_scratch_pt: (
             &mut LocalCap<MappedPageTable<ScratchPageTableSlots, role::Local>>,
             LocalCap<Untyped<paging::TotalCodeSizeBits>>,
@@ -159,7 +159,7 @@ impl VSpace {
     {
         VSpace::new_with_opts(
             boot_info,
-            ut17,
+            ut19,
             VSpaceCreateOptions::CopyWholeImageReadWrite {
                 scratch_page_table: code_untyped_and_scratch_pt.0,
                 code_ut: code_untyped_and_scratch_pt.1,
@@ -175,7 +175,7 @@ impl VSpace {
         ScratchPageTableSlots: Unsigned,
     >(
         boot_info: BootInfo<ASIDPoolFreeSlots, BootInfoPageDirFreeSlots>,
-        ut17: LocalCap<Untyped<U17>>,
+        ut19: LocalCap<Untyped<U19>>,
         opts: VSpaceCreateOptions<ScratchPageTableSlots>,
         dest_cnode: LocalCap<LocalCNode<CNodeFreeSlots>>,
     ) -> Result<
@@ -214,14 +214,17 @@ impl VSpace {
     {
         let (cnode, dest_cnode) = dest_cnode.reserve_region::<NewVSpaceCNodeSlots>();
 
-        let (ut16, page_tables_ut, cnode) = ut17.split(cnode)?;
+        let (ut18, page_tables_ut, cnode) = ut19.split(cnode)?;
+        let (ut16, _, _, _, cnode) = ut18.quarter(cnode)?;
         let (ut14, page_dir_ut, _, _, cnode) = ut16.quarter(cnode)?;
-        let (ut12, _, _, _, cnode) = ut14.quarter(cnode)?;
-        let (ut10, initial_page_table_ut, _, _, cnode) = ut12.quarter(cnode)?;
+        let (initial_page_table_ut, _, _, _, cnode) = ut14.quarter(cnode)?;
 
         // allocate and assign the page directory
+
+        debug_println!("retype page dir");
         let (page_dir, cnode): (LocalCap<UnassignedPageDirectory>, _) =
             page_dir_ut.retype_local(cnode)?;
+        debug_println!("assign page dir");
         let (page_dir, mut boot_info) = boot_info.assign_minimal_page_dir(page_dir)?;
 
         // Allocate and map the user image paging structures. This happens
@@ -230,6 +233,7 @@ impl VSpace {
 
         // Allocate the maximum number of page tables we could possibly need,
         // and reserve that many slots in the page directory.
+        debug_println!("retype page tables");
         let (page_tables, cnode): (
             CapRange<UnmappedPageTable, role::Local, paging::CodePageTableCount>,
             _,
@@ -238,6 +242,7 @@ impl VSpace {
         let (page_dir_slot_reservation_iter, mut page_dir) =
             page_dir.reservation_iter::<paging::CodePageTableCount>();
 
+        debug_println!("map page tables");
         for ((pt, page_dir_slot), _) in page_tables
             .iter()
             .zip(page_dir_slot_reservation_iter)
@@ -321,6 +326,7 @@ impl VSpace {
                 start_page,
                 page_count,
             } => {
+                debug_println!("Mapping page range, read only");
                 // map pages
                 let (cnode_slot_reservation_iter, cnode) =
                     cnode.reservation_iter::<paging::CodePageCount>();
@@ -1053,6 +1059,7 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<AssignedPageDirectory<FreeSl
         let page_table_vaddr = self.cap_data.next_free_slot
             << (paging::PageBits::USIZE + paging::PageTableBits::USIZE);
 
+        debug_print!("Mapping page table to {:#010x}", page_table_vaddr);
         // map the page table
         let err = unsafe {
             seL4_ARM_PageTable_Map(
@@ -1067,6 +1074,8 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<AssignedPageDirectory<FreeSl
         if err != 0 {
             return Err(SeL4Error::MapPageTable(err));
         }
+
+        debug_println!("... SUCCESS!");
 
         Ok((
             // page table
