@@ -6,7 +6,7 @@ use core::ptr;
 use crate::userland::{
     irq_state, memory_kind, role, AssignedPageDirectory, Badge, CNode, CNodeRole, Cap, FaultSource,
     IRQControl, IRQHandler, ImmobileIndelibleInertCapabilityReference, LocalCap, MappedPage,
-    Notification, SeL4Error, ThreadControlBlock,
+    NewCNodeSlot, Notification, SeL4Error, ThreadControlBlock,
 };
 use sel4_sys::*;
 use typenum::{IsLess, Sub1, True, Unsigned, B1, U0, U256};
@@ -71,26 +71,16 @@ impl From<SeL4Error> for IRQError {
 }
 
 impl LocalCap<IRQControl> {
-    pub fn create_handler<IRQ: Unsigned, DestRole: CNodeRole, DestFreeSlots: Unsigned>(
+    pub fn create_handler<IRQ: Unsigned, DestRole: CNodeRole>(
         &mut self,
-        dest_cnode: LocalCap<CNode<DestFreeSlots, DestRole>>,
-    ) -> Result<
-        (
-            Cap<IRQHandler<IRQ, irq_state::Unset>, DestRole>,
-            LocalCap<CNode<Sub1<DestFreeSlots>, DestRole>>,
-        ),
-        IRQError,
-    >
+        dest_slot: NewCNodeSlot<DestRole>,
+    ) -> Result<Cap<IRQHandler<IRQ, irq_state::Unset>, DestRole>, IRQError>
     where
-        DestFreeSlots: Sub<B1>,
-        Sub1<DestFreeSlots>: Unsigned,
-
         IRQ: IsLess<U256, Output = True>,
     {
         if self.cap_data.known_handled[IRQ::USIZE] {
             return Err(IRQError::UnavailableIRQ);
         }
-        let (dest_cnode_remainder, dest_slot) = dest_cnode.consume_slot();
         let err = unsafe {
             seL4_IRQControl_Get(
                 self.cptr, // service/authority
@@ -106,17 +96,14 @@ impl LocalCap<IRQControl> {
 
         self.cap_data.known_handled[IRQ::USIZE] = true;
 
-        Ok((
-            Cap {
-                cptr: dest_slot.offset,
-                cap_data: IRQHandler {
-                    _irq: PhantomData,
-                    _set_state: PhantomData,
-                },
-                _role: PhantomData,
+        Ok(Cap {
+            cptr: dest_slot.offset,
+            cap_data: IRQHandler {
+                _irq: PhantomData,
+                _set_state: PhantomData,
             },
-            dest_cnode_remainder,
-        ))
+            _role: PhantomData,
+        })
     }
 }
 

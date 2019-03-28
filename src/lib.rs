@@ -107,10 +107,12 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     )?;
     debug_println!("proc 2 vspace exists");
 
-    let (ipc_setup, responder, proc1_cspace, root_cnode) =
-        call_channel(endpoint_ut, proc1_cspace, root_cnode)?;
+    let (local_slot, root_cnode) = root_cnode.alloc();
+    let (proc1_slot, proc1_cspace) = proc1_cspace.alloc();
+    let (ipc_setup, responder) = call_channel(endpoint_ut, &root_cnode, local_slot, proc1_slot)?;
 
-    let (caller, proc2_cspace) = ipc_setup.create_caller(proc2_cspace)?;
+    let (proc2_slot, proc2_cspace) = proc2_cspace.alloc();
+    let caller = ipc_setup.create_caller(proc2_slot)?;
 
     let proc1_params = proc1::Proc1Params { rspdr: responder };
 

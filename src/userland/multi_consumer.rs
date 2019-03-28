@@ -29,10 +29,10 @@ use crate::userland::cap::Badge;
 use crate::userland::paging::PageBytes;
 use crate::userland::role;
 use crate::userland::{
-    irq_state, memory_kind, CNodeRole, Cap, CapRights, ChildCNode, DirectRetype, IRQControl,
-    IRQError, IRQHandler, ImmobileIndelibleInertCapabilityReference, LocalCNode, LocalCap,
-    MappedPage, MappedPageTable, Notification, PhantomCap, SeL4Error, UnmappedPage, Untyped,
-    VSpace,
+    irq_state, memory_kind, CNodeRole, Cap, CapRights, ChildCNode, ChildCNodeSlots, DirectRetype,
+    IRQControl, IRQError, IRQHandler, ImmobileIndelibleInertCapabilityReference, LocalCNode,
+    LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable, Notification, PhantomCap, SeL4Error,
+    UnmappedPage, Untyped, VSpace,
 };
 use cross_queue::PushError;
 use cross_queue::{ArrayQueue, Slot};
@@ -211,61 +211,37 @@ impl<IRQ: Unsigned> InterruptConsumer<IRQ, role::Child>
 where
     IRQ: IsLess<U256, Output = True>,
 {
-    pub fn new<ConsumerCNodeFreeSlots: Unsigned, LocalCNodeFreeSlots: Unsigned>(
+    pub fn new<LocalFreeSlots: Unsigned>(
         notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
-        consumer_cnode: LocalCap<ChildCNode<ConsumerCNodeFreeSlots>>,
         irq_control: &mut LocalCap<IRQControl>,
-        local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
-    ) -> Result<
-        (
-            InterruptConsumer<IRQ, role::Child>,
-            ConsumerToken,
-            LocalCap<ChildCNode<Sub1<Sub1<ConsumerCNodeFreeSlots>>>>,
-            LocalCap<LocalCNode<Sub1<Sub1<Sub1<LocalCNodeFreeSlots>>>>>,
-        ),
-        IRQError,
-    >
-    where
-        IRQ: IsLess<U256, Output = True>,
-
-        ConsumerCNodeFreeSlots: Sub<U2>,
-        Diff<ConsumerCNodeFreeSlots, U2>: Unsigned,
-
-        ConsumerCNodeFreeSlots: Sub<B1>,
-        Sub1<ConsumerCNodeFreeSlots>: Unsigned,
-
-        Sub1<ConsumerCNodeFreeSlots>: Sub<B1>,
-        Sub1<Sub1<ConsumerCNodeFreeSlots>>: Unsigned,
-
-        LocalCNodeFreeSlots: Sub<U3>,
-        Diff<LocalCNodeFreeSlots, U3>: Unsigned,
-
-        LocalCNodeFreeSlots: Sub<B1>,
-        Sub1<LocalCNodeFreeSlots>: Unsigned,
-
-        Sub1<LocalCNodeFreeSlots>: Sub<B1>,
-        Sub1<Sub1<LocalCNodeFreeSlots>>: Unsigned,
-
-        Sub1<Sub1<LocalCNodeFreeSlots>>: Sub<B1>,
-        Sub1<Sub1<Sub1<LocalCNodeFreeSlots>>>: Unsigned,
+        local_cnode: LocalCap<LocalCNode<LocalFreeSlots>>,
+        local_slots: LocalCNodeSlots<U3>,
+        consumer_slots: ChildCNodeSlots<U2>,
+    ) -> Result<(InterruptConsumer<IRQ, role::Child>, ConsumerToken), IRQError>
+// where
+    //     IRQ: IsLess<U256, Output = True>,
     {
         // Make a notification, mint-copy it to establish a badge
-        let (unbadged_notification, local_cnode) =
-            notification_ut.retype_local::<_, Notification>(local_cnode)?;
+        let (local_slot, local_slots) = local_slots.alloc();
+        let unbadged_notification: LocalCap<Notification> = notification_ut.retype(local_slot)?;
+
         let interrupt_badge = Badge::from(1);
-        let (notification, local_cnode) = unbadged_notification.mint_inside_cnode(
-            local_cnode,
-            CapRights::RWG,
-            interrupt_badge,
-        )?;
+
+        let (local_slot, local_slots) = local_slots.alloc();
+        let notification =
+            unbadged_notification.mint_inside_cnode(local_slot, CapRights::RWG, interrupt_badge)?;
 
         // Make a new IRQHandler, link it to the notification and move both to the child CNode
-        let (irq_handler, local_cnode) = irq_control.create_handler(local_cnode)?;
+        let (local_slot, local_slots) = local_slots.alloc();
+        let irq_handler = irq_control.create_handler(local_slot)?;
         let irq_handler = irq_handler.set_notification(&notification)?;
-        let (irq_handler_in_child, consumer_cnode) =
-            irq_handler.move_to_cnode(&local_cnode, consumer_cnode)?;
-        let (notification_in_child, consumer_cnode) =
-            notification.copy(&local_cnode, consumer_cnode, CapRights::RW)?;
+
+        let (consumer_slot, consumer_slots) = consumer_slots.alloc();
+        let irq_handler_in_child = irq_handler.move_to_slot(&local_cnode, consumer_slot)?;
+
+        let (consumer_slot, consumer_slots) = consumer_slots.alloc();
+        let notification_in_child =
+            notification.copy(&local_cnode, consumer_slot, CapRights::RW)?;
         Ok((
             InterruptConsumer {
                 irq_handler: irq_handler_in_child,
@@ -276,8 +252,6 @@ where
                 notification,
                 consumer_vspace_pagedir: None,
             },
-            consumer_cnode,
-            local_cnode,
         ))
     }
 

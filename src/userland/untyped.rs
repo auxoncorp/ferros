@@ -2,8 +2,8 @@ use core::marker::PhantomData;
 use core::ops::{Add, Mul, Sub};
 use crate::pow::{Pow, _Pow};
 use crate::userland::{
-    memory_kind, paging, role, CNode, Cap, CapRange, CapType, ChildCNode, ChildCap, DirectRetype,
-    LocalCap, MemoryKind, PhantomCap, SeL4Error, UnmappedPage, Untyped,
+    memory_kind, paging, role, CNode, CNodeRole, Cap, CapRange, CapType, ChildCNode, ChildCap,
+    DirectRetype, LocalCap, MemoryKind, NewCNodeSlot, PhantomCap, SeL4Error, UnmappedPage, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Prod, Sub1, Sum};
@@ -153,6 +153,39 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
 }
 
 impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
+    pub fn retype<TargetCapType: CapType, TargetRole: CNodeRole>(
+        self,
+        dest_slot: NewCNodeSlot<TargetRole>,
+    ) -> Result<Cap<TargetCapType, TargetRole>, SeL4Error>
+    where
+        TargetCapType: DirectRetype,
+        TargetCapType: PhantomCap,
+        BitSize: IsGreaterOrEqual<TargetCapType::SizeBits, Output = True>,
+    {
+        let err = unsafe {
+            seL4_Untyped_Retype(
+                self.cptr,                     // _service
+                TargetCapType::sel4_type_id(), // type
+                0,                             // size_bits
+                dest_slot.cptr,                // root
+                0,                             // index
+                0,                             // depth
+                dest_slot.offset,              // offset
+                1,                             // num_objects
+            )
+        };
+
+        if err != 0 {
+            return Err(SeL4Error::UntypedRetype(err));
+        }
+
+        Ok(Cap {
+            cptr: dest_slot.offset,
+            cap_data: PhantomCap::phantom_instance(),
+            _role: PhantomData,
+        })
+    }
+
     pub fn retype_local<FreeSlots: Unsigned, TargetCapType: CapType>(
         self,
         dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,

@@ -231,7 +231,7 @@ impl VSpace {
             let _mapped_pt = page_dir_slot.map_page_table(pt)?;
         }
 
-        // Here we determine whether or not this bergeoning process
+        // Here we determine whether or not this burgeoning process
         // needs writable access to the user image (e.g., for global
         // variables). We're signalled to this by the presence of a
         // scratch page table and a 26-bit untyped in which we can
@@ -288,8 +288,8 @@ impl VSpace {
                     .user_image_pages_iter()
                     .zip(cnode_slot_reservation_iter)
                 {
-                    // This is RW so that mutable global variables can be used
-                    let (copied_page_cap, _) = page_cap.copy(&cnode, slot_cnode, CapRights::R)?;
+                    let (slot, _) = slot_cnode.alloc();
+                    let copied_page_cap = page_cap.copy(&cnode, slot, CapRights::R)?;
                     // Use map_page_direct instead of a VSpace so we don't have to keep
                     // track of bulk allocations which cross page table boundaries at
                     // the type level.

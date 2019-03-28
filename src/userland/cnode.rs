@@ -25,7 +25,77 @@ pub(super) struct CNodeSlot {
     pub(super) offset: usize,
 }
 
+#[derive(Debug)]
+pub struct CNodeSlots<Size: Unsigned, Role: CNodeRole> {
+    pub(super) cptr: usize,
+    pub(super) offset: usize,
+    pub(super) _size: PhantomData<Size>,
+    pub(super) _role: PhantomData<Role>,
+}
+
+impl<Size: Unsigned, Role: CNodeRole> CNodeSlots<Size, Role> {
+    pub fn alloc<Count: Unsigned>(
+        self,
+    ) -> (CNodeSlots<Count, Role>, CNodeSlots<Diff<Size, Count>, Role>)
+    where
+        Size: Sub<Count>,
+        Diff<Size, Count>: Unsigned,
+    {
+        (
+            CNodeSlots {
+                cptr: self.cptr,
+                offset: self.offset,
+                _size: PhantomData,
+                _role: PhantomData,
+            },
+            CNodeSlots {
+                cptr: self.cptr,
+                offset: self.offset + Size::USIZE,
+                _size: PhantomData,
+                _role: PhantomData,
+            },
+        )
+    }
+}
+
+pub type LocalCNodeSlots<Size: Unsigned> = CNodeSlots<Size, role::Local>;
+pub type ChildCNodeSlots<Size: Unsigned> = CNodeSlots<Size, role::Child>;
+
+pub type NewCNodeSlot<Role: CNodeRole> = CNodeSlots<U1, Role>;
+pub type LocalCNodeSlot = NewCNodeSlot<role::Local>;
+pub type ChildCNodeSlot = NewCNodeSlot<role::Child>;
+
 impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<CNode<FreeSlots, Role>> {
+    pub fn alloc<Count: Unsigned>(
+        self,
+    ) -> (
+        CNodeSlots<Count, Role>,
+        LocalCap<CNode<Diff<FreeSlots, Count>, Role>>,
+    )
+    where
+        FreeSlots: Sub<Count>,
+        Diff<FreeSlots, Count>: Unsigned,
+    {
+        (
+            CNodeSlots {
+                cptr: self.cptr,
+                offset: self.cap_data.next_free_slot,
+                _size: PhantomData,
+                _role: PhantomData,
+            },
+            Cap {
+                cptr: self.cptr,
+                _role: PhantomData,
+                cap_data: CNode {
+                    radix: self.cap_data.radix,
+                    next_free_slot: self.cap_data.next_free_slot + Count::to_usize(),
+                    _free_slots: PhantomData,
+                    _role: PhantomData,
+                },
+            },
+        )
+    }
+
     // TODO: reverse these args to be consistent with everything else
     pub(super) fn consume_slot(self) -> (LocalCap<CNode<Sub1<FreeSlots>, Role>>, CNodeSlot)
     where

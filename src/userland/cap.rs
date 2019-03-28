@@ -1,6 +1,8 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
-use crate::userland::{paging, CNode, CapRights, SeL4Error};
+use crate::userland::{
+    paging, CNode, CNodeSlot, CapRights, LocalCNodeSlot, NewCNodeSlot, SeL4Error,
+};
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
 use typenum::{IsLess, True, Unsigned, B1, U10, U12, U14, U256, U4};
@@ -662,26 +664,16 @@ mod private {
 
 impl<CT: CapType> LocalCap<CT> {
     /// Copy a capability from one CNode to another CNode
-    pub fn copy<SourceFreeSlots: Unsigned, FreeSlots: Unsigned, DestRole: CNodeRole>(
+    pub fn copy<SourceFreeSlots: Unsigned, DestRole: CNodeRole>(
         &self,
         src_cnode: &LocalCap<CNode<SourceFreeSlots, role::Local>>,
-        dest_cnode: LocalCap<CNode<FreeSlots, DestRole>>,
+        dest_slot: NewCNodeSlot<DestRole>,
         rights: CapRights,
-    ) -> Result<
-        (
-            Cap<CT::CopyOutput, DestRole>,
-            LocalCap<CNode<Sub1<FreeSlots>, DestRole>>,
-        ),
-        SeL4Error,
-    >
+    ) -> Result<Cap<CT::CopyOutput, DestRole>, SeL4Error>
     where
-        FreeSlots: Sub<B1>,
-        Sub1<FreeSlots>: Unsigned,
         CT: CopyAliasable,
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
-        let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
-
         let err = unsafe {
             seL4_CNode_Copy(
                 dest_slot.cptr,      // _service
@@ -699,14 +691,11 @@ impl<CT: CapType> LocalCap<CT> {
         if err != 0 {
             Err(SeL4Error::CNodeCopy(err))
         } else {
-            Ok((
-                Cap {
-                    cptr: dest_slot.offset,
-                    cap_data: PhantomCap::phantom_instance(),
-                    _role: PhantomData,
-                },
-                dest_cnode,
-            ))
+            Ok(Cap {
+                cptr: dest_slot.offset,
+                cap_data: PhantomCap::phantom_instance(),
+                _role: PhantomData,
+            })
         }
     }
 
@@ -755,6 +744,46 @@ impl<CT: CapType> LocalCap<CT> {
                 },
                 src_and_dest_cnode,
             ))
+        }
+    }
+
+    /// Copy a capability to another CNode while also setting rights and a badge
+    pub(crate) fn mint_new<SourceFreeSlots: Unsigned, DestRole: CNodeRole>(
+        &self,
+        src_cnode: &LocalCap<CNode<SourceFreeSlots, role::Local>>,
+        dest_slot: NewCNodeSlot<DestRole>,
+        rights: CapRights,
+        badge: Badge,
+    ) -> Result<Cap<CT::CopyOutput, DestRole>, SeL4Error>
+    where
+        CT: Mintable,
+        CT: CopyAliasable,
+        CT: PhantomCap,
+        <CT as CopyAliasable>::CopyOutput: PhantomCap,
+    {
+        let err = unsafe {
+            seL4_CNode_Mint(
+                dest_slot.cptr,      // _service
+                dest_slot.offset,    // dest index
+                seL4_WordBits as u8, // dest depth
+                // Since src_cnode is restricted to Root, the cptr must
+                // actually be the slot index
+                src_cnode.cptr,      // src_root
+                self.cptr,           // src_index
+                seL4_WordBits as u8, // src_depth
+                rights.into(),       // rights
+                badge.into(),        // badge
+            )
+        };
+
+        if err != 0 {
+            Err(SeL4Error::CNodeMint(err))
+        } else {
+            Ok(Cap {
+                cptr: dest_slot.offset,
+                cap_data: PhantomCap::phantom_instance(),
+                _role: PhantomData,
+            })
         }
     }
 
@@ -812,27 +841,17 @@ impl<CT: CapType> LocalCap<CT> {
     }
 
     /// Copy a capability to another slot inside the same CNode while also setting rights and a badge
-    pub(crate) fn mint_inside_cnode<FreeSlots: Unsigned>(
+    pub(crate) fn mint_inside_cnode(
         &self,
-        src_and_dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
+        dest_slot: LocalCNodeSlot,
         rights: CapRights,
         badge: Badge,
-    ) -> Result<
-        (
-            LocalCap<CT::CopyOutput>,
-            LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
-        ),
-        SeL4Error,
-    >
+    ) -> Result<LocalCap<CT::CopyOutput>, SeL4Error>
     where
-        FreeSlots: Sub<B1>,
-        Sub1<FreeSlots>: Unsigned,
         CT: Mintable,
         CT: CopyAliasable,
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
-        let (src_and_dest_cnode, dest_slot) = src_and_dest_cnode.consume_slot();
-
         let err = unsafe {
             seL4_CNode_Mint(
                 dest_slot.cptr,      // _service
@@ -840,25 +859,55 @@ impl<CT: CapType> LocalCap<CT> {
                 seL4_WordBits as u8, // depth
                 // Since src_cnode is restricted to Root, the cptr must
                 // actually be the slot index
-                src_and_dest_cnode.cptr, // src_root
-                self.cptr,               // src_index
-                seL4_WordBits as u8,     // src_depth
-                rights.into(),           // rights
-                badge.into(),            // badge
+                dest_slot.cptr,      // src_root
+                self.cptr,           // src_index
+                seL4_WordBits as u8, // src_depth
+                rights.into(),       // rights
+                badge.into(),        // badge
             )
         };
 
         if err != 0 {
             Err(SeL4Error::CNodeMint(err))
         } else {
-            Ok((
-                Cap {
-                    cptr: dest_slot.offset,
-                    cap_data: PhantomCap::phantom_instance(),
-                    _role: PhantomData,
-                },
-                src_and_dest_cnode,
-            ))
+            Ok(Cap {
+                cptr: dest_slot.offset,
+                cap_data: PhantomCap::phantom_instance(),
+                _role: PhantomData,
+            })
+        }
+    }
+
+    /// Migrate a capability from one CNode to another.
+    pub fn move_to_slot<SourceFreeSlots: Unsigned, DestRole: CNodeRole>(
+        self,
+        src_cnode: &LocalCap<CNode<SourceFreeSlots, role::Local>>,
+        dest_slot: NewCNodeSlot<DestRole>,
+    ) -> Result<Cap<CT, DestRole>, SeL4Error>
+    where
+        CT: Movable,
+    {
+        let err = unsafe {
+            seL4_CNode_Move(
+                dest_slot.cptr,      // _service
+                dest_slot.offset,    // index
+                seL4_WordBits as u8, // depth
+                // Since src_cnode is restricted to Root, the cptr must
+                // actually be the slot index
+                src_cnode.cptr,      // src_root
+                self.cptr,           // src_index
+                seL4_WordBits as u8, // src_depth
+            )
+        };
+
+        if err != 0 {
+            Err(SeL4Error::CNodeMove(err))
+        } else {
+            Ok(Cap {
+                cptr: dest_slot.offset,
+                cap_data: self.cap_data,
+                _role: PhantomData,
+            })
         }
     }
 
