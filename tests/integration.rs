@@ -16,43 +16,41 @@ use smart_alloc::smart_alloc;
 //}
 
 struct CSlots {
-    capacity: usize
+    capacity: usize,
 }
 
 impl CSlots {
     fn alloc(self) -> (CSlots, CSlots) {
-        (CSlots {
-            capacity: 1
-        }, CSlots {
-            capacity: self.capacity - 1
-        })
+        (
+            CSlots { capacity: 1 },
+            CSlots {
+                capacity: self.capacity - 1,
+            },
+        )
     }
 
     fn new(capacity: usize) -> Self {
-        CSlots {
-            capacity
-        }
+        CSlots { capacity }
     }
 }
 
 struct Untypeds {
-    capacity: usize
+    capacity: usize,
 }
 
 impl Untypeds {
     fn alloc(self, cslots: CSlots) -> (Untypeds, Untypeds) {
         assert!(cslots.capacity > 0);
-        (Untypeds {
-            capacity: 1
-        }, Untypeds {
-            capacity: self.capacity - 1
-        })
+        (
+            Untypeds { capacity: 1 },
+            Untypeds {
+                capacity: self.capacity - 1,
+            },
+        )
     }
 
     fn new(capacity: usize) -> Self {
-        Untypeds {
-            capacity
-        }
+        Untypeds { capacity }
     }
 }
 
@@ -62,7 +60,7 @@ fn foo() {
     let cslots = CSlots::new(5);
     let untypeds = Untypeds::new(5);
 
-    smart_alloc! {|cslots, untypeds| {
+    smart_alloc! {|cslots as cs, untypeds as ut| {
         cs;
         let gamma = consume_a_slot(cs);
         let eta = consume_an_untyped(ut);
@@ -73,21 +71,13 @@ fn foo() {
     assert_eq!(1, gamma);
     assert_eq!(2, cslots.capacity);
     assert_eq!(4, untypeds.capacity);
+    assert_eq!(1, eta);
 }
 
-fn consume_a_slot(cslots:CSlots) -> usize {
+fn consume_a_slot(cslots: CSlots) -> usize {
     cslots.capacity
 }
 
 fn consume_an_untyped(ut: Untypeds) -> usize {
     ut.capacity
 }
-
-//#[test]
-//fn bar() {
-//    let alpha = 1;
-//
-//    smart_alloc! {}
-//
-//    assert_eq!(3, alpha);
-//}
