@@ -2,12 +2,13 @@ use core::marker::PhantomData;
 use core::ops::{Add, Mul, Sub};
 use crate::pow::{Pow, _Pow};
 use crate::userland::{
-    memory_kind, paging, role, CNode, CNodeRole, Cap, CapRange, CapType, ChildCNode, ChildCap,
-    DirectRetype, LocalCap, MemoryKind, NewCNodeSlot, PhantomCap, SeL4Error, UnmappedPage, Untyped,
+    memory_kind, paging, role, CNode, CNodeRole, CNodeSlots, Cap, CapRange, CapType, ChildCNode,
+    ChildCNodeSlots, ChildCap, DirectRetype, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MemoryKind,
+    NewCNodeSlot, PhantomCap, SeL4Error, UnmappedPage, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Prod, Sub1, Sum};
-use typenum::{IsGreaterOrEqual, IsLessOrEqual, True, Unsigned, B1, U1, U12, U2, U3, U4};
+use typenum::*;
 
 // The seL4 kernel's maximum amount of retypes per system call is configurable
 // in the fel4.toml, particularly by the KernelRetypeFanOutLimit property.
@@ -31,25 +32,20 @@ pub(crate) fn wrap_untyped<BitSize: Unsigned, Kind: MemoryKind>(
 }
 
 impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
-    pub fn split<FreeSlots: Unsigned>(
+    pub fn split(
         self,
-        dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
+        dest_slot: LocalCNodeSlot,
     ) -> Result<
         (
-            LocalCap<Untyped<Sub1<BitSize>, Kind>>,
-            LocalCap<Untyped<Sub1<BitSize>, Kind>>,
-            LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
+            LocalCap<Untyped<Diff<BitSize, U1>, Kind>>,
+            LocalCap<Untyped<Diff<BitSize, U1>, Kind>>,
         ),
         SeL4Error,
     >
     where
-        FreeSlots: Sub<B1>,
-        Sub1<FreeSlots>: Unsigned,
-        BitSize: Sub<B1>,
-        Sub1<BitSize>: Unsigned,
+        BitSize: Sub<U1>,
+        Diff<BitSize, U1>: Unsigned,
     {
-        let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
-
         let err = unsafe {
             seL4_Untyped_Retype(
                 self.cptr,                              // _service

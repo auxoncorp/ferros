@@ -50,11 +50,22 @@ impl<Size: Unsigned, Role: CNodeRole> CNodeSlots<Size, Role> {
             },
             CNodeSlots {
                 cptr: self.cptr,
-                offset: self.offset + Size::USIZE,
+                offset: self.offset + Count::USIZE,
                 _size: PhantomData,
                 _role: PhantomData,
             },
         )
+    }
+
+    pub fn iter(self) -> impl Iterator<Item = NewCNodeSlot<Role>> {
+        let cptr = self.cptr;
+        let offset = self.offset;
+        (0..Size::USIZE).map(move |n| CNodeSlots {
+            cptr: cptr,
+            offset: offset + n,
+            _size: PhantomData,
+            _role: PhantomData,
+        })
     }
 }
 
