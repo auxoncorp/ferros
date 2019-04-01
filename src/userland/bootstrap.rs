@@ -5,8 +5,8 @@ use crate::pow::Pow;
 use crate::userland::cap::UnassignedPageDirectory;
 use crate::userland::{
     memory_kind, role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, CNodeSlots, Cap,
-    IRQControl, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable, SeL4Error,
-    ThreadControlBlock, UnmappedPageTable, Untyped,
+    IRQControl, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable,
+    SeL4Error, ThreadControlBlock, UnmappedPageTable, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
@@ -24,7 +24,7 @@ type RootCNodeAvailableSlots = Diff<RootCNodeSize, SystemProvidedCapCount>;
 pub fn root_cnode(
     bootinfo: &'static seL4_BootInfo,
 ) -> (
-    LocalCap<CNode<U0, role::Local>>,
+    LocalCap<LocalCNode>,
     LocalCNodeSlots<RootCNodeAvailableSlots>,
 ) {
     (
@@ -33,8 +33,6 @@ pub fn root_cnode(
             _role: PhantomData,
             cap_data: CNode {
                 radix: 19,
-                next_free_slot: 10000000,
-                _free_slots: PhantomData,
                 _role: PhantomData,
             },
         },

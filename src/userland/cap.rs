@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
 use crate::userland::{
-    paging, CNode, CNodeSlot, CapRights, LocalCNodeSlot, NewCNodeSlot, SeL4Error,
+    paging, CNode, CNodeSlot, CapRights, LocalCNode, LocalCNodeSlot, NewCNodeSlot, SeL4Error,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::Sub1;
@@ -603,7 +603,7 @@ impl<Role: CNodeRole, Kind: MemoryKind> CopyAliasable for MappedSuperSection<Rol
     type CopyOutput = UnmappedSuperSection<Kind>;
 }
 
-impl<FreeSlots: typenum::Unsigned, Role: CNodeRole> CapType for CNode<FreeSlots, Role> {}
+impl<Role: CNodeRole> CapType for CNode<Role> {}
 
 mod private {
     use super::{irq_state, memory_kind, role, CNodeRole, IRQSetState, MemoryKind};
@@ -623,10 +623,7 @@ mod private {
 
     pub trait SealedCapType {}
     impl<BitSize: typenum::Unsigned, Kind: MemoryKind> SealedCapType for super::Untyped<BitSize, Kind> {}
-    impl<FreeSlots: typenum::Unsigned, Role: CNodeRole> SealedCapType
-        for super::CNode<FreeSlots, Role>
-    {
-    }
+    impl<Role: CNodeRole> SealedCapType for super::CNode<Role> {}
     impl SealedCapType for super::ThreadControlBlock {}
     impl SealedCapType for super::Endpoint {}
     impl SealedCapType for super::Notification {}
@@ -664,9 +661,9 @@ mod private {
 
 impl<CT: CapType> LocalCap<CT> {
     /// Copy a capability from one CNode to another CNode
-    pub fn copy<SourceFreeSlots: Unsigned, DestRole: CNodeRole>(
+    pub fn copy<DestRole: CNodeRole>(
         &self,
-        src_cnode: &LocalCap<CNode<SourceFreeSlots, role::Local>>,
+        src_cnode: &LocalCap<LocalCNode>,
         dest_slot: NewCNodeSlot<DestRole>,
         rights: CapRights,
     ) -> Result<Cap<CT::CopyOutput, DestRole>, SeL4Error>
@@ -699,58 +696,10 @@ impl<CT: CapType> LocalCap<CT> {
         }
     }
 
-    /// Copy a capability to another slot inside the same CNode
-    pub fn copy_inside_cnode<FreeSlots: Unsigned>(
-        &self,
-        src_and_dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
-        rights: CapRights,
-    ) -> Result<
-        (
-            LocalCap<CT::CopyOutput>,
-            LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
-        ),
-        SeL4Error,
-    >
-    where
-        FreeSlots: Sub<B1>,
-        Sub1<FreeSlots>: Unsigned,
-        CT: CopyAliasable,
-        <CT as CopyAliasable>::CopyOutput: PhantomCap,
-    {
-        let (src_and_dest_cnode, dest_slot) = src_and_dest_cnode.consume_slot();
-
-        let err = unsafe {
-            seL4_CNode_Copy(
-                dest_slot.cptr,      // _service
-                dest_slot.offset,    // index
-                seL4_WordBits as u8, // depth
-                // Since src_cnode is restricted to Root, the cptr must
-                // actually be the slot index
-                src_and_dest_cnode.cptr, // src_root
-                self.cptr,               // src_index
-                seL4_WordBits as u8,     // src_depth
-                rights.into(),           // rights
-            )
-        };
-
-        if err != 0 {
-            Err(SeL4Error::CNodeCopy(err))
-        } else {
-            Ok((
-                Cap {
-                    cptr: dest_slot.offset,
-                    cap_data: PhantomCap::phantom_instance(),
-                    _role: PhantomData,
-                },
-                src_and_dest_cnode,
-            ))
-        }
-    }
-
     /// Copy a capability to another CNode while also setting rights and a badge
-    pub(crate) fn mint_new<SourceFreeSlots: Unsigned, DestRole: CNodeRole>(
+    pub(crate) fn mint_new<DestRole: CNodeRole>(
         &self,
-        src_cnode: &LocalCap<CNode<SourceFreeSlots, role::Local>>,
+        src_cnode: &LocalCap<LocalCNode>,
         dest_slot: NewCNodeSlot<DestRole>,
         rights: CapRights,
         badge: Badge,
@@ -788,29 +737,19 @@ impl<CT: CapType> LocalCap<CT> {
     }
 
     /// Copy a capability to another CNode while also setting rights and a badge
-    pub(crate) fn mint<SourceFreeSlots: Unsigned, FreeSlots: Unsigned, DestRole: CNodeRole>(
+    pub(crate) fn mint<DestRole: CNodeRole>(
         &self,
-        src_cnode: &LocalCap<CNode<SourceFreeSlots, role::Local>>,
-        dest_cnode: LocalCap<CNode<FreeSlots, DestRole>>,
+        src_cnode: &LocalCap<LocalCNode>,
+        dest_slot: NewCNodeSlot<DestRole>,
         rights: CapRights,
         badge: Badge,
-    ) -> Result<
-        (
-            Cap<CT::CopyOutput, DestRole>,
-            LocalCap<CNode<Sub1<FreeSlots>, DestRole>>,
-        ),
-        SeL4Error,
-    >
+    ) -> Result<Cap<CT::CopyOutput, DestRole>, SeL4Error>
     where
-        FreeSlots: Sub<B1>,
-        Sub1<FreeSlots>: Unsigned,
         CT: Mintable,
         CT: CopyAliasable,
         CT: PhantomCap,
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
-        let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
-
         let err = unsafe {
             seL4_CNode_Mint(
                 dest_slot.cptr,      // _service
@@ -829,14 +768,11 @@ impl<CT: CapType> LocalCap<CT> {
         if err != 0 {
             Err(SeL4Error::CNodeMint(err))
         } else {
-            Ok((
-                Cap {
-                    cptr: dest_slot.offset,
-                    cap_data: PhantomCap::phantom_instance(),
-                    _role: PhantomData,
-                },
-                dest_cnode,
-            ))
+            Ok(Cap {
+                cptr: dest_slot.offset,
+                cap_data: PhantomCap::phantom_instance(),
+                _role: PhantomData,
+            })
         }
     }
 
@@ -879,9 +815,9 @@ impl<CT: CapType> LocalCap<CT> {
     }
 
     /// Migrate a capability from one CNode to another.
-    pub fn move_to_slot<SourceFreeSlots: Unsigned, DestRole: CNodeRole>(
+    pub fn move_to_slot<DestRole: CNodeRole>(
         self,
-        src_cnode: &LocalCap<CNode<SourceFreeSlots, role::Local>>,
+        src_cnode: &LocalCap<LocalCNode>,
         dest_slot: NewCNodeSlot<DestRole>,
     ) -> Result<Cap<CT, DestRole>, SeL4Error>
     where
@@ -912,24 +848,14 @@ impl<CT: CapType> LocalCap<CT> {
     }
 
     /// Migrate a capability from one CNode to another.
-    pub fn move_to_cnode<SourceFreeSlots: Unsigned, FreeSlots: Unsigned, DestRole: CNodeRole>(
+    pub fn move_to_cnode<DestRole: CNodeRole>(
         self,
-        src_cnode: &LocalCap<CNode<SourceFreeSlots, role::Local>>,
-        dest_cnode: LocalCap<CNode<FreeSlots, DestRole>>,
-    ) -> Result<
-        (
-            Cap<CT, DestRole>,
-            LocalCap<CNode<Sub1<FreeSlots>, DestRole>>,
-        ),
-        SeL4Error,
-    >
+        src_cnode: &LocalCap<LocalCNode>,
+        dest_slot: NewCNodeSlot<DestRole>,
+    ) -> Result<Cap<CT, DestRole>, SeL4Error>
     where
-        FreeSlots: Sub<B1>,
-        Sub1<FreeSlots>: Unsigned,
         CT: Movable,
     {
-        let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
-
         let err = unsafe {
             seL4_CNode_Move(
                 dest_slot.cptr,      // _service
@@ -946,21 +872,18 @@ impl<CT: CapType> LocalCap<CT> {
         if err != 0 {
             Err(SeL4Error::CNodeMove(err))
         } else {
-            Ok((
-                Cap {
-                    cptr: dest_slot.offset,
-                    cap_data: self.cap_data,
-                    _role: PhantomData,
-                },
-                dest_cnode,
-            ))
+            Ok(Cap {
+                cptr: dest_slot.offset,
+                cap_data: self.cap_data,
+                _role: PhantomData,
+            })
         }
     }
 
     /// Delete a capability
     pub fn delete<FreeSlots: Unsigned>(
         self,
-        parent_cnode: &LocalCap<CNode<FreeSlots, role::Local>>,
+        parent_cnode: &LocalCap<LocalCNode>,
     ) -> Result<(), SeL4Error>
     where
         CT: Delible,

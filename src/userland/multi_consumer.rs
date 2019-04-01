@@ -29,16 +29,16 @@ use crate::userland::cap::Badge;
 use crate::userland::paging::PageBytes;
 use crate::userland::role;
 use crate::userland::{
-    irq_state, memory_kind, CNodeRole, Cap, CapRights, ChildCNode, ChildCNodeSlots, DirectRetype,
-    IRQControl, IRQError, IRQHandler, ImmobileIndelibleInertCapabilityReference, LocalCNode,
-    LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable, Notification, PhantomCap, SeL4Error,
-    UnmappedPage, Untyped, VSpace,
+    irq_state, memory_kind, CNodeRole, Cap, CapRights, ChildCNode, ChildCNodeSlot, ChildCNodeSlots,
+    DirectRetype, IRQControl, IRQError, IRQHandler, ImmobileIndelibleInertCapabilityReference,
+    LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable,
+    Notification, PhantomCap, SeL4Error, UnmappedPage, Untyped, VSpace,
 };
 use cross_queue::PushError;
 use cross_queue::{ArrayQueue, Slot};
 use generic_array::ArrayLength;
 use sel4_sys::{seL4_Signal, seL4_Wait};
-use typenum::{Diff, IsGreater, IsLess, Sub1, True, Unsigned, B1, U0, U2, U256, U3};
+use typenum::*;
 
 /// A multi-consumer that consumes interrupt-style notifications
 ///
@@ -211,10 +211,10 @@ impl<IRQ: Unsigned> InterruptConsumer<IRQ, role::Child>
 where
     IRQ: IsLess<U256, Output = True>,
 {
-    pub fn new<LocalFreeSlots: Unsigned>(
+    pub fn new(
         notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
         irq_control: &mut LocalCap<IRQControl>,
-        local_cnode: LocalCap<LocalCNode<LocalFreeSlots>>,
+        local_cnode: LocalCap<LocalCNode>,
         local_slots: LocalCNodeSlots<U3>,
         consumer_slots: ChildCNodeSlots<U2>,
     ) -> Result<(InterruptConsumer<IRQ, role::Child>, ConsumerToken), IRQError>
@@ -258,7 +258,6 @@ where
     pub fn add_queue<
         E: Sized + Send + Sync,
         ELen: Unsigned,
-        LocalCNodeFreeSlots: Unsigned,
         LocalPageDirFreeSlots: Unsigned,
         LocalPageTableFreeSlots: Unsigned,
         ConsumerPageDirFreeSlots: Unsigned,
@@ -272,23 +271,20 @@ where
         consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
         local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
         local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
-        local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
+        local_cnode: &LocalCap<LocalCNode>,
+        dest_slots: LocalCNodeSlots<U2>,
     ) -> Result<
         (
             Consumer1<role::Child, E, ELen, IRQ>,
             ConsumerToken,
             ProducerSetup<E, ELen>,
             VSpace<ConsumerPageDirFreeSlots, Sub1<ConsumerPageTableFreeSlots>, role::Child>,
-            LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U2>>>,
         ),
         MultiConsumerError,
     >
     where
         ELen: ArrayLength<Slot<E>>,
         ELen: IsGreater<U0, Output = True>,
-
-        LocalCNodeFreeSlots: Sub<U2>,
-        Diff<LocalCNodeFreeSlots, U2>: Unsigned,
 
         LocalPageTableFreeSlots: Sub<B1>,
         Sub1<LocalPageTableFreeSlots>: Unsigned,
@@ -301,13 +297,14 @@ where
         if let Some(_) = consumer_token.consumer_vspace_pagedir {
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
-        let (shared_page, consumer_shared_page, consumer_vspace, remainder_local_cnode) =
-            create_page_filled_with_array_queue::<E, ELen, _, _, _, _, _>(
+        let (shared_page, consumer_shared_page, consumer_vspace) =
+            create_page_filled_with_array_queue::<E, ELen, _, _, _, _>(
                 shared_page_ut,
                 consumer_vspace,
                 local_page_table,
                 local_page_dir,
-                local_cnode,
+                &local_cnode,
+                dest_slots,
             )?;
 
         // Assumes we are using the one-hot style for identifying the interrupt badge index
@@ -345,7 +342,6 @@ where
             },
             producer_setup,
             consumer_vspace,
-            remainder_local_cnode,
         ))
     }
 }
@@ -357,7 +353,6 @@ where
     ELen: ArrayLength<Slot<E>>,
 {
     pub fn new<
-        LocalCNodeFreeSlots: Unsigned,
         LocalPageDirFreeSlots: Unsigned,
         LocalPageTableFreeSlots: Unsigned,
         ConsumerCNodeFreeSlots: Unsigned,
@@ -368,20 +363,20 @@ where
         shared_page_ut: LocalCap<
             Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
         >,
-        consumer_cnode: LocalCap<ChildCNode<ConsumerCNodeFreeSlots>>,
+        consumer_cnode: LocalCap<ChildCNode>,
         consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
         local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
         local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
-        local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
+        local_cnode: &LocalCap<LocalCNode>,
+        local_slots: LocalCNodeSlots<U3>,
+        consumer_slot: ChildCNodeSlots<U1>,
     ) -> Result<
         (
             Consumer1<role::Child, E, ELen, IRQ>,
             ConsumerToken,
             ProducerSetup<E, ELen>,
             WakerSetup,
-            LocalCap<ChildCNode<Sub1<ConsumerCNodeFreeSlots>>>,
             VSpace<ConsumerPageDirFreeSlots, Sub1<ConsumerPageTableFreeSlots>, role::Child>,
-            LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U3>>>,
         ),
         MultiConsumerError,
     >
@@ -389,14 +384,8 @@ where
         ELen: ArrayLength<Slot<E>>,
         ELen: IsGreater<U0, Output = True>,
 
-        LocalCNodeFreeSlots: Sub<U3>,
-        Diff<LocalCNodeFreeSlots, U3>: Unsigned,
-
         LocalPageTableFreeSlots: Sub<B1>,
         Sub1<LocalPageTableFreeSlots>: Unsigned,
-
-        ConsumerCNodeFreeSlots: Sub<B1>,
-        Sub1<ConsumerCNodeFreeSlots>: Unsigned,
 
         ConsumerPageTableFreeSlots: Sub<B1>,
         Sub1<ConsumerPageTableFreeSlots>: Unsigned,
@@ -405,21 +394,23 @@ where
         if queue_size > PageBytes::USIZE {
             return Err(MultiConsumerError::QueueTooBig);
         }
-        let (local_cnode, remainder_local_cnode) = local_cnode.reserve_region::<U3>();
-        let (shared_page, consumer_shared_page, consumer_vspace, local_cnode) =
-            create_page_filled_with_array_queue::<E, ELen, _, _, _, _, _>(
+        let (slots, local_slots) = local_slots.alloc();
+        let (shared_page, consumer_shared_page, consumer_vspace) =
+            create_page_filled_with_array_queue::<E, ELen, _, _, _, _>(
                 shared_page_ut,
                 consumer_vspace,
                 local_page_table,
                 local_page_dir,
-                local_cnode,
+                &local_cnode,
+                slots,
             )?;
 
-        let (local_notification, local_cnode) =
-            notification_ut.retype_local::<_, Notification>(local_cnode)?;
-        let (consumer_notification, consumer_cnode) = local_notification.mint(
+        let (slot, local_slots) = local_slots.alloc();
+        let local_notification: LocalCap<Notification> = notification_ut.retype(slot)?;
+
+        let consumer_notification = local_notification.mint(
             &local_cnode,
-            consumer_cnode,
+            consumer_slot,
             CapRights::RWG,
             Badge::from(0x00), // Only for Wait'ing, no need to set badge bits
         )?;
@@ -470,16 +461,13 @@ where
             consumer_token,
             producer_setup,
             waker_setup,
-            consumer_cnode,
             consumer_vspace,
-            remainder_local_cnode,
         ))
     }
 
     pub fn add_queue<
         F: Sized + Send + Sync,
         FLen: Unsigned,
-        LocalCNodeFreeSlots: Unsigned,
         LocalPageDirFreeSlots: Unsigned,
         LocalPageTableFreeSlots: Unsigned,
         ConsumerPageDirFreeSlots: Unsigned,
@@ -493,22 +481,19 @@ where
         consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
         local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
         local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
-        local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
+        local_cnode: &LocalCap<LocalCNode>,
+        dest_slots: LocalCNodeSlots<U2>,
     ) -> Result<
         (
             Consumer2<role::Child, E, ELen, F, FLen, IRQ>,
             ProducerSetup<F, FLen>,
             VSpace<ConsumerPageDirFreeSlots, Sub1<ConsumerPageTableFreeSlots>, role::Child>,
-            LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U2>>>,
         ),
         MultiConsumerError,
     >
     where
         FLen: ArrayLength<Slot<F>>,
         FLen: IsGreater<U0, Output = True>,
-
-        LocalCNodeFreeSlots: Sub<U2>,
-        Diff<LocalCNodeFreeSlots, U2>: Unsigned,
 
         LocalPageTableFreeSlots: Sub<B1>,
         Sub1<LocalPageTableFreeSlots>: Unsigned,
@@ -526,13 +511,14 @@ where
         } else {
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
-        let (shared_page, consumer_shared_page, consumer_vspace, remainder_local_cnode) =
-            create_page_filled_with_array_queue::<F, FLen, _, _, _, _, _>(
+        let (shared_page, consumer_shared_page, consumer_vspace) =
+            create_page_filled_with_array_queue::<F, FLen, _, _, _, _>(
                 shared_page_ut,
                 consumer_vspace,
                 local_page_table,
                 local_page_dir,
-                local_cnode,
+                &local_cnode,
+                dest_slots,
             )?;
 
         let fresh_queue_badge = Badge::from(self.queue_badge.inner << 1);
@@ -570,7 +556,6 @@ where
             },
             producer_setup,
             consumer_vspace,
-            remainder_local_cnode,
         ))
     }
 }
@@ -606,13 +591,13 @@ where
         consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
         local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
         local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
-        local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
+        local_cnode: &LocalCap<LocalCNode>,
+        dest_slots: LocalCNodeSlots<U2>,
     ) -> Result<
         (
             Consumer3<role::Child, E, ELen, F, FLen, G, GLen, IRQ>,
             ProducerSetup<F, FLen>,
             VSpace<ConsumerPageDirFreeSlots, Sub1<ConsumerPageTableFreeSlots>, role::Child>,
-            LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U2>>>,
         ),
         MultiConsumerError,
     >
@@ -621,9 +606,6 @@ where
         FLen: IsGreater<U0, Output = True>,
         GLen: ArrayLength<Slot<G>>,
         GLen: IsGreater<U0, Output = True>,
-
-        LocalCNodeFreeSlots: Sub<U2>,
-        Diff<LocalCNodeFreeSlots, U2>: Unsigned,
 
         LocalPageTableFreeSlots: Sub<B1>,
         Sub1<LocalPageTableFreeSlots>: Unsigned,
@@ -641,13 +623,14 @@ where
         } else {
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
-        let (shared_page, consumer_shared_page, consumer_vspace, remainder_local_cnode) =
-            create_page_filled_with_array_queue::<F, FLen, _, _, _, _, _>(
+        let (shared_page, consumer_shared_page, consumer_vspace) =
+            create_page_filled_with_array_queue::<F, FLen, _, _, _, _>(
                 shared_page_ut,
                 consumer_vspace,
                 local_page_table,
                 local_page_dir,
-                local_cnode,
+                &local_cnode,
+                dest_slots,
             )?;
 
         let fresh_queue_badge = Badge::from((self.queues.1).0.inner << 1);
@@ -686,7 +669,6 @@ where
             },
             producer_setup,
             consumer_vspace,
-            remainder_local_cnode,
         ))
     }
 }
@@ -694,7 +676,6 @@ where
 fn create_page_filled_with_array_queue<
     T: Sized + Send + Sync,
     QLen: Unsigned,
-    LocalCNodeFreeSlots: Unsigned,
     LocalPageDirFreeSlots: Unsigned,
     LocalPageTableFreeSlots: Unsigned,
     ConsumerPageDirFreeSlots: Unsigned,
@@ -706,13 +687,13 @@ fn create_page_filled_with_array_queue<
     consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
     local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
     mut local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
-    local_cnode: LocalCap<LocalCNode<LocalCNodeFreeSlots>>,
+    local_cnode: &LocalCap<LocalCNode>,
+    dest_slots: LocalCNodeSlots<U2>,
 ) -> Result<
     (
         LocalCap<UnmappedPage<memory_kind::General>>,
         LocalCap<MappedPage<role::Child, memory_kind::General>>,
         VSpace<ConsumerPageDirFreeSlots, Sub1<ConsumerPageTableFreeSlots>, role::Child>,
-        LocalCap<LocalCNode<Diff<LocalCNodeFreeSlots, U2>>>,
     ),
     MultiConsumerError,
 >
@@ -720,22 +701,19 @@ where
     QLen: ArrayLength<Slot<T>>,
     QLen: IsGreater<U0, Output = True>,
 
-    LocalCNodeFreeSlots: Sub<U2>,
-    Diff<LocalCNodeFreeSlots, U2>: Unsigned,
-
     LocalPageTableFreeSlots: Sub<B1>,
     Sub1<LocalPageTableFreeSlots>: Unsigned,
 
     ConsumerPageTableFreeSlots: Sub<B1>,
     Sub1<ConsumerPageTableFreeSlots>: Unsigned,
 {
-    let (local_cnode, remainder_local_cnode) = local_cnode.reserve_region::<U2>();
     let queue_size = core::mem::size_of::<ArrayQueue<T, QLen>>();
     if queue_size > PageBytes::USIZE {
         return Err(MultiConsumerError::QueueTooBig);
     }
-    let (shared_page, local_cnode) =
-        shared_page_ut.retype_local::<_, UnmappedPage<_>>(local_cnode)?;
+
+    let (slot, dest_slots) = dest_slots.alloc();
+    let shared_page: LocalCap<UnmappedPage<memory_kind::General>> = shared_page_ut.retype(slot)?;
     // Put some data in there. Specifically, an `ArrayQueue`.
     let (_, shared_page) =
         local_page_table.temporarily_map_page(shared_page, &mut local_page_dir, |mapped_page| {
@@ -750,15 +728,11 @@ where
                 core::mem::forget(aq_ptr);
             }
         })?;
-    let (consumer_shared_page, _local_cnode) =
-        shared_page.copy_inside_cnode(local_cnode, CapRights::RW)?;
+
+    let (slot, _) = dest_slots.alloc();
+    let consumer_shared_page = shared_page.copy(&local_cnode, slot, CapRights::RW)?;
     let (consumer_shared_page, consumer_vspace) = consumer_vspace.map_page(consumer_shared_page)?;
-    Ok((
-        shared_page,
-        consumer_shared_page,
-        consumer_vspace,
-        remainder_local_cnode,
-    ))
+    Ok((shared_page, consumer_shared_page, consumer_vspace))
 }
 
 /// Wrapper around the necessary capabilities for a given
@@ -771,22 +745,18 @@ pub struct Waker<Role: CNodeRole> {
 }
 
 impl Waker<role::Child> {
-    pub fn new<ChildCNodeSlots: Unsigned, LocalCNodeSlots: Unsigned>(
+    pub fn new(
         setup: &WakerSetup,
-        child_cnode: LocalCap<ChildCNode<ChildCNodeSlots>>,
-        local_cnode: &LocalCap<LocalCNode<LocalCNodeSlots>>,
-    ) -> Result<(Self, LocalCap<ChildCNode<Sub1<ChildCNodeSlots>>>), SeL4Error>
-    where
-        ChildCNodeSlots: Sub<B1>,
-        Sub1<ChildCNodeSlots>: Unsigned,
-    {
-        let (notification, child_cnode) = setup.notification.mint(
+        dest_slot: ChildCNodeSlot,
+        local_cnode: &LocalCap<LocalCNode>,
+    ) -> Result<Self, SeL4Error> {
+        let notification = setup.notification.mint(
             local_cnode,
-            child_cnode,
+            dest_slot,
             CapRights::RWG,
             setup.interrupt_badge,
         )?;
-        Ok((Waker { notification }, child_cnode))
+        Ok(Waker { notification })
     }
 }
 
@@ -1095,35 +1065,20 @@ where
     QLen: IsGreater<U0, Output = True>,
     QLen: ArrayLength<Slot<T>>,
 {
-    pub fn new<
-        ChildCNodeSlots: Unsigned,
-        LocalCNodeSlots: Unsigned,
-        ChildPageDirSlots: Unsigned,
-        ChildPageTableSlots: Unsigned,
-    >(
+    pub fn new<ChildPageDirSlots: Unsigned, ChildPageTableSlots: Unsigned>(
         setup: &ProducerSetup<T, QLen>,
-        child_cnode: LocalCap<ChildCNode<ChildCNodeSlots>>,
+        dest_slot: ChildCNodeSlot,
         child_vspace: VSpace<ChildPageDirSlots, ChildPageTableSlots, role::Child>,
-        local_cnode: LocalCap<LocalCNode<LocalCNodeSlots>>,
+        local_cnode: &LocalCap<LocalCNode>,
+        local_slot: LocalCNodeSlot,
     ) -> Result<
         (
             Self,
-            LocalCap<ChildCNode<Sub1<ChildCNodeSlots>>>,
             VSpace<ChildPageDirSlots, Sub1<ChildPageTableSlots>, role::Child>,
-            LocalCap<LocalCNode<Sub1<LocalCNodeSlots>>>,
         ),
         MultiConsumerError,
     >
     where
-        LocalCNodeSlots: Sub<B1>,
-        Sub1<LocalCNodeSlots>: Unsigned,
-
-        ChildCNodeSlots: Sub<B1>,
-        Sub1<ChildCNodeSlots>: Unsigned,
-
-        ChildCNodeSlots: Sub<B1>,
-        Sub1<ChildCNodeSlots>: Unsigned,
-
         ChildPageTableSlots: Sub<B1>,
         Sub1<ChildPageTableSlots>: Unsigned,
     {
@@ -1133,16 +1088,15 @@ where
             // of its own ingest queues.
             return Err(MultiConsumerError::ProduceToOwnQueueForbidden);
         }
-        let (producer_shared_page, local_cnode) = setup
-            .shared_page
-            .copy_inside_cnode(local_cnode, CapRights::RW)?;
+        let producer_shared_page =
+            setup
+                .shared_page
+                .copy(&local_cnode, local_slot, CapRights::RW)?;
         let (producer_shared_page, child_vspace) = child_vspace.map_page(producer_shared_page)?;
-        let (notification, child_cnode) = setup.notification.mint(
-            &local_cnode,
-            child_cnode,
-            CapRights::RWG,
-            setup.queue_badge,
-        )?;
+        let notification =
+            setup
+                .notification
+                .mint(&local_cnode, dest_slot, CapRights::RWG, setup.queue_badge)?;
         Ok((
             Producer {
                 notification,
@@ -1153,9 +1107,7 @@ where
                     _queue_len: PhantomData,
                 },
             },
-            child_cnode,
             child_vspace,
-            local_cnode,
         ))
     }
 }

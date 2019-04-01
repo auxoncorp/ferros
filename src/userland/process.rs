@@ -4,17 +4,17 @@ use core::mem::{self, size_of};
 use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
-    irq_state, memory_kind, role, AssignedPageDirectory, Badge, CNode, CNodeRole, Cap, FaultSource,
-    IRQControl, IRQHandler, ImmobileIndelibleInertCapabilityReference, LocalCap, MappedPage,
-    NewCNodeSlot, Notification, SeL4Error, ThreadControlBlock,
+    irq_state, memory_kind, role, AssignedPageDirectory, Badge, CNode, CNodeRole, Cap, ChildCNode,
+    FaultSource, IRQControl, IRQHandler, ImmobileIndelibleInertCapabilityReference, LocalCap,
+    MappedPage, NewCNodeSlot, Notification, SeL4Error, ThreadControlBlock,
 };
 use sel4_sys::*;
 use typenum::{IsLess, Sub1, True, Unsigned, B1, U0, U256};
 
 impl LocalCap<ThreadControlBlock> {
-    pub(super) fn configure<CNodeFreeSlots: Unsigned, VSpaceRole: CNodeRole>(
+    pub(super) fn configure<VSpaceRole: CNodeRole>(
         &mut self,
-        cspace_root: LocalCap<CNode<CNodeFreeSlots, role::Child>>,
+        cspace_root: LocalCap<ChildCNode>,
         fault_source: Option<FaultSource<role::Child>>,
         vspace_cptr: ImmobileIndelibleInertCapabilityReference<
             AssignedPageDirectory<U0, VSpaceRole>,

@@ -32,7 +32,6 @@ pub mod drivers;
 
 pub mod micro_alloc;
 pub mod pow;
-mod twinkle_types;
 pub mod userland;
 
 mod test_proc;

@@ -32,7 +32,7 @@ pub enum FaultManagementError {
 pub struct IpcSetup<Req, Rsp> {
     endpoint: LocalCap<Endpoint>,
     // Alias the cnode, but only so we can copy out of it
-    endpoint_cnode: LocalCap<LocalCNode<U0>>,
+    endpoint_cnode: LocalCap<LocalCNode>,
     _req: PhantomData<Req>,
     _rsp: PhantomData<Rsp>,
 }
@@ -40,9 +40,9 @@ pub struct IpcSetup<Req, Rsp> {
 /// Fastpath call channel -> given some memory capacity and two child cnodes,
 /// create an endpoint locally, copy it to the responder process cnode, and return an
 /// IpcSetup to allow connecting callers.
-pub fn call_channel<LocalFreeSlots: Unsigned, Req: Send + Sync, Rsp: Send + Sync>(
+pub fn call_channel<Req: Send + Sync, Rsp: Send + Sync>(
     untyped: LocalCap<Untyped<<Endpoint as DirectRetype>::SizeBits>>,
-    local_cnode: &LocalCap<LocalCNode<LocalFreeSlots>>,
+    local_cnode: &LocalCap<LocalCNode>,
     local_slot: LocalCNodeSlot,
     child_slot: ChildCNodeSlot,
 ) -> Result<(IpcSetup<Req, Rsp>, Responder<Req, Rsp, role::Child>), IPCError> {
@@ -58,8 +58,6 @@ pub fn call_channel<LocalFreeSlots: Unsigned, Req: Send + Sync, Rsp: Send + Sync
                 _role: PhantomData,
                 cap_data: CNode {
                     radix: local_cnode.cap_data.radix,
-                    next_free_slot: 0,
-                    _free_slots: PhantomData,
                     _role: PhantomData,
                 },
             },
@@ -452,8 +450,8 @@ pub struct FaultSinkSetup {
 }
 
 impl FaultSinkSetup {
-    pub fn new<LocalFreeSlots: Unsigned>(
-        local_cnode: &LocalCap<LocalCNode<LocalFreeSlots>>,
+    pub fn new(
+        local_cnode: &LocalCap<LocalCNode>,
         untyped: LocalCap<Untyped<<Endpoint as DirectRetype>::SizeBits>>,
         endpoint_slot: LocalCNodeSlot,
         fault_sink_slot: ChildCNodeSlot,
@@ -476,9 +474,9 @@ impl FaultSinkSetup {
         }
     }
 
-    pub fn add_fault_source<LocalFreeSlots: Unsigned>(
+    pub fn add_fault_source(
         &self,
-        local_cnode: &LocalCap<LocalCNode<LocalFreeSlots>>,
+        local_cnode: &LocalCap<LocalCNode>,
         fault_source_slot: ChildCNodeSlot,
         badge: Badge,
     ) -> Result<FaultSource<role::Child>, FaultManagementError> {
@@ -507,8 +505,8 @@ impl FaultSinkSetup {
 /// Only supports establishing two child processes where one process will be watching for faults on the other.
 /// Requires a separate input signature if we want the local/current thread to be the watcher due to
 /// our consuming full instances of the local scratch CNode and the destination CNodes separately in this function.
-pub fn setup_fault_endpoint_pair<LocalFreeSlots: Unsigned>(
-    local_cnode: &LocalCap<LocalCNode<LocalFreeSlots>>,
+pub fn setup_fault_endpoint_pair(
+    local_cnode: &LocalCap<LocalCNode>,
     untyped: LocalCap<Untyped<<Endpoint as DirectRetype>::SizeBits>>,
     endpoint_slot: LocalCNodeSlot,
     fault_source_slot: ChildCNodeSlot,
