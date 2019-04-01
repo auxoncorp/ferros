@@ -2,9 +2,9 @@ use core::marker::PhantomData;
 use core::ops::{Add, Mul, Sub};
 use crate::pow::{Pow, _Pow};
 use crate::userland::{
-    memory_kind, paging, role, CNode, CNodeRole, CNodeSlots, Cap, CapRange, CapType, ChildCNode,
-    ChildCNodeSlots, DirectRetype, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MemoryKind,
-    NewCNodeSlot, PhantomCap, SeL4Error, UnmappedPage, Untyped,
+    memory_kind, paging, role, CNode, CNodeRole, CNodeSlot, CNodeSlots, Cap, CapRange, CapType,
+    ChildCNode, ChildCNodeSlots, DirectRetype, LocalCNodeSlot, LocalCNodeSlots, LocalCap,
+    MemoryKind, PhantomCap, SeL4Error, UnmappedPage, Untyped,
 };
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Prod, Sum};
@@ -137,7 +137,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
 impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
     pub fn retype<TargetCapType: CapType, TargetRole: CNodeRole>(
         self,
-        dest_slot: NewCNodeSlot<TargetRole>,
+        dest_slot: CNodeSlot<TargetRole>,
     ) -> Result<Cap<TargetCapType, TargetRole>, SeL4Error>
     where
         TargetCapType: DirectRetype,

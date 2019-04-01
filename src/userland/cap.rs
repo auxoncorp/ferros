@@ -1,7 +1,5 @@
 use core::marker::PhantomData;
-use crate::userland::{
-    paging, CNode, CapRights, LocalCNode, LocalCNodeSlot, NewCNodeSlot, SeL4Error,
-};
+use crate::userland::{paging, CNode, CNodeSlot, CapRights, LocalCNode, LocalCNodeSlot, SeL4Error};
 use sel4_sys::*;
 use typenum::*;
 
@@ -662,7 +660,7 @@ impl<CT: CapType> LocalCap<CT> {
     pub fn copy<DestRole: CNodeRole>(
         &self,
         src_cnode: &LocalCap<LocalCNode>,
-        dest_slot: NewCNodeSlot<DestRole>,
+        dest_slot: CNodeSlot<DestRole>,
         rights: CapRights,
     ) -> Result<Cap<CT::CopyOutput, DestRole>, SeL4Error>
     where
@@ -698,7 +696,7 @@ impl<CT: CapType> LocalCap<CT> {
     pub(crate) fn mint_new<DestRole: CNodeRole>(
         &self,
         src_cnode: &LocalCap<LocalCNode>,
-        dest_slot: NewCNodeSlot<DestRole>,
+        dest_slot: CNodeSlot<DestRole>,
         rights: CapRights,
         badge: Badge,
     ) -> Result<Cap<CT::CopyOutput, DestRole>, SeL4Error>
@@ -738,7 +736,7 @@ impl<CT: CapType> LocalCap<CT> {
     pub(crate) fn mint<DestRole: CNodeRole>(
         &self,
         src_cnode: &LocalCap<LocalCNode>,
-        dest_slot: NewCNodeSlot<DestRole>,
+        dest_slot: CNodeSlot<DestRole>,
         rights: CapRights,
         badge: Badge,
     ) -> Result<Cap<CT::CopyOutput, DestRole>, SeL4Error>
@@ -816,7 +814,7 @@ impl<CT: CapType> LocalCap<CT> {
     pub fn move_to_slot<DestRole: CNodeRole>(
         self,
         src_cnode: &LocalCap<LocalCNode>,
-        dest_slot: NewCNodeSlot<DestRole>,
+        dest_slot: CNodeSlot<DestRole>,
     ) -> Result<Cap<CT, DestRole>, SeL4Error>
     where
         CT: Movable,
@@ -849,7 +847,7 @@ impl<CT: CapType> LocalCap<CT> {
     pub fn move_to_cnode<DestRole: CNodeRole>(
         self,
         src_cnode: &LocalCap<LocalCNode>,
-        dest_slot: NewCNodeSlot<DestRole>,
+        dest_slot: CNodeSlot<DestRole>,
     ) -> Result<Cap<CT, DestRole>, SeL4Error>
     where
         CT: Movable,

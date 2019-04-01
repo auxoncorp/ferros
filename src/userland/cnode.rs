@@ -49,7 +49,7 @@ impl<Size: Unsigned, Role: CNodeRole> CNodeSlots<Size, Role> {
         )
     }
 
-    pub fn iter(self) -> impl Iterator<Item = NewCNodeSlot<Role>> {
+    pub fn iter(self) -> impl Iterator<Item = CNodeSlot<Role>> {
         let cptr = self.cptr;
         let offset = self.offset;
         (0..Size::USIZE).map(move |n| CNodeSlots {
@@ -64,9 +64,9 @@ impl<Size: Unsigned, Role: CNodeRole> CNodeSlots<Size, Role> {
 pub type LocalCNodeSlots<Size> = CNodeSlots<Size, role::Local>;
 pub type ChildCNodeSlots<Size> = CNodeSlots<Size, role::Child>;
 
-pub type NewCNodeSlot<Role> = CNodeSlots<U1, Role>;
-pub type LocalCNodeSlot = NewCNodeSlot<role::Local>;
-pub type ChildCNodeSlot = NewCNodeSlot<role::Child>;
+pub type CNodeSlot<Role> = CNodeSlots<U1, Role>;
+pub type LocalCNodeSlot = CNodeSlot<role::Local>;
+pub type ChildCNodeSlot = CNodeSlot<role::Child>;
 
 impl LocalCap<ChildCNode> {
     // The first returned cap goes in the child process params struct. The
