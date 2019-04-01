@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
 
-use crate::userland::paging::PageBytes;
+use crate::arch::paging::PageBytes;
 use crate::userland::{
     memory_kind, role, Badge, CNodeRole, Cap, CapRights, ChildCNodeSlots, DirectRetype, IPCError,
     LocalCNode, LocalCNodeSlots, LocalCap, Notification, UnmappedPage, Untyped, VSpace,

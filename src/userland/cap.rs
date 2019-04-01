@@ -1,5 +1,6 @@
 use core::marker::PhantomData;
-use crate::userland::{paging, CNode, CNodeSlot, CapRights, LocalCNode, LocalCNodeSlot, SeL4Error};
+use crate::arch::paging;
+use crate::userland::{CNode, CNodeSlot, CapRights, LocalCNode, LocalCNodeSlot, SeL4Error};
 use sel4_sys::*;
 use typenum::*;
 
@@ -468,7 +469,7 @@ impl<Kind: MemoryKind> PhantomCap for UnmappedLargePage<Kind> {
 }
 
 impl DirectRetype for UnmappedLargePage<memory_kind::General> {
-    type SizeBits = crate::userland::paging::LargePageBits;
+    type SizeBits = paging::LargePageBits;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_LargePageObject as usize
     }
@@ -519,7 +520,7 @@ impl<Kind: MemoryKind> PhantomCap for UnmappedSection<Kind> {
 }
 
 impl DirectRetype for UnmappedSection<memory_kind::General> {
-    type SizeBits = crate::userland::paging::SectionBits;
+    type SizeBits = paging::SectionBits;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_SectionObject as usize
     }
@@ -568,7 +569,7 @@ impl<Kind: MemoryKind> PhantomCap for UnmappedSuperSection<Kind> {
 }
 
 impl DirectRetype for UnmappedSuperSection<memory_kind::General> {
-    type SizeBits = crate::userland::paging::SuperSectionBits;
+    type SizeBits = paging::SuperSectionBits;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_SuperSectionObject as usize
     }

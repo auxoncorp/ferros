@@ -24,9 +24,9 @@
 /// let (producer_params_member, ...leftovers) = Producer::new(queue_producer_setup, producer_thread_cnode, producer_thread_vspace)
 use core::marker::PhantomData;
 use core::ops::Sub;
+use crate::arch::paging::PageBytes;
 use crate::userland::cap::AssignedPageDirectory;
 use crate::userland::cap::Badge;
-use crate::userland::paging::PageBytes;
 use crate::userland::role;
 use crate::userland::{
     irq_state, memory_kind, CNodeRole, Cap, CapRights, ChildCNode, ChildCNodeSlot, ChildCNodeSlots,

@@ -2,11 +2,12 @@ use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Add, Sub};
 
+use crate::arch::paging;
 use crate::pow::Pow;
 use crate::userland::cap::ThreadControlBlock;
 use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, SetupVer};
 use crate::userland::{
-    memory_kind, paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNodeRole, Cap, CapRange,
+    memory_kind, role, ASIDPool, AssignedPageDirectory, BootInfo, CNodeRole, Cap, CapRange,
     CapRights, ChildCNode, DirectRetype, FaultSource, ImmobileIndelibleInertCapabilityReference,
     LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable,
     MappedSection, MemoryKind, PhantomCap, SeL4Error, UnassignedPageDirectory, UnmappedPage,

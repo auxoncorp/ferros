@@ -28,9 +28,11 @@ mod debug;
 
 pub mod drivers;
 
+pub mod arch;
 pub mod micro_alloc;
 pub mod pow;
 pub mod userland;
+// pub mod alloc;
 
 mod test_proc;
 
