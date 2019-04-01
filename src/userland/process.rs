@@ -1,15 +1,14 @@
 use core::cmp;
 use core::marker::PhantomData;
 use core::mem::{self, size_of};
-use core::ops::Sub;
 use core::ptr;
 use crate::userland::{
-    irq_state, memory_kind, role, AssignedPageDirectory, Badge, CNode, CNodeRole, Cap, ChildCNode,
+    irq_state, memory_kind, role, AssignedPageDirectory, Badge, CNodeRole, Cap, ChildCNode,
     FaultSource, IRQControl, IRQHandler, ImmobileIndelibleInertCapabilityReference, LocalCap,
     MappedPage, NewCNodeSlot, Notification, SeL4Error, ThreadControlBlock,
 };
 use sel4_sys::*;
-use typenum::{IsLess, Sub1, True, Unsigned, B1, U0, U256};
+use typenum::*;
 
 impl LocalCap<ThreadControlBlock> {
     pub(super) fn configure<VSpaceRole: CNodeRole>(
@@ -145,6 +144,7 @@ where
 
 impl LocalCap<Notification> {
     /// Blocking wait on a notification
+    #[allow(dead_code)]
     pub(crate) fn wait(&self) -> Badge {
         let mut sender_badge: usize = 0;
         unsafe {

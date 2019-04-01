@@ -3,11 +3,11 @@ use core::ops::{Add, Mul, Sub};
 use crate::pow::{Pow, _Pow};
 use crate::userland::{
     memory_kind, paging, role, CNode, CNodeRole, CNodeSlots, Cap, CapRange, CapType, ChildCNode,
-    ChildCNodeSlots, ChildCap, DirectRetype, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MemoryKind,
+    ChildCNodeSlots, DirectRetype, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MemoryKind,
     NewCNodeSlot, PhantomCap, SeL4Error, UnmappedPage, Untyped,
 };
 use sel4_sys::*;
-use typenum::operator_aliases::{Diff, Prod, Sub1, Sum};
+use typenum::operator_aliases::{Diff, Prod, Sum};
 use typenum::*;
 
 // The seL4 kernel's maximum amount of retypes per system call is configurable

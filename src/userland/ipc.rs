@@ -1,13 +1,10 @@
 use core::marker::PhantomData;
-use core::ops::Sub;
 use crate::userland::cap::DirectRetype;
 use crate::userland::{
-    role, Badge, CNode, CNodeRole, Cap, CapRights, ChildCNode, ChildCNodeSlot, ChildCap, Endpoint,
-    LocalCNode, LocalCNodeSlot, LocalCap, SeL4Error, Untyped,
+    role, Badge, CNode, CNodeRole, Cap, CapRights, ChildCNodeSlot, ChildCap, Endpoint, LocalCNode,
+    LocalCNodeSlot, LocalCap, SeL4Error, Untyped,
 };
 use sel4_sys::*;
-use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U0};
 
 #[derive(Debug)]
 pub enum IPCError {

@@ -1,11 +1,9 @@
 use core::marker::PhantomData;
-use core::ops::Sub;
 use crate::userland::{
-    paging, CNode, CNodeSlot, CapRights, LocalCNode, LocalCNodeSlot, NewCNodeSlot, SeL4Error,
+    paging, CNode, CapRights, LocalCNode, LocalCNodeSlot, NewCNodeSlot, SeL4Error,
 };
 use sel4_sys::*;
-use typenum::operator_aliases::Sub1;
-use typenum::{IsLess, True, Unsigned, B1, U10, U12, U14, U256, U4};
+use typenum::*;
 
 /// Type-level enum indicating the relative location / Capability Pointer addressing
 /// scheme that should be used for the objects parameterized by it.

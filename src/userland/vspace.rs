@@ -6,16 +6,16 @@ use crate::pow::Pow;
 use crate::userland::cap::ThreadControlBlock;
 use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, SetupVer};
 use crate::userland::{
-    address_space, memory_kind, paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNodeRole,
-    Cap, CapRange, CapRights, ChildCNode, DirectRetype, FaultSource,
-    ImmobileIndelibleInertCapabilityReference, LocalCNode, LocalCNodeSlot, LocalCNodeSlots,
-    LocalCap, MappedPage, MappedPageTable, MappedSection, MemoryKind, PhantomCap, SeL4Error,
-    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, UnmappedSection, Untyped,
+    memory_kind, paging, role, ASIDPool, AssignedPageDirectory, BootInfo, CNodeRole, Cap, CapRange,
+    CapRights, ChildCNode, DirectRetype, FaultSource, ImmobileIndelibleInertCapabilityReference,
+    LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable,
+    MappedSection, MemoryKind, PhantomCap, SeL4Error, UnassignedPageDirectory, UnmappedPage,
+    UnmappedPageTable, UnmappedSection, Untyped,
 };
 use generic_array::{ArrayLength, GenericArray};
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1, Sum};
-use typenum::{UInt, UTerm, Unsigned, B0, B1, U0, U1, U10, U16, U17, U32};
+use typenum::*;
 
 #[derive(Debug)]
 pub enum VSpaceError {
@@ -47,8 +47,6 @@ pub struct VSpace<
 }
 
 type NewVSpaceCNodeSlots = Sum<Sum<paging::CodePageTableCount, paging::CodePageCount>, U16>;
-#[rustfmt::skip]
-type NewVSpaceCNodeSlotsNormalized = UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B1>, B0>, B0>, B0>, B0>, B0>, B0>, B0>, B1>, B0>, B1>, B0>, B0>, B0>, B0>;
 
 impl VSpace {
     pub fn new<ASIDPoolFreeSlots: Unsigned, BootInfoPageDirFreeSlots: Unsigned>(
@@ -196,7 +194,7 @@ impl VSpace {
         let (ut12, _, _, _) = ut14.quarter(slots)?;
 
         let (slots, dest_slots) = dest_slots.alloc();
-        let (ut10, initial_page_table_ut, _, _) = ut12.quarter(slots)?;
+        let (_ut10, initial_page_table_ut, _, _) = ut12.quarter(slots)?;
 
         // allocate and assign the page directory
         let (slots, dest_slots) = dest_slots.alloc();
@@ -290,7 +288,7 @@ impl VSpace {
             }
         };
 
-        let (slots, dest_slots) = dest_slots.alloc();
+        let (slots, _dest_slots) = dest_slots.alloc();
         let initial_page_table: LocalCap<UnmappedPageTable> =
             initial_page_table_ut.retype(slots)?;
         let (initial_page_table, page_dir) = page_dir.map_page_table(initial_page_table)?;
@@ -633,7 +631,7 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
         let (ipc_buffer, vspace) = vspace.map_page(ipc_buffer)?;
 
         // allocate the thread control block
-        let (slots, dest_slots) = dest_slots.alloc();
+        let (slots, _dest_slots) = dest_slots.alloc();
         let tcb = tcb_ut.retype(slots)?;
 
         let ready_thread = ReadyThread {
@@ -1315,7 +1313,7 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<MappedPageTable<FreeSlots, R
         unmapped_pages: CapRange<UnmappedPage<Kind>, role::Local, PageCount>,
         // TODO - must this page_dir always be the parent of this page table?
         // if so, we should clamp down harder on enforcing this relationship.
-        mut page_dir: &mut LocalCap<AssignedPageDirectory<PageDirFreeSlots, Role>>,
+        page_dir: &mut LocalCap<AssignedPageDirectory<PageDirFreeSlots, Role>>,
         f: F,
     ) -> Result<(Out, CapRange<UnmappedPage<Kind>, role::Local, PageCount>), SeL4Error>
     where

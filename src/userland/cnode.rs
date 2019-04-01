@@ -2,8 +2,8 @@ use core::marker::PhantomData;
 use core::ops::Sub;
 use crate::userland::{role, CNodeRole, Cap, CapRights, ChildCap, LocalCap, SeL4Error};
 use sel4_sys::*;
-use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U0, U1};
+use typenum::operator_aliases::Diff;
+use typenum::*;
 
 /// There will only ever be one CNode in a process with Role = Root. The
 /// cptrs any regular Cap are /also/ offsets into that cnode, because of
@@ -16,12 +16,6 @@ pub struct CNode<Role: CNodeRole> {
 
 pub type LocalCNode = CNode<role::Local>;
 pub type ChildCNode = CNode<role::Child>;
-
-#[derive(Debug)]
-pub(super) struct CNodeSlot {
-    pub(super) cptr: usize,
-    pub(super) offset: usize,
-}
 
 #[derive(Debug)]
 pub struct CNodeSlots<Size: Unsigned, Role: CNodeRole> {
@@ -67,10 +61,10 @@ impl<Size: Unsigned, Role: CNodeRole> CNodeSlots<Size, Role> {
     }
 }
 
-pub type LocalCNodeSlots<Size: Unsigned> = CNodeSlots<Size, role::Local>;
-pub type ChildCNodeSlots<Size: Unsigned> = CNodeSlots<Size, role::Child>;
+pub type LocalCNodeSlots<Size> = CNodeSlots<Size, role::Local>;
+pub type ChildCNodeSlots<Size> = CNodeSlots<Size, role::Child>;
 
-pub type NewCNodeSlot<Role: CNodeRole> = CNodeSlots<U1, Role>;
+pub type NewCNodeSlot<Role> = CNodeSlots<U1, Role>;
 pub type LocalCNodeSlot = NewCNodeSlot<role::Local>;
 pub type ChildCNodeSlot = NewCNodeSlot<role::Child>;
 
@@ -97,14 +91,14 @@ impl LocalCap<ChildCNode> {
         if err != 0 {
             Err(SeL4Error::CNodeCopy(err))
         } else {
-            Ok((Cap {
+            Ok(Cap {
                 cptr: dest_slot.offset,
                 _role: PhantomData,
                 cap_data: CNode {
                     radix: self.cap_data.radix,
                     _role: PhantomData,
                 },
-            }))
+            })
         }
     }
 }

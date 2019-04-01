@@ -11,11 +11,9 @@ extern crate alloc;
 
 extern crate arrayvec;
 extern crate generic_array;
-extern crate sel4_sys;
-#[macro_use]
-extern crate typenum;
-#[macro_use]
 extern crate registers;
+extern crate sel4_sys;
+extern crate typenum;
 
 extern crate cross_queue;
 
@@ -38,13 +36,12 @@ mod test_proc;
 
 use crate::micro_alloc::Error as AllocError;
 use crate::userland::{
-    call_channel, role, root_cnode, BootInfo, CNode, Consumer1, IPCError, IRQError,
-    LocalCNodeSlots, LocalCap, MultiConsumerError, Producer, SeL4Error, UnmappedPageTable, VSpace,
-    VSpaceError, Waker,
+    call_channel, root_cnode, BootInfo, IPCError, IRQError, MultiConsumerError, SeL4Error, VSpace,
+    VSpaceError,
 };
 
 use sel4_sys::*;
-use typenum::{Diff, U1, U12, U27, U4096};
+use typenum::*;
 
 fn yield_forever() {
     unsafe {
@@ -126,8 +123,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     debug_println!("proc 2 cspace retyped");
 
     let (slots, local_slots) = local_slots.alloc();
-    let (proc1_vspace, mut boot_info) =
-        VSpace::new(boot_info, proc1_vspace_ut, &root_cnode, slots)?;
+    let (proc1_vspace, boot_info) = VSpace::new(boot_info, proc1_vspace_ut, &root_cnode, slots)?;
 
     debug_println!("proc 1 vspace exists");
     let (slots, local_slots) = local_slots.alloc();
@@ -141,10 +137,10 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     debug_println!("proc 2 vspace exists");
 
     let (slots, local_slots) = local_slots.alloc();
-    let (slots1, proc1_slots) = proc1_slots.alloc();
+    let (slots1, _proc1_slots) = proc1_slots.alloc();
     let (ipc_setup, responder) = call_channel(endpoint_ut, &root_cnode, slots, slots1)?;
 
-    let (slots2, proc2_slots) = proc2_slots.alloc();
+    let (slots2, _proc2_slots) = proc2_slots.alloc();
     let caller = ipc_setup.create_caller(slots2)?;
 
     let proc1_params = proc1::Proc1Params { rspdr: responder };
@@ -162,7 +158,7 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
     proc1_thread.start(proc1_cspace, None, &boot_info.tcb, 255)?;
 
-    let (slots, local_slots) = local_slots.alloc();
+    let (slots, _local_slots) = local_slots.alloc();
     let (proc2_thread, _) = proc2_vspace.prepare_thread(
         proc2::run,
         proc2_params,

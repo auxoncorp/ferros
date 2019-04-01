@@ -3,11 +3,11 @@ use core::ops::Sub;
 
 use crate::userland::paging::PageBytes;
 use crate::userland::{
-    memory_kind, role, Badge, CNodeRole, Cap, CapRights, ChildCNode, ChildCNodeSlots, DirectRetype,
-    IPCError, LocalCNode, LocalCNodeSlots, LocalCap, Notification, UnmappedPage, Untyped, VSpace,
+    memory_kind, role, Badge, CNodeRole, Cap, CapRights, ChildCNodeSlots, DirectRetype, IPCError,
+    LocalCNode, LocalCNodeSlots, LocalCap, Notification, UnmappedPage, Untyped, VSpace,
 };
 use sel4_sys::{seL4_Signal, seL4_Wait};
-use typenum::operator_aliases::{Diff, Sub1};
+use typenum::operator_aliases::Sub1;
 use typenum::{Unsigned, B1, U2, U5};
 
 pub mod sync {
@@ -78,7 +78,7 @@ pub mod sync {
         let (slot, local_slots) = local_slots.alloc();
         let local_request_ready: LocalCap<Notification> = call_notification_ut.retype(slot)?;
 
-        let (slot, local_slots) = local_slots.alloc();
+        let (slot, _local_slots) = local_slots.alloc();
         let local_response_ready: LocalCap<Notification> = response_notification_ut.retype(slot)?;
 
         let (caller_slot, caller_slots) = caller_slots.alloc();
@@ -89,7 +89,7 @@ pub mod sync {
             Badge::from(1 << 0),
         )?;
 
-        let (caller_slot, caller_slots) = caller_slots.alloc();
+        let (caller_slot, _caller_slots) = caller_slots.alloc();
         let caller_response_ready = local_response_ready.mint(
             &local_cnode,
             caller_slot,
@@ -116,7 +116,7 @@ pub mod sync {
             Badge::from(1 << 2),
         )?;
 
-        let (responder_slot, responder_slots) = responder_slots.alloc();
+        let (responder_slot, _responder_slots) = responder_slots.alloc();
         let responder_response_ready = local_response_ready.mint(
             &local_cnode,
             responder_slot,

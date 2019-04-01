@@ -232,14 +232,14 @@ where
             unbadged_notification.mint_inside_cnode(local_slot, CapRights::RWG, interrupt_badge)?;
 
         // Make a new IRQHandler, link it to the notification and move both to the child CNode
-        let (local_slot, local_slots) = local_slots.alloc();
+        let (local_slot, _local_slots) = local_slots.alloc();
         let irq_handler = irq_control.create_handler(local_slot)?;
         let irq_handler = irq_handler.set_notification(&notification)?;
 
         let (consumer_slot, consumer_slots) = consumer_slots.alloc();
         let irq_handler_in_child = irq_handler.move_to_slot(&local_cnode, consumer_slot)?;
 
-        let (consumer_slot, consumer_slots) = consumer_slots.alloc();
+        let (consumer_slot, _consumer_slots) = consumer_slots.alloc();
         let notification_in_child =
             notification.copy(&local_cnode, consumer_slot, CapRights::RW)?;
         Ok((
@@ -363,7 +363,7 @@ where
         shared_page_ut: LocalCap<
             Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
         >,
-        consumer_cnode: LocalCap<ChildCNode>,
+        _consumer_cnode: LocalCap<ChildCNode>,
         consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
         local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
         local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
@@ -405,7 +405,7 @@ where
                 slots,
             )?;
 
-        let (slot, local_slots) = local_slots.alloc();
+        let (slot, _local_slots) = local_slots.alloc();
         let local_notification: LocalCap<Notification> = notification_ut.retype(slot)?;
 
         let consumer_notification = local_notification.mint(

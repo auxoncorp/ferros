@@ -47,6 +47,7 @@ impl RetypeForSetup for WakerParams<role::Local> {
     type Output = WakerParams<role::Child>;
 }
 
+#[allow(dead_code)]
 pub extern "C" fn consumer_process(p: ConsumerParams<role::Local>) {
     #[derive(Debug)]
     struct State {
@@ -101,11 +102,13 @@ pub extern "C" fn consumer_process(p: ConsumerParams<role::Local>) {
     )
 }
 
+#[allow(dead_code)]
 pub extern "C" fn waker_process(p: WakerParams<role::Local>) {
     debug_println!("Inside waker");
     p.waker.send_wakeup_signal();
 }
 
+#[allow(dead_code)]
 pub extern "C" fn producer_x_process(p: ProducerXParams<role::Local>) {
     debug_println!("Inside producer x");
     let mut rejection_count = 0;
@@ -129,6 +132,7 @@ pub extern "C" fn producer_x_process(p: ProducerXParams<role::Local>) {
     debug_println!("\n\nProducer rejection count: {}\n\n", rejection_count);
 }
 
+#[allow(dead_code)]
 pub extern "C" fn producer_y_process(p: ProducerYParams<role::Local>) {
     debug_println!("Inside producer y ");
     let producer = p.producer;
