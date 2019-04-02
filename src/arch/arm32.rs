@@ -2,6 +2,12 @@ use crate::pow::Pow;
 use typenum::operator_aliases::{Diff, Prod, Sum};
 use typenum::*;
 
+pub mod kernel {
+    use super::*;
+    pub type MaxUntypedSize = U31;
+    pub type MinUntypedSize = U4;
+}
+
 pub mod paging {
     use super::*;
 

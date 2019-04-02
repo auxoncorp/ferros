@@ -26,6 +26,10 @@ pub struct CNodeSlots<Size: Unsigned, Role: CNodeRole> {
 }
 
 impl<Size: Unsigned, Role: CNodeRole> CNodeSlots<Size, Role> {
+    pub fn elim(self) -> (usize, usize, usize) {
+        (self.cptr, self.offset, Size::USIZE)
+    }
+
     pub fn alloc<Count: Unsigned>(
         self,
     ) -> (CNodeSlots<Count, Role>, CNodeSlots<Diff<Size, Count>, Role>)

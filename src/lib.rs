@@ -28,18 +28,18 @@ mod debug;
 
 pub mod drivers;
 
+pub mod alloc;
 pub mod arch;
-pub mod micro_alloc;
+pub mod config;
 pub mod pow;
 pub mod userland;
-// pub mod alloc;
 
 mod test_proc;
 
-use crate::micro_alloc::Error as AllocError;
+use crate::alloc::micro_alloc::Error as AllocError;
 use crate::userland::{
-    call_channel, root_cnode, BootInfo, IPCError, IRQError, MultiConsumerError, SeL4Error, VSpace,
-    VSpaceError,
+    call_channel, root_cnode, BootInfo, IPCError, IRQError, LocalCap, MultiConsumerError,
+    SeL4Error, Untyped, VSpace, VSpaceError,
 };
 
 use sel4_sys::*;
@@ -59,88 +59,63 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
 }
 
 fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
-    let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
+    let mut allocator = alloc::micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
     let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
 
     let ut27 = allocator
         .get_untyped::<U27>()
         .expect("initial alloc failure");
+    let uts = alloc::ut_buddy(ut27);
 
     let (slots, local_slots) = local_slots.alloc();
-    let (ui_ut, ut26) = ut27.split(slots)?;
+    let (ut, uts) = uts.alloc(slots)?;
+    let (slots, local_slots) = local_slots.alloc();
+    let boot_info = BootInfo::wrap(raw_boot_info, ut, slots);
 
     let (slots, local_slots) = local_slots.alloc();
-    let (ut24, _, _, _) = ut26.quarter(slots)?;
-
+    let (ut, uts): (LocalCap<Untyped<U12>>, _) = uts.alloc(slots)?;
     let (slots, local_slots) = local_slots.alloc();
-    let (ut22, _, _, _) = ut24.quarter(slots)?;
-
-    let (slots, local_slots) = local_slots.alloc();
-    let (ut20, _, _, _) = ut22.quarter(slots)?;
-
-    let (slots, local_slots) = local_slots.alloc();
-    let (ut18a, ut18b, ut18c, _) = ut20.quarter(slots)?;
-
-    let (slots, local_slots) = local_slots.alloc();
-    let (proc1_vspace_ut, proc1_thread_ut) = ut18a.split(slots)?;
-
-    let (slots, local_slots) = local_slots.alloc();
-    let (proc2_vspace_ut, proc2_thread_ut) = ut18b.split(slots)?;
-
-    let (slots, local_slots) = local_slots.alloc();
-    let (proc1_cspace_ut, proc2_cspace_ut, ut16, _) = ut18c.quarter(slots)?;
-
-    let (slots, local_slots) = local_slots.alloc();
-    let (ut14, _, _, _) = ut16.quarter(slots)?;
-
-    let (slots, local_slots) = local_slots.alloc();
-    let (asid_pool_ut, ut12, _, _) = ut14.quarter(slots)?;
-
-    let (slots, local_slots) = local_slots.alloc();
-    let (scratch_page_table_ut, ut10, _, _) = ut12.quarter(slots)?;
-
-    let (slots, local_slots) = local_slots.alloc();
-    let (ut8, _, _, _) = ut10.quarter(slots)?;
-
-    let (slots, local_slots) = local_slots.alloc();
-    let (ut6, _, _, _) = ut8.quarter(slots)?;
-
-    let (slots, local_slots) = local_slots.alloc();
-    let (endpoint_ut, _, _, _) = ut6.quarter(slots)?;
-
-    let (slots, local_slots) = local_slots.alloc();
-    let boot_info = BootInfo::wrap(raw_boot_info, asid_pool_ut, slots);
-
-    let (slots, local_slots) = local_slots.alloc();
-    let unmapped_scratch_page_table = scratch_page_table_ut.retype(slots)?;
+    let unmapped_scratch_page_table = ut.retype(slots)?;
     let (mut scratch_page_table, boot_info) =
         boot_info.map_page_table(unmapped_scratch_page_table)?;
 
     let (slots, local_slots) = local_slots.alloc();
-    let (proc1_cspace, proc1_slots) = proc1_cspace_ut.retype_cnode::<U12>(slots)?;
+    let (ut, uts): (LocalCap<Untyped<U16>>, _) = uts.alloc(slots)?;
+    let (slots, local_slots) = local_slots.alloc();
+    let (proc1_cspace, proc1_slots) = ut.retype_cnode::<U12>(slots)?;
     debug_println!("proc 1 cspace retyped");
 
     let (slots, local_slots) = local_slots.alloc();
-    let (proc2_cspace, proc2_slots) = proc2_cspace_ut.retype_cnode::<U12>(slots)?;
+    let (ut, uts): (LocalCap<Untyped<U16>>, _) = uts.alloc(slots)?;
+    let (slots, local_slots) = local_slots.alloc();
+    let (proc2_cspace, proc2_slots) = ut.retype_cnode::<U12>(slots)?;
     debug_println!("proc 2 cspace retyped");
 
     let (slots, local_slots) = local_slots.alloc();
-    let (proc1_vspace, boot_info) = VSpace::new(boot_info, proc1_vspace_ut, &root_cnode, slots)?;
+    let (ut, uts) = uts.alloc(slots)?;
+    let (slots, local_slots) = local_slots.alloc();
+    let (proc1_vspace, boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
 
     debug_println!("proc 1 vspace exists");
     let (slots, local_slots) = local_slots.alloc();
+    let (ut_1, uts) = uts.alloc(slots)?;
+    let (slots, local_slots) = local_slots.alloc();
+    let (ut_2, uts) = uts.alloc(slots)?;
+    let (slots, local_slots) = local_slots.alloc();
     let (proc2_vspace, mut boot_info) = VSpace::new_with_writable_user_image(
         boot_info,
-        proc2_vspace_ut,
-        (&mut scratch_page_table, ui_ut),
+        ut_1,
+        (&mut scratch_page_table, ut_2),
         &root_cnode,
         slots,
     )?;
     debug_println!("proc 2 vspace exists");
 
     let (slots, local_slots) = local_slots.alloc();
+    let (ut, uts) = uts.alloc(slots)?;
+    let (slots, local_slots) = local_slots.alloc();
     let (slots1, _proc1_slots) = proc1_slots.alloc();
-    let (ipc_setup, responder) = call_channel(endpoint_ut, &root_cnode, slots, slots1)?;
+    let (ipc_setup, responder) = call_channel(ut, &root_cnode, slots, slots1)?;
 
     let (slots2, _proc2_slots) = proc2_slots.alloc();
     let caller = ipc_setup.create_caller(slots2)?;
@@ -149,10 +124,12 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let proc2_params = proc2::Proc2Params { cllr: caller };
 
     let (slots, local_slots) = local_slots.alloc();
+    let (ut, uts) = uts.alloc(slots)?;
+    let (slots, local_slots) = local_slots.alloc();
     let (proc1_thread, _) = proc1_vspace.prepare_thread(
         proc1::run,
         proc1_params,
-        proc1_thread_ut,
+        ut,
         slots,
         &mut scratch_page_table,
         &mut boot_info.page_directory,
@@ -160,11 +137,13 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
     proc1_thread.start(proc1_cspace, None, &boot_info.tcb, 255)?;
 
+    let (slots, local_slots) = local_slots.alloc();
+    let (ut, _uts) = uts.alloc(slots)?;
     let (slots, _local_slots) = local_slots.alloc();
     let (proc2_thread, _) = proc2_vspace.prepare_thread(
         proc2::run,
         proc2_params,
-        proc2_thread_ut,
+        ut,
         slots,
         &mut scratch_page_table,
         &mut boot_info.page_directory,
