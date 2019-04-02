@@ -38,8 +38,8 @@ mod test_proc;
 
 use crate::alloc::micro_alloc::Error as AllocError;
 use crate::userland::{
-    call_channel, root_cnode, BootInfo, IPCError, IRQError, LocalCap, MultiConsumerError,
-    SeL4Error, Untyped, VSpace, VSpaceError,
+    call_channel, retype, retype_cnode, root_cnode, BootInfo, IPCError, IRQError,
+    MultiConsumerError, SeL4Error, VSpace, VSpaceError,
 };
 
 use sel4_sys::*;
@@ -73,22 +73,22 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let boot_info = BootInfo::wrap(raw_boot_info, ut, slots);
 
     let (slots, local_slots) = local_slots.alloc();
-    let (ut, uts): (LocalCap<Untyped<U12>>, _) = uts.alloc(slots)?;
+    let (ut, uts) = uts.alloc(slots)?;
     let (slots, local_slots) = local_slots.alloc();
-    let unmapped_scratch_page_table = ut.retype(slots)?;
+    let unmapped_scratch_page_table = retype(ut, slots)?;
     let (mut scratch_page_table, boot_info) =
         boot_info.map_page_table(unmapped_scratch_page_table)?;
 
     let (slots, local_slots) = local_slots.alloc();
-    let (ut, uts): (LocalCap<Untyped<U16>>, _) = uts.alloc(slots)?;
+    let (ut, uts) = uts.alloc(slots)?;
     let (slots, local_slots) = local_slots.alloc();
-    let (proc1_cspace, proc1_slots) = ut.retype_cnode::<U12>(slots)?;
+    let (proc1_cspace, proc1_slots) = retype_cnode::<U12>(ut, slots)?;
     debug_println!("proc 1 cspace retyped");
 
     let (slots, local_slots) = local_slots.alloc();
-    let (ut, uts): (LocalCap<Untyped<U16>>, _) = uts.alloc(slots)?;
+    let (ut, uts) = uts.alloc(slots)?;
     let (slots, local_slots) = local_slots.alloc();
-    let (proc2_cspace, proc2_slots) = ut.retype_cnode::<U12>(slots)?;
+    let (proc2_cspace, proc2_slots) = retype_cnode::<U12>(ut, slots)?;
     debug_println!("proc 2 cspace retyped");
 
     let (slots, local_slots) = local_slots.alloc();

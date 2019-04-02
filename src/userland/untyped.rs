@@ -135,6 +135,46 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
     }
 }
 
+/// A version of retype that concretely specifies the required untyped size,
+/// to work well with type inference.
+pub fn retype<TargetCapType: CapType, TargetRole: CNodeRole>(
+    untyped: LocalCap<Untyped<TargetCapType::SizeBits, memory_kind::General>>,
+    dest_slot: CNodeSlot<TargetRole>,
+) -> Result<Cap<TargetCapType, TargetRole>, SeL4Error>
+where
+    TargetCapType: DirectRetype,
+    TargetCapType: PhantomCap,
+    TargetCapType::SizeBits: IsGreaterOrEqual<TargetCapType::SizeBits, Output = True>,
+{
+    untyped.retype(dest_slot)
+}
+
+/// A version of retype_cnode that concretely specifies the required untyped size,
+/// to work well with type inference.
+pub fn retype_cnode<ChildRadix: Unsigned>(
+    untyped: LocalCap<Untyped<Sum<ChildRadix, U4>, memory_kind::General>>,
+    local_slots: LocalCNodeSlots<U2>,
+) -> Result<
+    (
+        LocalCap<ChildCNode>,
+        ChildCNodeSlots<Diff<Pow<ChildRadix>, U1>>,
+    ),
+    SeL4Error,
+>
+where
+    ChildRadix: _Pow,
+    Pow<ChildRadix>: Unsigned,
+
+    Pow<ChildRadix>: Sub<U1>,
+    Diff<Pow<ChildRadix>, U1>: Unsigned,
+
+    ChildRadix: Add<U4>,
+    Sum<ChildRadix, U4>: Unsigned,
+    Sum<ChildRadix, U4>: IsGreaterOrEqual<Sum<ChildRadix, U4>>,
+{
+    untyped.retype_cnode::<ChildRadix>(local_slots)
+}
+
 impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
     pub fn retype<TargetCapType: CapType, TargetRole: CNodeRole>(
         self,
