@@ -4,6 +4,7 @@
 #![feature(optin_builtin_traits)]
 #![feature(associated_type_defaults)]
 #![recursion_limit = "128"]
+#![feature(proc_macro_hygiene)]
 
 #[cfg(all(feature = "alloc"))]
 #[macro_use]
@@ -16,6 +17,7 @@ extern crate sel4_sys;
 extern crate typenum;
 
 extern crate cross_queue;
+extern crate smart_alloc;
 
 #[cfg(all(feature = "test"))]
 extern crate proptest;
@@ -45,6 +47,8 @@ use crate::userland::{
 use sel4_sys::*;
 use typenum::*;
 
+use smart_alloc::smart_alloc;
+
 fn yield_forever() {
     unsafe {
         loop {
@@ -58,8 +62,10 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     yield_forever();
 }
 
+#[allow(unused_variables)]
 fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let mut allocator = alloc::micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
+
     let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
 
     let ut27 = allocator
@@ -67,89 +73,63 @@ fn do_run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         .expect("initial alloc failure");
     let uts = alloc::ut_buddy(ut27);
 
-    let (slots, local_slots) = local_slots.alloc();
-    let (ut, uts) = uts.alloc(slots)?;
-    let (slots, local_slots) = local_slots.alloc();
-    let boot_info = BootInfo::wrap(raw_boot_info, ut, slots);
+    smart_alloc!(|slots from local_slots, ut from uts| {
+        let boot_info = BootInfo::wrap(raw_boot_info, ut, slots);
 
-    let (slots, local_slots) = local_slots.alloc();
-    let (ut, uts) = uts.alloc(slots)?;
-    let (slots, local_slots) = local_slots.alloc();
-    let unmapped_scratch_page_table = retype(ut, slots)?;
-    let (mut scratch_page_table, boot_info) =
-        boot_info.map_page_table(unmapped_scratch_page_table)?;
+        let unmapped_scratch_page_table = retype(ut, slots)?;
+        let (mut scratch_page_table, boot_info) =
+            boot_info.map_page_table(unmapped_scratch_page_table)?;
 
-    let (slots, local_slots) = local_slots.alloc();
-    let (ut, uts) = uts.alloc(slots)?;
-    let (slots, local_slots) = local_slots.alloc();
-    let (proc1_cspace, proc1_slots) = retype_cnode::<U12>(ut, slots)?;
-    debug_println!("proc 1 cspace retyped");
+        let (proc1_cspace, proc1_slots) = retype_cnode::<U12>(ut, slots)?;
+        debug_println!("proc 1 cspace retyped");
 
-    let (slots, local_slots) = local_slots.alloc();
-    let (ut, uts) = uts.alloc(slots)?;
-    let (slots, local_slots) = local_slots.alloc();
-    let (proc2_cspace, proc2_slots) = retype_cnode::<U12>(ut, slots)?;
-    debug_println!("proc 2 cspace retyped");
+        let (proc2_cspace, proc2_slots) = retype_cnode::<U12>(ut, slots)?;
+        debug_println!("proc 2 cspace retyped");
 
-    let (slots, local_slots) = local_slots.alloc();
-    let (ut, uts) = uts.alloc(slots)?;
-    let (slots, local_slots) = local_slots.alloc();
-    let (proc1_vspace, boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
+        let (proc1_vspace, boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
+        debug_println!("proc 1 vspace exists");
 
-    debug_println!("proc 1 vspace exists");
-    let (slots, local_slots) = local_slots.alloc();
-    let (ut_1, uts) = uts.alloc(slots)?;
-    let (slots, local_slots) = local_slots.alloc();
-    let (ut_2, uts) = uts.alloc(slots)?;
-    let (slots, local_slots) = local_slots.alloc();
-    let (proc2_vspace, mut boot_info) = VSpace::new_with_writable_user_image(
-        boot_info,
-        ut_1,
-        (&mut scratch_page_table, ut_2),
-        &root_cnode,
-        slots,
-    )?;
-    debug_println!("proc 2 vspace exists");
+        let (proc2_vspace, mut boot_info) = VSpace::new_with_writable_user_image(
+            boot_info,
+            ut,
+            (&mut scratch_page_table, ut),
+            &root_cnode,
+            slots,
+        )?;
+        debug_println!("proc 2 vspace exists");
 
-    let (slots, local_slots) = local_slots.alloc();
-    let (ut, uts) = uts.alloc(slots)?;
-    let (slots, local_slots) = local_slots.alloc();
-    let (slots1, _proc1_slots) = proc1_slots.alloc();
-    let (ipc_setup, responder) = call_channel(ut, &root_cnode, slots, slots1)?;
+        let (slots1, _) = proc1_slots.alloc();
+        let (ipc_setup, responder) = call_channel(ut, &root_cnode, slots, slots1)?;
 
-    let (slots2, _proc2_slots) = proc2_slots.alloc();
-    let caller = ipc_setup.create_caller(slots2)?;
+        let (slots2, _) = proc2_slots.alloc();
+        let caller = ipc_setup.create_caller(slots2)?;
 
-    let proc1_params = proc1::Proc1Params { rspdr: responder };
-    let proc2_params = proc2::Proc2Params { cllr: caller };
+        let proc1_params = proc1::Proc1Params { rspdr: responder };
+        let proc2_params = proc2::Proc2Params { cllr: caller };
 
-    let (slots, local_slots) = local_slots.alloc();
-    let (ut, uts) = uts.alloc(slots)?;
-    let (slots, local_slots) = local_slots.alloc();
-    let (proc1_thread, _) = proc1_vspace.prepare_thread(
-        proc1::run,
-        proc1_params,
-        ut,
-        slots,
-        &mut scratch_page_table,
-        &mut boot_info.page_directory,
-    )?;
+        let (proc1_thread, _) = proc1_vspace.prepare_thread(
+            proc1::run,
+            proc1_params,
+            ut,
+            slots,
+            &mut scratch_page_table,
+            &mut boot_info.page_directory,
+        )?;
 
-    proc1_thread.start(proc1_cspace, None, &boot_info.tcb, 255)?;
+        proc1_thread.start(proc1_cspace, None, &boot_info.tcb, 255)?;
 
-    let (slots, local_slots) = local_slots.alloc();
-    let (ut, _uts) = uts.alloc(slots)?;
-    let (slots, _local_slots) = local_slots.alloc();
-    let (proc2_thread, _) = proc2_vspace.prepare_thread(
-        proc2::run,
-        proc2_params,
-        ut,
-        slots,
-        &mut scratch_page_table,
-        &mut boot_info.page_directory,
-    )?;
+        let (proc2_thread, _) = proc2_vspace.prepare_thread(
+            proc2::run,
+            proc2_params,
+            ut,
+            slots,
+            &mut scratch_page_table,
+            &mut boot_info.page_directory,
+        )?;
 
-    proc2_thread.start(proc2_cspace, None, &boot_info.tcb, 255)?;
+        proc2_thread.start(proc2_cspace, None, &boot_info.tcb, 255)?;
+    });
+
     Ok(())
 }
 

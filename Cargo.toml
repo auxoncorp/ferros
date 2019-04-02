@@ -12,6 +12,7 @@ typenum = { git = "ssh://github.com/auxoncorp/typenum" }
 registers = { git = "ssh://github.com/auxoncorp/registers" }
 generic-array = { git = "ssh://github.com/auxoncorp/generic-array", branch = "auxon-typenum" }
 cross_queue = { path = "./cross_queue" }
+smart_alloc = { path = "./smart_alloc" }
 
 [dependencies.arrayvec]
 version = "0.4.10"
