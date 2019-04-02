@@ -9,24 +9,18 @@ use syn::fold::Fold;
 use syn::{parse_macro_input, Block, Ident};
 use uuid::Uuid;
 
-const RESOURCE_TYPE_HINT_CSLOTS: &'static str = "CNodeSlots";
-const RESOURCE_TYPE_HINT_UNTYPED: &'static str = "UntypedBuddy";
-const RESOURCE_TYPE_HINT_ADDR: &'static str = "AddressBuddy";
+const RESOURCE_TYPE_HINT_CSLOTS: &str = "CNodeSlots";
+const RESOURCE_TYPE_HINT_UNTYPED: &str = "UntypedBuddy";
+const RESOURCE_TYPE_HINT_ADDR: &str = "AddressBuddy";
 
-const DEFAULT_REQUEST_ID_CSLOTS: &'static str = "cs";
-const DEFAULT_REQUEST_ID_UNTYPED: &'static str = "ut";
-const DEFAULT_REQUEST_ID_ADDR: &'static str = "ad";
-
-const EXPECTED_LAYOUT_MESSAGE: &'static str = r"smart_alloc expects to be invoked like:
+const EXPECTED_LAYOUT_MESSAGE: &str = r"smart_alloc expects to be invoked like:
 smart_alloc! { |cs from cslots, ut from untypeds, ad from address_buddy | {
     let id_that_will_leak = something_requiring_slots(cs);
     op_requiring_memory(ut);
     top_fn(cs, nested_fn(cs, ut));
 }}";
-const RESOURCE_DECLARATION_LAYOUT_MESSAGE: &'static str =
+const RESOURCE_DECLARATION_LAYOUT_MESSAGE: &str =
     r"When a resource is declared, it should be in one of the following forms:
-* `resource_id`
-* `resource_id: ResourceKind`
 * `request_id from resource_id`
 * `request_id from resource_id: ResourceKind`
 
@@ -89,10 +83,12 @@ pub fn smart_alloc(tokens: TokenStream) -> TokenStream {
 }
 
 fn assert_tt_ident(maybe_tt: Option<TokenTree>) -> proc_macro2::Ident {
-    let id = maybe_tt.expect(&format!(
-        "{}\nbut the token stream ended too soon",
-        EXPECTED_LAYOUT_MESSAGE
-    ));
+    let id = maybe_tt.unwrap_or_else(|| {
+        panic!(
+            "{}\nbut the token stream ended too soon",
+            EXPECTED_LAYOUT_MESSAGE
+        )
+    });
     if let TokenTree::Ident(i) = id {
         i
     } else {
@@ -100,11 +96,26 @@ fn assert_tt_ident(maybe_tt: Option<TokenTree>) -> proc_macro2::Ident {
     }
 }
 
+fn assert_tt_ident_named(maybe_tt: Option<TokenTree>, name: &'static str) -> proc_macro2::Ident {
+    let id = assert_tt_ident(maybe_tt);
+    let found = id.to_string();
+    if found == name {
+        id
+    } else {
+        panic!(
+            "{}\nbut {} was found when {} was expected.",
+            EXPECTED_LAYOUT_MESSAGE, found, name
+        )
+    }
+}
+
 fn assert_tt_punct(maybe_tt: Option<TokenTree>) -> proc_macro2::Punct {
-    let tt = maybe_tt.expect(&format!(
-        "{} , but the token stream ended too soon",
-        EXPECTED_LAYOUT_MESSAGE
-    ));
+    let tt = maybe_tt.unwrap_or_else(|| {
+        panic!(
+            "{}\nbut the token stream ended too soon",
+            EXPECTED_LAYOUT_MESSAGE
+        )
+    });
     if let TokenTree::Punct(p) = tt {
         p
     } else {
@@ -117,10 +128,12 @@ fn assert_tt_punct(maybe_tt: Option<TokenTree>) -> proc_macro2::Punct {
 }
 
 fn assert_tt_punct_named(maybe_tt: Option<TokenTree>, name: char) -> proc_macro2::Punct {
-    let tt = maybe_tt.expect(&format!(
-        "{} , but the token stream ended too soon",
-        EXPECTED_LAYOUT_MESSAGE
-    ));
+    let tt = maybe_tt.unwrap_or_else(|| {
+        panic!(
+            "{} , but the token stream ended too soon",
+            EXPECTED_LAYOUT_MESSAGE
+        )
+    });
     if let TokenTree::Punct(p) = tt {
         if p.as_char() == name {
             p
@@ -207,22 +220,18 @@ impl From<char> for ResourceParseContinuation {
 fn parse_intermediate_resource(
     tok_iter: &mut impl Iterator<Item = TokenTree>,
 ) -> (IntermediateResource, ResourceParseContinuation) {
-    let req_or_resource = assert_tt_ident(tok_iter.next());
+    let request_id = assert_tt_ident(tok_iter.next());
+    let _ = assert_tt_ident_named(tok_iter.next(), "from");
+    let resource_id = assert_tt_ident(tok_iter.next());
 
     match tok_iter.next().expect(EXPECTED_LAYOUT_MESSAGE) {
         TokenTree::Group(_) => panic!(EXPECTED_LAYOUT_MESSAGE),
-        TokenTree::Ident(i) => {
-            if &i.to_string() == "from" {
-                parse_resource_and_kind(tok_iter, req_or_resource)
-            } else {
-                panic!(RESOURCE_DECLARATION_LAYOUT_MESSAGE)
-            }
-        }
+        TokenTree::Ident(_) => panic!(RESOURCE_DECLARATION_LAYOUT_MESSAGE),
         TokenTree::Punct(p) => match p.as_char() {
             '|' | ',' => (
                 IntermediateResource {
-                    resource_id: req_or_resource,
-                    request_id: None,
+                    resource_id,
+                    request_id,
                     kind: None,
                 },
                 p.as_char().into(),
@@ -231,8 +240,8 @@ fn parse_intermediate_resource(
                 let k = parse_resource_kind(tok_iter);
                 (
                     IntermediateResource {
-                        resource_id: req_or_resource,
-                        request_id: None,
+                        resource_id,
+                        request_id,
                         kind: Some(k),
                     },
                     assert_tt_punct(tok_iter.next()).as_char().into(),
@@ -241,36 +250,6 @@ fn parse_intermediate_resource(
             _ => panic!(EXPECTED_LAYOUT_MESSAGE),
         },
         TokenTree::Literal(_) => panic!(EXPECTED_LAYOUT_MESSAGE),
-    }
-}
-
-fn parse_resource_and_kind(
-    tok_iter: &mut impl Iterator<Item = TokenTree>,
-    request_id: Ident,
-) -> (IntermediateResource, ResourceParseContinuation) {
-    let resource_id = assert_tt_ident(tok_iter.next());
-    let p = assert_tt_punct(tok_iter.next());
-    match p.as_char() {
-        '|' | ',' => (
-            IntermediateResource {
-                resource_id,
-                request_id: Some(request_id),
-                kind: None,
-            },
-            p.as_char().into(),
-        ),
-        ':' => {
-            let k = parse_resource_kind(tok_iter);
-            (
-                IntermediateResource {
-                    resource_id,
-                    request_id: Some(request_id),
-                    kind: Some(k),
-                },
-                assert_tt_punct(tok_iter.next()).as_char().into(),
-            )
-        }
-        _ => panic!(RESOURCE_DECLARATION_LAYOUT_MESSAGE),
     }
 }
 
@@ -286,7 +265,7 @@ fn parse_resource_kind(tok_iter: &mut impl Iterator<Item = TokenTree>) -> ResKin
 
 struct IntermediateResource {
     resource_id: Ident,
-    request_id: Option<Ident>,
+    request_id: Ident,
     kind: Option<ResKind>,
 }
 
@@ -368,9 +347,7 @@ impl Header {
         Header {
             cnode_slots: ResourceRequest {
                 resource_id: first.resource_id,
-                request_id: first
-                    .request_id
-                    .unwrap_or_else(|| Ident::new(DEFAULT_REQUEST_ID_CSLOTS, Span::call_site())),
+                request_id: first.request_id,
             },
             untypeds: None,
             address_ranges: None,
@@ -378,23 +355,23 @@ impl Header {
     }
 
     fn from_resource_pair(first: IntermediateResource, second: IntermediateResource) -> Header {
-        const ADDRESSES_REQUIRE_THREE_RESOURCES: &'static str = "Addresses can only be smart-allocated with access to CNodeSlots, an UntypedBuddy, and an AddressBuddy , but only two such resources were supplied";
+        let error = format!("Addresses can only be smart-allocated with access to {}, an {}, and an {}, but only two such resources were supplied", RESOURCE_TYPE_HINT_CSLOTS, RESOURCE_TYPE_HINT_UNTYPED, RESOURCE_TYPE_HINT_ADDR);
         match (first.kind.as_ref(), second.kind.as_ref()) {
             (None, None) => Header::from_known_kinds_resource_pair(first, second),
             (Some(fk), None) => match fk {
                 ResKind::CNodeSlots => Header::from_known_kinds_resource_pair(first, second),
                 ResKind::Untyped => Header::from_known_kinds_resource_pair(second, first),
-                ResKind::AddressRange => panic!(ADDRESSES_REQUIRE_THREE_RESOURCES),
+                ResKind::AddressRange => panic!(error),
             },
             (None, Some(sk)) => match sk {
                 ResKind::CNodeSlots => Header::from_known_kinds_resource_pair(second, first),
                 ResKind::Untyped => Header::from_known_kinds_resource_pair(first, second),
-                ResKind::AddressRange => panic!(ADDRESSES_REQUIRE_THREE_RESOURCES),
+                ResKind::AddressRange => panic!(error),
             },
             (Some(fk), Some(_sk)) => match fk {
                 ResKind::CNodeSlots => Header::from_known_kinds_resource_pair(first, second),
                 ResKind::Untyped => Header::from_known_kinds_resource_pair(second, first),
-                ResKind::AddressRange => panic!(ADDRESSES_REQUIRE_THREE_RESOURCES),
+                ResKind::AddressRange => panic!(error),
             },
         }
     }
@@ -414,15 +391,11 @@ impl Header {
         Header {
             cnode_slots: ResourceRequest {
                 resource_id: cnode_slots.resource_id,
-                request_id: cnode_slots
-                    .request_id
-                    .unwrap_or_else(|| Ident::new(DEFAULT_REQUEST_ID_CSLOTS, Span::call_site())),
+                request_id: cnode_slots.request_id,
             },
             untypeds: Some(ResourceRequest {
                 resource_id: untypeds.resource_id,
-                request_id: untypeds
-                    .request_id
-                    .unwrap_or_else(|| Ident::new(DEFAULT_REQUEST_ID_UNTYPED, Span::call_site())),
+                request_id: untypeds.request_id,
             }),
             address_ranges: None,
         }
@@ -447,21 +420,15 @@ impl Header {
         Header {
             cnode_slots: ResourceRequest {
                 resource_id: cnode_slots.resource_id,
-                request_id: cnode_slots
-                    .request_id
-                    .unwrap_or_else(|| Ident::new(DEFAULT_REQUEST_ID_CSLOTS, Span::call_site())),
+                request_id: cnode_slots.request_id,
             },
             untypeds: Some(ResourceRequest {
                 resource_id: untypeds.resource_id,
-                request_id: untypeds
-                    .request_id
-                    .unwrap_or_else(|| Ident::new(DEFAULT_REQUEST_ID_UNTYPED, Span::call_site())),
+                request_id: untypeds.request_id,
             }),
             address_ranges: Some(ResourceRequest {
                 resource_id: addrs.resource_id,
-                request_id: addrs
-                    .request_id
-                    .unwrap_or_else(|| Ident::new(DEFAULT_REQUEST_ID_ADDR, Span::call_site())),
+                request_id: addrs.request_id,
             }),
         }
     }

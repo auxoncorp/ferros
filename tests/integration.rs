@@ -70,38 +70,6 @@ impl AddressBuddy {
 fn single_resource() -> Result<(), ()> {
     let cslots = CNodeSlots::new(10);
 
-    smart_alloc! {|cslots | {
-        cs;
-        let gamma = consume_slot(cs);
-        let alpha = 3;
-    }}
-
-    assert_eq!(3, alpha);
-    assert_eq!(1, gamma);
-    assert_eq!(8, cslots.capacity);
-    Ok(())
-}
-
-#[test]
-fn single_resource_kinded() -> Result<(), ()> {
-    let cslots = CNodeSlots::new(10);
-
-    smart_alloc! {|cslots: CNodeSlots | {
-        cs;
-        let gamma = consume_slot(cs);
-        let alpha = 3;
-    }}
-
-    assert_eq!(3, alpha);
-    assert_eq!(1, gamma);
-    assert_eq!(8, cslots.capacity);
-    Ok(())
-}
-
-#[test]
-fn single_resource_custom_request_id() -> Result<(), ()> {
-    let cslots = CNodeSlots::new(10);
-
     smart_alloc! {|slot_please from cslots | {
         slot_please;
         let gamma = consume_slot(slot_please);
@@ -115,7 +83,7 @@ fn single_resource_custom_request_id() -> Result<(), ()> {
 }
 
 #[test]
-fn single_resource_custom_request_id_kinded() -> Result<(), ()> {
+fn single_resource_kinded() -> Result<(), ()> {
     let cslots = CNodeSlots::new(10);
 
     smart_alloc! {|slot_please from cslots: CNodeSlots | {
@@ -194,27 +162,7 @@ fn two_resources_custom_request_id_first_kinded() -> Result<(), ()> {
 }
 
 #[test]
-fn two_resources_first_kinded() -> Result<(), ()> {
-    let cslots = CNodeSlots::new(5);
-    let untypeds = UntypedBuddy::new(5);
-
-    smart_alloc! {|cslots: CNodeSlots, untypeds | {
-        cs;
-        let gamma = consume_slot(cs);
-        let eta = consume_untyped(ut);
-        let alpha = 3;
-    }}
-
-    assert_eq!(3, alpha);
-    assert_eq!(1, gamma);
-    assert_eq!(2, cslots.capacity);
-    assert_eq!(4, untypeds.capacity);
-    assert_eq!(1, eta);
-    Ok(())
-}
-
-#[test]
-fn two_resources_custom_request_id_second_kinded() -> Result<(), ()> {
+fn two_resources_second_kinded() -> Result<(), ()> {
     let cslots = CNodeSlots::new(5);
     let untypeds = UntypedBuddy::new(5);
 
@@ -234,7 +182,7 @@ fn two_resources_custom_request_id_second_kinded() -> Result<(), ()> {
 }
 
 #[test]
-fn two_resources_custom_request_id_second_kinded_unordered() -> Result<(), ()> {
+fn two_resources_second_kinded_unordered() -> Result<(), ()> {
     let cslots = CNodeSlots::new(5);
     let untypeds = UntypedBuddy::new(5);
 
@@ -254,76 +202,12 @@ fn two_resources_custom_request_id_second_kinded_unordered() -> Result<(), ()> {
 }
 
 #[test]
-fn two_resources_second_kinded() -> Result<(), ()> {
-    let cslots = CNodeSlots::new(5);
-    let untypeds = UntypedBuddy::new(5);
-
-    smart_alloc! {|cslots, untypeds: UntypedBuddy | {
-        cs;
-        let gamma = consume_slot(cs);
-        let eta = consume_untyped(ut);
-        let alpha = 3;
-    }}
-
-    assert_eq!(3, alpha);
-    assert_eq!(1, gamma);
-    assert_eq!(2, cslots.capacity);
-    assert_eq!(4, untypeds.capacity);
-    assert_eq!(1, eta);
-    Ok(())
-}
-
-#[test]
-fn two_resources_second_kinded_unordered() -> Result<(), ()> {
-    let cslots = CNodeSlots::new(5);
-    let untypeds = UntypedBuddy::new(5);
-
-    smart_alloc! {|untypeds, cslots: CNodeSlots| {
-        cs;
-        let gamma = consume_slot(cs);
-        let eta = consume_untyped(ut);
-        let alpha = 3;
-    }}
-
-    assert_eq!(3, alpha);
-    assert_eq!(1, gamma);
-    assert_eq!(2, cslots.capacity);
-    assert_eq!(4, untypeds.capacity);
-    assert_eq!(1, eta);
-    Ok(())
-}
-
-#[test]
-fn three_resources_unkinded() -> Result<(), ()> {
-    let cslots = CNodeSlots::new(5);
-    let untypeds = UntypedBuddy::new(5);
-    let addresses = AddressBuddy::new(5);
-
-    smart_alloc! {|cslots, untypeds, addresses | {
-        cs;
-        let gamma = consume_slot(cs);
-        let eta = consume_untyped(ut);
-        let alpha = 3;
-        let delta = consume_address(ad);
-    }}
-
-    assert_eq!(3, alpha);
-    assert_eq!(1, gamma);
-    assert_eq!(0, cslots.capacity);
-    assert_eq!(3, untypeds.capacity);
-    assert_eq!(1, eta);
-    assert_eq!(1, delta);
-    assert_eq!(4, addresses.capacity);
-    Ok(())
-}
-
-#[test]
 fn three_resources_kinded() -> Result<(), ()> {
     let cslots = CNodeSlots::new(5);
     let untypeds = UntypedBuddy::new(5);
     let addresses = AddressBuddy::new(5);
 
-    smart_alloc! {|cslots: CNodeSlots, untypeds: UntypedBuddy, addresses: AddressBuddy | {
+    smart_alloc! {|cs from cslots: CNodeSlots, ut from untypeds: UntypedBuddy, ad from addresses: AddressBuddy | {
         cs;
         let gamma = consume_slot(cs);
         let eta = consume_untyped(ut);
@@ -347,7 +231,7 @@ fn three_resources_kinded_unordered() -> Result<(), ()> {
     let untypeds = UntypedBuddy::new(5);
     let addresses = AddressBuddy::new(5);
 
-    smart_alloc! {|addresses: AddressBuddy, cslots: CNodeSlots, untypeds: UntypedBuddy  | {
+    smart_alloc! {|ad from addresses: AddressBuddy, cs from cslots: CNodeSlots, ut from untypeds: UntypedBuddy  | {
         cs;
         let gamma = consume_slot(cs);
         let eta = consume_untyped(ut);
@@ -390,12 +274,12 @@ fn three_resources_custom_request_ids_kinded_unordered() -> Result<(), ()> {
 }
 
 #[test]
-fn three_resources_single_custom_request_id_kinded_unordered() -> Result<(), ()> {
+fn three_resources_unkinded() -> Result<(), ()> {
     let cslots = CNodeSlots::new(5);
     let untypeds = UntypedBuddy::new(5);
     let addresses = AddressBuddy::new(5);
 
-    smart_alloc! {|addresses: AddressBuddy, slots from cslots: CNodeSlots, untypeds: UntypedBuddy  | {
+    smart_alloc! {|slots from cslots, ut from untypeds, ad from addresses | {
         slots;
         let gamma = consume_slot(slots);
         let eta = consume_untyped(ut);
