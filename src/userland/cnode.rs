@@ -75,7 +75,7 @@ pub type ChildCNodeSlot = CNodeSlot<role::Child>;
 impl LocalCap<ChildCNode> {
     // The first returned cap goes in the child process params struct. The
     // second one goes in the TCB when starting the child process.
-    pub fn generate_self_reference<ParentFreeSlots: Unsigned>(
+    pub fn generate_self_reference(
         &self,
         parent_cnode: &LocalCap<LocalCNode>,
         dest_slot: ChildCNodeSlot,

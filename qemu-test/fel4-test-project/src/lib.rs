@@ -1,5 +1,6 @@
 #![no_std]
 #![recursion_limit = "128"]
+#![feature(proc_macro_hygiene)]
 
 extern crate cross_queue;
 extern crate ferros;
@@ -27,12 +28,12 @@ mod dont_tread_on_me;
 mod double_door_backpressure;
 #[cfg(dual_process = "true")]
 mod dual_process;
-mod fault_pair;
-#[cfg(single_process = "true")]
-mod single_process;
-mod uart;
+// mod fault_pair;
+// #[cfg(single_process = "true")]
+// mod single_process;
+// mod uart;
 
-use ferros::micro_alloc::Error as AllocError;
+use ferros::alloc::micro_alloc::Error as AllocError;
 use ferros::userland::{IPCError, IRQError, MultiConsumerError, SeL4Error, VSpaceError};
 
 fn yield_forever() {

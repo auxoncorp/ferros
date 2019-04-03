@@ -355,7 +355,6 @@ where
     pub fn new<
         LocalPageDirFreeSlots: Unsigned,
         LocalPageTableFreeSlots: Unsigned,
-        ConsumerCNodeFreeSlots: Unsigned,
         ConsumerPageDirFreeSlots: Unsigned,
         ConsumerPageTableFreeSlots: Unsigned,
     >(
@@ -363,7 +362,6 @@ where
         shared_page_ut: LocalCap<
             Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
         >,
-        _consumer_cnode: LocalCap<ChildCNode>,
         consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
         local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
         local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
