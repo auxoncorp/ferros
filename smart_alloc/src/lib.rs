@@ -3,11 +3,12 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenTree};
-use quote::quote;
+use quote::TokenStreamExt;
+use std::fmt::{Display, Formatter};
 use syn::export::TokenStream2;
 use syn::fold::Fold;
 use syn::parse_macro_input::parse as syn_parse;
-use syn::{Error as SynError, Ident};
+use syn::{parse_quote, Block, Error as SynError, Ident, Item as SynItem, ItemMacro, Stmt};
 use uuid::Uuid;
 
 const RESOURCE_TYPE_HINT_CSLOTS: &str = "CNodeSlots";
@@ -30,17 +31,20 @@ where ResourceKind is one of CNodeSlots, UntypedBuddy, or AddressBuddy";
 #[proc_macro]
 pub fn smart_alloc(tokens: TokenStream) -> TokenStream {
     smart_alloc_impl(TokenStream2::from(tokens))
-        .unwrap_or_else(|e| match e {
-            Error::BlockParse(se) => se.to_compile_error(),
-            _ => panic!(EXPECTED_LAYOUT_MESSAGE), // TODO - fill out other branches with proper error messages
-        })
+        .unwrap_or_else(|e| panic!("{}", e))
         .into()
 }
 
 fn smart_alloc_impl(tokens: TokenStream2) -> Result<TokenStream2, Error> {
+    let mut output_tokens = TokenStream2::new();
+    output_tokens.append_all(smart_alloc_structured(tokens)?);
+    Ok(output_tokens)
+}
+fn smart_alloc_structured(tokens: TokenStream2) -> Result<Vec<Stmt>, Error> {
     let (header, stream_remainder) = parse_header(tokens)?;
     let content_block: TokenStream = stream_remainder.into();
     let mut block = syn_parse(content_block)?;
+
     // Find all requests for allocations, replace the relevant target-ids with unique ids,
     // and construct an allocation plan for each site for later code generation
     let mut id_tracker = IdTracker::from(&header);
@@ -52,21 +56,21 @@ fn smart_alloc_impl(tokens: TokenStream2) -> Result<TokenStream2, Error> {
         address_resource,
     } = ResolvedResourceIds::resolve(&header, &id_tracker.planned_allocs).unwrap();
 
-    let mut output_tokens = TokenStream2::new();
+    let mut output_stmts = Vec::new();
     for plan in id_tracker.planned_allocs {
         match plan {
             PlannedAlloc::CSlot(id) => {
-                let alloc_cslot = quote! {
+                let alloc_cslot: Stmt = parse_quote! {
                     let (#id, #cslots_resource) = #cslots_resource.alloc();
                 };
-                output_tokens.extend(alloc_cslot);
+                output_stmts.push(alloc_cslot);
             }
             PlannedAlloc::Untyped { ut, cslot } => {
-                let alloc_both = quote! {
+                let alloc_both: Block = parse_quote! { {
                     let (#cslot, #cslots_resource) = #cslots_resource.alloc();
                     let (#ut, #untyped_resource) = #untyped_resource.alloc(#cslot)?;
-                };
-                output_tokens.extend(alloc_both);
+                }};
+                output_stmts.extend(alloc_both.stmts);
             }
             PlannedAlloc::AddressRange {
                 addr,
@@ -74,25 +78,22 @@ fn smart_alloc_impl(tokens: TokenStream2) -> Result<TokenStream2, Error> {
                 ut,
                 cslot_for_ut,
             } => {
-                let alloc_addr = quote! {
+                let alloc_addr: Block = parse_quote! { {
                     let (#cslot_for_ut, #cslots_resource) = #cslots_resource.alloc();
                     let (#ut, #untyped_resource) = #untyped_resource.alloc(#cslot_for_ut)?;
                     let (#cslot_for_addr, #cslots_resource) = #cslots_resource.alloc();
                     let (#addr, #address_resource) = #address_resource.alloc(#cslot_for_addr, #ut)?;
-                };
-                output_tokens.extend(alloc_addr);
+                }};
+                output_stmts.extend(alloc_addr.stmts);
             }
         }
     }
     let user_statements = block.stmts;
-    let user_statement_tokens = quote! {
-        #(#user_statements)*
-    };
-    output_tokens.extend(user_statement_tokens);
-    Ok(output_tokens)
+    output_stmts.extend(user_statements);
+    Ok(output_stmts)
 }
 
-fn assert_tt_ident(maybe_tt: Option<TokenTree>) -> Result<proc_macro2::Ident, Error> {
+fn extract_ident(maybe_tt: Option<TokenTree>) -> Result<proc_macro2::Ident, Error> {
     let tt = maybe_tt.ok_or_else(|| Error::NotEnoughTokens)?;
     if let TokenTree::Ident(i) = tt {
         Ok(i)
@@ -104,11 +105,11 @@ fn assert_tt_ident(maybe_tt: Option<TokenTree>) -> Result<proc_macro2::Ident, Er
     }
 }
 
-fn assert_tt_ident_named(
+fn extract_ident_named(
     maybe_tt: Option<TokenTree>,
     name: &'static str,
 ) -> Result<proc_macro2::Ident, Error> {
-    let tt = assert_tt_ident(maybe_tt)?;
+    let tt = extract_ident(maybe_tt)?;
     let found = tt.to_string();
     if found == name {
         Ok(tt)
@@ -120,7 +121,7 @@ fn assert_tt_ident_named(
     }
 }
 
-fn assert_tt_punct(maybe_tt: Option<TokenTree>) -> Result<proc_macro2::Punct, Error> {
+fn extract_punct(maybe_tt: Option<TokenTree>) -> Result<proc_macro2::Punct, Error> {
     let tt = maybe_tt.ok_or_else(|| Error::NotEnoughTokens)?;
     if let TokenTree::Punct(p) = tt {
         Ok(p)
@@ -132,7 +133,7 @@ fn assert_tt_punct(maybe_tt: Option<TokenTree>) -> Result<proc_macro2::Punct, Er
     }
 }
 
-fn assert_tt_punct_named(
+fn extract_punct_named(
     maybe_tt: Option<TokenTree>,
     name: char,
 ) -> Result<proc_macro2::Punct, Error> {
@@ -171,7 +172,50 @@ enum Error {
     MissingRequiredResourceKind {
         msg: String,
     },
+    AmbiguousResourceId {
+        id: String,
+    },
+    AmbiguousRequestId {
+        id: String,
+    },
     BlockParse(SynError),
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), std::fmt::Error> {
+        let s = match self {
+            Error::NotEnoughTokens => format!(
+                "{}\nbut not enough tokens were supplied",
+                EXPECTED_LAYOUT_MESSAGE
+            ),
+            Error::IncorrectExpectedTokenTreeVariant { found, expected } => format!(
+                "{}\nbut {} was found when {} was expected",
+                EXPECTED_LAYOUT_MESSAGE, found, expected
+            ),
+            Error::IncorrectExpectedTokenContent { found, expected } => format!(
+                "{}\nbut {} was found when {} was expected",
+                EXPECTED_LAYOUT_MESSAGE, found, expected
+            ),
+            Error::InvalidResourceKind { found } => format!(
+                "{}\nbut an invalid resource kind {} was found",
+                EXPECTED_LAYOUT_MESSAGE, found
+            ),
+            Error::MissingRequiredResourceKind { msg } => format!(
+                "{}\nbut a required resource kind was missing: {}",
+                EXPECTED_LAYOUT_MESSAGE, msg
+            ),
+            Error::AmbiguousResourceId { id } => format!(
+                "{}\nbut an ambiguous resource id was found: {}",
+                EXPECTED_LAYOUT_MESSAGE, id
+            ),
+            Error::AmbiguousRequestId { id } => format!(
+                "{}\nbut an ambiguous alloc request id was found: {}",
+                EXPECTED_LAYOUT_MESSAGE, id
+            ),
+            Error::BlockParse(se) => se.to_compile_error().to_string(),
+        };
+        f.write_str(&s)
+    }
 }
 
 impl From<SynError> for Error {
@@ -182,7 +226,7 @@ impl From<SynError> for Error {
 
 fn parse_header(ts2: TokenStream2) -> Result<(Header, TokenStream2), Error> {
     let mut tok_iter = ts2.into_iter();
-    let _ = assert_tt_punct_named(tok_iter.next(), '|')?; // open-delim
+    let _ = extract_punct_named(tok_iter.next(), '|')?; // open-delim
     let (first_resource, shall_we_continue) = parse_intermediate_resource(&mut tok_iter)?;
     let optional_resources =
         if ResourceParseContinuation::ExpectAnotherResource == shall_we_continue {
@@ -196,7 +240,6 @@ fn parse_header(ts2: TokenStream2) -> Result<(Header, TokenStream2), Error> {
         } else {
             (None, None)
         };
-
     Ok((
         header_from_resources(first_resource, optional_resources)?,
         tok_iter.collect(),
@@ -246,9 +289,9 @@ impl From<char> for ResourceParseContinuation {
 fn parse_intermediate_resource(
     tok_iter: &mut impl Iterator<Item = TokenTree>,
 ) -> Result<(IntermediateResource, ResourceParseContinuation), Error> {
-    let request_id = assert_tt_ident(tok_iter.next())?;
-    let _ = assert_tt_ident_named(tok_iter.next(), "from")?;
-    let resource_id = assert_tt_ident(tok_iter.next())?;
+    let request_id = extract_ident(tok_iter.next())?;
+    let _ = extract_ident_named(tok_iter.next(), "from")?;
+    let resource_id = extract_ident(tok_iter.next())?;
 
     match tok_iter.next().expect(EXPECTED_LAYOUT_MESSAGE) {
         TokenTree::Group(_) => panic!(EXPECTED_LAYOUT_MESSAGE),
@@ -270,7 +313,7 @@ fn parse_intermediate_resource(
                         request_id,
                         kind: Some(k),
                     },
-                    assert_tt_punct(tok_iter.next())?.as_char().into(),
+                    extract_punct(tok_iter.next())?.as_char().into(),
                 ))
             }
             _ => panic!(EXPECTED_LAYOUT_MESSAGE),
@@ -280,7 +323,7 @@ fn parse_intermediate_resource(
 }
 
 fn parse_resource_kind(tok_iter: &mut impl Iterator<Item = TokenTree>) -> Result<ResKind, Error> {
-    let raw_kind = assert_tt_ident(tok_iter.next())?.to_string();
+    let raw_kind = extract_ident(tok_iter.next())?.to_string();
     match raw_kind.as_ref() {
         RESOURCE_TYPE_HINT_CSLOTS => Ok(ResKind::CNodeSlots),
         RESOURCE_TYPE_HINT_UNTYPED => Ok(ResKind::Untyped),
@@ -414,15 +457,27 @@ impl Header {
         cnode_slots: IntermediateResource,
         untypeds: IntermediateResource,
     ) -> Result<Header, Error> {
-        // TODO - better error message here
+        // Check for duplicates
+        if cnode_slots.resource_id == untypeds.resource_id {
+            return Err(Error::AmbiguousResourceId {
+                id: cnode_slots.resource_id.to_string(),
+            });
+        }
+        if cnode_slots.request_id == untypeds.request_id {
+            return Err(Error::AmbiguousRequestId {
+                id: cnode_slots.request_id.to_string(),
+            });
+        }
+
+        // Confirm assumptions about resource kinds
         if !(cnode_slots.kind == None || cnode_slots.kind == Some(ResKind::CNodeSlots)) {
             return Err(Error::MissingRequiredResourceKind {
-                msg: EXPECTED_LAYOUT_MESSAGE.to_string(),
+                msg: RESOURCE_TYPE_HINT_CSLOTS.to_string(),
             });
         };
         if !(untypeds.kind == None || untypeds.kind == Some(ResKind::Untyped)) {
             return Err(Error::MissingRequiredResourceKind {
-                msg: EXPECTED_LAYOUT_MESSAGE.to_string(),
+                msg: RESOURCE_TYPE_HINT_UNTYPED.to_string(),
             });
         };
         Ok(Header {
@@ -442,19 +497,51 @@ impl Header {
         untypeds: IntermediateResource,
         addrs: IntermediateResource,
     ) -> Result<Header, Error> {
-        // TODO - convert to error-return
-        assert!(
-            cnode_slots.kind == None || cnode_slots.kind == Some(ResKind::CNodeSlots),
-            EXPECTED_LAYOUT_MESSAGE
-        );
-        assert!(
-            untypeds.kind == None || untypeds.kind == Some(ResKind::Untyped),
-            EXPECTED_LAYOUT_MESSAGE
-        );
-        assert!(
-            addrs.kind == None || addrs.kind == Some(ResKind::AddressRange),
-            EXPECTED_LAYOUT_MESSAGE
-        );
+        // Check for duplicates
+        match (
+            cnode_slots.resource_id.to_string(),
+            untypeds.resource_id.to_string(),
+            addrs.resource_id.to_string(),
+        ) {
+            (ref a, ref b, ref c) if a == b || a == c => {
+                return Err(Error::AmbiguousResourceId { id: a.to_string() })
+            }
+            (_, ref b, ref c) if b == c => {
+                return Err(Error::AmbiguousResourceId { id: b.to_string() })
+            }
+            _ => (),
+        };
+        match (
+            cnode_slots.request_id.to_string(),
+            untypeds.request_id.to_string(),
+            addrs.request_id.to_string(),
+        ) {
+            (ref a, ref b, ref c) if a == b || a == c => {
+                return Err(Error::AmbiguousRequestId { id: a.to_string() })
+            }
+            (_, ref b, ref c) if b == c => {
+                return Err(Error::AmbiguousRequestId { id: b.to_string() })
+            }
+            _ => (),
+        };
+
+        // Confirm assumptions about resource kinds
+        if !(cnode_slots.kind == None || cnode_slots.kind == Some(ResKind::CNodeSlots)) {
+            return Err(Error::MissingRequiredResourceKind {
+                msg: RESOURCE_TYPE_HINT_CSLOTS.to_string(),
+            });
+        };
+        if !(untypeds.kind == None || untypeds.kind == Some(ResKind::Untyped)) {
+            return Err(Error::MissingRequiredResourceKind {
+                msg: RESOURCE_TYPE_HINT_UNTYPED.to_string(),
+            });
+        };
+        if !(addrs.kind == None || addrs.kind == Some(ResKind::AddressRange)) {
+            return Err(Error::MissingRequiredResourceKind {
+                msg: RESOURCE_TYPE_HINT_ADDR.to_string(),
+            });
+        };
+
         Ok(Header {
             cnode_slots: ResourceRequest {
                 resource_id: cnode_slots.resource_id,
@@ -536,6 +623,43 @@ fn make_ident(uuid: Uuid, name_hint: &'static str) -> Ident {
 }
 
 impl Fold for IdTracker {
+    fn fold_block(&mut self, i: Block) -> Block {
+        let brace_token = i.brace_token;
+        let visitor = self;
+        let expand = |st: Stmt| -> Vec<Stmt> {
+            match st {
+                s @ Stmt::Local(_) => vec![visitor.fold_stmt(s)],
+                s @ Stmt::Expr(_) => vec![visitor.fold_stmt(s)],
+                s @ Stmt::Semi(_, _) => vec![visitor.fold_stmt(s)],
+                Stmt::Item(i) => {
+                    if let SynItem::Macro(item_macro) = i {
+                        // Manually invoke nested smart_alloc invocations
+                        // rather than relying on normal Rust compiler detection
+                        // in order to run id-replacement processing on their outputs
+                        // so that we can support the use of higher-level allocation requests
+                        // in nested contexts.
+                        if macro_name_matches(&item_macro, "smart_alloc") {
+                            // TODO - consider passing down pre-existing header-defined request ids
+                            // in order to detect and error out in the case of accidental shadowing
+                            let nested_stmts = smart_alloc_structured(item_macro.mac.tts).unwrap();
+                            let mut out_stmts = Vec::new();
+                            for stmt in nested_stmts {
+                                out_stmts.push(visitor.fold_stmt(stmt));
+                            }
+                            out_stmts
+                        } else {
+                            vec![visitor.fold_stmt(Stmt::Item(SynItem::Macro(item_macro)))]
+                        }
+                    } else {
+                        vec![visitor.fold_stmt(Stmt::Item(i))]
+                    }
+                }
+            }
+        };
+        let stmts = i.stmts.into_iter().map(expand).flatten().collect();
+        Block { brace_token, stmts }
+    }
+
     fn fold_ident(&mut self, node: Ident) -> Ident {
         if node == self.cslot_request_id {
             let fresh_id = make_ident(Uuid::new_v4(), "cslots");
@@ -575,6 +699,14 @@ impl Fold for IdTracker {
     }
 }
 
+fn macro_name_matches(item_macro: &ItemMacro, target: &'static str) -> bool {
+    if let Some(end) = item_macro.mac.path.segments.last() {
+        end.value().ident == Ident::new(target, Span::call_site())
+    } else {
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{parse_header, Error};
@@ -601,7 +733,53 @@ mod tests {
         let ts2: TokenStream2 = TokenStream2::from_str("| ut from uts: UntypedBuddy |").unwrap();
         match parse_header(ts2) {
             Ok(_) => panic!("Expected an error"),
-            Err(_) => (), // TODO - precise error kind
+            Err(Error::MissingRequiredResourceKind { .. }) => (),
+            Err(_) => panic!("Got the wrong error kind"),
+        }
+    }
+
+    #[test]
+    fn addresses_only_header_is_an_error() {
+        let ts2: TokenStream2 = TokenStream2::from_str("| ad from ads: AddressBuddy |").unwrap();
+        match parse_header(ts2) {
+            Ok(_) => panic!("Expected an error"),
+            Err(Error::MissingRequiredResourceKind { .. }) => (),
+            Err(_) => panic!("Got the wrong error kind"),
+        }
+    }
+
+    #[test]
+    fn addresses_and_untypeds_header_without_cslots_is_an_error() {
+        let ts2: TokenStream2 =
+            TokenStream2::from_str("| ut from uts: UntypedBuddy, ad from ads: AddressBuddy |")
+                .unwrap();
+        match parse_header(ts2) {
+            Ok(_) => panic!("Expected an error"),
+            Err(Error::MissingRequiredResourceKind { .. }) => (),
+            Err(_) => panic!("Got the wrong error kind"),
+        }
+    }
+
+    #[test]
+    fn duplicate_request_ids_problematic() {
+        let ts2: TokenStream2 =
+            TokenStream2::from_str("| cs from cslots, cs from untypeds |").unwrap();
+        match parse_header(ts2) {
+            Ok(_) => panic!("Expected an error"),
+            Err(Error::AmbiguousRequestId { id }) => assert_eq!("cs", id),
+            Err(_) => panic!("Got the wrong error kind"),
+        }
+    }
+
+    #[test]
+    fn triplicate_request_ids_problematic() {
+        let ts2: TokenStream2 =
+            TokenStream2::from_str("| cs from cslots, cs from untypeds, cs from addresses |")
+                .unwrap();
+        match parse_header(ts2) {
+            Ok(_) => panic!("Expected an error"),
+            Err(Error::AmbiguousRequestId { id }) => assert_eq!("cs", id),
+            Err(_) => panic!("Got the wrong error kind"),
         }
     }
 }
