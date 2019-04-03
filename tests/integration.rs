@@ -297,6 +297,68 @@ fn three_resources_unkinded() -> Result<(), ()> {
     Ok(())
 }
 
+#[test]
+fn single_resources_nested() -> Result<(), ()> {
+    let cslots = CNodeSlots::new(10);
+
+    smart_alloc! {|outer_slot_please from cslots | {
+        outer_slot_please;
+        let gamma = consume_slot(outer_slot_please);
+        let cslots_inner = CNodeSlots::new(5);
+        smart_alloc! { | inner_slot_please from cslots_inner | {
+            let delta = inner_slot_please;
+            let epsilon = consume_slot(inner_slot_please);
+            let alpha = 3;
+            let psi = consume_slot(outer_slot_please);
+        }}
+    }}
+
+    assert_eq!(3, alpha);
+    assert_eq!(1, gamma);
+    assert_eq!(7, cslots.capacity);
+    assert_eq!(1, delta.capacity);
+    assert_eq!(1, epsilon);
+    assert_eq!(1, psi);
+    assert_eq!(3, cslots_inner.capacity);
+    Ok(())
+}
+
+#[test]
+fn single_resources_deeply_nested() -> Result<(), ()> {
+    let cslots_crust = CNodeSlots::new(5);
+    let cslots_mantle = CNodeSlots::new(5);
+    let cslots_core = CNodeSlots::new(5);
+
+    smart_alloc! {|crust from cslots_crust | {
+        let beta = crust;
+        smart_alloc! { | mantle from cslots_mantle | {
+            let gamma = crust;
+            let delta = mantle;
+            smart_alloc! { | core from cslots_core | {
+                let epsilon = crust;
+                let zeta = mantle;
+                let eta = core;
+
+                let alpha = 3;
+            }}
+        }}
+    }}
+
+    assert_eq!(1, beta.capacity);
+    assert_eq!(1, gamma.capacity);
+    assert_eq!(1, delta.capacity);
+    assert_eq!(1, epsilon.capacity);
+    assert_eq!(1, zeta.capacity);
+    assert_eq!(1, eta.capacity);
+
+    assert_eq!(2, cslots_crust.capacity);
+    assert_eq!(3, cslots_mantle.capacity);
+    assert_eq!(4, cslots_core.capacity);
+
+    assert_eq!(3, alpha);
+    Ok(())
+}
+
 fn consume_slot(cslots: CNodeSlots) -> usize {
     cslots.capacity
 }
