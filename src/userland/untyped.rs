@@ -443,3 +443,65 @@ impl LocalCap<Untyped<paging::PageBits, memory_kind::Device>> {
         ))
     }
 }
+
+impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::Device>> {
+    pub fn retype_multi<FreeSlots: Unsigned, TargetCapType: CapType, Count: Unsigned>(
+        self,
+        dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
+    ) -> Result<
+        (
+            CapRange<TargetCapType, role::Local, Count>,
+            LocalCap<CNode<Diff<FreeSlots, Count>, role::Local>>,
+        ),
+        SeL4Error,
+    >
+    where
+        FreeSlots: Sub<Count>,
+        Diff<FreeSlots, Count>: Unsigned,
+        Count: IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
+
+        TargetCapType: DirectRetype,
+        TargetCapType: PhantomCap,
+
+        BitSize: _Pow,
+        Pow<BitSize>: Unsigned,
+
+        <TargetCapType as DirectRetype>::SizeBits: _Pow,
+        Pow<<TargetCapType as DirectRetype>::SizeBits>: Mul<Count>,
+        Prod<Pow<<TargetCapType as DirectRetype>::SizeBits>, Count>: Unsigned,
+
+        Pow<BitSize>: IsGreaterOrEqual<
+            Prod<Pow<<TargetCapType as DirectRetype>::SizeBits>, Count>,
+            Output = True,
+        >,
+    {
+        let (reservation, dest_cnode) = dest_cnode.reserve_region::<Count>();
+
+        let err = unsafe {
+            seL4_Untyped_Retype(
+                self.cptr,                           // _service
+                TargetCapType::sel4_type_id(),       // type
+                0,                                   // size_bits
+                reservation.cptr,                    // root
+                0,                                   // index
+                0,                                   // depth
+                reservation.cap_data.next_free_slot, // offset
+                Count::USIZE,                        // num_objects
+            )
+        };
+
+        if err != 0 {
+            return Err(SeL4Error::UntypedRetype(err));
+        }
+
+        Ok((
+            CapRange {
+                start_cptr: reservation.cap_data.next_free_slot,
+                _cap_type: PhantomData,
+                _role: PhantomData,
+                _slots: PhantomData,
+            },
+            dest_cnode,
+        ))
+    }
+}
