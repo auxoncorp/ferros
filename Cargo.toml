@@ -7,7 +7,8 @@ edition = "2018"
 [dependencies]
 # NOTE: We use a git dependency directly since the git submodules
 # don't currently work when pulled down from crates.io
-libsel4-sys = { git = "ssh://git@github.com/auxoncorp/libsel4-sys.git", branch = "master" }
+libsel4-sys = { git = "ssh://git@github.com/auxoncorp/libsel4-sys.git", branch = "add-rpi3-bcm2837-support" }
+#libsel4-sys = { git = "ssh://git@github.com/auxoncorp/libsel4-sys.git", branch = "master" }
 typenum = { git = "ssh://github.com/auxoncorp/typenum" }
 registers = { git = "ssh://github.com/auxoncorp/registers" }
 generic-array = { git = "ssh://github.com/auxoncorp/generic-array", branch = "auxon-typenum" }

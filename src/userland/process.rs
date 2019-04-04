@@ -94,7 +94,7 @@ impl LocalCap<IRQControl> {
         let err = unsafe {
             seL4_IRQControl_Get(
                 self.cptr, // service/authority
-                IRQ::I32,
+                IRQ::USIZE,
                 dest_slot.cptr,      //root
                 dest_slot.offset,    //index
                 seL4_WordBits as u8, //depth
