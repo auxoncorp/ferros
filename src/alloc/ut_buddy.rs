@@ -136,7 +136,7 @@ where
     OneHotUList<Diff<BitSize, U4>>: UList,
 {
     let mut pool: [ArrayVec<[usize; config::UTPoolSlotsPerSize::USIZE]>;
-                      kernel::MaxUntypedSize::USIZE] = Default::default();
+        kernel::MaxUntypedSize::USIZE] = Default::default();
 
     pool[BitSize::USIZE - kernel::MinUntypedSize::USIZE].push(ut.cptr);
 

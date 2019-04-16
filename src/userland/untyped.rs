@@ -1,5 +1,3 @@
-use core::marker::PhantomData;
-use core::ops::{Add, Mul, Sub};
 use crate::arch::paging;
 use crate::pow::{Pow, _Pow};
 use crate::userland::{
@@ -7,6 +5,8 @@ use crate::userland::{
     ChildCNodeSlots, DirectRetype, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MemoryKind,
     PhantomCap, SeL4Error, UnmappedPage, Untyped,
 };
+use core::marker::PhantomData;
+use core::ops::{Add, Mul, Sub};
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Prod, Sum};
 use typenum::*;

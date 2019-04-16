@@ -1,12 +1,12 @@
-use core::cmp;
-use core::marker::PhantomData;
-use core::mem::{self, size_of};
-use core::ptr;
 use crate::userland::{
     irq_state, memory_kind, role, AssignedPageDirectory, Badge, CNodeRole, CNodeSlot, Cap,
     ChildCNode, FaultSource, IRQControl, IRQHandler, ImmobileIndelibleInertCapabilityReference,
     LocalCap, MappedPage, Notification, SeL4Error, ThreadControlBlock,
 };
+use core::cmp;
+use core::marker::PhantomData;
+use core::mem::{self, size_of};
+use core::ptr;
 use sel4_sys::*;
 use typenum::*;
 

@@ -209,11 +209,8 @@ impl VSpace {
         // Allocate the maximum number of page tables we could possibly need,
         // and reserve that many slots in the page directory.
         let (slots, dest_slots) = dest_slots.alloc();
-        let page_tables: CapRange<
-            UnmappedPageTable,
-            role::Local,
-            paging::CodePageTableCount,
-        > = page_tables_ut.retype_multi(slots)?;
+        let page_tables: CapRange<UnmappedPageTable, role::Local, paging::CodePageTableCount> =
+            page_tables_ut.retype_multi(slots)?;
 
         let (page_dir_slot_reservation_iter, mut page_dir) =
             page_dir.reservation_iter::<paging::CodePageTableCount>();
@@ -592,11 +589,8 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
         let (_ut10, tcb_ut, _, _) = ut12.quarter(slots)?;
 
         let (slots, dest_slots) = dest_slots.alloc();
-        let stack_pages: CapRange<
-            UnmappedPage<memory_kind::General>,
-            role::Local,
-            StackPageCount,
-        > = stack_pages_ut.retype_multi(slots)?;
+        let stack_pages: CapRange<UnmappedPage<memory_kind::General>, role::Local, StackPageCount> =
+            stack_pages_ut.retype_multi(slots)?;
 
         // Reserve a guard page before the stack
         let vspace = vspace.skip_pages::<U1>();

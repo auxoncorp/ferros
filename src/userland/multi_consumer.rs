@@ -1,3 +1,13 @@
+use crate::arch::paging::PageBytes;
+use crate::userland::cap::AssignedPageDirectory;
+use crate::userland::cap::Badge;
+use crate::userland::role;
+use crate::userland::{
+    irq_state, memory_kind, CNodeRole, Cap, CapRights, ChildCNode, ChildCNodeSlot, ChildCNodeSlots,
+    DirectRetype, IRQControl, IRQError, IRQHandler, ImmobileIndelibleInertCapabilityReference,
+    LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable,
+    Notification, PhantomCap, SeL4Error, UnmappedPage, Untyped, VSpace,
+};
 /// A pattern for async IPC with driver processes/threads
 /// where there is a single (driver) consumer thread that is waiting
 /// on a single notification.
@@ -24,16 +34,6 @@
 /// let (producer_params_member, ...leftovers) = Producer::new(queue_producer_setup, producer_thread_cnode, producer_thread_vspace)
 use core::marker::PhantomData;
 use core::ops::Sub;
-use crate::arch::paging::PageBytes;
-use crate::userland::cap::AssignedPageDirectory;
-use crate::userland::cap::Badge;
-use crate::userland::role;
-use crate::userland::{
-    irq_state, memory_kind, CNodeRole, Cap, CapRights, ChildCNode, ChildCNodeSlot, ChildCNodeSlots,
-    DirectRetype, IRQControl, IRQError, IRQHandler, ImmobileIndelibleInertCapabilityReference,
-    LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable,
-    Notification, PhantomCap, SeL4Error, UnmappedPage, Untyped, VSpace,
-};
 use cross_queue::PushError;
 use cross_queue::{ArrayQueue, Slot};
 use generic_array::ArrayLength;

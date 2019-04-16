@@ -1,6 +1,3 @@
-use core::marker::PhantomData;
-use core::mem::size_of;
-use core::ops::Sub;
 use crate::arch::{address_space, paging};
 use crate::pow::Pow;
 use crate::userland::cap::UnassignedPageDirectory;
@@ -9,6 +6,9 @@ use crate::userland::{
     IRQControl, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable,
     SeL4Error, ThreadControlBlock, UnmappedPageTable, Untyped,
 };
+use core::marker::PhantomData;
+use core::mem::size_of;
+use core::ops::Sub;
 use sel4_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U0, U12, U19};

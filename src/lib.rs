@@ -161,8 +161,8 @@ pub mod proc1 {
 }
 
 pub mod proc2 {
-    use core::ptr;
     use crate::userland::{role, CNodeRole, Caller, RetypeForSetup};
+    use core::ptr;
 
     use super::to_be_changed;
 

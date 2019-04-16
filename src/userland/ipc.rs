@@ -1,9 +1,9 @@
-use core::marker::PhantomData;
 use crate::userland::cap::DirectRetype;
 use crate::userland::{
     role, Badge, CNode, CNodeRole, Cap, CapRights, ChildCNodeSlot, ChildCap, Endpoint, LocalCNode,
     LocalCNodeSlot, LocalCap, SeL4Error, Untyped,
 };
+use core::marker::PhantomData;
 use sel4_sys::*;
 
 #[derive(Debug)]

@@ -1,6 +1,6 @@
-use core::marker::PhantomData;
 use crate::arch::paging;
 use crate::userland::{CNode, CNodeSlot, CapRights, LocalCNode, LocalCNodeSlot, SeL4Error};
+use core::marker::PhantomData;
 use sel4_sys::*;
 use typenum::*;
 
