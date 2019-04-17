@@ -21,7 +21,7 @@ impl fmt::Write for DebugOutHandle {
 macro_rules! debug_print {
     ($($arg:tt)*) => ({
         use core::fmt::Write;
-        DebugOutHandle.write_fmt(format_args!($($arg)*)).unwrap();
+        $crate::debug::DebugOutHandle.write_fmt(format_args!($($arg)*)).unwrap();
     });
 }
 

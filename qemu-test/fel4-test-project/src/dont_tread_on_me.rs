@@ -8,7 +8,7 @@ use ferros::userland::{call_channel, root_cnode, BootInfo, VSpace, retype, retyp
 
 use typenum::*;
 
-use sel4_sys::{seL4_BootInfo, DebugOutHandle};
+use sel4_sys::{seL4_BootInfo};
 
 use super::TopLevelError;
 

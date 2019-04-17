@@ -1,26 +1,14 @@
-### PC99 (x64)
-[build.pc99]
-cross_compiler_prefix = ""
-
-[build.pc99.debug]
-make_root_task = "cargo xbuild --target=x86_64-unknown-linux-gnu"
-root_task_image = "target/x86_64-unknown-linux-gnu/debug/example"
-
-[build.pc99.release]
-make_root_task = "cargo xbuild --target=x86_64-unknown-linux-gnu --release"
-root_task_image = "target/x86_64-unknown-linux-gnu/release/example"
-
 ### Sabre (ARMv7 imx6)
 [build.sabre]
 cross_compiler_prefix = "arm-linux-gnueabihf-"
 
 [build.sabre.debug]
-make_root_task = "cargo xbuild --target=armv7-unknown-linux-gnueabihf"
-root_task_image = "target/armv7-unknown-linux-gnueabihf/debug/example"
+make_root_task = "cargo xbuild --target=armv7-unknown-linux-gnueabihf -vv"
+root_task_image = "target/armv7-unknown-linux-gnueabihf/debug/fel4-test-project"
 
 [build.sabre.release]
 make_root_task = "cargo xbuild --target=armv7-unknown-linux-gnueabihf --release"
-root_task_image = "target/armv7-unknown-linux-gnueabihf/release/example"
+root_task_image = "target/armv7-unknown-linux-gnueabihf/release/fel4-test-project"
 
 
 [sel4]
@@ -30,35 +18,17 @@ util_libs  = { git = "https://github.com/seL4/util_libs" , branch = "10.1.x-comp
 
 ### arch
 
-[sel4.config.x86]
-KernelArch = 'x86'
-
 [sel4.config.arm]
 KernelArch = 'arm'
 KernelIPCBufferLocation = 'threadID_register'
 
 ### sel4_arch
 
-[sel4.config.x86_64]
-KernelSel4Arch = 'x86_64'
-KernelX86Sel4Arch = 'x86_64'
-
 [sel4.config.aarch32]
 KernelSel4Arch = 'aarch32'
 KernelArmSel4Arch = 'aarch32'
 
 ### platform
-
-[sel4.config.pc99]
-KernelX86Platform = 'pc99'
-KernelX86MicroArch = 'nehalem'
-LibPlatSupportX86ConsoleDevice = 'com1'
-KernelVTX = false
-KernelX86DangerousMSR = false
-KernelX86IBPBOnContextSwitch = false
-KernelX86IBRSMode = 'ibrs_none'
-KernelX86RSBOnContextSwitch = false
-
 
 [sel4.config.sabre]
 KernelARMPlatform = 'imx6'
@@ -74,7 +44,6 @@ KernelDebugBuild = true
 KernelPrinting = false
 KernelDebugBuild = false
 KernelOptimisation = '-O2'
-
 
 [sel4.config]
 KernelColourPrinting = true

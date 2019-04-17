@@ -19,14 +19,8 @@ extern crate typenum;
 extern crate cross_queue;
 extern crate smart_alloc;
 
-#[cfg(all(feature = "test"))]
-extern crate proptest;
-
-#[cfg(feature = "test")]
-pub mod fel4_test;
-
 #[macro_use]
-mod debug;
+pub mod debug;
 
 pub mod drivers;
 
@@ -39,7 +33,6 @@ pub mod userland;
 mod test_proc;
 
 use crate::alloc::micro_alloc::Error as AllocError;
-use crate::debug::*;
 use crate::userland::{
     call_channel, retype, retype_cnode, root_cnode, BootInfo, IPCError, IRQError,
     MultiConsumerError, SeL4Error, VSpace, VSpaceError,

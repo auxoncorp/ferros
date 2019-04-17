@@ -24,7 +24,6 @@
 //! let (producer_params_member, ...leftovers) = Producer::new(queue_producer_setup, producer_thread_cnode, producer_thread_vspace)
 
 use crate::arch::paging::PageBytes;
-use crate::debug::*;
 use crate::userland::cap::AssignedPageDirectory;
 use crate::userland::cap::Badge;
 use crate::userland::role;

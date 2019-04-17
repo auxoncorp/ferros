@@ -1,4 +1,3 @@
-use crate::debug::*;
 use crate::userland::cap::DirectRetype;
 use crate::userland::{
     role, Badge, CNode, CNodeRole, Cap, CapRights, ChildCNodeSlot, ChildCap, Endpoint, LocalCNode,

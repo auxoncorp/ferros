@@ -27,7 +27,7 @@ macro_rules! sequential_test {
 }
 
 fn run_qemu_test<F>(
-    name: &str,
+    test_case: &str,
     pass_line: Regex,
     fail_line: Regex,
     ready_line_and_func: Option<(Regex, F)>,
@@ -39,47 +39,49 @@ fn run_qemu_test<F>(
     let rust_identifier_regex: Regex =
         Regex::new("(^[a-zA-Z][a-zA-Z0-9_]*$)|(^_[a-zA-Z0-9_]+$)").unwrap();
     let is_rust_id = |s| rust_identifier_regex.is_match(s);
-    if !is_rust_id(name) {
+    if !is_rust_id(test_case) {
         panic!(
-            "Invalid test case name {}. Test case name must be a valid rust identifier",
-            name
+            "Invalid test case test_case {}. Test case name must be a valid rust identifier",
+            test_case
         );
     }
 
-    let mut build_command = Command::new("cargo");
-    (&mut build_command)
-        .arg("fel4")
-        .arg("build")
-        .current_dir("fel4-test-project")
-        .env("TEST_CASE", name);
-    let escaped_flags_summary = {
-        if let Some(flags) = supplemental_feature_flags {
-            let merged_pairs: Vec<_> = flags
-                .iter()
-                .map(|(k, v)| {
-                    if !is_rust_id(k) || !is_rust_id(v) {
-                        panic!("Invalid extra test feature flag passed: ({}, {}). Extra flags must be valid rust identifiers", k, v)
-                    }
-                    format!("{}=\"{}\"", k, v)
-                })
-                .collect();
-            (&mut build_command).env("TEST_EXTRA_FLAG_PAIRS", merged_pairs.join(","));
-            let escaped_pairs: Vec<_> = flags
-                .iter()
-                .map(|(k, v)| format!("{}=\\\"{}\\\"", k, v))
-                .collect();
-            format!("TEST_EXTRA_FLAG_PAIRS={}", escaped_pairs.join(","))
-        } else {
-            "".to_string()
-        }
+    let sel4_arch = "aarch32";
+    let platform = "sabre";
+    let test_extra_flag_pairs = if let Some(flags) = supplemental_feature_flags {
+        flags.iter().map(|(k, v)| {
+            if !is_rust_id(k) || !is_rust_id(v) {
+                panic!("Invalid extra test feature flag passed: ({}, {}). Extra flags must be valid rust identifiers", k, v)
+            }
+            format!("{}=\"{}\"", k, v)
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+    } else {
+        "".to_string()
     };
+    let escaped_test_extra_flag_pairs = test_extra_flag_pairs.replace(r#"""#, r#"\""#);
+
+
+    let mut build_command = Command::new("cotransport");
+    (&mut build_command)
+        .arg("build")
+        .arg("--sel4_arch")
+        .arg(sel4_arch)
+        .arg("--platform")
+        .arg(platform)
+        .arg("-v")
+        .current_dir("fel4-test-project")
+        .env("TEST_CASE", test_case)
+        .env("TEST_EXTRA_FLAG_PAIRS", test_extra_flag_pairs.clone());
+
     println!(
-        "running 'TEST_CASE={} {} cargo fel4 build",
-        name, escaped_flags_summary
+        r#"running: TEST_CASE={} TEST_EXTRA_FLAG_PAIRS="{}" {:?}"#,
+        test_case, escaped_test_extra_flag_pairs, build_command
     );
     let build_result = build_command
         .output()
-        .expect("Couldn't run `cargo fel4 build`");
+        .expect("Couldn't run `cotransport build`");
     if !build_result.status.success() {
         io::stdout().write_all(&build_result.stdout).unwrap();
         io::stderr().write_all(&build_result.stderr).unwrap();
@@ -89,16 +91,25 @@ fn run_qemu_test<F>(
     let sim_command = match custom_sim {
         Some(cmd) => cmd,
         None => {
-            let mut std_sim = Command::new("cargo");
+            let mut std_sim = Command::new("cotransport");
             std_sim
-                .arg("fel4")
                 .arg("simulate")
-                .current_dir("fel4-test-project");
+                .arg("--sel4_arch")
+                .arg(sel4_arch)
+                .arg("--platform")
+                .arg(platform)
+                .arg("-v")
+                .current_dir("fel4-test-project")
+                .env("TEST_CASE", test_case)
+                .env("TEST_EXTRA_FLAG_PAIRS", test_extra_flag_pairs);
             std_sim
         }
     };
 
-    println!("running `{:?}`", sim_command);
+    println!(
+        r#"running: TEST_CASE={} TEST_EXTRA_FLAG_PAIRS="{}" {:?}"#,
+        test_case, escaped_test_extra_flag_pairs, sim_command
+    );
 
     let mut sim = spawn_command(sim_command, Some(10000)).expect("Couldn't start simulate command");
 

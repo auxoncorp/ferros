@@ -1,3 +1,6 @@
+extern crate confignoble;
+use confignoble::build_helpers::*;
+
 use fel4_config::{
     get_fel4_config, infer_manifest_location_from_env, infer_support_extension_from_env,
     BuildProfile, Fel4Config, FlatTomlValue, ManifestDiscoveryError, SupportedTarget,
@@ -11,6 +14,10 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 fn main() {
+    BuildEnv::request_reruns();
+    let config = load_config_from_env_or_default();
+    config.print_boolean_feature_flags();
+
     let (fel4_manifest_path, profile) = match infer_manifest_location_from_env() {
         Ok(v) => v,
         Err(e) => {
