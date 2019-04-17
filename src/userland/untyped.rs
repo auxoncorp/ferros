@@ -300,8 +300,8 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
             // In order to set the guard (for the sake of our C-pointer simplification scheme),
             // mutate the CNode in the scratch slot, which copies the CNode into a second slot
             let guard_data = seL4_CNode_CapData_new(
-                0,                                               // guard
-                seL4_WordBits - ChildRadix::to_usize() as usize, // guard size in bits
+                0,                                                      // guard
+                (seL4_WordBits - ChildRadix::to_usize() as usize) as _, // guard size in bits
             )
             .words[0];
 
@@ -312,7 +312,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
                 scratch_slot.cptr,         // src_root: seL4_CNode,
                 scratch_slot.offset,       // src_index: seL4_Word,
                 seL4_WordBits as u8,    // src_depth: seL4_Uint8,
-                guard_data              // badge or guard: seL4_Word,
+                guard_data as usize             // badge or guard: seL4_Word,
             );
 
             // TODO - If we wanted to make more efficient use of our available slots at the cost

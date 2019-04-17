@@ -1,37 +1,39 @@
+//! A pattern for async IPC with driver processes/threads
+//! where there is a single (driver) consumer thread that is waiting
+//! on a single notification.
+//! There are two possible badge values for the notification, and
+//! based on the badge, the consumer will do one of the following:
+//!
+//! A) Execute a custom, interrupt-handling-specialized path.
+//! B) Attempt to read from a shared memory queue. If an element is found, process it.
+//!
+//! The alpha-path is intended to be bound to an interrupt notification,
+//! but technically will work out of the box with any regular notification-sender
+//! badged to match the A) path.
+//!
+//! There may be many other threads producing to the shared memory queue.
+//! A queue-producer thread requires:
+//! * A capability to the notification, badged to correspond to the queue-path.
+//! * The page(s) where the queue lives mapped into its VSpace
+//! * A pointer to the shared memory queue valid in its VSpace.
+//!
+//! There are two doors into the consumer thread. Do you pick door A or B?
+//!
+//! let (consumer_params_member, queue_producer_setup, waker_setup,  ...leftovers) = double_door(...)
+//! let (waker_params_member, ...leftovers) = Waker::new(waker_setup,waker_thread_cnode)
+//! let (producer_params_member, ...leftovers) = Producer::new(queue_producer_setup, producer_thread_cnode, producer_thread_vspace)
+
 use crate::arch::paging::PageBytes;
+use crate::debug::*;
 use crate::userland::cap::AssignedPageDirectory;
 use crate::userland::cap::Badge;
 use crate::userland::role;
 use crate::userland::{
-    irq_state, memory_kind, CNodeRole, Cap, CapRights, ChildCNode, ChildCNodeSlot, ChildCNodeSlots,
+    irq_state, memory_kind, CNodeRole, Cap, CapRights, ChildCNodeSlot, ChildCNodeSlots,
     DirectRetype, IRQControl, IRQError, IRQHandler, ImmobileIndelibleInertCapabilityReference,
     LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable,
     Notification, PhantomCap, SeL4Error, UnmappedPage, Untyped, VSpace,
 };
-/// A pattern for async IPC with driver processes/threads
-/// where there is a single (driver) consumer thread that is waiting
-/// on a single notification.
-/// There are two possible badge values for the notification, and
-/// based on the badge, the consumer will do one of the following:
-///
-/// A) Execute a custom, interrupt-handling-specialized path.
-/// B) Attempt to read from a shared memory queue. If an element is found, process it.
-///
-/// The alpha-path is intended to be bound to an interrupt notification,
-/// but technically will work out of the box with any regular notification-sender
-/// badged to match the A) path.
-///
-/// There may be many other threads producing to the shared memory queue.
-/// A queue-producer thread requires:
-/// * A capability to the notification, badged to correspond to the queue-path.
-/// * The page(s) where the queue lives mapped into its VSpace
-/// * A pointer to the shared memory queue valid in its VSpace.
-///
-/// There are two doors into the consumer thread. Do you pick door A or B?
-///
-/// let (consumer_params_member, queue_producer_setup, waker_setup,  ...leftovers) = double_door(...)
-/// let (waker_params_member, ...leftovers) = Waker::new(waker_setup,waker_thread_cnode)
-/// let (producer_params_member, ...leftovers) = Producer::new(queue_producer_setup, producer_thread_cnode, producer_thread_vspace)
 use core::marker::PhantomData;
 use core::ops::Sub;
 use cross_queue::PushError;

@@ -613,9 +613,9 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
             - param_size_on_stack;
 
         registers.sp = stack_pointer;
-        registers.pc = function_descriptor as seL4_Word;
+        registers.pc = function_descriptor as usize;
         // TODO - Probably ought to attempt to suspend the thread instead of endlessly yielding
-        registers.r14 = (yield_forever as *const fn() -> !) as seL4_Word;
+        registers.r14 = (yield_forever as *const fn() -> !) as usize;
 
         // Reserve a guard page after the stack
         let vspace = vspace.skip_pages::<U1>();
@@ -812,7 +812,7 @@ impl<Role: CNodeRole> ReadyThread<Role> {
                 0,
                 0,
                 // all the regs
-                core::mem::size_of::<seL4_UserContext>() / core::mem::size_of::<seL4_Word>(),
+                core::mem::size_of::<seL4_UserContext>() / core::mem::size_of::<usize>(),
                 &mut regs,
             );
             if err != 0 {

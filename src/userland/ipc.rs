@@ -1,3 +1,4 @@
+use crate::debug::*;
 use crate::userland::cap::DirectRetype;
 use crate::userland::{
     role, Badge, CNode, CNodeRole, Cap, CapRights, ChildCNodeSlot, ChildCap, Endpoint, LocalCNode,
@@ -198,10 +199,10 @@ fn type_length_in_words<T>() -> usize {
 fn type_length_message_info<T>() -> seL4_MessageInfo_t {
     unsafe {
         seL4_MessageInfo_new(
-            0,                           // label,
-            0,                           // capsUnwrapped,
-            0,                           // extraCaps,
-            type_length_in_words::<T>(), // length in words!
+            0,                                  // label,
+            0,                                  // capsUnwrapped,
+            0,                                  // extraCaps,
+            type_length_in_words::<T>() as u32, // length in words!
         )
     }
 }
@@ -221,7 +222,7 @@ impl MessageInfo {
         unsafe {
             seL4_MessageInfo_ptr_get_label(
                 &self.inner as *const seL4_MessageInfo_t as *mut seL4_MessageInfo_t,
-            )
+            ) as usize
         }
     }
 
@@ -232,7 +233,7 @@ impl MessageInfo {
         unsafe {
             seL4_MessageInfo_ptr_get_length(
                 &self.inner as *const seL4_MessageInfo_t as *mut seL4_MessageInfo_t,
-            )
+            ) as usize
         }
     }
 

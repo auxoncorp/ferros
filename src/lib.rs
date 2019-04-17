@@ -39,6 +39,7 @@ pub mod userland;
 mod test_proc;
 
 use crate::alloc::micro_alloc::Error as AllocError;
+use crate::debug::*;
 use crate::userland::{
     call_channel, retype, retype_cnode, root_cnode, BootInfo, IPCError, IRQError,
     MultiConsumerError, SeL4Error, VSpace, VSpaceError,

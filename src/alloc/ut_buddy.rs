@@ -8,6 +8,7 @@ use typenum::*;
 
 use crate::arch::kernel;
 use crate::config;
+use crate::debug::*;
 use crate::userland::{Cap, LocalCNodeSlots, LocalCap, SeL4Error, Untyped};
 
 /// A type-level linked list of typenum::Unsigned.
