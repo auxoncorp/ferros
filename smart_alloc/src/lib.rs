@@ -1,5 +1,3 @@
-#![feature(extern_crate_item_prelude)]
-
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenTree};
