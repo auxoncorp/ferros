@@ -1360,38 +1360,6 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<MappedPageTable<FreeSlots, R
         })
     }
 
-    pub(super) fn reservation_iter<Count: Unsigned>(
-        self,
-    ) -> (
-        impl ExactSizeIterator<Item = LocalCap<MappedPageTable<U1, Role>>>,
-        LocalCap<MappedPageTable<Diff<FreeSlots, Count>, Role>>,
-    )
-    where
-        FreeSlots: Sub<Count>,
-        Diff<FreeSlots, Count>: Unsigned,
-    {
-        let iter_cptr = self.cptr;
-        let iter_base_vaddr = self.cap_data.vaddr;
-
-        (
-            (self.cap_data.next_free_slot..self.cap_data.next_free_slot + Count::to_usize()).map(
-                move |slot| {
-                    Cap {
-                        cptr: iter_cptr,
-                        _role: PhantomData,
-                        cap_data: MappedPageTable {
-                            next_free_slot: slot,
-                            vaddr: iter_base_vaddr, //item_vaddr,
-                            _free_slots: PhantomData,
-                            _role: PhantomData,
-                        },
-                    }
-                },
-            ),
-            self.skip_pages::<Count>(),
-        )
-    }
-
     pub(super) fn skip_pages<Count: Unsigned>(
         self,
     ) -> LocalCap<MappedPageTable<Diff<FreeSlots, Count>, Role>>
