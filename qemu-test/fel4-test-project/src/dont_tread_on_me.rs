@@ -22,7 +22,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let uts = alloc::ut_buddy(ut27);
 
     smart_alloc!(|slots from local_slots, ut from uts| {
-
         let boot_info = BootInfo::wrap(raw_boot_info, ut, slots);
 
         let unmapped_scratch_page_table = retype(ut, slots)?;

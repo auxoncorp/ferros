@@ -1,12 +1,14 @@
 use super::TopLevelError;
-use ferros::micro_alloc;
+
+use ferros::alloc::{self, smart_alloc, micro_alloc};
+use typenum::*;
+
 use ferros::pow::Pow;
 use ferros::userland::{
     role, root_cnode, BootInfo, CNode, CNodeRole, Cap, Endpoint, LocalCap, RetypeForSetup,
-    SeL4Error, UnmappedPageTable, Untyped, VSpace,
+    SeL4Error, UnmappedPageTable, Untyped, VSpace, retype, retype_cnode, CNodeSlots
 };
 use sel4_sys::*;
-use typenum::{Diff, U1, U12, U2, U20, U3, U4096, U6};
 type U4095 = Diff<U4096, U1>;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
@@ -15,57 +17,52 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         debug_println!("\nhello from the root task!\n");
     }
 
+
     let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
-    // wrap bootinfo caps
-    let root_cnode = root_cnode(&raw_boot_info);
+    let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
 
-    // find an untyped of size 20 bits (1 meg)
-    let ut20 = allocator
-        .get_untyped::<U20>()
-        .expect("Couldn't find initial untyped");
+    let ut27 = allocator
+        .get_untyped::<U27>()
+        .expect("initial alloc failure");
+    let uts = alloc::ut_buddy(ut27);
 
-    let (ut18, ut18b, _, _, root_cnode) = ut20.quarter(root_cnode)?;
-    let (child_vspace_ut, child_thread_ut, root_cnode) = ut18b.split(root_cnode)?;
-    let (ut16, child_cnode_ut, _, _, root_cnode) = ut18.quarter(root_cnode)?;
-    let (ut14, _, _, _, root_cnode) = ut16.quarter(root_cnode)?;
-    let (ut12, asid_pool_ut, _, _, root_cnode) = ut14.quarter(root_cnode)?;
-    let (ut10, scratch_page_table_ut, _, _, root_cnode) = ut12.quarter(root_cnode)?;
-    let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode)?;
-    let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode)?;
+    let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
 
-    // wrap the rest of the critical boot info
-    let (mut boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
+    smart_alloc!(|slots from local_slots, ut from uts| {
+        let boot_info = BootInfo::wrap(raw_boot_info, ut, slots);
 
-    let (scratch_page_table, root_cnode): (LocalCap<UnmappedPageTable>, _) =
-        scratch_page_table_ut.retype_local(root_cnode)?;
-    let (mut scratch_page_table, mut boot_info) = boot_info.map_page_table(scratch_page_table)?;
+        let unmapped_scratch_page_table = retype(ut, slots)?;
+        let (mut scratch_page_table, boot_info) =
+            boot_info.map_page_table(unmapped_scratch_page_table)?;
+
+        let (child_cnode, child_slots) = retype_cnode::<U12>(ut, slots)?;
+    });
+
 
     #[cfg(min_params = "true")]
-    let (child_cnode, root_cnode, params) = {
-        let (child_cnode, root_cnode) = child_cnode_ut.retype_cnode::<_, U12>(root_cnode)?;
-
-        (child_cnode, root_cnode, ProcParams { value: 42 })
-    };
+    smart_alloc!(|slots from local_slots, ut from uts| {
+        let params = ProcParams { value: 42 };
+    });
 
     #[cfg(test_case = "child_process_cap_management")]
-    let (child_cnode, root_cnode, params) = {
-        let (child_cnode, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
-            child_cnode_ut.retype_cnode::<_, U12>(root_cnode)?;
+    smart_alloc!(|slots from local_slots| {
+        let (ut5, uts): (LocalCap<Untyped<U5>>, _) = uts.alloc(slots)?;
 
-        let (child_ut6, child_cnode) = ut6.move_to_cnode(&root_cnode, child_cnode)?;
+        smart_alloc!(|slots_c from child_slots| {
+            // FIXME generate_self_reference needs to hand some cnode slots to
+            // the child as well, and our types need to reflect this.
+            let cnode_for_child = child_cnode.generate_self_reference(&root_cnode, slots_c)?;
+            let child_ut5 = ut5.move_to_cnode(&root_cnode, slots_c)?;
+            let slots_for_child = slots_c;
+        });
 
-        let (child_cnode_as_child, child_cnode) =
-            child_cnode.generate_self_reference(&root_cnode)?;
+        let params = CapManagementParams {
+            my_cnode: cnode_for_child,
+            my_cnode_slots: slots_for_child,
+            my_ut: child_ut5,
+        };
+    });
 
-        (
-            child_cnode,
-            root_cnode,
-            CapManagementParams {
-                my_cnode: child_cnode_as_child,
-                data_source: child_ut6,
-            },
-        )
-    };
     #[cfg(test_case = "over_register_size_params")]
     let (child_cnode, root_cnode, params) = {
         let (child_cnode, root_cnode) = child_cnode_ut.retype_cnode::<_, U12>(root_cnode)?;
@@ -76,17 +73,18 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         (child_cnode, root_cnode, OverRegisterSizeParams { nums })
     };
 
-    let (child_vspace, mut boot_info, root_cnode) =
-        VSpace::new(boot_info, child_vspace_ut, root_cnode)?;
+    smart_alloc!(|slots from local_slots, ut from uts| {
+        let (child_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
 
-    let (child_process, _caller_vspace, root_cnode) = child_vspace.prepare_thread(
-        proc_main,
-        params,
-        child_thread_ut,
-        root_cnode,
-        &mut scratch_page_table,
-        &mut boot_info.page_directory,
-    )?;
+        let (child_process, _) = child_vspace.prepare_thread(
+            proc_main,
+            params,
+            ut,
+            slots,
+            &mut scratch_page_table,
+            &mut boot_info.page_directory,
+        )?;
+    });
 
     child_process.start(child_cnode, None, &boot_info.tcb, 255)?;
 
@@ -137,8 +135,9 @@ pub extern "C" fn proc_main(_params: ProcParams) {
 
 #[derive(Debug)]
 pub struct CapManagementParams<Role: CNodeRole> {
-    pub my_cnode: Cap<CNode<Diff<Pow<U12>, U3>, Role>, Role>,
-    pub data_source: Cap<Untyped<U6>, Role>,
+    pub my_cnode: Cap<CNode<Role>, Role>,
+    pub my_cnode_slots: CNodeSlots<U42, Role>,
+    pub my_ut: Cap<Untyped<U5>, Role>,
 }
 
 impl RetypeForSetup for CapManagementParams<role::Local> {
@@ -150,24 +149,26 @@ impl RetypeForSetup for CapManagementParams<role::Local> {
 pub extern "C" fn proc_main(params: CapManagementParams<role::Local>) {
     debug_println!("");
     debug_println!("--- Hello from the cap_management_run feL4 process!");
+    debug_println!("{:#?}", params);
 
-    debug_println!("Let's split an untyped inside child process");
-    let (ut_kid_a, ut_kid_b, cnode) = params
-        .data_source
-        .split(params.my_cnode)
-        .expect("child process split untyped");
-    debug_println!("We got past the split in a child process\n");
+    let CapManagementParams { my_cnode, my_cnode_slots, my_ut } = params;
 
-    debug_println!("Let's make an Endpoint");
-    let (_endpoint, cnode): (LocalCap<Endpoint>, _) = ut_kid_a
-        .retype_local(cnode)
-        .expect("Retype local in a child process failure");
-    debug_println!("Successfully built an Endpoint\n");
+    smart_alloc!(|slots from my_cnode_slots| {
+        debug_println!("Let's split an untyped inside child process");
+        let (ut_kid_a, ut_kid_b) = my_ut
+            .split(slots)
+            .expect("child process split untyped");
+        debug_println!("We got past the split in a child process\n");
 
-    debug_println!("And now for a delete in a child process");
-    ut_kid_b.delete(&cnode).expect("child process delete a cap");
-    debug_println!("Hey, we deleted a cap in a child process");
-    debug_println!("Split, retyped, and deleted caps in a child process");
+        debug_println!("Let's make an Endpoint");
+        let _endpoint: LocalCap<Endpoint> = retype(ut_kid_a, slots).expect("Retype local in a child process failure");
+        debug_println!("Successfully built an Endpoint\n");
+
+        debug_println!("And now for a delete in a child process");
+        ut_kid_b.delete(&my_cnode).expect("child process delete a cap");
+        debug_println!("Hey, we deleted a cap in a child process");
+        debug_println!("Split, retyped, and deleted caps in a child process");
+    });
 }
 
 pub struct OverRegisterSizeParams {

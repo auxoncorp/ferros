@@ -18,8 +18,8 @@ mod double_door_backpressure;
 #[cfg(dual_process = "true")]
 mod dual_process;
 // mod fault_pair;
-// #[cfg(single_process = "true")]
-// mod single_process;
+#[cfg(single_process = "true")]
+mod single_process;
 // mod uart;
 
 use ferros::alloc::micro_alloc::Error as AllocError;

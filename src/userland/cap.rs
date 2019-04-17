@@ -878,10 +878,7 @@ impl<CT: CapType> LocalCap<CT> {
     }
 
     /// Delete a capability
-    pub fn delete<FreeSlots: Unsigned>(
-        self,
-        parent_cnode: &LocalCap<LocalCNode>,
-    ) -> Result<(), SeL4Error>
+    pub fn delete(self, parent_cnode: &LocalCap<LocalCNode>) -> Result<(), SeL4Error>
     where
         CT: Delible,
     {
