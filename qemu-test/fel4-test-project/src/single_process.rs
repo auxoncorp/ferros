@@ -17,7 +17,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         debug_println!("\nhello from the root task!\n");
     }
 
-
     let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
     let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
 
@@ -25,8 +24,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         .get_untyped::<U27>()
         .expect("initial alloc failure");
     let uts = alloc::ut_buddy(ut27);
-
-    let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
 
     smart_alloc!(|slots from local_slots, ut from uts| {
         let boot_info = BootInfo::wrap(raw_boot_info, ut, slots);
