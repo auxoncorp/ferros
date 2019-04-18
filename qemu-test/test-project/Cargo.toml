@@ -1,5 +1,5 @@
 [package]
-name = "fel4-test-project"
+name = "test-project"
 version = "0.1.0"
 authors = ["Russell Mull <russell@auxon.io>"]
 edition = "2018"

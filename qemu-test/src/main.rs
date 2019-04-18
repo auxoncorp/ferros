@@ -71,7 +71,7 @@ fn run_qemu_test<F>(
         .arg("--platform")
         .arg(platform)
         .arg("-v")
-        .current_dir("fel4-test-project")
+        .current_dir("test-project")
         .env("TEST_CASE", test_case)
         .env("TEST_EXTRA_FLAG_PAIRS", test_extra_flag_pairs.clone());
 
@@ -101,7 +101,7 @@ fn run_qemu_test<F>(
         .arg("--platform")
         .arg(platform)
         .arg("-v")
-        .current_dir("fel4-test-project")
+        .current_dir("test-project")
         .env("TEST_CASE", test_case)
         .env("TEST_EXTRA_FLAG_PAIRS", test_extra_flag_pairs);
 
