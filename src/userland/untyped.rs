@@ -350,7 +350,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
 impl LocalCap<Untyped<paging::PageBits, memory_kind::Device>> {
     /// The only thing memory_kind::Device memory can be used to make
     /// is a page/frame.
-    pub fn retype_device_page<CNodeFreeSlots: Unsigned>(
+    pub fn retype_device_page(
         self,
         dest_slot: LocalCNodeSlot,
     ) -> Result<LocalCap<UnmappedPage<memory_kind::Device>>, SeL4Error> {

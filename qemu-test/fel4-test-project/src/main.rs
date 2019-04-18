@@ -20,7 +20,7 @@ mod dual_process;
 mod fault_pair;
 #[cfg(single_process = "true")]
 mod single_process;
-// mod uart;
+mod uart;
 
 use ferros::alloc::micro_alloc::Error as AllocError;
 use ferros::userland::{IPCError, IRQError, MultiConsumerError, SeL4Error, VSpaceError};

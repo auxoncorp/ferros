@@ -215,7 +215,7 @@ where
     pub fn new(
         notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
         irq_control: &mut LocalCap<IRQControl>,
-        local_cnode: LocalCap<LocalCNode>,
+        local_cnode: &LocalCap<LocalCNode>,
         local_slots: LocalCNodeSlots<U3>,
         consumer_slots: ChildCNodeSlots<U2>,
     ) -> Result<(InterruptConsumer<IRQ, role::Child>, ConsumerToken), IRQError>

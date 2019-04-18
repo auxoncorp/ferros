@@ -31,7 +31,7 @@ fn run_qemu_test<F>(
     pass_line: Regex,
     fail_line: Regex,
     ready_line_and_func: Option<(Regex, F)>,
-    custom_sim: Option<Command>,
+    serial_override: Option<&str>,
     supplemental_feature_flags: Option<Vec<(&'static str, &'static str)>>,
 ) where
     F: Fn(),
@@ -88,23 +88,22 @@ fn run_qemu_test<F>(
     }
     assert!(build_result.status.success());
 
-    let sim_command = match custom_sim {
-        Some(cmd) => cmd,
-        None => {
-            let mut std_sim = Command::new("cotransport");
-            std_sim
-                .arg("simulate")
-                .arg("--sel4_arch")
-                .arg(sel4_arch)
-                .arg("--platform")
-                .arg(platform)
-                .arg("-v")
-                .current_dir("fel4-test-project")
-                .env("TEST_CASE", test_case)
-                .env("TEST_EXTRA_FLAG_PAIRS", test_extra_flag_pairs);
-            std_sim
-        }
-    };
+    let mut sim_command = Command::new("cotransport");
+    sim_command.arg("simulate");
+
+    if let Some(opt) = serial_override {
+        sim_command.arg("--serial-override").arg(opt);
+    }
+
+    sim_command
+        .arg("--sel4_arch")
+        .arg(sel4_arch)
+        .arg("--platform")
+        .arg(platform)
+        .arg("-v")
+        .current_dir("fel4-test-project")
+        .env("TEST_CASE", test_case)
+        .env("TEST_EXTRA_FLAG_PAIRS", test_extra_flag_pairs);
 
     println!(
         r#"running: TEST_CASE={} TEST_EXTRA_FLAG_PAIRS="{}" {:?}"#,
@@ -300,16 +299,6 @@ mod tests {
             use std::net::TcpStream;
             use std::io::Write;
 
-            let mut custom_sim = Command::new("qemu-system-arm");
-            custom_sim.current_dir("fel4-test-project")
-                .args(&["-machine", "sabrelite",
-                        "-nographic",
-                        "-s",
-                        "-serial", "tcp:localhost:8888,server,nowait,nodelay",
-                        "-serial", "mon:stdio",
-                        "-m", "size=1024M",
-                        "-kernel", "artifacts/debug/kernel",
-                        "-initrd", "artifacts/debug/feL4img"]);
             run_qemu_test(
                 "uart",
                 Regex::new(".*got byte: 1.*").unwrap(),
@@ -319,7 +308,7 @@ mod tests {
                     let mut stream = TcpStream::connect("localhost:8888").expect("connect stream");
                     stream.write(&[1]).expect("write stream");
                 })),
-                Some(custom_sim),
+                Some("-serial tcp:localhost:8888,server,nowait,nodelay -serial mon:stdio"),
                 None,
             );
         }
