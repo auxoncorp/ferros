@@ -61,13 +61,11 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     });
 
     #[cfg(test_case = "over_register_size_params")]
-    let (child_cnode, root_cnode, params) = {
-        let (child_cnode, root_cnode) = child_cnode_ut.retype_cnode::<_, U12>(root_cnode)?;
-
+    let params = {
         let mut nums = [0xaaaaaaaa; 140];
         nums[0] = 0xbbbbbbbb;
         nums[139] = 0xcccccccc;
-        (child_cnode, root_cnode, OverRegisterSizeParams { nums })
+        OverRegisterSizeParams { nums }
     };
 
     smart_alloc!(|slots from local_slots, ut from uts| {
