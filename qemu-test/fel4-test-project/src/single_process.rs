@@ -6,7 +6,7 @@ use typenum::*;
 use ferros::pow::Pow;
 use ferros::userland::{
     role, root_cnode, BootInfo, CNode, CNodeRole, Cap, Endpoint, LocalCap, RetypeForSetup,
-    SeL4Error, UnmappedPageTable, Untyped, VSpace, retype, retype_cnode, CNodeSlots
+    SeL4Error, UnmappedPageTable, Untyped, VSpace, retype, retype_cnode, CNodeSlots, CNodeSlotsData
 };
 use sel4_sys::*;
 type U4095 = Diff<U4096, U1>;
@@ -49,11 +49,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (ut5, uts): (LocalCap<Untyped<U5>>, _) = uts.alloc(slots)?;
 
         smart_alloc!(|slots_c from child_slots| {
-            // FIXME generate_self_reference needs to hand some cnode slots to
-            // the child as well, and our types need to reflect this.
-            let cnode_for_child = child_cnode.generate_self_reference(&root_cnode, slots_c)?;
+            let (cnode_for_child, slots_for_child) = child_cnode.generate_self_reference(&root_cnode, slots_c)?;
             let child_ut5 = ut5.move_to_cnode(&root_cnode, slots_c)?;
-            let slots_for_child = slots_c;
         });
 
         let params = CapManagementParams {
@@ -136,7 +133,7 @@ pub extern "C" fn proc_main(_params: ProcParams) {
 #[derive(Debug)]
 pub struct CapManagementParams<Role: CNodeRole> {
     pub my_cnode: Cap<CNode<Role>, Role>,
-    pub my_cnode_slots: CNodeSlots<U42, Role>,
+    pub my_cnode_slots: Cap<CNodeSlotsData<U42, Role>, Role>,
     pub my_ut: Cap<Untyped<U5>, Role>,
 }
 

@@ -1,5 +1,7 @@
 use crate::arch::paging;
-use crate::userland::{CNode, CNodeSlot, CapRights, LocalCNode, LocalCNodeSlot, SeL4Error};
+use crate::userland::{
+    CNode, CNodeSlot, CNodeSlotsData, CapRights, LocalCNode, LocalCNodeSlot, SeL4Error,
+};
 use core::marker::PhantomData;
 use sel4_sys::*;
 use typenum::*;
@@ -602,6 +604,8 @@ impl<Role: CNodeRole, Kind: MemoryKind> CopyAliasable for MappedSuperSection<Rol
 
 impl<Role: CNodeRole> CapType for CNode<Role> {}
 
+impl<Size: Unsigned, Role: CNodeRole> CapType for CNodeSlotsData<Size, Role> {}
+
 mod private {
     use super::{irq_state, memory_kind, role, CNodeRole, IRQSetState, MemoryKind};
     use typenum::{IsLess, True, Unsigned, U256};
@@ -621,6 +625,7 @@ mod private {
     pub trait SealedCapType {}
     impl<BitSize: typenum::Unsigned, Kind: MemoryKind> SealedCapType for super::Untyped<BitSize, Kind> {}
     impl<Role: CNodeRole> SealedCapType for super::CNode<Role> {}
+    impl<Size: Unsigned, Role: CNodeRole> SealedCapType for super::CNodeSlotsData<Size, Role> {}
     impl SealedCapType for super::ThreadControlBlock {}
     impl SealedCapType for super::Endpoint {}
     impl SealedCapType for super::Notification {}
@@ -668,10 +673,11 @@ impl<CT: CapType> LocalCap<CT> {
         CT: CopyAliasable,
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
+        let (dest_cptr, dest_offset, _) = dest_slot.elim();
         let err = unsafe {
             seL4_CNode_Copy(
-                dest_slot.cptr,      // _service
-                dest_slot.offset,    // index
+                dest_cptr,           // _service
+                dest_offset,         // index
                 seL4_WordBits as u8, // depth
                 // Since src_cnode is restricted to Root, the cptr must
                 // actually be the slot index
@@ -686,7 +692,7 @@ impl<CT: CapType> LocalCap<CT> {
             Err(SeL4Error::CNodeCopy(err))
         } else {
             Ok(Cap {
-                cptr: dest_slot.offset,
+                cptr: dest_offset,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             })
@@ -707,10 +713,11 @@ impl<CT: CapType> LocalCap<CT> {
         CT: PhantomCap,
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
+        let (dest_cptr, dest_offset, _) = dest_slot.elim();
         let err = unsafe {
             seL4_CNode_Mint(
-                dest_slot.cptr,      // _service
-                dest_slot.offset,    // dest index
+                dest_cptr,           // _service
+                dest_offset,         // dest index
                 seL4_WordBits as u8, // dest depth
                 // Since src_cnode is restricted to Root, the cptr must
                 // actually be the slot index
@@ -726,7 +733,7 @@ impl<CT: CapType> LocalCap<CT> {
             Err(SeL4Error::CNodeMint(err))
         } else {
             Ok(Cap {
-                cptr: dest_slot.offset,
+                cptr: dest_offset,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             })
@@ -747,10 +754,11 @@ impl<CT: CapType> LocalCap<CT> {
         CT: PhantomCap,
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
+        let (dest_cptr, dest_offset, _) = dest_slot.elim();
         let err = unsafe {
             seL4_CNode_Mint(
-                dest_slot.cptr,      // _service
-                dest_slot.offset,    // dest index
+                dest_cptr,           // _service
+                dest_offset,         // dest index
                 seL4_WordBits as u8, // dest depth
                 // Since src_cnode is restricted to Root, the cptr must
                 // actually be the slot index
@@ -766,7 +774,7 @@ impl<CT: CapType> LocalCap<CT> {
             Err(SeL4Error::CNodeMint(err))
         } else {
             Ok(Cap {
-                cptr: dest_slot.offset,
+                cptr: dest_offset,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             })
@@ -785,14 +793,15 @@ impl<CT: CapType> LocalCap<CT> {
         CT: CopyAliasable,
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
+        let (dest_cptr, dest_offset, _) = dest_slot.elim();
         let err = unsafe {
             seL4_CNode_Mint(
-                dest_slot.cptr,      // _service
-                dest_slot.offset,    // index
+                dest_cptr,           // _service
+                dest_offset,         // index
                 seL4_WordBits as u8, // depth
                 // Since src_cnode is restricted to Root, the cptr must
                 // actually be the slot index
-                dest_slot.cptr,      // src_root
+                dest_cptr,           // src_root
                 self.cptr,           // src_index
                 seL4_WordBits as u8, // src_depth
                 rights.into(),       // rights
@@ -804,7 +813,7 @@ impl<CT: CapType> LocalCap<CT> {
             Err(SeL4Error::CNodeMint(err))
         } else {
             Ok(Cap {
-                cptr: dest_slot.offset,
+                cptr: dest_offset,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             })
@@ -820,10 +829,11 @@ impl<CT: CapType> LocalCap<CT> {
     where
         CT: Movable,
     {
+        let (dest_cptr, dest_offset, _) = dest_slot.elim();
         let err = unsafe {
             seL4_CNode_Move(
-                dest_slot.cptr,      // _service
-                dest_slot.offset,    // index
+                dest_cptr,           // _service
+                dest_offset,         // index
                 seL4_WordBits as u8, // depth
                 // Since src_cnode is restricted to Root, the cptr must
                 // actually be the slot index
@@ -837,7 +847,7 @@ impl<CT: CapType> LocalCap<CT> {
             Err(SeL4Error::CNodeMove(err))
         } else {
             Ok(Cap {
-                cptr: dest_slot.offset,
+                cptr: dest_offset,
                 cap_data: self.cap_data,
                 _role: PhantomData,
             })
@@ -853,10 +863,11 @@ impl<CT: CapType> LocalCap<CT> {
     where
         CT: Movable,
     {
+        let (dest_cptr, dest_offset, _) = dest_slot.elim();
         let err = unsafe {
             seL4_CNode_Move(
-                dest_slot.cptr,      // _service
-                dest_slot.offset,    // index
+                dest_cptr,           // _service
+                dest_offset,         // index
                 seL4_WordBits as u8, // depth
                 // Since src_cnode is restricted to Root, the cptr must
                 // actually be the slot index
@@ -870,7 +881,7 @@ impl<CT: CapType> LocalCap<CT> {
             Err(SeL4Error::CNodeMove(err))
         } else {
             Ok(Cap {
-                cptr: dest_slot.offset,
+                cptr: dest_offset,
                 cap_data: self.cap_data,
                 _role: PhantomData,
             })

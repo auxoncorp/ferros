@@ -115,19 +115,11 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             let (slots_c, caller_slots) = caller_slots.alloc();
             let caller = ipc_setup.create_caller(slots_c)?;
 
-            let (slots_r, responder_slots) = responder_slots.alloc();
-            let responder_cnode_child = responder_cnode.generate_self_reference(&root_cnode, slots_r)?;
-
-            let (slots_c, caller_slots) = caller_slots.alloc();
-            let caller_cnode_child = caller_cnode.generate_self_reference(&root_cnode, slots_c)?;
-
             let caller_params = CallerParams::<role::Child> {
-                my_cnode: caller_cnode_child,
                 caller,
             };
 
             let responder_params = ResponderParams::<role::Child> {
-                my_cnode: responder_cnode_child,
                 responder,
             };
         });
@@ -192,7 +184,6 @@ pub struct AdditionResponse {
 
 #[derive(Debug)]
 pub struct CallerParams<Role: CNodeRole> {
-    pub my_cnode: Cap<CNode<Role>, Role>,
     pub caller: Caller<AdditionRequest, AdditionResponse, Role>,
 }
 
@@ -202,7 +193,6 @@ impl RetypeForSetup for CallerParams<role::Local> {
 
 #[derive(Debug)]
 pub struct ResponderParams<Role: CNodeRole> {
-    pub my_cnode: Cap<CNode<Role>, Role>,
     pub responder: Responder<AdditionRequest, AdditionResponse, Role>,
 }
 

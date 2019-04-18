@@ -47,15 +47,17 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
         BitSize: Sub<U1>,
         Diff<BitSize, U1>: Unsigned,
     {
+        let (dest_cptr, dest_offset, _) = dest_slot.elim();
+
         let err = unsafe {
             seL4_Untyped_Retype(
                 self.cptr,                              // _service
                 api_object_seL4_UntypedObject as usize, // type
                 BitSize::to_usize() - 1,                // size_bits
-                dest_slot.cptr,                         // root
+                dest_cptr,                              // root
                 0,                                      // index
                 0,                                      // depth
-                dest_slot.offset,                       // offset
+                dest_offset,                            // offset
                 1,                                      // num_objects
             )
         };
@@ -70,7 +72,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
                 _role: PhantomData,
             },
             Cap {
-                cptr: dest_slot.offset,
+                cptr: dest_offset,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
@@ -93,16 +95,16 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
         BitSize: Sub<U2>,
         Diff<BitSize, U2>: Unsigned,
     {
-        let offset = dest_slots.offset;
+        let (dest_cptr, dest_offset, _) = dest_slots.elim();
         let err = unsafe {
             seL4_Untyped_Retype(
                 self.cptr,                              // _service
                 api_object_seL4_UntypedObject as usize, // type
                 BitSize::to_usize() - 2,                // size_bits
-                dest_slots.cptr,                        // root
+                dest_cptr,                              // root
                 0,                                      // index
                 0,                                      // depth
-                offset,                                 // offset
+                dest_offset,                            // offset
                 3,                                      // num_objects
             )
         };
@@ -112,22 +114,22 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
 
         Ok((
             Cap {
-                cptr: offset,
+                cptr: dest_offset,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             Cap {
-                cptr: offset + 1,
+                cptr: dest_offset + 1,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             Cap {
-                cptr: offset + 2,
+                cptr: dest_offset + 2,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             Cap {
-                cptr: self.cptr,
+                cptr: dest_cptr,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
@@ -185,15 +187,17 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         TargetCapType: PhantomCap,
         BitSize: IsGreaterOrEqual<TargetCapType::SizeBits, Output = True>,
     {
+        let (dest_cptr, dest_offset, _) = dest_slot.elim();
+
         let err = unsafe {
             seL4_Untyped_Retype(
                 self.cptr,                     // _service
                 TargetCapType::sel4_type_id(), // type
                 0,                             // size_bits
-                dest_slot.cptr,                // root
+                dest_cptr,                     // root
                 0,                             // index
                 0,                             // depth
-                dest_slot.offset,              // offset
+                dest_offset,                   // offset
                 1,                             // num_objects
             )
         };
@@ -203,7 +207,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         }
 
         Ok(Cap {
-            cptr: dest_slot.offset,
+            cptr: dest_offset,
             cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         })
@@ -231,15 +235,16 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
             Output = True,
         >,
     {
+        let (dest_cptr, dest_offset, _) = dest_slots.elim();
         let err = unsafe {
             seL4_Untyped_Retype(
                 self.cptr,                     // _service
                 TargetCapType::sel4_type_id(), // type
                 0,                             // size_bits
-                dest_slots.cptr,               // root
+                dest_cptr,                     // root
                 0,                             // index
                 0,                             // depth
-                dest_slots.offset,             // offset
+                dest_offset,                   // offset
                 Count::USIZE,                  // num_objects
             )
         };
@@ -249,7 +254,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         }
 
         Ok(CapRange {
-            start_cptr: dest_slots.offset,
+            start_cptr: dest_offset,
             _cap_type: PhantomData,
             _role: PhantomData,
             _slots: PhantomData,
@@ -280,16 +285,19 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         let (scratch_slot, local_slots) = local_slots.alloc::<U1>();
         let (dest_slot, _) = local_slots.alloc::<U1>();
 
+        let (scratch_cptr, scratch_offset, _) = scratch_slot.elim();
+        let (dest_cptr, dest_offset, _) = dest_slot.elim();
+
         unsafe {
             // Retype to fill the scratch slot with a fresh CNode
             let err = seL4_Untyped_Retype(
                 self.cptr,                               // _service
                 api_object_seL4_CapTableObject as usize, // type
                 ChildRadix::to_usize(),                  // size_bits
-                scratch_slot.cptr,                       // root
+                scratch_cptr,                            // root
                 0,                                       // index
                 0,                                       // depth
-                scratch_slot.offset,                     // offset
+                scratch_offset,                          // offset
                 1,                                       // num_objects
             );
 
@@ -306,13 +314,13 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
             .words[0];
 
             let err = seL4_CNode_Mutate(
-                dest_slot.cptr,        // _service: seL4_CNode,
-                dest_slot.offset,      // dest_index: seL4_Word,
-                seL4_WordBits as u8,    // dest_depth: seL4_Uint8,
-                scratch_slot.cptr,         // src_root: seL4_CNode,
-                scratch_slot.offset,       // src_index: seL4_Word,
-                seL4_WordBits as u8,    // src_depth: seL4_Uint8,
-                guard_data as usize             // badge or guard: seL4_Word,
+                dest_cptr,           // _service: seL4_CNode,
+                dest_offset,         // dest_index: seL4_Word,
+                seL4_WordBits as u8, // dest_depth: seL4_Uint8,
+                scratch_cptr,        // src_root: seL4_CNode,
+                scratch_offset,      // src_index: seL4_Word,
+                seL4_WordBits as u8, // src_depth: seL4_Uint8,
+                guard_data as usize, // badge or guard: seL4_Word,
             );
 
             // TODO - If we wanted to make more efficient use of our available slots at the cost
@@ -326,20 +334,15 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
 
         Ok((
             Cap {
-                cptr: dest_slot.offset,
+                cptr: dest_offset,
                 _role: PhantomData,
                 cap_data: CNode {
                     radix: ChildRadix::to_u8(),
                     _role: PhantomData,
                 },
             },
-            CNodeSlots {
-                cptr: dest_slot.offset,
-                // We start with the next free slot at 1 in order to "reserve" the 0-indexed slot for "null"
-                offset: 1,
-                _role: PhantomData,
-                _size: PhantomData,
-            },
+            // We start with the next free slot at 1 in order to "reserve" the 0-indexed slot for "null"
+            CNodeSlots::internal_new(dest_offset, 1),
         ))
     }
 }
@@ -356,15 +359,17 @@ impl LocalCap<Untyped<paging::PageBits, memory_kind::Device>> {
         // trait to allow some sort of associated-type matching between the allowable
         // source Untyped memory kinds and the output cap types.
 
+        let (dest_cptr, dest_offset, _) = dest_slot.elim();
+
         let err = unsafe {
             seL4_Untyped_Retype(
                 self.cptr,                    // _service
                 UnmappedPage::sel4_type_id(), // type
                 0,                            // size_bits
-                dest_slot.cptr,               // root
+                dest_cptr,                    // root
                 0,                            // index
                 0,                            // depth
-                dest_slot.offset,             // offset
+                dest_offset,                  // offset
                 1,                            // num_objects
             )
         };
@@ -374,7 +379,7 @@ impl LocalCap<Untyped<paging::PageBits, memory_kind::Device>> {
         }
 
         Ok(Cap {
-            cptr: dest_slot.offset,
+            cptr: dest_offset,
             cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         })

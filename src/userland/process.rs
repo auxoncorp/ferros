@@ -77,16 +77,18 @@ impl LocalCap<IRQControl> {
     where
         IRQ: IsLess<U256, Output = True>,
     {
+        let (dest_cptr, dest_offset, _) = dest_slot.elim();
+
         if self.cap_data.known_handled[IRQ::USIZE] {
             return Err(IRQError::UnavailableIRQ);
         }
         let err = unsafe {
             seL4_IRQControl_Get(
-                self.cptr, // service/authority
-                IRQ::I32,
-                dest_slot.cptr,      //root
-                dest_slot.offset,    //index
-                seL4_WordBits as u8, //depth
+                self.cptr,           // service/authority
+                IRQ::I32,            // irq
+                dest_cptr,           // root
+                dest_offset,         // index
+                seL4_WordBits as u8, // depth
             )
         };
         if err != 0 {
@@ -96,7 +98,7 @@ impl LocalCap<IRQControl> {
         self.cap_data.known_handled[IRQ::USIZE] = true;
 
         Ok(Cap {
-            cptr: dest_slot.offset,
+            cptr: dest_offset,
             cap_data: IRQHandler {
                 _irq: PhantomData,
                 _set_state: PhantomData,

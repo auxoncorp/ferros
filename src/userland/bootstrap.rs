@@ -37,12 +37,7 @@ pub fn root_cnode(
                 _role: PhantomData,
             },
         },
-        CNodeSlots {
-            cptr: seL4_CapInitThreadCNode as usize,
-            offset: bootinfo.empty.start,
-            _role: PhantomData,
-            _size: PhantomData,
-        },
+        CNodeSlots::internal_new(seL4_CapInitThreadCNode as usize, bootinfo.empty.start),
     )
 }
 
@@ -228,12 +223,13 @@ impl LocalCap<Untyped<U12, memory_kind::General>> {
         asid_control: LocalCap<ASIDControl>,
         dest_slot: LocalCNodeSlot,
     ) -> Result<LocalCap<ASIDPool<paging::BaseASIDPoolFreeSlots>>, SeL4Error> {
+        let (dest_cptr, dest_offset, _) = dest_slot.elim();
         let err = unsafe {
             seL4_ARM_ASIDControl_MakePool(
                 asid_control.cptr,              // _service
                 self.cptr,                      // untyped
-                dest_slot.cptr,                 // root
-                dest_slot.offset,               // index
+                dest_cptr,                      // root
+                dest_offset,                    // index
                 (8 * size_of::<usize>()) as u8, // depth
             )
         };
@@ -243,7 +239,7 @@ impl LocalCap<Untyped<U12, memory_kind::General>> {
         }
 
         Ok(Cap {
-            cptr: dest_slot.offset,
+            cptr: dest_offset,
             cap_data: ASIDPool {
                 next_free_slot: 0,
                 _free_slots: PhantomData,
