@@ -164,12 +164,8 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
     {
         // The index in the pool array where Untypeds of the requested size are stored.
         let index = BitSize::USIZE - kernel::MinUntypedSize::USIZE;
-        // let cptr_bitsize = index + kernel::MinUntypedSize::USIZE;
-        // debug_println!("*** Requested a UT{}", cptr_bitsize);
 
         let mut pool = self.pool;
-        // debug_print!("*** Initial pool: ");
-        // print_pool(&pool);
 
         // If there's no cptr of the requested size, make one by splitting the larger ones.
         if pool[index].len() == 0 {
@@ -178,7 +174,6 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
                 let cptr = pool[i].pop().unwrap();
                 let cptr_bitsize = i + kernel::MinUntypedSize::USIZE;
 
-                // debug_println!("*** Splitting a UT{}", cptr_bitsize);
                 let (slot_cptr, slot_offset, _) = slot.elim();
 
                 let err = unsafe {
@@ -203,9 +198,6 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
         }
 
         let cptr = pool[index].pop().unwrap();
-        // debug_println!("*** Returning a UT{}", cptr_bitsize);
-        // debug_print!("*** New pool:     ");
-        // print_pool(&pool);
 
         Ok((
             Cap::wrap_cptr(cptr),
@@ -216,84 +208,3 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
         ))
     }
 }
-
-// trait UTBuddyAlloc<SlotCount: Unsigned, PoolSizes: UList, BitSize: Unsigned>
-// where
-//     BitSize: Sub<kernel::MinUntypedSize>,
-//     PoolSizes: _TakeUntyped<Diff<BitSize, kernel::MinUntypedSize>, NumSplits = SlotCount>,
-//     TakeUntyped_ResultPoolSizes<PoolSizes, Diff<BitSize, kernel::MinUntypedSize>>: UList,
-// {
-//     fn alloc(
-//         self,
-//         slots: LocalCNodeSlots<SlotCount>,
-//     ) -> (
-//         LocalCap<Untyped<BitSize>>,
-//         UTBuddy<TakeUntyped_ResultPoolSizes<PoolSizes, Diff<BitSize, kernel::MinUntypedSize>>>,
-//     );
-// }
-
-// impl<PoolSizes: UList, BitSize: Unsigned> UTBuddyAlloc<U0, PoolSizes, BitSize>
-//     for UTBuddy<PoolSizes>
-// where
-//     BitSize: Sub<kernel::MinUntypedSize>,
-//     PoolSizes: _TakeUntyped<Diff<BitSize, kernel::MinUntypedSize>, NumSplits = U0>,
-//     TakeUntyped_ResultPoolSizes<PoolSizes, Diff<BitSize, kernel::MinUntypedSize>>: UList,
-// {
-//     fn alloc(
-//         self,
-//         slots: LocalCNodeSlots<U0>,
-//     ) -> (
-//         LocalCap<Untyped<BitSize>>,
-//         UTBuddy<TakeUntyped_ResultPoolSizes<PoolSizes, Diff<BitSize, kernel::MinUntypedSize>>>,
-//     ) {
-//         let index = BitSize::USIZE - kernel::MinUntypedSize::USIZE;
-//         let mut pool = self.pool;
-//         match pool[index].pop() {
-//             Some(cptr) => (
-//                 Cap::wrap_cptr(cptr),
-//                 UTBuddy {
-//                     _pool_sizes: PhantomData,
-//                     pool: pool,
-//                 },
-//             ),
-//             None => {
-//                 // This should be entirely unreachable
-//                 panic!()
-//             }
-//         }
-//     }
-// }
-
-// impl<SCHead: Bit, SCTail: Unsigned, PoolSizes: UList, BitSize: Unsigned>
-//     UTBuddyAlloc<UInt<SCTail, SCHead>, PoolSizes, BitSize> for UTBuddy<PoolSizes>
-// where
-//     BitSize: Sub<kernel::MinUntypedSize>,
-//     PoolSizes:
-//         _TakeUntyped<Diff<BitSize, kernel::MinUntypedSize>, NumSplits = UInt<SCTail, SCHead>>,
-//     TakeUntyped_ResultPoolSizes<PoolSizes, Diff<BitSize, kernel::MinUntypedSize>>: UList,
-//     UInt<SCTail, SCHead>: Sub<U1>,
-//     Diff<UInt<SCTail, SCHead>, U1>: Unsigned,
-//     BitSize: Add<U1>,
-//     Sum<BitSize, U1>: Unsigned,
-//     Sum<BitSize, U1>: Sub<U1>,
-//     Diff<Sum<BitSize, U1>, U1>: Unsigned,
-// Sum<BitSize, U1>: Sub<U4>,
-// Diff<Sum<BitSize, U1>, U4>: Unsigned,
-// {
-//     fn alloc(
-//         self,
-//         slots: LocalCNodeSlots<UInt<SCTail, SCHead>>,
-//     ) -> (
-//         LocalCap<Untyped<BitSize>>,
-//         UTBuddy<TakeUntyped_ResultPoolSizes<PoolSizes, Diff<BitSize, kernel::MinUntypedSize>>>,
-//     ) {
-//         let index = BitSize::USIZE - kernel::MinUntypedSize::USIZE;
-//         assert!(self.pool[index].len() == 0);
-
-//         let (slot, slots): (LocalCNodeSlot, _) = slots.alloc();
-//         let (ut, buddy): (LocalCap<Untyped<op!{BitSize + U1}>>, _) = self.alloc(slots);
-//         let (ut_a, ut_b) = ut.split(slot).unwrap();
-//         buddy.pool[index][0] = ut_a.cptr;
-//         (ut_b, buddy)
-//     }
-// }

@@ -40,16 +40,6 @@ fn main() {
     debug_println!("Starting the test!");
     let bootinfo = unsafe { &*sel4_start::BOOTINFO };
     run(bootinfo);
-
-    // let suspend_error = unsafe { seL4_TCB_Suspend(seL4_CapInitThreadTCB as usize) };
-    // if suspend_error != 0 {
-    //     writeln!(
-    //         DebugOutHandle,
-    //         "Error suspending root task thread: {}",
-    //         suspend_error
-    //     )
-    //         .unwrap();
-    // }
 }
 
 #[panic_handler]
