@@ -21,6 +21,5 @@ pub mod drivers;
 
 pub mod alloc;
 pub mod arch;
-pub mod config;
 pub mod pow;
 pub mod userland;

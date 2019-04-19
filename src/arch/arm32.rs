@@ -66,3 +66,8 @@ pub mod address_space {
     /// 0xe0000000
     pub type KernelReservedStart = Sum<Pow<U31>, Sum<Pow<U30>, Pow<U29>>>;
 }
+
+pub mod ut_buddy {
+    use super::*;
+    pub type UTPoolSlotsPerSize = U4;
+}

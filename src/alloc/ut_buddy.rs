@@ -6,8 +6,7 @@ use core::ops::Sub;
 use selfe_sys::*;
 use typenum::*;
 
-use crate::arch::kernel;
-use crate::config;
+use crate::arch::{self, kernel};
 use crate::userland::{Cap, LocalCNodeSlots, LocalCap, SeL4Error, Untyped};
 
 /// A type-level linked list of typenum::Unsigned.
@@ -112,12 +111,14 @@ type TakeUntyped_NumSplits<PoolSizes, Index> = <PoolSizes as _TakeUntyped<Index>
 // Buddy alloc
 pub struct UTBuddy<PoolSizes: UList> {
     _pool_sizes: PhantomData<PoolSizes>,
-    pool: [ArrayVec<[usize; config::UTPoolSlotsPerSize::USIZE]>; kernel::MaxUntypedSize::USIZE],
+    pool: [ArrayVec<[usize; arch::ut_buddy::UTPoolSlotsPerSize::USIZE]>;
+        kernel::MaxUntypedSize::USIZE],
 }
 
 #[allow(dead_code)]
 fn print_pool(
-    pool: &[ArrayVec<[usize; config::UTPoolSlotsPerSize::USIZE]>; kernel::MaxUntypedSize::USIZE],
+    pool: &[ArrayVec<[usize; arch::ut_buddy::UTPoolSlotsPerSize::USIZE]>;
+         kernel::MaxUntypedSize::USIZE],
 ) {
     debug_print!("Pool[ ");
     for av in pool {
@@ -135,7 +136,7 @@ where
     Diff<BitSize, U4>: _OneHotUList,
     OneHotUList<Diff<BitSize, U4>>: UList,
 {
-    let mut pool: [ArrayVec<[usize; config::UTPoolSlotsPerSize::USIZE]>;
+    let mut pool: [ArrayVec<[usize; arch::ut_buddy::UTPoolSlotsPerSize::USIZE]>;
         kernel::MaxUntypedSize::USIZE] = Default::default();
 
     pool[BitSize::USIZE - kernel::MinUntypedSize::USIZE].push(ut.cptr);
