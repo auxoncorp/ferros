@@ -1,7 +1,7 @@
 use crate::userland::{role, CNodeRole, Cap, CapRights, ChildCap, LocalCap, SeL4Error};
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
-use sel4_sys::*;
+use selfe_sys::*;
 use typenum::operator_aliases::Diff;
 use typenum::*;
 

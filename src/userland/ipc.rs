@@ -4,7 +4,7 @@ use crate::userland::{
     LocalCNodeSlot, LocalCap, SeL4Error, Untyped,
 };
 use core::marker::PhantomData;
-use sel4_sys::*;
+use selfe_sys::*;
 
 #[derive(Debug)]
 pub enum IPCError {
@@ -206,7 +206,6 @@ fn type_length_message_info<T>() -> seL4_MessageInfo_t {
     }
 }
 
-#[derive(Debug)]
 pub struct MessageInfo {
     inner: seL4_MessageInfo_t,
 }

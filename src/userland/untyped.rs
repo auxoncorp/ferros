@@ -7,7 +7,7 @@ use crate::userland::{
 };
 use core::marker::PhantomData;
 use core::ops::{Add, Mul, Sub};
-use sel4_sys::*;
+use selfe_sys::*;
 use typenum::operator_aliases::{Diff, Prod, Sum};
 use typenum::*;
 

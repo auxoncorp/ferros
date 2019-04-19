@@ -7,11 +7,11 @@ extern crate cross_queue;
 extern crate ferros;
 #[macro_use]
 extern crate registers;
-extern crate sel4_sys;
+extern crate selfe_sys;
 #[macro_use]
 extern crate typenum;
 
-use sel4_sys::*;
+use selfe_sys::*;
 
 mod dont_tread_on_me;
 mod double_door_backpressure;

@@ -7,7 +7,7 @@ use arrayvec::ArrayVec;
 use typenum::Unsigned;
 
 use core::fmt::{Debug, Error as FmtError, Formatter};
-use sel4_sys::{seL4_BootInfo, seL4_UntypedDesc};
+use selfe_sys::{seL4_BootInfo, seL4_UntypedDesc};
 
 pub const MIN_UNTYPED_SIZE_BITS: u8 = 4;
 pub const MAX_UNTYPED_SIZE_BITS: u8 = 32;

@@ -1,4 +1,4 @@
-use sel4_sys::*;
+use selfe_sys::*;
 
 use ferros::drivers::uart::UartParams;
 use ferros::alloc::{self, smart_alloc, micro_alloc};
@@ -72,7 +72,7 @@ pub mod uart {
 
     use core::mem;
 
-    use sel4_sys::*;
+    use selfe_sys::*;
 
     use ferros::drivers::uart::UartParams;
     use ferros::userland::role;

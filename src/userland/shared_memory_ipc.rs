@@ -6,7 +6,7 @@ use crate::userland::{
     memory_kind, role, Badge, CNodeRole, Cap, CapRights, ChildCNodeSlots, DirectRetype, IPCError,
     LocalCNode, LocalCNodeSlots, LocalCap, Notification, UnmappedPage, Untyped, VSpace,
 };
-use sel4_sys::{seL4_Signal, seL4_Wait};
+use selfe_sys::{seL4_Signal, seL4_Wait};
 use typenum::operator_aliases::Sub1;
 use typenum::{Unsigned, B1, U2, U5};
 

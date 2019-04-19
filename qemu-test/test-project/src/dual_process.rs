@@ -7,7 +7,7 @@ use ferros::userland::{
     Cap, Consumer1, Endpoint, FaultSink, LocalCap, Producer, ProducerSetup, QueueFullError,
     Responder, RetypeForSetup, SeL4Error, UnmappedPageTable, Untyped, VSpace, retype, retype_cnode
 };
-use sel4_sys::*;
+use selfe_sys::*;
 use typenum::*;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {

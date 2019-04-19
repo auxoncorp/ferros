@@ -9,7 +9,7 @@ use crate::userland::{
 use core::marker::PhantomData;
 use core::mem::size_of;
 use core::ops::Sub;
-use sel4_sys::*;
+use selfe_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U0, U12, U19};
 

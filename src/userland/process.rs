@@ -7,7 +7,7 @@ use core::cmp;
 use core::marker::PhantomData;
 use core::mem::{self, size_of};
 use core::ptr;
-use sel4_sys::*;
+use selfe_sys::*;
 use typenum::*;
 
 impl LocalCap<ThreadControlBlock> {

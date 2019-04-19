@@ -1,7 +1,7 @@
 use crate::userland::{
     role, CNodeRole, Consumer2, InterruptConsumer, Producer, QueueFullError, RetypeForSetup, Waker,
 };
-use sel4_sys::seL4_Yield;
+use selfe_sys::seL4_Yield;
 use typenum::{U10, U2, U58};
 
 #[derive(Debug)]

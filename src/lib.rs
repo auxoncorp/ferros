@@ -13,7 +13,7 @@ extern crate alloc;
 extern crate arrayvec;
 extern crate generic_array;
 extern crate registers;
-extern crate sel4_sys;
+extern crate selfe_sys;
 extern crate typenum;
 
 extern crate cross_queue;
@@ -38,7 +38,7 @@ use crate::userland::{
     MultiConsumerError, SeL4Error, VSpace, VSpaceError,
 };
 
-use sel4_sys::*;
+use selfe_sys::*;
 use typenum::*;
 
 use smart_alloc::smart_alloc;

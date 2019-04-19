@@ -3,7 +3,7 @@ use crate::userland::{
     CNode, CNodeSlot, CNodeSlotsData, CapRights, LocalCNode, LocalCNodeSlot, SeL4Error,
 };
 use core::marker::PhantomData;
-use sel4_sys::*;
+use selfe_sys::*;
 use typenum::*;
 
 /// Type-level enum indicating the relative location / Capability Pointer addressing

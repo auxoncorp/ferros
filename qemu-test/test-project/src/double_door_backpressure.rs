@@ -5,7 +5,7 @@ use ferros::userland::{
     QueueFullError, RetypeForSetup, UnmappedPageTable, VSpace, Waker, retype, retype_cnode
 };
 use ferros::debug::DebugOutHandle;
-use sel4_sys::{seL4_BootInfo, seL4_Yield};
+use selfe_sys::{seL4_BootInfo, seL4_Yield};
 use typenum::*;
 type U4095 = Diff<U4096, U1>;
 

@@ -26,16 +26,16 @@ ferros = { git = "ssh://github.com/auxoncorp/ferros"}
 
 ## Quick Start
 
-The following code walkthrough assumes execution in a feL4 project,
+The following code walkthrough assumes execution in a selfe project,
 and introduces some aspects of `ferros`.
 
 ```
-use sel4_sys;
+use selfe_sys;
 use ferros::micro_alloc::Allocator;
 use ferros::userland::{root_cnode, BootInfo};
 
 // The raw boot info is provided by the default feL4 entry point;
-let raw_boot_info: &'static sel4_sys::seL4_BootInfo = unimplemented!();
+let raw_boot_info: &'static selfe_sys::seL4_BootInfo = unimplemented!();
 
 // Create the top-level CNode wrapper with type-level-tracked remaining slot capacity
 let root_cnode: LocalCap<CNode<_>> = root_cnode(&raw_boot_info);

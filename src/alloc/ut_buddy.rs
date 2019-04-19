@@ -3,7 +3,7 @@ use arrayvec::ArrayVec;
 use core::marker::PhantomData;
 use core::ops::Add;
 use core::ops::Sub;
-use sel4_sys::*;
+use selfe_sys::*;
 use typenum::*;
 
 use crate::arch::kernel;

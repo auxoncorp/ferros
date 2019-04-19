@@ -1,4 +1,4 @@
-use sel4_sys::{seL4_CapRights_new, seL4_CapRights_t};
+use selfe_sys::{seL4_CapRights_new, seL4_CapRights_t};
 
 pub enum CapRights {
     R,

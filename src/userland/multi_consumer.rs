@@ -38,7 +38,7 @@ use core::ops::Sub;
 use cross_queue::PushError;
 use cross_queue::{ArrayQueue, Slot};
 use generic_array::ArrayLength;
-use sel4_sys::{seL4_Signal, seL4_Wait};
+use selfe_sys::{seL4_Signal, seL4_Wait};
 use typenum::*;
 
 /// A multi-consumer that consumes interrupt-style notifications

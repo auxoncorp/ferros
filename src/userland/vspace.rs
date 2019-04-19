@@ -14,7 +14,7 @@ use crate::userland::{
     UnmappedPageTable, UnmappedSection, Untyped,
 };
 use generic_array::{ArrayLength, GenericArray};
-use sel4_sys::*;
+use selfe_sys::*;
 use typenum::operator_aliases::{Diff, Sub1, Sum};
 use typenum::*;
 

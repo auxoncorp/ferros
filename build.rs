@@ -1,5 +1,5 @@
-extern crate confignoble;
-use confignoble::build_helpers::*;
+extern crate selfe_config;
+use selfe_config::build_helpers::*;
 
 use fel4_config::{
     get_fel4_config, infer_manifest_location_from_env, infer_support_extension_from_env,

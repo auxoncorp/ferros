@@ -8,7 +8,7 @@ use ferros::userland::{
     role, root_cnode, BootInfo, CNode, CNodeRole, Cap, Endpoint, LocalCap, RetypeForSetup,
     SeL4Error, UnmappedPageTable, Untyped, VSpace, retype, retype_cnode, CNodeSlots, CNodeSlotsData
 };
-use sel4_sys::*;
+use selfe_sys::*;
 type U4095 = Diff<U4096, U1>;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
