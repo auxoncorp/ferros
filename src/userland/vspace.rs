@@ -36,7 +36,7 @@ impl From<SeL4Error> for VSpaceError {
 /// and is used in the setup and creation of that process.
 ///
 /// A VSpace instance comes with with user-image code
-/// of the running feL4 application already copied into
+/// of the running sel4 application already copied into
 /// its internal paging structures.
 pub struct VSpace<
     PageDirFreeSlots: Unsigned = U0,

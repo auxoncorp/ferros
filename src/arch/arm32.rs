@@ -36,8 +36,8 @@ pub mod paging {
 
     pub type BasePageTableFreeSlots = Pow<PageTableBits>;
 
-    // The root task has a stack size configurable by the fel4.toml
-    // in the `[fel4.executable]` table's `root-task-stack-bytes` property.
+    // The root task has a stack size configurable by the sel4.toml
+    // in the `root-task-stack-bytes` metadata property.
     // This configuration is turned into a generated Rust type named `RootTaskStackPageTableCount`
     // that implements `typenum::Unsigned` in the `build.rs` file.
     include!(concat!(

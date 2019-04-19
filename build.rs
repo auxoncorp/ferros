@@ -1,7 +1,7 @@
 extern crate selfe_config;
-use selfe_config::model::*;
-use selfe_config::model::contextualized::Contextualized;
 use selfe_config::build_helpers::*;
+use selfe_config::model::contextualized::Contextualized;
+use selfe_config::model::*;
 
 use std::cmp::max;
 use std::env;
@@ -40,22 +40,26 @@ fn generate_root_task_stack_types(out_dir: &Path, config: &Contextualized) {
     let bytes_per_page = 2u32.pow(page_bits);
     let bytes_per_page_table = bytes_per_page * pages_per_table;
 
-    let raw_stack_bytes = if let Some(SingleValue::Integer(root_task_stack_bytes)) = config.metadata.get("root_task_stack_bytes") {
+    let raw_stack_bytes = if let Some(SingleValue::Integer(root_task_stack_bytes)) =
+        config.metadata.get("root_task_stack_bytes")
+    {
         let bytes = *root_task_stack_bytes;
-        if bytes as i128 > ::std::u32::MAX as i128 || bytes <= 0{
+        if bytes as i128 > ::std::u32::MAX as i128 || bytes <= 0 {
             panic!("root_task_stack_bytes must be greater than 0 and less than u32::MAX");
         } else {
             f64::from(bytes as u32)
         }
     } else {
         const DEFAULT_STACK_BYTES: u32 = 2097152;
-        println!("cargo:warning=Using a default root_task_stack_bytes of {}", DEFAULT_STACK_BYTES);
+        println!(
+            "cargo:warning=Using a default root_task_stack_bytes of {}",
+            DEFAULT_STACK_BYTES
+        );
         f64::from(DEFAULT_STACK_BYTES)
     };
     let stack_reserved_page_tables: usize = max(
         1,
-        (raw_stack_bytes / f64::from(bytes_per_page_table))
-            .ceil() as usize,
+        (raw_stack_bytes / f64::from(bytes_per_page_table)).ceil() as usize,
     );
     let typenum_for_reserved_page_tables_count = format!(
         "pub type RootTaskStackPageTableCount = typenum::U{};",
@@ -70,10 +74,11 @@ fn generate_root_task_stack_types(out_dir: &Path, config: &Contextualized) {
 }
 fn generate_kernel_retype_fan_out_limit_types(out_dir: &Path, config: &Contextualized) {
     const FANOUT_PROP: &'static str = "KernelRetypeFanOutLimit";
-    let kernel_retype_fan_out_limit = match config.sel4_config.get(FANOUT_PROP).unwrap_or_else(||panic!(
-        "Missing required sel4.toml property, {}",
-        FANOUT_PROP
-    )) {
+    let kernel_retype_fan_out_limit = match config
+        .sel4_config
+        .get(FANOUT_PROP)
+        .unwrap_or_else(|| panic!("Missing required sel4.toml property, {}", FANOUT_PROP))
+    {
         SingleValue::Integer(i) => {
             if *i > 0 {
                 *i as u32

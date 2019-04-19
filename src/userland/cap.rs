@@ -30,7 +30,7 @@ pub trait DirectRetype {
     // TODO - find out where the actual size of the fixed-size objects are specified in seL4-land
     // and pipe them through to the implementations of this trait as an associated type parameter,
     // selected either through `cfg` attributes or reference to `build.rs` generated code that inspects
-    // feature flags passed by cargo-fel4.
+    // feature flags.
     //type SizeBits: Unsigned;
     fn sel4_type_id() -> usize;
 }

@@ -140,7 +140,7 @@ impl RetypeForSetup for CapManagementParams<role::Local> {
 #[cfg(test_case = "child_process_cap_management")]
 pub extern "C" fn proc_main(params: CapManagementParams<role::Local>) {
     debug_println!("");
-    debug_println!("--- Hello from the cap_management_run feL4 process!");
+    debug_println!("--- Hello from the cap_management_run ferros process!");
     debug_println!("{:#?}", params);
 
     let CapManagementParams { my_cnode, my_cnode_slots, my_ut } = params;

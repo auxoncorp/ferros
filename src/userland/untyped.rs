@@ -12,7 +12,7 @@ use typenum::operator_aliases::{Diff, Prod, Sum};
 use typenum::*;
 
 // The seL4 kernel's maximum amount of retypes per system call is configurable
-// in the fel4.toml, particularly by the KernelRetypeFanOutLimit property.
+// in the sel4.toml, particularly by the KernelRetypeFanOutLimit property.
 // This configuration is turned into a generated Rust type of the same name
 // that implements `typenum::Unsigned` in the `build.rs` file.
 include!(concat!(env!("OUT_DIR"), "/KERNEL_RETYPE_FAN_OUT_LIMIT"));
