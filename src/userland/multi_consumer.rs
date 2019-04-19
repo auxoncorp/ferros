@@ -218,10 +218,7 @@ where
         local_cnode: &LocalCap<LocalCNode>,
         local_slots: LocalCNodeSlots<U3>,
         consumer_slots: ChildCNodeSlots<U2>,
-    ) -> Result<(InterruptConsumer<IRQ, role::Child>, ConsumerToken), IRQError>
-// where
-    //     IRQ: IsLess<U256, Output = True>,
-    {
+    ) -> Result<(InterruptConsumer<IRQ, role::Child>, ConsumerToken), IRQError> {
         // Make a notification, mint-copy it to establish a badge
         let (local_slot, local_slots) = local_slots.alloc();
         let unbadged_notification: LocalCap<Notification> = notification_ut.retype(local_slot)?;
