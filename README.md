@@ -7,17 +7,19 @@ A Rust library to add extra assurances to seL4 development.
 `ferros` provides smart type-safe wrappers around seL4 features
 with an emphasis on compile-time resource tracking.
 
-`ferros` builds on top of the `libsel4-sys` library from the `feL4` ecosystem.
+`ferros` builds on top of the `selfe-sys` library.
 
 ## Build
 
-Install `cargo-fel4` then run `cargo fel4 build` from the root project directory.
+Install `cargo-xbuild` then run `cargo xbuild --target
+armv7-unknown-linux-gnueabihf` from the root project directory.
 
-Integration test execution is as simple as `cd qemu-test && cargo test` and requires the installation of `qemu-system-arm`.
+Integration test execution is as simple as `cd qemu-test && cargo test` and
+requires the installation of `qemu-system-arm`.
 
 ## Usage
 
-Add `ferros` to your `feL4` project in the `Cargo.toml`
+Add `ferros` as a cargo dependency. 
 
 ```
 [dependencies]
@@ -26,49 +28,46 @@ ferros = { git = "ssh://github.com/auxoncorp/ferros"}
 
 ## Quick Start
 
-The following code walkthrough assumes execution in a selfe project,
+The following code walkthrough assumes execution selfe with the example sel4_start library,
 and introduces some aspects of `ferros`.
 
-```
+```rust
 use selfe_sys;
-use ferros::micro_alloc::Allocator;
+use ferros::alloc::{self, micro_alloc, smart_alloc};
 use ferros::userland::{root_cnode, BootInfo};
 
-// The raw boot info is provided by the default feL4 entry point;
-let raw_boot_info: &'static selfe_sys::seL4_BootInfo = unimplemented!();
+// The raw boot info is provided by the sel4_start library
+let raw_boot_info: &'static selfe_sys::seL4_BootInfo = unsafe { &*sel4_start::BOOTINFO };
 
-// Create the top-level CNode wrapper with type-level-tracked remaining slot capacity
-let root_cnode: LocalCap<CNode<_>> = root_cnode(&raw_boot_info);
 
 // Utility for finding and claiming `Untyped` instances supplied by the boot info.
 let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
-let initial_untyped: LocalCap<Untyped<U20>> = allocator
+let initial_untyped = allocator
     .get_untyped::<U20>() // The size of the Untyped instance, as bits
     .expect("Couldn't find an untyped instance of the desired size");
 
+// Create the top-level CNode wrapper with type-level-tracked remaining slot capacity
+let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
+
 // Once we have an initial Untyped instance, memory distribution from it
-// can be tracked with compile-time checks. We split up large
-// Untyped instances to the right size for transformation into useful
-// kernel objects.
-let (ut18, ut18b, _ut18c, _ut18d, root_cnode) = ut20.quarter(root_cnode)?;
-let (ut16, _, _, _, root_cnode) = ut18.quarter(root_cnode)?;
+// can be tracked with compile-time checks. The smart_alloc macro synthesizes
+// the allocation code, and the capacity bounds are statically verified by
+// the type checker. The effect is that you can write 'slots' in the macro body 
+// anywhere you need some slots, and you'll get the right number allocated
+// with type inference. A reference to 'ut' does the same for untyped memory. 
+smart_alloc!(|slots from local_slots, ut from uts| {
 
-// Note the CNode that will contain the (here, Untyped) capabilities
-// is passed in to the function, and then returned
-// with diminished type-tracked slot capacity.
-let (ut14, _, _, _, root_cnode) = ut18.quarter(root_cnode)?;
+    // Create a page table seL4 kernel object and return a capability pointer to it.
+    // Here we use a variable binding type annotation and Rust's type system can figure out
+    // if it can allocate a large enough Untyped instance and enough cnode slots
+    // to represent this particular kernel object.
+    let example_page_table: LocalCap<UnmappedPageTable> = retype(ut, slots)?;
 
-// Create a page table seL4 kernel object and return a capability pointer to it.
-// Here we use a variable binding type annotation and Rust's type system can figure out
-// if the Untyped instance used has enough capacity to represent this particular
-// kernel object.
-let (root_page_table, root_cnode): (LocalCap<UnmappedPageTable>, _) =
-    ut18b.retype_local(root_cnode)?;
-
-// Create a resource-tracking wrapper around the raw boot info to assist in
-// virtual memory related operations.
-let (boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
-let (root_page_table, boot_info) = boot_info.map_page_table(root_page_table)?;
+    // Create a resource-tracking wrapper around the raw boot info to assist in
+    // virtual memory related operations.
+    let boot_info  = BootInfo::wrap(raw_boot_info, ut, slots);
+    let (root_page_table, boot_info) = boot_info.map_page_table(root_page_table)?;
+});
 ```
 
 ## Features
