@@ -18,22 +18,5 @@ smart_alloc = { path = "./smart_alloc" }
 version = "0.4.10"
 default-features = false
 
-[dependencies.wee_alloc]
-version = "0.4"
-features = ["static_array_backend"]
-optional = true
-
-[dependencies.proptest]
-version = "0.8.6"
-default-features = false
-features = ["alloc", "nightly"]
-optional = true
-
 [build-dependencies]
-fel4-config = { git = "ssh://github.com/auxoncorp/fel4-config" }
 selfe-config = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
-
-[features]
-default = []
-alloc = ["wee_alloc"]
-test = ["alloc", "proptest"]

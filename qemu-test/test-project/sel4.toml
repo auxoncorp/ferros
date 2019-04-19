@@ -84,3 +84,6 @@ KernelSkimWindow = true
 KernelSyscall = 'syscall'
 KernelXSaveSize = 576
 LinkPageSize = 4096
+
+[metadata]
+root_task_stack_bytes = 2097152

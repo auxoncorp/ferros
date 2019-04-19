@@ -63,7 +63,7 @@ fn run_qemu_test<F>(
     let escaped_test_extra_flag_pairs = test_extra_flag_pairs.replace(r#"""#, r#"\""#);
 
 
-    let mut build_command = Command::new("cotransport");
+    let mut build_command = Command::new("selfe");
     (&mut build_command)
         .arg("build")
         .arg("--sel4_arch")
@@ -81,14 +81,14 @@ fn run_qemu_test<F>(
     );
     let build_result = build_command
         .output()
-        .expect("Couldn't run `cotransport build`");
+        .expect("Couldn't run `selfe build`");
     if !build_result.status.success() {
         io::stdout().write_all(&build_result.stdout).unwrap();
         io::stderr().write_all(&build_result.stderr).unwrap();
     }
     assert!(build_result.status.success());
 
-    let mut sim_command = Command::new("cotransport");
+    let mut sim_command = Command::new("selfe");
     sim_command.arg("simulate");
 
     if let Some(opt) = serial_override {
