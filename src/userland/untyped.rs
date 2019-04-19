@@ -129,7 +129,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
                 _role: PhantomData,
             },
             Cap {
-                cptr: dest_cptr,
+                cptr: self.cptr,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
