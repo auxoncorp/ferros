@@ -1,20 +1,19 @@
+use crate::userland::{
+    irq_state, memory_kind, role, AssignedPageDirectory, Badge, CNodeRole, CNodeSlot, Cap,
+    ChildCNode, FaultSource, IRQControl, IRQHandler, ImmobileIndelibleInertCapabilityReference,
+    LocalCap, MappedPage, Notification, SeL4Error, ThreadControlBlock,
+};
 use core::cmp;
 use core::marker::PhantomData;
 use core::mem::{self, size_of};
-use core::ops::Sub;
 use core::ptr;
-use crate::userland::{
-    irq_state, memory_kind, role, AssignedPageDirectory, Badge, CNode, CNodeRole, Cap, FaultSource,
-    IRQControl, IRQHandler, ImmobileIndelibleInertCapabilityReference, LocalCap, MappedPage,
-    Notification, SeL4Error, ThreadControlBlock,
-};
-use sel4_sys::*;
-use typenum::{IsLess, Sub1, True, Unsigned, B1, U0, U256};
+use selfe_sys::*;
+use typenum::*;
 
 impl LocalCap<ThreadControlBlock> {
-    pub(super) fn configure<CNodeFreeSlots: Unsigned, VSpaceRole: CNodeRole>(
+    pub(super) fn configure<VSpaceRole: CNodeRole>(
         &mut self,
-        cspace_root: LocalCap<CNode<CNodeFreeSlots, role::Child>>,
+        cspace_root: LocalCap<ChildCNode>,
         fault_source: Option<FaultSource<role::Child>>,
         vspace_cptr: ImmobileIndelibleInertCapabilityReference<
             AssignedPageDirectory<U0, VSpaceRole>,
@@ -25,11 +24,11 @@ impl LocalCap<ThreadControlBlock> {
         // used by the radix.
         let cspace_root_data = unsafe {
             seL4_CNode_CapData_new(
-                0,                                                   // guard
-                seL4_WordBits - cspace_root.cap_data.radix as usize, // guard size in bits
+                0,                                                          // guard
+                (seL4_WordBits - cspace_root.cap_data.radix as usize) as _, // guard size in bits
             )
         }
-        .words[0];
+        .words[0] as usize;
 
         let tcb_err = unsafe {
             seL4_TCB_Configure(
@@ -71,33 +70,25 @@ impl From<SeL4Error> for IRQError {
 }
 
 impl LocalCap<IRQControl> {
-    pub fn create_handler<IRQ: Unsigned, DestRole: CNodeRole, DestFreeSlots: Unsigned>(
+    pub fn create_handler<IRQ: Unsigned, DestRole: CNodeRole>(
         &mut self,
-        dest_cnode: LocalCap<CNode<DestFreeSlots, DestRole>>,
-    ) -> Result<
-        (
-            Cap<IRQHandler<IRQ, irq_state::Unset>, DestRole>,
-            LocalCap<CNode<Sub1<DestFreeSlots>, DestRole>>,
-        ),
-        IRQError,
-    >
+        dest_slot: CNodeSlot<DestRole>,
+    ) -> Result<Cap<IRQHandler<IRQ, irq_state::Unset>, DestRole>, IRQError>
     where
-        DestFreeSlots: Sub<B1>,
-        Sub1<DestFreeSlots>: Unsigned,
-
         IRQ: IsLess<U256, Output = True>,
     {
+        let (dest_cptr, dest_offset, _) = dest_slot.elim();
+
         if self.cap_data.known_handled[IRQ::USIZE] {
             return Err(IRQError::UnavailableIRQ);
         }
-        let (dest_cnode_remainder, dest_slot) = dest_cnode.consume_slot();
         let err = unsafe {
             seL4_IRQControl_Get(
-                self.cptr, // service/authority
-                IRQ::I32,
-                dest_slot.cptr,      //root
-                dest_slot.offset,    //index
-                seL4_WordBits as u8, //depth
+                self.cptr,           // service/authority
+                IRQ::I32,            // irq
+                dest_cptr,           // root
+                dest_offset,         // index
+                seL4_WordBits as u8, // depth
             )
         };
         if err != 0 {
@@ -106,17 +97,14 @@ impl LocalCap<IRQControl> {
 
         self.cap_data.known_handled[IRQ::USIZE] = true;
 
-        Ok((
-            Cap {
-                cptr: dest_slot.offset,
-                cap_data: IRQHandler {
-                    _irq: PhantomData,
-                    _set_state: PhantomData,
-                },
-                _role: PhantomData,
+        Ok(Cap {
+            cptr: dest_offset,
+            cap_data: IRQHandler {
+                _irq: PhantomData,
+                _set_state: PhantomData,
             },
-            dest_cnode_remainder,
-        ))
+            _role: PhantomData,
+        })
     }
 }
 
@@ -158,6 +146,7 @@ where
 
 impl LocalCap<Notification> {
     /// Blocking wait on a notification
+    #[allow(dead_code)]
     pub(crate) fn wait(&self) -> Badge {
         let mut sender_badge: usize = 0;
         unsafe {

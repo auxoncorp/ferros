@@ -1,14 +1,15 @@
-use core::marker::PhantomData;
-use core::mem::size_of;
-use core::ops::Sub;
+use crate::arch::{address_space, paging};
 use crate::pow::Pow;
 use crate::userland::cap::UnassignedPageDirectory;
 use crate::userland::{
-    memory_kind, role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, Cap, IRQControl,
-    LocalCap, MappedPage, MappedPageTable, SeL4Error, ThreadControlBlock, UnmappedPageTable,
-    Untyped,
+    memory_kind, role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, CNodeSlots, Cap,
+    IRQControl, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable,
+    SeL4Error, ThreadControlBlock, UnmappedPageTable, Untyped,
 };
-use sel4_sys::*;
+use core::marker::PhantomData;
+use core::mem::size_of;
+use core::ops::Sub;
+use selfe_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U0, U12, U19};
 
@@ -23,80 +24,21 @@ type RootCNodeAvailableSlots = Diff<RootCNodeSize, SystemProvidedCapCount>;
 // TODO: ideally, this should only be callable once in the process. Is that possible?
 pub fn root_cnode(
     bootinfo: &'static seL4_BootInfo,
-) -> LocalCap<CNode<RootCNodeAvailableSlots, role::Local>> {
-    Cap {
-        cptr: seL4_CapInitThreadCNode as usize,
-        _role: PhantomData,
-        cap_data: CNode {
-            radix: 19,
-            next_free_slot: bootinfo.empty.start,
-            _free_slots: PhantomData,
+) -> (
+    LocalCap<LocalCNode>,
+    LocalCNodeSlots<RootCNodeAvailableSlots>,
+) {
+    (
+        Cap {
+            cptr: seL4_CapInitThreadCNode as usize,
             _role: PhantomData,
+            cap_data: CNode {
+                radix: 19,
+                _role: PhantomData,
+            },
         },
-    }
-}
-
-pub mod paging {
-    use crate::pow::Pow;
-    use typenum::operator_aliases::{Diff, Prod, Sum};
-    use typenum::{Unsigned, U1024, U12, U16, U20, U24, U26, U6, U8, U9};
-
-    pub type BaseASIDPoolFreeSlots = U1024;
-
-    // Arm32 address structure
-    pub type PageDirectoryBits = U12;
-    pub type PageTableBits = U8;
-    pub type PageBits = U12; // 4kb
-
-    pub type LargePageBits = U16; // 64 KB
-    pub type SectionBits = U20; // 1 MB
-    pub type SuperSectionBits = U24; // 16 MB
-
-    // PageTableBits + PageBits
-    pub type PageTableTotalBits = U20;
-
-    pub type CodePageTableBits = U6;
-    pub type CodePageTableCount = Pow<CodePageTableBits>; // 64 page tables == 64 mb
-    pub type CodePageCount = Prod<CodePageTableCount, BasePageTableFreeSlots>; // 2^14
-    pub type TotalCodeSizeBits = U26;
-
-    // 0xe00000000 and up is reserved to the kernel; this translates to the last
-    // 2^9 (512) pagedir entries.
-    pub type BasePageDirFreeSlots = Diff<Pow<PageDirectoryBits>, Pow<U9>>;
-
-    pub type BasePageTableFreeSlots = Pow<PageTableBits>;
-
-    // The root task has a stack size configurable by the fel4.toml
-    // in the `[fel4.executable]` table's `root-task-stack-bytes` property.
-    // This configuration is turned into a generated Rust type named `RootTaskStackPageTableCount`
-    // that implements `typenum::Unsigned` in the `build.rs` file.
-    include!(concat!(
-        env!("OUT_DIR"),
-        "/ROOT_TASK_STACK_PAGE_TABLE_COUNT"
-    ));
-    // The first N page tables are already mapped for the user image in the root
-    // task. Add in the stack-reserved page tables (minimum of 1 more)
-    pub type RootTaskReservedPageDirSlots = Sum<CodePageTableCount, RootTaskStackPageTableCount>;
-
-    pub type RootTaskPageDirFreeSlots = Diff<BasePageDirFreeSlots, RootTaskReservedPageDirSlots>;
-
-    // Useful for constant comparison to data structure size_of results
-    pub type PageBytes = Pow<PageBits>;
-
-    pub const USIZE_PER_PAGE: usize = PageBytes::USIZE / core::mem::size_of::<usize>();
-}
-
-pub mod address_space {
-    use crate::pow::Pow;
-    use typenum::operator_aliases::Sum;
-    use typenum::{U16, U29, U30, U31};
-
-    // TODO this is a magic numbers we got from inspecting the binary.
-    /// 0x00010000
-    pub type ProgramStart = Pow<U16>;
-
-    /// 0xe0000000
-    pub type KernelReservedStart = Sum<Pow<U31>, Sum<Pow<U30>, Pow<U29>>>;
+        CNodeSlots::internal_new(seL4_CapInitThreadCNode as usize, bootinfo.empty.start),
+    )
 }
 
 /// Currently assume that a BootInfo cannot be handed to child processes
@@ -118,47 +60,40 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned> !Send
 }
 
 impl BootInfo<paging::BaseASIDPoolFreeSlots, paging::RootTaskPageDirFreeSlots> {
-    pub fn wrap<FreeSlots: Unsigned>(
+    pub fn wrap(
         bootinfo: &'static seL4_BootInfo,
         asid_pool_ut: LocalCap<Untyped<U12>>,
-        dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
-    ) -> (Self, LocalCap<CNode<Sub1<FreeSlots>, role::Local>>)
-    where
-        FreeSlots: Sub<B1>,
-        Sub1<FreeSlots>: Unsigned,
-    {
+        asid_pool_slot: LocalCNodeSlot,
+    ) -> Self {
         let asid_control = Cap::wrap_cptr(seL4_CapASIDControl as usize);
-        let (asid_pool, dest_cnode): (Cap<ASIDPool<_>, _>, _) = asid_pool_ut
-            .retype_asid_pool(asid_control, dest_cnode)
+        let asid_pool = asid_pool_ut
+            .retype_asid_pool(asid_control, asid_pool_slot)
             .expect("retype asid pool");
 
-        (
-            BootInfo {
-                page_directory: Cap {
-                    cptr: seL4_CapInitThreadVSpace as usize,
-                    _role: PhantomData,
-                    cap_data: AssignedPageDirectory {
-                        next_free_slot: paging::RootTaskReservedPageDirSlots::USIZE,
-                        _free_slots: PhantomData,
-                        _role: PhantomData,
-                    },
-                },
-                tcb: Cap::wrap_cptr(seL4_CapInitThreadTCB as usize),
-                asid_pool,
-                irq_control: Cap {
-                    cptr: seL4_CapIRQControl as usize,
-                    cap_data: IRQControl {
-                        known_handled: [false; 256],
-                    },
+        BootInfo {
+            page_directory: Cap {
+                cptr: seL4_CapInitThreadVSpace as usize,
+                _role: PhantomData,
+                cap_data: AssignedPageDirectory {
+                    next_free_slot: paging::RootTaskReservedPageDirSlots::USIZE,
+                    _free_slots: PhantomData,
                     _role: PhantomData,
                 },
-                user_image_frames_start: bootinfo.userImageFrames.start,
-                user_image_frames_end: bootinfo.userImageFrames.end,
-                user_image_paging_start: bootinfo.userImagePaging.start,
-                user_image_paging_end: bootinfo.userImagePaging.end,
             },
-            dest_cnode,
-        )
+            tcb: Cap::wrap_cptr(seL4_CapInitThreadTCB as usize),
+            asid_pool,
+            irq_control: Cap {
+                cptr: seL4_CapIRQControl as usize,
+                cap_data: IRQControl {
+                    known_handled: [false; 256],
+                },
+                _role: PhantomData,
+            },
+            user_image_frames_start: bootinfo.userImageFrames.start,
+            user_image_frames_end: bootinfo.userImageFrames.end,
+            user_image_paging_start: bootinfo.userImagePaging.start,
+            user_image_paging_end: bootinfo.userImagePaging.end,
+        }
     }
 }
 
@@ -283,29 +218,18 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
 /// because there is a lightly-documented seL4 constraint
 /// that limits us to a single ASIDPool per application.
 impl LocalCap<Untyped<U12, memory_kind::General>> {
-    pub fn retype_asid_pool<FreeSlots: Unsigned>(
+    pub fn retype_asid_pool(
         self,
         asid_control: LocalCap<ASIDControl>,
-        dest_cnode: LocalCap<CNode<FreeSlots, role::Local>>,
-    ) -> Result<
-        (
-            LocalCap<ASIDPool<paging::BaseASIDPoolFreeSlots>>,
-            LocalCap<CNode<Sub1<FreeSlots>, role::Local>>,
-        ),
-        SeL4Error,
-    >
-    where
-        FreeSlots: Sub<B1>,
-        Sub1<FreeSlots>: Unsigned,
-    {
-        let (dest_cnode, dest_slot) = dest_cnode.consume_slot();
-
+        dest_slot: LocalCNodeSlot,
+    ) -> Result<LocalCap<ASIDPool<paging::BaseASIDPoolFreeSlots>>, SeL4Error> {
+        let (dest_cptr, dest_offset, _) = dest_slot.elim();
         let err = unsafe {
             seL4_ARM_ASIDControl_MakePool(
                 asid_control.cptr,              // _service
                 self.cptr,                      // untyped
-                dest_slot.cptr,                 // root
-                dest_slot.offset,               // index
+                dest_cptr,                      // root
+                dest_offset,                    // index
                 (8 * size_of::<usize>()) as u8, // depth
             )
         };
@@ -314,16 +238,13 @@ impl LocalCap<Untyped<U12, memory_kind::General>> {
             return Err(SeL4Error::UntypedRetype(err));
         }
 
-        Ok((
-            Cap {
-                cptr: dest_slot.offset,
-                cap_data: ASIDPool {
-                    next_free_slot: 0,
-                    _free_slots: PhantomData,
-                },
-                _role: PhantomData,
+        Ok(Cap {
+            cptr: dest_offset,
+            cap_data: ASIDPool {
+                next_free_slot: 0,
+                _free_slots: PhantomData,
             },
-            dest_cnode,
-        ))
+            _role: PhantomData,
+        })
     }
 }

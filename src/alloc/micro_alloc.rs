@@ -2,12 +2,12 @@
 //! This one doesn't split anything; it just hands out the smallest untyped item
 //! that's big enough for the request.
 
-use arrayvec::ArrayVec;
 use crate::userland::{memory_kind, wrap_untyped, LocalCap, MemoryKind, Untyped};
+use arrayvec::ArrayVec;
 use typenum::Unsigned;
 
 use core::fmt::{Debug, Error as FmtError, Formatter};
-use sel4_sys::{seL4_BootInfo, seL4_UntypedDesc};
+use selfe_sys::{seL4_BootInfo, seL4_UntypedDesc};
 
 pub const MIN_UNTYPED_SIZE_BITS: u8 = 4;
 pub const MAX_UNTYPED_SIZE_BITS: u8 = 32;
@@ -125,7 +125,8 @@ impl Allocator {
                     && match physical_address {
                         Some(a) => item.desc.paddr == a,
                         None => true,
-                    } {
+                    }
+                {
                     let u = wrap_untyped(item.cptr, item.desc);
                     if u.is_some() {
                         item.is_free = false;

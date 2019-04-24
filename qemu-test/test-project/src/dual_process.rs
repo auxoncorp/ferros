@@ -1,56 +1,34 @@
 use super::TopLevelError;
 use core::marker::PhantomData;
-use ferros::micro_alloc;
+use ferros::alloc::{self, micro_alloc, smart_alloc};
 use ferros::pow::Pow;
 use ferros::userland::{
     call_channel, role, root_cnode, setup_fault_endpoint_pair, BootInfo, CNode, CNodeRole, Caller,
     Cap, Consumer1, Endpoint, FaultSink, LocalCap, Producer, ProducerSetup, QueueFullError,
-    Responder, RetypeForSetup, SeL4Error, UnmappedPageTable, Untyped, VSpace,
+    Responder, RetypeForSetup, SeL4Error, UnmappedPageTable, Untyped, VSpace, retype, retype_cnode
 };
-use sel4_sys::*;
-use typenum::{Diff, U1, U100, U12, U2, U20, U3, U4096, U6};
-type U4095 = Diff<U4096, U1>;
-
-use sel4_sys::seL4_Yield;
+use selfe_sys::*;
+use typenum::*;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
-    // wrap all untyped memory
     let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
-
-    // wrap root CNode for safe usage
-    let root_cnode = root_cnode(&raw_boot_info);
+    let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
 
     // find an untyped of size 20 bits (1 meg)
     let ut20 = allocator
         .get_untyped::<U20>()
         .expect("Couldn't find initial untyped");
+    let uts = alloc::ut_buddy(ut20);
 
-    let (ut18, ut18b, child_a_ut18, child_b_ut18, root_cnode) = ut20.quarter(root_cnode)?;
+    smart_alloc!(|slots from local_slots, ut from uts| {
+        let boot_info = BootInfo::wrap(raw_boot_info, ut, slots);
 
-    let (child_a_vspace_ut, child_a_thread_ut, root_cnode) = child_a_ut18.split(root_cnode)?;
-    let (child_b_vspace_ut, child_b_thread_ut, root_cnode) = child_b_ut18.split(root_cnode)?;
+        let scratch_page_table = retype(ut, slots)?;
+        let (mut scratch_page_table, mut boot_info) = boot_info.map_page_table(scratch_page_table)?;
 
-    let (ut16a, ut16b, _, _, root_cnode) = ut18.quarter(root_cnode)?;
-    let (ut16e, _, _, _, root_cnode) = ut18b.quarter(root_cnode)?;
-    let (ut14, _, _, _, root_cnode) = ut16e.quarter(root_cnode)?;
-    let (ut12, asid_pool_ut, shared_page_ut, _, root_cnode) = ut14.quarter(root_cnode)?;
-    let (ut10, scratch_page_table_ut, _, _, root_cnode) = ut12.quarter(root_cnode)?;
-    let (ut8, _, _, _, root_cnode) = ut10.quarter(root_cnode)?;
-    let (ut6, _, _, _, root_cnode) = ut8.quarter(root_cnode)?;
-    let (ut5, _, root_cnode) = ut6.split(root_cnode)?;
-    let (ut4, _, root_cnode) = ut5.split(root_cnode)?; // Why two splits? To exercise split.
-
-    // wrap the rest of the critical boot info
-    let (mut boot_info, root_cnode) = BootInfo::wrap(raw_boot_info, asid_pool_ut, root_cnode);
-
-    let (scratch_page_table, root_cnode): (LocalCap<UnmappedPageTable>, _) =
-        scratch_page_table_ut.retype_local(root_cnode)?;
-    let (mut scratch_page_table, mut boot_info) = boot_info.map_page_table(scratch_page_table)?;
-
-    let (child_a_vspace, mut boot_info, root_cnode) =
-        VSpace::new(boot_info, child_a_vspace_ut, root_cnode)?;
-    let (child_b_vspace, mut boot_info, root_cnode) =
-        VSpace::new(boot_info, child_b_vspace_ut, root_cnode)?;
+        let (child_a_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
+        let (child_b_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
+    });
 
     #[cfg(test_case = "shared_page_queue")]
     let (
@@ -62,42 +40,46 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         proc_cnode_local_b,
         child_b_vspace,
         child_fault_source_b,
-        root_cnode,
+        local_slots,
+        uts
     ) = {
-        let (producer_cnode_local, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
-            ut16a.retype_cnode::<_, U12>(root_cnode)?;
+        smart_alloc!(|slots from local_slots, ut from uts| {
+            let (producer_cnode, producer_slots) = retype_cnode::<U12>(ut, slots)?;
+            let (consumer_cnode, consumer_slots) = retype_cnode::<U12>(ut, slots)?;
 
-        let (consumer_cnode_local, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
-            ut16b.retype_cnode::<_, U12>(root_cnode)?;
+            let (slots_c, consumer_slots) = consumer_slots.alloc();
+            let (
+                consumer,
+                consumer_token,
+                producer_setup,
+                waker_setup,
+                consumer_vspace,
+            ) = Consumer1::new(
+                ut,
+                ut,
+                child_a_vspace,
+                &mut scratch_page_table,
+                &mut boot_info.page_directory,
+                &root_cnode,
+                slots,
+                slots_c
+            )?;
 
-        let (
-            consumer,
-            consumer_token,
-            producer_setup,
-            waker_setup,
-            consumer_cnode,
-            consumer_vspace,
-            root_cnode,
-        ) = Consumer1::new(
-            ut4,
-            shared_page_ut,
-            consumer_cnode_local,
-            child_a_vspace,
-            &mut scratch_page_table,
-            &mut boot_info.page_directory,
-            root_cnode,
-        )?;
+            let consumer_params = ConsumerParams::<role::Child> { consumer };
 
-        let consumer_params = ConsumerParams::<role::Child> { consumer };
+            let (slots_p, producer_slots) = producer_slots.alloc();
+            let (producer, producer_vspace) = Producer::new(
+                &producer_setup,
+                slots_p,
+                child_b_vspace,
+                &root_cnode,
+                slots,
+            )?;
 
-        let (producer, producer_cnode, producer_vspace, root_cnode) = Producer::new(
-            &producer_setup,
-            producer_cnode_local,
-            child_b_vspace,
-            root_cnode,
-        )?;
+            let producer_params = ProducerParams::<role::Child> { producer };
 
-        let producer_params = ProducerParams::<role::Child> { producer };
+        });
+
         (
             consumer_params,
             consumer_cnode,
@@ -107,7 +89,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             producer_cnode,
             producer_vspace,
             None,
-            root_cnode,
+            local_slots,
+            uts,
         )
     };
 
@@ -119,72 +102,71 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         child_params_b,
         proc_cnode_local_b,
         child_fault_source_b,
-        root_cnode,
+        local_slots,
+        uts
     ) = {
-        let (caller_cnode_local, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
-            ut16a.retype_cnode::<_, U12>(root_cnode)?;
+        smart_alloc!(|slots from local_slots, ut from uts| {
+            let (caller_cnode, caller_slots) = retype_cnode::<U12>(ut, slots)?;
+            let (responder_cnode, responder_slots) = retype_cnode::<U12>(ut, slots)?;
 
-        let (responder_cnode_local, root_cnode): (LocalCap<CNode<U4095, role::Child>>, _) =
-            ut16b.retype_cnode::<_, U12>(root_cnode)?;
+            let (slots_r, responder_slots) = responder_slots.alloc();
+            let (ipc_setup, responder) = call_channel(ut, &root_cnode, slots, slots_r)?;
 
-        let (ipc_setup, responder, responder_cnode_local, root_cnode) =
-            call_channel(ut4, responder_cnode_local, root_cnode)?;
+            let (slots_c, caller_slots) = caller_slots.alloc();
+            let caller = ipc_setup.create_caller(slots_c)?;
 
-        let (caller, caller_cnode_local) = ipc_setup.create_caller(caller_cnode_local)?;
+            let caller_params = CallerParams::<role::Child> {
+                caller,
+            };
 
-        let (caller_cnode_child, caller_cnode_local) =
-            caller_cnode_local.generate_self_reference(&root_cnode)?;
-        let (responder_cnode_child, responder_cnode_local) =
-            responder_cnode_local.generate_self_reference(&root_cnode)?;
+            let responder_params = ResponderParams::<role::Child> {
+                responder,
+            };
+        });
 
-        let caller_params = CallerParams::<role::Child> {
-            my_cnode: caller_cnode_child,
-            caller,
-        };
-
-        let responder_params = ResponderParams::<role::Child> {
-            my_cnode: responder_cnode_child,
-            responder,
-        };
         (
             caller_params,
-            caller_cnode_local,
+            caller_cnode,
             None,
             responder_params,
-            responder_cnode_local,
+            responder_cnode,
             None,
-            root_cnode,
+            local_slots,
+            uts,
         )
     };
-    let (child_a_process, _caller_vspace, root_cnode) = child_a_vspace.prepare_thread(
-        child_proc_a,
-        child_params_a,
-        child_a_thread_ut,
-        root_cnode,
-        &mut scratch_page_table,
-        &mut boot_info.page_directory,
-    )?;
-    child_a_process.start(
-        proc_cnode_local_a,
-        child_fault_source_a,
-        &boot_info.tcb,
-        255,
-    )?;
 
-    let (child_b_process, _caller_vspace, root_cnode) = child_b_vspace.prepare_thread(
-        child_proc_b,
-        child_params_b,
-        child_b_thread_ut,
-        root_cnode,
-        &mut scratch_page_table,
-        &mut boot_info.page_directory,
-    )?;
-    child_b_process.start(
-        proc_cnode_local_b,
-        child_fault_source_b,
-        &boot_info.tcb,
-        255,
-    )?;
+    smart_alloc!(|slots from local_slots, ut from uts| {
+        let (child_a_process, _) = child_a_vspace.prepare_thread(
+            child_proc_a,
+            child_params_a,
+            ut,
+            slots,
+            &mut scratch_page_table,
+            &mut boot_info.page_directory,
+        )?;
+        child_a_process.start(
+            proc_cnode_local_a,
+            child_fault_source_a,
+            &boot_info.tcb,
+            255,
+        )?;
+
+        let (child_b_process, _) = child_b_vspace.prepare_thread(
+            child_proc_b,
+            child_params_b,
+            ut,
+            slots,
+            &mut scratch_page_table,
+            &mut boot_info.page_directory,
+        )?;
+        child_b_process.start(
+            proc_cnode_local_b,
+            child_fault_source_b,
+            &boot_info.tcb,
+            255,
+        )?;
+    });
 
     Ok(())
 }
@@ -202,7 +184,6 @@ pub struct AdditionResponse {
 
 #[derive(Debug)]
 pub struct CallerParams<Role: CNodeRole> {
-    pub my_cnode: Cap<CNode<Diff<Pow<U12>, U3>, Role>, Role>,
     pub caller: Caller<AdditionRequest, AdditionResponse, Role>,
 }
 
@@ -212,7 +193,6 @@ impl RetypeForSetup for CallerParams<role::Local> {
 
 #[derive(Debug)]
 pub struct ResponderParams<Role: CNodeRole> {
-    pub my_cnode: Cap<CNode<Diff<Pow<U12>, U3>, Role>, Role>,
     pub responder: Responder<AdditionRequest, AdditionResponse, Role>,
 }
 

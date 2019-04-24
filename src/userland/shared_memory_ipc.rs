@@ -1,22 +1,19 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
 
-use crate::userland::paging::PageBytes;
+use crate::arch::paging::PageBytes;
 use crate::userland::{
-    memory_kind, role, Badge, CNodeRole, Cap, CapRights, ChildCNode, DirectRetype, IPCError,
-    LocalCNode, LocalCap, Notification, UnmappedPage, Untyped, VSpace,
+    memory_kind, role, Badge, CNodeRole, Cap, CapRights, ChildCNodeSlots, DirectRetype, IPCError,
+    LocalCNode, LocalCNodeSlots, LocalCap, Notification, UnmappedPage, Untyped, VSpace,
 };
-use sel4_sys::{seL4_Signal, seL4_Wait};
-use typenum::operator_aliases::{Diff, Sub1};
+use selfe_sys::{seL4_Signal, seL4_Wait};
+use typenum::operator_aliases::Sub1;
 use typenum::{Unsigned, B1, U2, U5};
 
 pub mod sync {
     use super::*;
     /// A synchronous call channel backed by a page of shared memory
     pub fn extended_call_channel<
-        ScratchFreeSlots: Unsigned,
-        CallerFreeSlots: Unsigned,
-        ResponderFreeSlots: Unsigned,
         CallerPageDirFreeSlots: Unsigned,
         CallerPageTableFreeSlots: Unsigned,
         ResponderPageDirFreeSlots: Unsigned,
@@ -24,7 +21,8 @@ pub mod sync {
         Req: Send + Sync,
         Rsp: Send + Sync,
     >(
-        local_cnode: LocalCap<LocalCNode<ScratchFreeSlots>>,
+        local_cnode: &LocalCap<LocalCNode>,
+        local_slots: LocalCNodeSlots<U5>,
         shared_page_ut: LocalCap<
             Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
         >,
@@ -36,35 +34,23 @@ pub mod sync {
             ResponderPageTableFreeSlots,
             role::Child,
         >,
-        child_cnode_caller: LocalCap<ChildCNode<CallerFreeSlots>>,
-        child_cnode_responder: LocalCap<ChildCNode<ResponderFreeSlots>>,
+        caller_slots: ChildCNodeSlots<U2>,
+        responder_slots: ChildCNodeSlots<U2>,
     ) -> Result<
         (
-            LocalCap<ChildCNode<Diff<CallerFreeSlots, U2>>>,
-            LocalCap<ChildCNode<Diff<ResponderFreeSlots, U2>>>,
             ExtendedCaller<Req, Rsp, role::Child>,
             ExtendedResponder<Req, Rsp, role::Child>,
             VSpace<CallerPageDirFreeSlots, Sub1<CallerPageTableFreeSlots>, role::Child>,
             VSpace<ResponderPageDirFreeSlots, Sub1<ResponderPageTableFreeSlots>, role::Child>,
-            LocalCap<LocalCNode<Diff<ScratchFreeSlots, U5>>>,
         ),
         IPCError,
     >
     where
-        ScratchFreeSlots: Sub<U5>,
-        Diff<ScratchFreeSlots, U5>: Unsigned,
-
         CallerPageTableFreeSlots: Sub<B1>,
         Sub1<CallerPageTableFreeSlots>: Unsigned,
 
         ResponderPageTableFreeSlots: Sub<B1>,
         Sub1<ResponderPageTableFreeSlots>: Unsigned,
-
-        CallerFreeSlots: Sub<U2>,
-        Diff<CallerFreeSlots, U2>: Unsigned,
-
-        ResponderFreeSlots: Sub<U2>,
-        Diff<ResponderFreeSlots, U2>: Unsigned,
     {
         let request_size = core::mem::size_of::<Req>();
         let response_size = core::mem::size_of::<Rsp>();
@@ -76,39 +62,37 @@ pub mod sync {
             return Err(IPCError::ResponseSizeTooBig);
         }
 
-        let (local_cnode, remainder_local_cnode) = local_cnode.reserve_region::<U5>();
-        let (child_cnode_caller, remainder_child_cnode_caller) =
-            child_cnode_caller.reserve_region::<U2>();
-        let (child_cnode_responder, remainder_child_cnode_responder) =
-            child_cnode_responder.reserve_region::<U2>();
+        let (slot, local_slots) = local_slots.alloc();
+        let shared_page: LocalCap<UnmappedPage<memory_kind::General>> =
+            shared_page_ut.retype(slot)?;
 
-        let (shared_page, local_cnode) =
-            shared_page_ut.retype_local::<_, UnmappedPage<_>>(local_cnode)?;
-
-        let (caller_shared_page, local_cnode) =
-            shared_page.copy_inside_cnode(local_cnode, CapRights::RW)?;
+        let (slot, local_slots) = local_slots.alloc();
+        let caller_shared_page = shared_page.copy(&local_cnode, slot, CapRights::RW)?;
         let (caller_shared_page, caller_vspace) = caller_vspace.map_page(caller_shared_page)?;
 
-        let (responder_shared_page, local_cnode) =
-            shared_page.copy_inside_cnode(local_cnode, CapRights::RW)?;
+        let (slot, local_slots) = local_slots.alloc();
+        let responder_shared_page = shared_page.copy(&local_cnode, slot, CapRights::RW)?;
         let (responder_shared_page, responder_vspace) =
             responder_vspace.map_page(responder_shared_page)?;
 
-        let (local_request_ready, local_cnode) =
-            call_notification_ut.retype_local::<_, Notification>(local_cnode)?;
-        let (local_response_ready, local_cnode) =
-            response_notification_ut.retype_local::<_, Notification>(local_cnode)?;
+        let (slot, local_slots) = local_slots.alloc();
+        let local_request_ready: LocalCap<Notification> = call_notification_ut.retype(slot)?;
 
-        // -2 caller cnode slots
-        let (caller_request_ready, child_cnode_caller) = local_request_ready.mint(
+        let (slot, _local_slots) = local_slots.alloc();
+        let local_response_ready: LocalCap<Notification> = response_notification_ut.retype(slot)?;
+
+        let (caller_slot, caller_slots) = caller_slots.alloc();
+        let caller_request_ready = local_request_ready.mint(
             &local_cnode,
-            child_cnode_caller,
+            caller_slot,
             CapRights::RWG,
             Badge::from(1 << 0),
         )?;
-        let (caller_response_ready, _child_cnode_caller) = local_response_ready.mint(
+
+        let (caller_slot, _caller_slots) = caller_slots.alloc();
+        let caller_response_ready = local_response_ready.mint(
             &local_cnode,
-            child_cnode_caller,
+            caller_slot,
             CapRights::RWG,
             Badge::from(1 << 1),
         )?;
@@ -124,15 +108,18 @@ pub mod sync {
             },
         };
 
-        let (responder_request_ready, child_cnode_responder) = local_request_ready.mint(
+        let (responder_slot, responder_slots) = responder_slots.alloc();
+        let responder_request_ready = local_request_ready.mint(
             &local_cnode,
-            child_cnode_responder,
+            responder_slot,
             CapRights::RWG,
             Badge::from(1 << 2),
         )?;
-        let (responder_response_ready, _child_cnode_responder) = local_response_ready.mint(
+
+        let (responder_slot, _responder_slots) = responder_slots.alloc();
+        let responder_response_ready = local_response_ready.mint(
             &local_cnode,
-            child_cnode_responder,
+            responder_slot,
             CapRights::RWG,
             Badge::from(1 << 3),
         )?;
@@ -147,15 +134,7 @@ pub mod sync {
                 _role: PhantomData,
             },
         };
-        Ok((
-            remainder_child_cnode_caller,
-            remainder_child_cnode_responder,
-            caller,
-            responder,
-            caller_vspace,
-            responder_vspace,
-            remainder_local_cnode,
-        ))
+        Ok((caller, responder, caller_vspace, responder_vspace))
     }
 
     #[derive(Debug)]

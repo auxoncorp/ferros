@@ -1,13 +1,10 @@
-use core::marker::PhantomData;
-use core::ops::Sub;
 use crate::userland::cap::DirectRetype;
 use crate::userland::{
-    role, Badge, CNode, CNodeRole, Cap, CapRights, ChildCNode, ChildCap, Endpoint, LocalCNode,
-    LocalCap, SeL4Error, Untyped,
+    role, Badge, CNode, CNodeRole, Cap, CapRights, ChildCNodeSlot, ChildCap, Endpoint, LocalCNode,
+    LocalCNodeSlot, LocalCap, SeL4Error, Untyped,
 };
-use sel4_sys::*;
-use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U0};
+use core::marker::PhantomData;
+use selfe_sys::*;
 
 #[derive(Debug)]
 pub enum IPCError {
@@ -32,7 +29,7 @@ pub enum FaultManagementError {
 pub struct IpcSetup<Req, Rsp> {
     endpoint: LocalCap<Endpoint>,
     // Alias the cnode, but only so we can copy out of it
-    endpoint_cnode: LocalCap<LocalCNode<U0>>,
+    endpoint_cnode: LocalCap<LocalCNode>,
     _req: PhantomData<Req>,
     _rsp: PhantomData<Rsp>,
 }
@@ -40,35 +37,15 @@ pub struct IpcSetup<Req, Rsp> {
 /// Fastpath call channel -> given some memory capacity and two child cnodes,
 /// create an endpoint locally, copy it to the responder process cnode, and return an
 /// IpcSetup to allow connecting callers.
-pub fn call_channel<
-    LocalFreeSlots: Unsigned,
-    ResponderFreeSlots: Unsigned,
-    Req: Send + Sync,
-    Rsp: Send + Sync,
->(
+pub fn call_channel<Req: Send + Sync, Rsp: Send + Sync>(
     untyped: LocalCap<Untyped<<Endpoint as DirectRetype>::SizeBits>>,
-    child_cnode: LocalCap<ChildCNode<ResponderFreeSlots>>,
-    local_cnode: LocalCap<LocalCNode<LocalFreeSlots>>,
-) -> Result<
-    (
-        IpcSetup<Req, Rsp>,
-        Responder<Req, Rsp, role::Child>,
-        LocalCap<ChildCNode<Sub1<ResponderFreeSlots>>>,
-        LocalCap<LocalCNode<Sub1<LocalFreeSlots>>>,
-    ),
-    IPCError,
->
-where
-    LocalFreeSlots: Sub<B1>,
-    Diff<LocalFreeSlots, B1>: Unsigned,
-    ResponderFreeSlots: Sub<B1>,
-    Sub1<ResponderFreeSlots>: Unsigned,
-{
+    local_cnode: &LocalCap<LocalCNode>,
+    local_slot: LocalCNodeSlot,
+    child_slot: ChildCNodeSlot,
+) -> Result<(IpcSetup<Req, Rsp>, Responder<Req, Rsp, role::Child>), IPCError> {
     let _ = IPCBuffer::<Req, Rsp>::new()?; // Check buffer fits Req and Rsp
-    let (local_endpoint, local_cnode): (LocalCap<Endpoint>, _) =
-        untyped.retype_local(local_cnode)?;
-    let (child_endpoint, child_cnode) =
-        local_endpoint.copy(&local_cnode, child_cnode, CapRights::RW)?;
+    let local_endpoint: LocalCap<Endpoint> = untyped.retype(local_slot)?;
+    let child_endpoint = local_endpoint.copy(&local_cnode, child_slot, CapRights::RW)?;
 
     Ok((
         IpcSetup {
@@ -78,8 +55,6 @@ where
                 _role: PhantomData,
                 cap_data: CNode {
                     radix: local_cnode.cap_data.radix,
-                    next_free_slot: 0,
-                    _free_slots: PhantomData,
                     _role: PhantomData,
                 },
             },
@@ -92,39 +67,24 @@ where
             _rsp: PhantomData,
             _role: PhantomData,
         },
-        child_cnode,
-        local_cnode,
     ))
 }
 
 impl<Req, Rsp> IpcSetup<Req, Rsp> {
-    pub fn create_caller<CallerFreeSlots: Unsigned>(
+    pub fn create_caller(
         &self,
-        child_cnode: LocalCap<ChildCNode<CallerFreeSlots>>,
-    ) -> Result<
-        (
-            Caller<Req, Rsp, role::Child>,
-            LocalCap<ChildCNode<Sub1<CallerFreeSlots>>>,
-        ),
-        IPCError,
-    >
-    where
-        CallerFreeSlots: Sub<B1>,
-        Sub1<CallerFreeSlots>: Unsigned,
-    {
-        let (child_endpoint, child_cnode) =
+        child_slot: ChildCNodeSlot,
+    ) -> Result<Caller<Req, Rsp, role::Child>, IPCError> {
+        let child_endpoint =
             self.endpoint
-                .copy(&self.endpoint_cnode, child_cnode, CapRights::RWG)?;
+                .copy(&self.endpoint_cnode, child_slot, CapRights::RWG)?;
 
-        Ok((
-            Caller {
-                endpoint: child_endpoint,
-                _req: PhantomData,
-                _rsp: PhantomData,
-                _role: PhantomData,
-            },
-            child_cnode,
-        ))
+        Ok(Caller {
+            endpoint: child_endpoint,
+            _req: PhantomData,
+            _rsp: PhantomData,
+            _role: PhantomData,
+        })
     }
 }
 
@@ -238,15 +198,14 @@ fn type_length_in_words<T>() -> usize {
 fn type_length_message_info<T>() -> seL4_MessageInfo_t {
     unsafe {
         seL4_MessageInfo_new(
-            0,                           // label,
-            0,                           // capsUnwrapped,
-            0,                           // extraCaps,
-            type_length_in_words::<T>(), // length in words!
+            0,                                  // label,
+            0,                                  // capsUnwrapped,
+            0,                                  // extraCaps,
+            type_length_in_words::<T>() as u32, // length in words!
         )
     }
 }
 
-#[derive(Debug)]
 pub struct MessageInfo {
     inner: seL4_MessageInfo_t,
 }
@@ -261,7 +220,7 @@ impl MessageInfo {
         unsafe {
             seL4_MessageInfo_ptr_get_label(
                 &self.inner as *const seL4_MessageInfo_t as *mut seL4_MessageInfo_t,
-            )
+            ) as usize
         }
     }
 
@@ -272,7 +231,7 @@ impl MessageInfo {
         unsafe {
             seL4_MessageInfo_ptr_get_length(
                 &self.inner as *const seL4_MessageInfo_t as *mut seL4_MessageInfo_t,
-            )
+            ) as usize
         }
     }
 
@@ -487,67 +446,49 @@ pub struct FaultSinkSetup {
 }
 
 impl FaultSinkSetup {
-    pub fn new<ScratchFreeSlots: Unsigned, FaultSinkChildFreeSlots: Unsigned>(
-        local_cnode: LocalCap<LocalCNode<ScratchFreeSlots>>,
+    pub fn new(
+        local_cnode: &LocalCap<LocalCNode>,
         untyped: LocalCap<Untyped<<Endpoint as DirectRetype>::SizeBits>>,
-        child_cnode_fault_sink: LocalCap<ChildCNode<FaultSinkChildFreeSlots>>,
-    ) -> (
-        Self,
-        LocalCap<ChildCNode<Sub1<FaultSinkChildFreeSlots>>>,
-        LocalCap<LocalCNode<Sub1<ScratchFreeSlots>>>,
-    )
-    where
-        ScratchFreeSlots: Sub<B1>,
-        Diff<ScratchFreeSlots, B1>: Unsigned,
-        FaultSinkChildFreeSlots: Sub<B1>,
-        Sub1<FaultSinkChildFreeSlots>: Unsigned,
-    {
-        let (local_endpoint, local_cnode): (LocalCap<Endpoint>, _) = untyped
-            .retype_local(local_cnode)
+        endpoint_slot: LocalCNodeSlot,
+        fault_sink_slot: ChildCNodeSlot,
+    ) -> Self {
+        let sink_cspace_local_cptr = fault_sink_slot.cptr;
+
+        // TODO relay these errors up
+        let local_endpoint: LocalCap<Endpoint> = untyped
+            .retype(endpoint_slot)
             .expect("could not create local endpoint");
-        let (sink_child_endpoint, child_cnode_fault_sink) = local_endpoint
-            .copy(&local_cnode, child_cnode_fault_sink, CapRights::RW)
+
+        let sink_child_endpoint = local_endpoint
+            .copy(&local_cnode, fault_sink_slot, CapRights::RW)
             .expect("Could not copy to fault sink cnode");
-        (
-            FaultSinkSetup {
-                local_endpoint,
-                sink_child_endpoint,
-                sink_cspace_local_cptr: child_cnode_fault_sink.cptr,
-            },
-            child_cnode_fault_sink,
-            local_cnode,
-        )
+
+        FaultSinkSetup {
+            local_endpoint,
+            sink_child_endpoint,
+            sink_cspace_local_cptr,
+        }
     }
 
-    pub fn add_fault_source<FaultSourceChildFreeSlots: Unsigned, LocalFreeSlots: Unsigned>(
+    pub fn add_fault_source(
         &self,
-        local_cnode: &LocalCap<LocalCNode<LocalFreeSlots>>,
-        child_cnode_fault_source: LocalCap<ChildCNode<FaultSourceChildFreeSlots>>,
+        local_cnode: &LocalCap<LocalCNode>,
+        fault_source_slot: ChildCNodeSlot,
         badge: Badge,
-    ) -> Result<
-        (
-            FaultSource<role::Child>,
-            LocalCap<ChildCNode<Sub1<FaultSourceChildFreeSlots>>>,
-        ),
-        FaultManagementError,
-    >
-    where
-        FaultSourceChildFreeSlots: Sub<B1>,
-        Sub1<FaultSourceChildFreeSlots>: Unsigned,
-    {
-        if child_cnode_fault_source.cptr == self.sink_cspace_local_cptr {
+    ) -> Result<FaultSource<role::Child>, FaultManagementError> {
+        if fault_source_slot.cptr == self.sink_cspace_local_cptr {
             return Err(FaultManagementError::SelfFaultHandlingForbidden);
         }
-        let (child_endpoint_fault_source, child_cnode_fault_source) = self
+
+        // TODO Relay this error up
+        let child_endpoint_fault_source = self
             .local_endpoint
-            .mint(local_cnode, child_cnode_fault_source, CapRights::RWG, badge)
+            .mint_new(local_cnode, fault_source_slot, CapRights::RWG, badge)
             .expect("Could not copy to fault source cnode");
-        Ok((
-            FaultSource {
-                endpoint: child_endpoint_fault_source,
-            },
-            child_cnode_fault_source,
-        ))
+
+        Ok(FaultSource {
+            endpoint: child_endpoint_fault_source,
+        })
     }
 
     pub fn sink(self) -> FaultSink<role::Child> {
@@ -560,46 +501,19 @@ impl FaultSinkSetup {
 /// Only supports establishing two child processes where one process will be watching for faults on the other.
 /// Requires a separate input signature if we want the local/current thread to be the watcher due to
 /// our consuming full instances of the local scratch CNode and the destination CNodes separately in this function.
-pub fn setup_fault_endpoint_pair<
-    ScratchFreeSlots: Unsigned,
-    FaultSourceChildFreeSlots: Unsigned,
-    FaultSinkChildFreeSlots: Unsigned,
->(
-    local_cnode: LocalCap<LocalCNode<ScratchFreeSlots>>,
+pub fn setup_fault_endpoint_pair(
+    local_cnode: &LocalCap<LocalCNode>,
     untyped: LocalCap<Untyped<<Endpoint as DirectRetype>::SizeBits>>,
-    child_cnode_fault_source: LocalCap<ChildCNode<FaultSourceChildFreeSlots>>,
-    child_cnode_fault_sink: LocalCap<ChildCNode<FaultSinkChildFreeSlots>>,
-) -> Result<
-    (
-        LocalCap<ChildCNode<Sub1<FaultSourceChildFreeSlots>>>,
-        LocalCap<ChildCNode<Sub1<FaultSinkChildFreeSlots>>>,
-        FaultSource<role::Child>,
-        FaultSink<role::Child>,
-        LocalCap<LocalCNode<Sub1<ScratchFreeSlots>>>,
-    ),
-    SeL4Error,
->
-where
-    ScratchFreeSlots: Sub<B1>,
-    Diff<ScratchFreeSlots, B1>: Unsigned,
-    FaultSourceChildFreeSlots: Sub<B1>,
-    Sub1<FaultSourceChildFreeSlots>: Unsigned,
-    FaultSinkChildFreeSlots: Sub<B1>,
-    Sub1<FaultSinkChildFreeSlots>: Unsigned,
-{
-    let (builder, child_cnode_fault_sink, local_cnode) =
-        FaultSinkSetup::new(local_cnode, untyped, child_cnode_fault_sink);
-    let (fault_source, child_cnode_fault_source) = builder.add_fault_source(
-        &local_cnode, child_cnode_fault_source, Badge::from(0)
-    ).expect("Should be impossible to generate a self-handler since we are consuming independent parameters for both the source and sink child cnodes");
+    endpoint_slot: LocalCNodeSlot,
+    fault_source_slot: ChildCNodeSlot,
+    fault_sink_slot: ChildCNodeSlot,
+) -> Result<(FaultSource<role::Child>, FaultSink<role::Child>), SeL4Error> {
+    let setup = FaultSinkSetup::new(&local_cnode, untyped, endpoint_slot, fault_sink_slot);
+    // TODO: Relay up this error
+    let fault_source = setup.add_fault_source(&local_cnode, fault_source_slot, Badge::from(0))
+        .expect("Should be impossible to generate a self-handler since we are consuming independent parameters for both the source and sink child cnodes");
 
-    Ok((
-        child_cnode_fault_source,
-        child_cnode_fault_sink,
-        fault_source,
-        builder.sink(),
-        local_cnode,
-    ))
+    Ok((fault_source, setup.sink()))
 }
 
 /// The side of a fault endpoint that sends fault messages

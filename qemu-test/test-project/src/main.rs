@@ -1,27 +1,17 @@
 #![no_std]
 #![recursion_limit = "128"]
+#![feature(proc_macro_hygiene)]
 
 extern crate cross_queue;
+#[macro_use]
 extern crate ferros;
 #[macro_use]
 extern crate registers;
-extern crate sel4_sys;
+extern crate selfe_sys;
 #[macro_use]
 extern crate typenum;
 
-use sel4_sys::*;
-
-macro_rules! debug_print {
-    ($($arg:tt)*) => ({
-        use core::fmt::Write;
-        DebugOutHandle.write_fmt(format_args!($($arg)*)).unwrap();
-    });
-}
-
-macro_rules! debug_println {
-    ($fmt:expr) => (debug_print!(concat!($fmt, "\n")));
-    ($fmt:expr, $($arg:tt)*) => (debug_print!(concat!($fmt, "\n"), $($arg)*));
-}
+use selfe_sys::*;
 
 mod dont_tread_on_me;
 mod double_door_backpressure;
@@ -32,8 +22,11 @@ mod fault_pair;
 mod single_process;
 mod uart;
 
-use ferros::micro_alloc::Error as AllocError;
+use ferros::alloc::micro_alloc::Error as AllocError;
 use ferros::userland::{IPCError, IRQError, MultiConsumerError, SeL4Error, VSpaceError};
+use ferros::debug::*;
+use core::fmt::Write;
+use core::panic::PanicInfo;
 
 fn yield_forever() {
     unsafe {
@@ -42,6 +35,18 @@ fn yield_forever() {
         }
     }
 }
+
+fn main() {
+    debug_println!("Starting the test!");
+    let bootinfo = unsafe { &*sel4_start::BOOTINFO };
+    run(bootinfo);
+}
+
+#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    sel4_start::debug_panic_handler(&info)
+}
+
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     #[cfg(single_process = "true")]

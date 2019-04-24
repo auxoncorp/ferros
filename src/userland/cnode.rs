@@ -1,160 +1,115 @@
-use core::marker::PhantomData;
-use core::ops::Sub;
 use crate::userland::{role, CNodeRole, Cap, CapRights, ChildCap, LocalCap, SeL4Error};
-use sel4_sys::*;
-use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U0, U1};
+use core::marker::PhantomData;
+use core::ops::{Add, Sub};
+use selfe_sys::*;
+use typenum::operator_aliases::Diff;
+use typenum::*;
 
 /// There will only ever be one CNode in a process with Role = Root. The
 /// cptrs any regular Cap are /also/ offsets into that cnode, because of
 /// how we're configuring each CNode's guard.
 #[derive(Debug)]
-pub struct CNode<FreeSlots: Unsigned, Role: CNodeRole> {
+pub struct CNode<Role: CNodeRole> {
     pub(super) radix: u8,
-    pub(super) next_free_slot: usize,
-    pub(super) _free_slots: PhantomData<FreeSlots>,
     pub(super) _role: PhantomData<Role>,
 }
 
-pub type LocalCNode<FreeSlots> = CNode<FreeSlots, role::Local>;
-pub type ChildCNode<FreeSlots> = CNode<FreeSlots, role::Child>;
+pub type LocalCNode = CNode<role::Local>;
+pub type ChildCNode = CNode<role::Child>;
 
 #[derive(Debug)]
-pub(super) struct CNodeSlot {
-    pub(super) cptr: usize,
-    pub(super) offset: usize,
+pub struct CNodeSlotsData<Size: Unsigned, Role: CNodeRole> {
+    offset: usize,
+    _size: PhantomData<Size>,
+    _role: PhantomData<Role>,
 }
 
-impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<CNode<FreeSlots, Role>> {
-    // TODO: reverse these args to be consistent with everything else
-    pub(super) fn consume_slot(self) -> (LocalCap<CNode<Sub1<FreeSlots>, Role>>, CNodeSlot)
-    where
-        FreeSlots: Sub<B1>,
-        Sub1<FreeSlots>: Unsigned,
-    {
-        (
-            Cap {
-                cptr: self.cptr,
-                _role: PhantomData,
-                cap_data: CNode {
-                    radix: self.cap_data.radix,
-                    next_free_slot: self.cap_data.next_free_slot + 1,
-                    _free_slots: PhantomData,
-                    _role: PhantomData,
-                },
-            },
-            CNodeSlot {
-                cptr: self.cptr,
-                offset: self.cap_data.next_free_slot,
-            },
-        )
-    }
+pub type CNodeSlots<Size, Role> = LocalCap<CNodeSlotsData<Size, Role>>;
+pub type LocalCNodeSlots<Size> = CNodeSlots<Size, role::Local>;
+pub type ChildCNodeSlots<Size> = CNodeSlots<Size, role::Child>;
 
-    /// Reserve Count slots. Return another node with the same cptr, but the
-    /// requested capacity.
-    /// TODO - Make this function private-only until we implement a safe way
-    /// to expose aliased CNode objects.
-    pub fn reserve_region<Count: Unsigned>(
-        self,
-    ) -> (
-        LocalCap<CNode<Count, Role>>,
-        LocalCap<CNode<Diff<FreeSlots, Count>, Role>>,
-    )
-    where
-        FreeSlots: Sub<Count>,
-        Diff<FreeSlots, Count>: Unsigned,
-    {
-        (
-            Cap {
-                cptr: self.cptr,
-                _role: PhantomData,
-                cap_data: CNode {
-                    radix: self.cap_data.radix,
-                    next_free_slot: self.cap_data.next_free_slot,
-                    _free_slots: PhantomData,
-                    _role: PhantomData,
-                },
-            },
-            Cap {
-                cptr: self.cptr,
-                _role: PhantomData,
-                cap_data: CNode {
-                    radix: self.cap_data.radix,
-                    next_free_slot: self.cap_data.next_free_slot + Count::to_usize(),
-                    _free_slots: PhantomData,
-                    _role: PhantomData,
-                },
-            },
-        )
-    }
+pub type CNodeSlot<Role> = CNodeSlots<U1, Role>;
+pub type LocalCNodeSlot = CNodeSlot<role::Local>;
+pub type ChildCNodeSlot = CNodeSlot<role::Child>;
 
-    /// TODO - Make this function private-only until we implement a safe way
-    /// to expose aliased CNode objects.
-    pub(super) fn reservation_iter<Count: Unsigned>(
-        self,
-    ) -> (
-        impl Iterator<Item = LocalCap<CNode<U1, Role>>>,
-        LocalCap<CNode<Diff<FreeSlots, Count>, Role>>,
-    )
-    where
-        FreeSlots: Sub<Count>,
-        Diff<FreeSlots, Count>: Unsigned,
-    {
-        let iter_radix = self.cap_data.radix;
-        let iter_cptr = self.cptr;
-        (
-            (self.cap_data.next_free_slot..self.cap_data.next_free_slot + Count::to_usize()).map(
-                move |slot| Cap {
-                    cptr: iter_cptr,
-                    _role: PhantomData,
-                    cap_data: CNode {
-                        radix: iter_radix,
-                        next_free_slot: slot,
-                        _free_slots: PhantomData,
-                        _role: PhantomData,
-                    },
-                },
-            ),
-            Cap {
-                cptr: self.cptr,
+impl<Size: Unsigned, CapRole: CNodeRole, Role: CNodeRole> Cap<CNodeSlotsData<Size, Role>, CapRole> {
+    /// A private constructor
+    pub(super) fn internal_new(
+        cptr: usize,
+        offset: usize,
+    ) -> Cap<CNodeSlotsData<Size, Role>, CapRole> {
+        Cap {
+            cptr,
+            _role: PhantomData,
+            cap_data: CNodeSlotsData {
+                offset,
+                _size: PhantomData,
                 _role: PhantomData,
-                cap_data: CNode {
-                    radix: self.cap_data.radix,
-                    next_free_slot: self.cap_data.next_free_slot + Count::to_usize(),
-                    _free_slots: PhantomData,
-                    _role: PhantomData,
-                },
             },
-        )
+        }
     }
 }
 
-impl<FreeSlots: Unsigned> LocalCap<CNode<FreeSlots, role::Child>> {
-    // The first returned cap goes in the child process params struct. The
-    // second one goes in the TCB when starting the child process.
-    pub fn generate_self_reference<ParentFreeSlots: Unsigned>(
+impl<Size: Unsigned, Role: CNodeRole> CNodeSlots<Size, Role> {
+    pub fn elim(self) -> (usize, usize, usize) {
+        (self.cptr, self.cap_data.offset, Size::USIZE)
+    }
+
+    pub fn alloc<Count: Unsigned>(
         self,
-        parent_cnode: &LocalCap<CNode<ParentFreeSlots, role::Local>>,
+    ) -> (CNodeSlots<Count, Role>, CNodeSlots<Diff<Size, Count>, Role>)
+    where
+        Size: Sub<Count>,
+        Diff<Size, Count>: Unsigned,
+    {
+        let (cptr, offset, _) = self.elim();
+
+        (
+            CNodeSlots::internal_new(cptr, offset),
+            CNodeSlots::internal_new(cptr, offset + Count::USIZE),
+        )
+    }
+
+    pub fn iter(self) -> impl Iterator<Item = CNodeSlot<Role>> {
+        let cptr = self.cptr;
+        let offset = self.cap_data.offset;
+        (0..Size::USIZE).map(move |n| Cap {
+            cptr: cptr,
+            _role: PhantomData,
+            cap_data: CNodeSlotsData {
+                offset: offset + n,
+                _size: PhantomData,
+                _role: PhantomData,
+            },
+        })
+    }
+}
+
+impl LocalCap<ChildCNode> {
+    pub fn generate_self_reference<SlotsForChild: Unsigned>(
+        &self,
+        parent_cnode: &LocalCap<LocalCNode>,
+        dest_slots: LocalCap<CNodeSlotsData<op! {SlotsForChild + U1}, role::Child>>,
     ) -> Result<
         (
-            ChildCap<CNode<Sub1<FreeSlots>, role::Child>>,
-            LocalCap<CNode<U0, role::Child>>,
+            ChildCap<ChildCNode>,
+            ChildCap<CNodeSlotsData<SlotsForChild, role::Child>>,
         ),
         SeL4Error,
     >
     where
-        FreeSlots: Sub<B1>,
-        Sub1<FreeSlots>: Unsigned,
+        SlotsForChild: Add<U1>,
+        op! {SlotsForChild +  U1}: Unsigned,
     {
-        let (local_self, dest_slot) = self.consume_slot();
+        let (dest_cptr, dest_offset, _) = dest_slots.elim();
 
         let err = unsafe {
             seL4_CNode_Copy(
-                dest_slot.cptr,       // _service
-                dest_slot.offset,     // index
+                dest_cptr,            // _service
+                dest_offset,          // index
                 seL4_WordBits as u8,  // depth
                 parent_cnode.cptr,    // src_root
-                local_self.cptr,      // src_index
+                self.cptr,            // src_index
                 seL4_WordBits as u8,  // src_depth
                 CapRights::RW.into(), // rights
             )
@@ -165,26 +120,14 @@ impl<FreeSlots: Unsigned> LocalCap<CNode<FreeSlots, role::Child>> {
         } else {
             Ok((
                 Cap {
-                    cptr: dest_slot.offset,
+                    cptr: dest_offset,
                     _role: PhantomData,
                     cap_data: CNode {
-                        radix: local_self.cap_data.radix,
-                        next_free_slot: local_self.cap_data.next_free_slot + 1,
-                        _free_slots: PhantomData,
+                        radix: self.cap_data.radix,
                         _role: PhantomData,
                     },
                 },
-                // Take this apart and put it back together to get it to the right type
-                Cap {
-                    cptr: local_self.cptr,
-                    _role: PhantomData,
-                    cap_data: CNode {
-                        radix: local_self.cap_data.radix,
-                        next_free_slot: core::usize::MAX,
-                        _free_slots: PhantomData,
-                        _role: PhantomData,
-                    },
-                },
+                Cap::internal_new(dest_offset, dest_offset + 1),
             ))
         }
     }
