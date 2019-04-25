@@ -1,6 +1,6 @@
 use crate::userland::cap::DirectRetype;
 use crate::userland::{
-    role, Badge, CNode, CNodeRole, Cap, CapRights, ChildCNodeSlot, ChildCap, Endpoint, LocalCNode,
+    role, Badge, CNodeRole, Cap, CapRights, ChildCNodeSlot, ChildCap, Endpoint, LocalCNode,
     LocalCNodeSlot, LocalCap, SeL4Error, Untyped,
 };
 use core::marker::PhantomData;
@@ -33,10 +33,9 @@ impl From<SeL4Error> for FaultManagementError {
     }
 }
 
-pub struct IpcSetup<Req, Rsp> {
+pub struct IpcSetup<'a, Req, Rsp> {
     endpoint: LocalCap<Endpoint>,
-    // Alias the cnode, but only so we can copy out of it
-    endpoint_cnode: LocalCap<LocalCNode>,
+    endpoint_cnode: &'a LocalCap<LocalCNode>,
     _req: PhantomData<Req>,
     _rsp: PhantomData<Rsp>,
 }
@@ -57,14 +56,7 @@ pub fn call_channel<Req: Send + Sync, Rsp: Send + Sync>(
     Ok((
         IpcSetup {
             endpoint: local_endpoint,
-            endpoint_cnode: Cap {
-                cptr: local_cnode.cptr,
-                _role: PhantomData,
-                cap_data: CNode {
-                    radix: local_cnode.cap_data.radix,
-                    _role: PhantomData,
-                },
-            },
+            endpoint_cnode: &local_cnode,
             _req: PhantomData,
             _rsp: PhantomData,
         },
@@ -77,7 +69,7 @@ pub fn call_channel<Req: Send + Sync, Rsp: Send + Sync>(
     ))
 }
 
-impl<Req, Rsp> IpcSetup<Req, Rsp> {
+impl<'a, Req, Rsp> IpcSetup<'a, Req, Rsp> {
     pub fn create_caller(
         &self,
         child_slot: ChildCNodeSlot,

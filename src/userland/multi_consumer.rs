@@ -191,7 +191,7 @@ pub struct WakerSetup {
 
     // User-concealed alias'ing happening here.
     // Don't mutate/delete this Cap. Copying/minting is okay.
-    notification: Cap<Notification, role::Local>,
+    notification: LocalCap<Notification>,
 }
 
 /// Wrapper around the locally-accessible resources
@@ -243,7 +243,7 @@ where
         Ok((
             InterruptConsumer {
                 irq_handler: irq_handler_in_child,
-                interrupt_badge: interrupt_badge,
+                interrupt_badge,
                 notification: notification_in_child,
             },
             ConsumerToken {
@@ -438,7 +438,7 @@ where
             consumer_vspace_pagedir: Some(consumer_vspace.identity_ref()),
         };
         let waker_setup = WakerSetup {
-            interrupt_badge: interrupt_badge,
+            interrupt_badge,
             notification: local_notification,
         };
         Ok((
