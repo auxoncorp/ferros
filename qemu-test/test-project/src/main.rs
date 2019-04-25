@@ -23,7 +23,7 @@ mod single_process;
 mod uart;
 
 use ferros::alloc::micro_alloc::Error as AllocError;
-use ferros::userland::{IPCError, IRQError, MultiConsumerError, SeL4Error, VSpaceError};
+use ferros::userland::{IPCError, IRQError, MultiConsumerError, SeL4Error, VSpaceError, FaultManagementError};
 use ferros::debug::*;
 use core::fmt::Write;
 use core::panic::PanicInfo;
@@ -73,6 +73,7 @@ pub enum TopLevelError {
     VSpaceError(VSpaceError),
     SeL4Error(SeL4Error),
     IRQError(IRQError),
+    FaultManagementError(FaultManagementError),
 }
 
 impl From<AllocError> for TopLevelError {
@@ -108,5 +109,11 @@ impl From<SeL4Error> for TopLevelError {
 impl From<IRQError> for TopLevelError {
     fn from(e: IRQError) -> Self {
         TopLevelError::IRQError(e)
+    }
+}
+
+impl From<FaultManagementError> for TopLevelError {
+    fn from(e: FaultManagementError) -> Self {
+        TopLevelError::FaultManagementError(e)
     }
 }
