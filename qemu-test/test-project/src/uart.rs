@@ -1,6 +1,5 @@
 use selfe_sys::*;
 
-use ferros::drivers::uart::UartParams;
 use ferros::alloc::{self, smart_alloc, micro_alloc};
 use ferros::userland::{role, root_cnode, BootInfo, InterruptConsumer, VSpace, retype, retype_cnode};
 use typenum::*;
@@ -48,7 +47,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let uart1_page_1 = uart1_page_1_untyped.retype_device_page(slots)?;
         let (uart1_page_1, uart1_vspace) = uart1_vspace.map_page(uart1_page_1)?;
 
-        let uart1_params = UartParams::<Uart1IrqLine, role::Child> {
+        let uart1_params = uart::UartParams::<Uart1IrqLine, role::Child> {
             base_ptr: uart1_page_1.vaddr(),
             consumer: interrupt_consumer,
         };
@@ -69,18 +68,27 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 }
 
 pub mod uart {
-
-    use core::mem;
-
-    use selfe_sys::*;
-
-    use ferros::drivers::uart::UartParams;
-    use ferros::userland::role;
+    use ferros::userland::{role, CNodeRole, InterruptConsumer, RetypeForSetup};
 
     use typenum::consts::{True, U1, U256};
     use typenum::{IsLess, Unsigned};
 
     use registers::{ReadOnlyRegister, ReadWriteRegister, WriteOnlyRegister};
+
+    pub struct UartParams<IRQ: Unsigned + Sync + Send, Role: CNodeRole>
+        where
+            IRQ: IsLess<U256, Output = True>,
+    {
+        pub base_ptr: usize,
+        pub consumer: InterruptConsumer<IRQ, Role>,
+    }
+
+    impl<IRQ: Unsigned + Sync + Send> RetypeForSetup for UartParams<IRQ, role::Local>
+        where
+            IRQ: IsLess<U256, Output = True>,
+    {
+        type Output = UartParams<IRQ, role::Child>;
+    }
 
     register! {
         UartRX,
@@ -183,8 +191,6 @@ pub mod uart {
             unsafe { (*ub).tx.modify(checked) };
         }
     }
-
-    use core::ptr;
 
     pub extern "C" fn run<IRQ: Unsigned + Sync + Send>(params: UartParams<IRQ, role::Local>)
     where

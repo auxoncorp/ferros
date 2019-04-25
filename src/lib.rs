@@ -17,8 +17,6 @@ extern crate smart_alloc;
 #[macro_use]
 pub mod debug;
 
-pub mod drivers;
-
 pub mod alloc;
 pub mod arch;
 pub mod pow;
