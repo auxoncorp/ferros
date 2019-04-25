@@ -262,7 +262,7 @@ pub(crate) unsafe fn setup_initial_stack_and_regs(
 /// Using this technique allows us to avoid a presently unstable
 /// feature, `optin_builtin_traits` to explicitly opt-out of
 /// implementing Send and Sync.
-pub(crate) struct NeitherSendNorSync(PhantomData<* const()>);
+pub(crate) struct NeitherSendNorSync(PhantomData<*const ()>);
 
 impl core::default::Default for NeitherSendNorSync {
     fn default() -> Self {

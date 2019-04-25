@@ -47,7 +47,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
         smart_alloc!(|slots_c from child_slots| {
             let (cnode_for_child, slots_for_child) = child_cnode.generate_self_reference(&root_cnode, slots_c)?;
-            let child_ut5 = ut5.move_to_cnode(&root_cnode, slots_c)?;
+            let child_ut5 = ut5.move_to_slot(&root_cnode, slots_c)?;
         });
 
         let params = CapManagementParams {
