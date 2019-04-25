@@ -262,7 +262,7 @@ where
         ConsumerPageTableFreeSlots: Unsigned,
     >(
         self,
-        consumer_token: ConsumerToken,
+        consumer_token: &mut ConsumerToken,
         shared_page_ut: LocalCap<
             Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
         >,
@@ -274,7 +274,6 @@ where
     ) -> Result<
         (
             Consumer1<role::Child, E, ELen, IRQ>,
-            ConsumerToken,
             ProducerSetup<E, ELen>,
             VSpace<ConsumerPageDirFreeSlots, Sub1<ConsumerPageTableFreeSlots>, role::Child>,
         ),
@@ -304,6 +303,7 @@ where
                 &local_cnode,
                 dest_slots,
             )?;
+        consumer_token.consumer_vspace_pagedir = Some(consumer_vspace.identity_ref());
 
         // Assumes we are using the one-hot style for identifying the interrupt badge index
         let fresh_queue_badge = Badge::from(self.interrupt_badge.inner << 1);
@@ -321,6 +321,7 @@ where
             _queue_element_type: PhantomData,
             _queue_lenth: PhantomData,
         };
+
         Ok((
             Consumer1 {
                 irq_handler: Some(self.irq_handler),
@@ -333,10 +334,6 @@ where
                     _t: PhantomData,
                     _queue_len: PhantomData,
                 },
-            },
-            ConsumerToken {
-                notification: consumer_token.notification,
-                consumer_vspace_pagedir: Some(consumer_vspace.identity_ref()),
             },
             producer_setup,
             consumer_vspace,
