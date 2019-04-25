@@ -12,6 +12,7 @@ use core::ops::Sub;
 use selfe_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
 use typenum::{Unsigned, B1, U0, U12, U19};
+use crate::userland::process::NeitherSendNorSync;
 
 // The root CNode radix is 19. Conservatively set aside 2^12 (the default root
 // cnode size) for system use. TODO: verify at build time that this is enough /
@@ -52,11 +53,9 @@ pub struct BootInfo<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned> {
     user_image_frames_end: usize,
     user_image_paging_start: usize,
     user_image_paging_end: usize,
-}
 
-impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned> !Send
-    for BootInfo<ASIDPoolFreeSlots, PageDirFreeSlots>
-{
+    #[allow(dead_code)]
+    neither_send_nor_sync: NeitherSendNorSync,
 }
 
 impl BootInfo<paging::BaseASIDPoolFreeSlots, paging::RootTaskPageDirFreeSlots> {
@@ -93,6 +92,8 @@ impl BootInfo<paging::BaseASIDPoolFreeSlots, paging::RootTaskPageDirFreeSlots> {
             user_image_frames_end: bootinfo.userImageFrames.end,
             user_image_paging_start: bootinfo.userImagePaging.start,
             user_image_paging_end: bootinfo.userImagePaging.end,
+
+            neither_send_nor_sync: Default::default()
         }
     }
 }
@@ -173,6 +174,8 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
                 user_image_frames_end: self.user_image_frames_end,
                 user_image_paging_start: self.user_image_paging_start,
                 user_image_paging_end: self.user_image_paging_end,
+
+                neither_send_nor_sync: Default::default()
             },
         ))
     }
@@ -206,6 +209,8 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
                 user_image_frames_end: self.user_image_frames_end,
                 user_image_paging_start: self.user_image_paging_start,
                 user_image_paging_end: self.user_image_paging_end,
+
+                neither_send_nor_sync: Default::default()
             },
         ))
     }

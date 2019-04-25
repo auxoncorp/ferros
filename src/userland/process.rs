@@ -255,6 +255,21 @@ pub(crate) unsafe fn setup_initial_stack_and_regs(
     (regs, param_size_on_stack)
 }
 
+/// A helper zero-sized struct that forces structures
+/// which have a field of its type to not auto-implement
+/// core::marker::Send or core::marker::Sync.
+///
+/// Using this technique allows us to avoid a presently unstable
+/// feature, `optin_builtin_traits` to explicitly opt-out of
+/// implementing Send and Sync.
+pub(crate) struct NeitherSendNorSync(PhantomData<* const()>);
+
+impl core::default::Default for NeitherSendNorSync {
+    fn default() -> Self {
+        NeitherSendNorSync(PhantomData)
+    }
+}
+
 #[cfg(feature = "test")]
 pub mod test {
     use super::*;
