@@ -1,17 +1,12 @@
 use super::TopLevelError;
 use core::marker::PhantomData;
-use ferros::alloc::{self, smart_alloc, micro_alloc};
-use ferros::pow::Pow;
+use ferros::alloc::{self, micro_alloc, smart_alloc};
 use ferros::userland::{
-    call_channel, role, root_cnode, setup_fault_endpoint_pair, BootInfo, CNode, CNodeRole, Caller,
-    Cap, Consumer1, Endpoint, FaultSink, LocalCap, Producer, ProducerSetup, QueueFullError,
-    Responder, RetypeForSetup, SeL4Error, UnmappedPageTable, Untyped, VSpace, retype, retype_cnode
+    retype, retype_cnode, role, root_cnode, setup_fault_endpoint_pair, BootInfo, CNodeRole,
+    FaultSink, RetypeForSetup, VSpace,
 };
 use selfe_sys::*;
 use typenum::*;
-type U4095 = Diff<U4096, U1>;
-
-use selfe_sys::seL4_Yield;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
@@ -35,8 +30,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (fault_handler_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
         let (fault_handler_cnode, fault_handler_slots) = retype_cnode::<U12>(ut, slots)?;
 
-        let (slots_source, mischief_maker_slots) = mischief_maker_slots.alloc();
-        let (slots_sink, fault_handler_slots) = fault_handler_slots.alloc();
+        let (slots_source, _mischief_maker_slots) = mischief_maker_slots.alloc();
+        let (slots_sink, _fault_handler_slots) = fault_handler_slots.alloc();
         let (fault_source, fault_sink) =
             setup_fault_endpoint_pair(&root_cnode, ut, slots, slots_source, slots_sink)?;
 

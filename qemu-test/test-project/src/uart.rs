@@ -1,7 +1,9 @@
 use selfe_sys::*;
 
-use ferros::alloc::{self, smart_alloc, micro_alloc};
-use ferros::userland::{role, root_cnode, BootInfo, InterruptConsumer, VSpace, retype, retype_cnode};
+use ferros::alloc::{self, micro_alloc, smart_alloc};
+use ferros::userland::{
+    retype, retype_cnode, role, root_cnode, BootInfo, InterruptConsumer, VSpace,
+};
 use typenum::*;
 
 use super::TopLevelError;
@@ -34,7 +36,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (uart1_cnode, uart1_slots) = retype_cnode::<U12>(ut, slots)?;
         let (uart1_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
 
-        let (slots_u, uart1_slots) = uart1_slots.alloc();
+        let (slots_u, _uart1_slots) = uart1_slots.alloc();
         let (interrupt_consumer, _) = InterruptConsumer::new(
             ut,
             &mut boot_info.irq_control,
@@ -76,16 +78,16 @@ pub mod uart {
     use registers::{ReadOnlyRegister, ReadWriteRegister, WriteOnlyRegister};
 
     pub struct UartParams<IRQ: Unsigned + Sync + Send, Role: CNodeRole>
-        where
-            IRQ: IsLess<U256, Output = True>,
+    where
+        IRQ: IsLess<U256, Output = True>,
     {
         pub base_ptr: usize,
         pub consumer: InterruptConsumer<IRQ, Role>,
     }
 
     impl<IRQ: Unsigned + Sync + Send> RetypeForSetup for UartParams<IRQ, role::Local>
-        where
-            IRQ: IsLess<U256, Output = True>,
+    where
+        IRQ: IsLess<U256, Output = True>,
     {
         type Output = UartParams<IRQ, role::Child>;
     }
@@ -196,7 +198,7 @@ pub mod uart {
     where
         IRQ: IsLess<U256, Output = True>,
     {
-        let mut uart = Uart {
+        let uart = Uart {
             addr: params.base_ptr as u32,
         };
 

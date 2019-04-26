@@ -2,13 +2,12 @@
 //! the user image, that such a write cannot affect another process'
 //! copy of the user image.
 
-
-use ferros::alloc::{self, smart_alloc, micro_alloc};
-use ferros::userland::{call_channel, root_cnode, BootInfo, VSpace, retype, retype_cnode};
+use ferros::alloc::{self, micro_alloc, smart_alloc};
+use ferros::userland::{call_channel, retype, retype_cnode, root_cnode, BootInfo, VSpace};
 
 use typenum::*;
 
-use selfe_sys::{seL4_BootInfo};
+use selfe_sys::seL4_BootInfo;
 
 use super::TopLevelError;
 
@@ -34,7 +33,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (proc2_cspace, proc2_slots) = retype_cnode::<U12>(ut, slots)?;
         debug_println!("proc 2 cspace retyped");
 
-        let (proc1_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
+        let (proc1_vspace, boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
         debug_println!("proc 1 vspace exists");
 
         let (proc2_vspace, mut boot_info) = VSpace::new_with_writable_user_image(
@@ -81,6 +80,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn to_be_changed() {
     debug_println!("not changed at all");
 }
