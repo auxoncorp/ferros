@@ -303,6 +303,11 @@ impl VSpace {
 impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
     VSpace<PageDirFreeSlots, PageTableFreeSlots, Role>
 {
+    // TODO: just for testing MemoryRegion out
+    pub fn leak_page_dir_cap(&self) -> usize {
+        self.page_dir.cptr
+    }
+
     pub fn next_page_table<CNodeFreeSlots: Unsigned>(
         self,
         new_page_table_ut: LocalCap<Untyped<<UnmappedPageTable as DirectRetype>::SizeBits>>,

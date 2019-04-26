@@ -14,6 +14,7 @@ ferros = { path = "../.." }
 cross_queue = { path = "../../cross_queue" }
 typenum = { git = "ssh://github.com/auxoncorp/typenum.git" }
 registers = { git = "ssh://github.com/auxoncorp/registers.git" }
+ferros-hal = { git = "ssh://github.com/auxoncorp/ferros-hal-prototyping", branch = "master" }
 
 [profile.dev]
 panic = "abort"
