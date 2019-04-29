@@ -8,27 +8,32 @@ use selfe_sys::{seL4_BootInfo, seL4_Yield};
 use typenum::*;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
-    // wrap all untyped memory
+    let BootInfo {
+        root_page_directory,
+        asid_control,
+        user_image,
+        root_tcb,
+        ..
+    } = BootInfo::wrap(&raw_boot_info);
     let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
-
-    debug_println!("Allocator State: {:?}", allocator);
-
-    // wrap root CNode for safe usage
     let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
-
-    // find an untyped of size 21 bits
-    let ut21 = allocator
-        .get_untyped::<U21>()
-        .expect("initial alloc failure");
-    let uts = alloc::ut_buddy(ut21);
+    let uts = alloc::ut_buddy(
+        allocator
+            .get_untyped::<U21>()
+            .expect("initial alloc failure"),
+    );
 
     smart_alloc!(|slots from local_slots, ut from uts| {
-        // wrap the rest of the critical boot info
-        let boot_info = BootInfo::wrap(raw_boot_info, ut, slots);
+        let unmapped_scratch_page_table = retype(ut, slots)?;
+        let (mut scratch_page_table, mut root_page_directory) =
+            root_page_directory.map_page_table(unmapped_scratch_page_table)?;
 
-        // retypes
-        let scratch_page_table = retype(ut, slots)?;
-        let (mut scratch_page_table, boot_info) = boot_info.map_page_table(scratch_page_table)?;
+        let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
+
+        let (consumer_asid, asid_pool) = asid_pool.alloc();
+        let (producer_a_asid, asid_pool) = asid_pool.alloc();
+        let (producer_b_asid, asid_pool) = asid_pool.alloc();
+        let (waker_asid, asid_pool) = asid_pool.alloc();
 
         let (consumer_cnode, consumer_slots) = retype_cnode::<U12>(ut, slots)?;
         let (producer_a_cnode, producer_a_slots) = retype_cnode::<U12>(ut, slots)?;
@@ -36,10 +41,14 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (waker_cnode, waker_slots) = retype_cnode::<U12>(ut, slots)?;
 
         // vspace setup
-        let (consumer_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
-        let (producer_a_vspace, boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
-        let (producer_b_vspace, boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
-        let (waker_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
+        let consumer_vspace = VSpace::new(ut, slots, consumer_asid, &user_image, &root_cnode,
+                                          &mut root_page_directory)?;
+        let producer_a_vspace = VSpace::new(ut, slots, producer_a_asid, &user_image, &root_cnode,
+                                            &mut root_page_directory)?;
+        let producer_b_vspace = VSpace::new(ut, slots, producer_b_asid, &user_image, &root_cnode,
+                                            &mut root_page_directory)?;
+        let waker_vspace = VSpace::new(ut, slots, waker_asid, &user_image, &root_cnode,
+                                       &mut root_page_directory)?;
 
         let (slots_c, consumer_slots) = consumer_slots.alloc();
         let (
@@ -53,7 +62,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             ut,
             consumer_vspace,
             &mut scratch_page_table,
-            &mut boot_info.page_directory,
+            &mut root_page_directory,
             &root_cnode,
             slots,
             slots_c
@@ -64,7 +73,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             ut,
             consumer_vspace,
             &mut scratch_page_table,
-            &mut boot_info.page_directory,
+            &mut root_page_directory,
             &root_cnode,
             slots
         )?;
@@ -107,7 +116,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             ut,
             slots,
             &mut scratch_page_table,
-            &mut boot_info.page_directory,
+            &mut root_page_directory,
         )?;
 
         let (producer_a_thread, _) = producer_a_vspace.prepare_thread(
@@ -116,7 +125,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             ut,
             slots,
             &mut scratch_page_table,
-            &mut boot_info.page_directory,
+            &mut root_page_directory,
         )?;
 
         let (producer_b_thread, _) = producer_b_vspace.prepare_thread(
@@ -125,7 +134,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             ut,
             slots,
             &mut scratch_page_table,
-            &mut boot_info.page_directory,
+            &mut root_page_directory,
         )?;
 
         let (waker_thread, _) = waker_vspace.prepare_thread(
@@ -134,13 +143,13 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             ut,
             slots,
             &mut scratch_page_table,
-            &mut boot_info.page_directory,
+            &mut root_page_directory,
         )?;
 
-        consumer_thread.start(consumer_cnode, None, &boot_info.tcb, 255)?;
-        producer_a_thread.start(producer_a_cnode, None, &boot_info.tcb, 255)?;
-        producer_b_thread.start(producer_b_cnode, None, &boot_info.tcb, 255)?;
-        waker_thread.start(waker_cnode, None, &boot_info.tcb, 255)?;
+        consumer_thread.start(consumer_cnode, None, &root_tcb, 255)?;
+        producer_a_thread.start(producer_a_cnode, None, &root_tcb, 255)?;
+        producer_b_thread.start(producer_b_cnode, None, &root_tcb, 255)?;
+        waker_thread.start(waker_cnode, None, &root_tcb, 255)?;
     });
     Ok(())
 }

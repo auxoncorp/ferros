@@ -10,24 +10,31 @@ use ferros::userland::{
 };
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
+    let BootInfo {
+        root_page_directory,
+        asid_control,
+        user_image,
+        root_tcb,
+        ..
+    } = BootInfo::wrap(&raw_boot_info);
     let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
     let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
-
-    let ut27 = allocator
-        .get_untyped::<U27>()
-        .expect("initial alloc failure");
-    let uts = alloc::ut_buddy(ut27);
+    let uts = alloc::ut_buddy(
+        allocator
+            .get_untyped::<U27>()
+            .expect("initial alloc failure"),
+    );
 
     smart_alloc!(|slots from local_slots, ut from uts| {
-        let boot_info = BootInfo::wrap(raw_boot_info, ut, slots);
-
         let unmapped_scratch_page_table = retype(ut, slots)?;
-        let (mut scratch_page_table, boot_info) =
-            boot_info.map_page_table(unmapped_scratch_page_table)?;
+        let (mut scratch_page_table, mut root_page_directory) =
+            root_page_directory.map_page_table(unmapped_scratch_page_table)?;
 
+        let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
+        let (child_asid, _asid_pool) = asid_pool.alloc();
         let (child_cnode, child_slots) = retype_cnode::<U12>(ut, slots)?;
 
-        let (ut5, uts): (LocalCap<Untyped<U5>>, _) = uts.alloc(slots)?;
+        let ut5: LocalCap<Untyped<U5>> = ut;
 
         smart_alloc!(|slots_c from child_slots| {
             let (cnode_for_child, slots_for_child) = child_cnode.generate_self_reference(&root_cnode, slots_c)?;
@@ -40,7 +47,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             my_ut: child_ut5,
         };
 
-        let (child_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
+        let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &root_cnode, &mut root_page_directory)?;
 
         let (child_process, _) = child_vspace.prepare_thread(
             proc_main,
@@ -48,11 +55,11 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             ut,
             slots,
             &mut scratch_page_table,
-            &mut boot_info.page_directory,
+            &mut root_page_directory,
         )?;
     });
 
-    child_process.start(child_cnode, None, &boot_info.tcb, 255)?;
+    child_process.start(child_cnode, None, &root_tcb, 255)?;
 
     Ok(())
 }

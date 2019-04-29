@@ -1,3 +1,4 @@
+mod asid;
 mod bootstrap;
 mod cap;
 mod cap_range;
@@ -11,6 +12,7 @@ mod shared_memory_ipc;
 mod untyped;
 mod vspace;
 
+pub use crate::userland::asid::*;
 pub use crate::userland::bootstrap::*;
 pub use crate::userland::cap::*;
 pub use crate::userland::cap_range::*;

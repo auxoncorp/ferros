@@ -9,25 +9,36 @@ use selfe_sys::*;
 use typenum::*;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
+    let BootInfo {
+        root_page_directory,
+        asid_control,
+        user_image,
+        root_tcb,
+        ..
+    } = BootInfo::wrap(&raw_boot_info);
     let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
     let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
-
-    let ut27 = allocator
-        .get_untyped::<U27>()
-        .expect("initial alloc failure");
-    let uts = alloc::ut_buddy(ut27);
+    let uts = alloc::ut_buddy(
+        allocator
+            .get_untyped::<U27>()
+            .expect("initial alloc failure"),
+    );
 
     smart_alloc!(|slots from local_slots, ut from uts| {
-        let boot_info = BootInfo::wrap(raw_boot_info, ut, slots);
-
         let unmapped_scratch_page_table = retype(ut, slots)?;
-        let (mut scratch_page_table, boot_info) =
-            boot_info.map_page_table(unmapped_scratch_page_table)?;
+        let (mut scratch_page_table, mut root_page_directory) =
+            root_page_directory.map_page_table(unmapped_scratch_page_table)?;
 
-        let (mischief_maker_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
+        let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
+
+        let (mischief_maker_asid, asid_pool) = asid_pool.alloc();
+        let mischief_maker_vspace = VSpace::new(ut, slots, mischief_maker_asid, &user_image, &root_cnode,
+                                                &mut root_page_directory)?;
         let (mischief_maker_cnode, mischief_maker_slots) = retype_cnode::<U12>(ut, slots)?;
 
-        let (fault_handler_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
+        let (fault_handler_asid, asid_pool) = asid_pool.alloc();
+        let fault_handler_vspace = VSpace::new(ut, slots, fault_handler_asid, &user_image, &root_cnode,
+                                               &mut root_page_directory)?;
         let (fault_handler_cnode, fault_handler_slots) = retype_cnode::<U12>(ut, slots)?;
 
         let (slots_source, _mischief_maker_slots) = mischief_maker_slots.alloc();
@@ -44,13 +55,13 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             ut,
             slots,
             &mut scratch_page_table,
-            &mut boot_info.page_directory,
+            &mut root_page_directory,
         )?;
 
         mischief_maker_process.start(
             mischief_maker_cnode,
             Some(fault_source),
-            &boot_info.tcb,
+            &root_tcb,
             255,
         )?;
 
@@ -61,13 +72,13 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             ut,
             slots,
             &mut scratch_page_table,
-            &mut boot_info.page_directory,
+            &mut root_page_directory,
         )?;
 
         fault_handler_process.start(
             fault_handler_cnode,
             None,
-            &boot_info.tcb,
+            &root_tcb,
             255
         )?;
     });
