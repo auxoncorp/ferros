@@ -3,9 +3,10 @@ use super::TopLevelError;
 use core::ptr;
 use ferros::alloc::{self, micro_alloc, smart_alloc};
 use ferros::userland::{
-    retype, retype_cnode, role, root_cnode, BootInfo, CNode, CNodeRole, CNodeSlots, CNodeSlotsData,
-    Cap, Endpoint, LocalCap, RetypeForSetup, SeL4Error, UnmappedPageTable, Untyped, VSpace,
+    retype, retype_cnode, role, root_cnode, yield_forever, BootInfo, CapRights, LocalCap,
+    RetypeForSetup, Untyped, VSpace,
 };
+use ferros_hal::dma_cache_op::{DmaCacheOp, DmaCacheOpExt};
 use ferros_hal::memory_region::MemoryRegion;
 use selfe_sys::*;
 use typenum::*;
@@ -29,26 +30,32 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (proc_cnode, proc_slots) = retype_cnode::<U12>(ut, slots)?;
         let (proc_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
 
-        // Carve off 2 pages of memory
-        let unmapped_page_a = retype(ut, slots)?;
-        let (page_a, proc_vspace) = proc_vspace.map_page(unmapped_page_a)?;
-        let unmapped_page_b = retype(ut, slots)?;
-        let (page_b, proc_vspace) = proc_vspace.map_page(unmapped_page_b)?;
+        // Map two pages to a single page memory region
+        // The first page, will be mapped without cacheability attributes
+        // and the second page (pagec) will be mapped with them
+        let unmapped_page = retype(ut, slots)?;
+        let unmapped_pagec = unmapped_page
+            .copy(&root_cnode, slots, CapRights::RW)?;
 
-        let page_a_vaddr = page_a.virtual_address();
-        let page_a_paddr = page_a.physical_address()?;
+        let (mapped_page, proc_vspace) = proc_vspace.map_dma_page(unmapped_page)?;
+        let (mapped_pagec, proc_vspace) = proc_vspace.map_page(unmapped_pagec)?;
 
-        let page_b_vaddr = page_b.virtual_address();
-        let page_b_paddr = page_b.physical_address()?;
+        let page_vaddr = mapped_page.virtual_address();
+        let page_paddr = mapped_page.physical_address()?;
 
-        debug_println!("Page A vaddr {:#010X} paddr {:#010X}", page_a_vaddr, page_a_paddr);
-        debug_println!("Page B vaddr {:#010X} paddr {:#010X}", page_b_vaddr, page_b_paddr);
+        let pagec_vaddr = mapped_pagec.virtual_address();
+        let pagec_paddr = mapped_pagec.physical_address()?;
+
+        debug_println!("Page vaddr {:#010X} paddr {:#010X}", page_vaddr, page_paddr);
+        debug_println!("PageC vaddr {:#010X} paddr {:#010X}", pagec_vaddr, pagec_paddr);
 
         let proc_params = ProcParams {
-            page_a_vaddr,
-            page_a_paddr,
-            page_b_vaddr,
-            page_b_paddr,
+            // TODO - this won't work yet, need to mint
+            cache_op_token: proc_vspace.leak_page_dir_cap(),
+            page_vaddr,
+            page_paddr,
+            pagec_vaddr,
+            pagec_paddr,
         };
 
         let (proc_thread, _) = proc_vspace.prepare_thread(
@@ -74,14 +81,14 @@ type ExpectedPaddr = Sum<Sum<U268435456, U134217728>, U8192>;
 /// 4K page
 type PageSize = U4096;
 
-/// Two pages in the pool
-type MemPoolSize = Sum<PageSize, PageSize>;
-
 pub struct ProcParams {
-    pub page_a_vaddr: usize,
-    pub page_a_paddr: usize,
-    pub page_b_vaddr: usize,
-    pub page_b_paddr: usize,
+    pub cache_op_token: usize,
+    // Page without cacheability attributes
+    pub page_vaddr: usize,
+    pub page_paddr: usize,
+    // Page with cacheability attributes
+    pub pagec_vaddr: usize,
+    pub pagec_paddr: usize,
 }
 
 impl RetypeForSetup for ProcParams {
@@ -93,37 +100,49 @@ pub extern "C" fn test_page_directory_flush(p: ProcParams) {
     // on the vaddr/paddr being constant, this might break if
     // the underlying device tree, memory split, or ut ordering changes
 
-    assert_eq!(p.page_a_vaddr, ExpectedVaddr::USIZE);
-    assert_eq!(p.page_a_paddr, ExpectedPaddr::USIZE);
+    // Both pages are mapped to the same region, so they
+    // should have the same paddr and size
+    assert_eq!(p.page_paddr, ExpectedPaddr::USIZE);
+    assert_eq!(p.pagec_paddr, ExpectedPaddr::USIZE);
 
-    type PageBVaddr = Sum<ExpectedVaddr, PageSize>;
-    type PageBPaddr = Sum<ExpectedPaddr, PageSize>;
-    assert_eq!(p.page_b_vaddr, PageBVaddr::USIZE);
-    assert_eq!(p.page_b_paddr, PageBPaddr::USIZE);
+    // They should be mapped contiguously, so vaddr is offset by a page
+    type PageCVaddr = Sum<ExpectedVaddr, PageSize>;
+    assert_eq!(p.page_vaddr, ExpectedVaddr::USIZE);
+    assert_eq!(p.pagec_vaddr, PageCVaddr::USIZE);
 
-    // Merge the two pages into a single MemoryRegion
-    let mem_pool = MemoryRegion::new::<ExpectedVaddr, ExpectedPaddr, MemPoolSize>();
+    // Create two memory regions over the pages
+    let mut mem = MemoryRegion::new::<ExpectedVaddr, ExpectedPaddr, PageSize>();
+    let mut memc =
+        MemoryRegion::new_with_token::<PageCVaddr, ExpectedPaddr, PageSize>(p.cache_op_token);
 
-    debug_println!("{}", mem_pool);
-
-    // Split the pool into two regions
-    let (mut mem_a, mut mem_b) = mem_pool.split_off::<PageSize>();
+    debug_println!("Non-cache mem:\n{}", mem);
+    debug_println!("Cacheable mem:\n{}", memc);
 
     // Clean makes data observable to non-cached page
-    unsafe { ptr::write_volatile(mem_a.as_mut_ptr::<u32>().unwrap(), 0xC0FFEE) };
-    unsafe { ptr::write_volatile(mem_b.as_mut_ptr::<u32>().unwrap(), 0xDEADBEEF) };
+    unsafe { ptr::write_volatile(mem.as_mut_ptr::<u32>().unwrap(), 0xC0FFEE) };
+    unsafe { ptr::write_volatile(memc.as_mut_ptr::<u32>().unwrap(), 0xDEADBEEF) };
     assert_eq!(
-        unsafe { ptr::read_volatile(mem_a.as_mut_ptr::<u32>().unwrap()) },
+        unsafe { ptr::read_volatile(mem.as_mut_ptr::<u32>().unwrap()) },
         0xC0FFEE
     );
     assert_eq!(
-        unsafe { ptr::read_volatile(mem_b.as_mut_ptr::<u32>().unwrap()) },
+        unsafe { ptr::read_volatile(memc.as_mut_ptr::<u32>().unwrap()) },
+        0xDEADBEEF
+    );
+    memc.dma_cache_op(DmaCacheOp::Clean, memc.vaddr(), memc.size())
+        .unwrap();
+    assert_eq!(
+        unsafe { ptr::read_volatile(mem.as_mut_ptr::<u32>().unwrap()) },
+        0xDEADBEEF
+    );
+    assert_eq!(
+        unsafe { ptr::read_volatile(memc.as_mut_ptr::<u32>().unwrap()) },
         0xDEADBEEF
     );
 
+    // TODO
+
     debug_println!("All done");
 
-    loop {
-        // TODO
-    }
+    unsafe { yield_forever() };
 }

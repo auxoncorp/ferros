@@ -381,6 +381,33 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
         ))
     }
 
+    // TODO - DMA probably doesn't belong, what we really want is
+    // to specify mapping attributes, ie no cacheability
+    pub fn map_dma_page<Kind: MemoryKind>(
+        self,
+        page: LocalCap<UnmappedPage<Kind>>,
+    ) -> Result<
+        (
+            LocalCap<MappedPage<Role, Kind>>,
+            VSpace<PageDirFreeSlots, Sub1<PageTableFreeSlots>, Role>,
+        ),
+        SeL4Error,
+    >
+    where
+        PageTableFreeSlots: Sub<B1>,
+        Sub1<PageTableFreeSlots>: Unsigned,
+    {
+        let mut page_dir = self.page_dir;
+        let (mapped_page, page_table) = self.current_page_table.map_dma_page(page, &mut page_dir)?;
+        Ok((
+            mapped_page,
+            VSpace {
+                page_dir: page_dir,
+                current_page_table: page_table,
+            },
+        ))
+    }
+
     pub(super) fn skip_pages<Count: Unsigned>(
         self,
     ) -> VSpace<PageDirFreeSlots, Diff<PageTableFreeSlots, Count>, Role>
