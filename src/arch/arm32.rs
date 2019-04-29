@@ -2,16 +2,27 @@ use crate::pow::Pow;
 use typenum::operator_aliases::{Diff, Prod, Sum};
 use typenum::*;
 
+pub type WordBits = U32;
+pub type WordBytes = U4;
+
 pub mod kernel {
     use super::*;
     pub type MaxUntypedSize = U31;
     pub type MinUntypedSize = U4;
 }
 
-pub mod paging {
+pub mod asid {
     use super::*;
 
-    pub type BaseASIDPoolFreeSlots = U1024;
+    pub type ControlBits = U2;
+    pub type PoolBits = U10;
+
+    pub type PoolCount = op! {U1 << ControlBits};
+    pub type PoolSize = op! {U1 << PoolBits };
+}
+
+pub mod paging {
+    use super::*;
 
     // Arm32 address structure
     pub type PageDirectoryBits = U12;
@@ -53,7 +64,7 @@ pub mod paging {
     // Useful for constant comparison to data structure size_of results
     pub type PageBytes = Pow<PageBits>;
 
-    pub const USIZE_PER_PAGE: usize = PageBytes::USIZE / core::mem::size_of::<usize>();
+    pub const WORDS_PER_PAGE: usize = PageBytes::USIZE / core::mem::size_of::<usize>();
 }
 
 pub mod address_space {

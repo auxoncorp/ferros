@@ -6,12 +6,14 @@ use typenum::*;
 use ferros::pow::Pow;
 use ferros::userland::{
     role, root_cnode, BootInfo, CNode, CNodeRole, Cap, Endpoint, LocalCap, RetypeForSetup,
-    SeL4Error, UnmappedPageTable, Untyped, VSpace, retype, retype_cnode, CNodeSlots, CNodeSlotsData
+    SeL4Error, UnmappedPageTable, Untyped, VSpace, retype, retype_cnode, CNodeSlots, CNodeSlotsData, memory_kind
 };
 use selfe_sys::*;
 type U4095 = Diff<U4096, U1>;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
+    let BootInfo { root_page_directory, asid_control, user_image, root_tcb, .. } = BootInfo::wrap(raw_boot_info);
+
     #[cfg(test_case = "root_task_runs")]
     {
         debug_println!("\nhello from the root task!\n");
@@ -26,11 +28,10 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let uts = alloc::ut_buddy(ut27);
 
     smart_alloc!(|slots from local_slots, ut from uts| {
-        let boot_info = BootInfo::wrap(raw_boot_info, ut, slots);
 
         let unmapped_scratch_page_table = retype(ut, slots)?;
-        let (mut scratch_page_table, boot_info) =
-            boot_info.map_page_table(unmapped_scratch_page_table)?;
+        let (mut scratch_page_table, mut root_page_directory) =
+            root_page_directory.map_page_table(unmapped_scratch_page_table)?;
 
         let (child_cnode, child_slots) = retype_cnode::<U12>(ut, slots)?;
     });
@@ -66,7 +67,14 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     };
 
     smart_alloc!(|slots from local_slots, ut from uts| {
-        let (child_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
+        // temporary workaround for https://github.com/seL4/seL4/issues/128
+        let ut13: LocalCap<Untyped<U13, memory_kind::General>> = ut;
+        let (a, b) = ut13.split(slots)?;
+        let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(b, slots)?;
+
+        let (child_asid, _asid_pool) = asid_pool.alloc();
+
+        let child_vspace = VSpace::new(ut, slots, child_asid,  &user_image, &root_cnode, &mut root_page_directory)?;
 
         let (child_process, _) = child_vspace.prepare_thread(
             proc_main,
@@ -74,11 +82,11 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             ut,
             slots,
             &mut scratch_page_table,
-            &mut boot_info.page_directory,
+            &mut root_page_directory,
         )?;
     });
 
-    child_process.start(child_cnode, None, &boot_info.tcb, 255)?;
+    child_process.start(child_cnode, None, &root_tcb, 255)?;
 
     Ok(())
 }

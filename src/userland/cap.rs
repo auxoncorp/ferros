@@ -1,6 +1,7 @@
 use crate::arch::paging;
 use crate::userland::{
-    CNode, CNodeSlot, CNodeSlotsData, CapRights, LocalCNode, LocalCNodeSlot, SeL4Error,
+    ASIDControl, ASIDPool, AssignedASID, CNode, CNodeSlot, CNodeSlotsData, CapRights, LocalCNode,
+    LocalCNodeSlot, SeL4Error, UnassignedASID,
 };
 use core::marker::PhantomData;
 use selfe_sys::*;
@@ -259,23 +260,9 @@ pub mod irq_state {
     impl IRQSetState for Set {}
 }
 
-#[derive(Debug)]
-pub struct ASIDControl {}
-
-impl CapType for ASIDControl {}
-
-impl PhantomCap for ASIDControl {
-    fn phantom_instance() -> Self {
-        Self {}
-    }
-}
-#[derive(Debug)]
-pub struct ASIDPool<FreeSlots: Unsigned> {
-    pub(super) next_free_slot: usize,
-    pub(super) _free_slots: PhantomData<FreeSlots>,
-}
-
-impl<FreeSlots: Unsigned> CapType for ASIDPool<FreeSlots> {}
+//////////////
+// IPC Caps //
+//////////////
 
 #[derive(Debug)]
 pub struct Endpoint {}
@@ -629,8 +616,10 @@ mod private {
     impl SealedCapType for super::ThreadControlBlock {}
     impl SealedCapType for super::Endpoint {}
     impl SealedCapType for super::Notification {}
-    impl SealedCapType for super::ASIDControl {}
+    impl<FreePools: Unsigned> SealedCapType for super::ASIDControl<FreePools> {}
     impl<FreeSlots: Unsigned> SealedCapType for super::ASIDPool<FreeSlots> {}
+    impl SealedCapType for super::UnassignedASID {}
+    impl<ThreadCount: Unsigned> SealedCapType for super::AssignedASID<ThreadCount> {}
     impl<FreeSlots: Unsigned, Role: CNodeRole> SealedCapType
         for super::AssignedPageDirectory<FreeSlots, Role>
     {

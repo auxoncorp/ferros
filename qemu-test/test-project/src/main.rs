@@ -13,14 +13,14 @@ extern crate typenum;
 
 use selfe_sys::*;
 
-mod dont_tread_on_me;
-mod double_door_backpressure;
-#[cfg(dual_process = "true")]
-mod dual_process;
-mod fault_pair;
+// mod dont_tread_on_me;
+// mod double_door_backpressure;
+// #[cfg(dual_process = "true")]
+// mod dual_process;
+// mod fault_pair;
 #[cfg(single_process = "true")]
 mod single_process;
-mod uart;
+// mod uart;
 
 use ferros::alloc::micro_alloc::Error as AllocError;
 use ferros::userland::{IPCError, IRQError, MultiConsumerError, SeL4Error, VSpaceError};

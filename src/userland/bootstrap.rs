@@ -1,17 +1,15 @@
-use crate::arch::{address_space, paging};
+use crate::arch::{address_space, asid, paging};
 use crate::pow::Pow;
-use crate::userland::cap::UnassignedPageDirectory;
 use crate::userland::{
-    memory_kind, role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, CNodeSlots, Cap,
-    IRQControl, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable,
-    SeL4Error, ThreadControlBlock, UnmappedPageTable, Untyped,
+    memory_kind, role, ASIDControl, AssignedPageDirectory, CNode, CNodeSlots, Cap, IRQControl,
+    LocalCNode, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable, SeL4Error,
+    ThreadControlBlock, UnmappedPageTable,
 };
 use core::marker::PhantomData;
-use core::mem::size_of;
 use core::ops::Sub;
 use selfe_sys::*;
 use typenum::operator_aliases::{Diff, Sub1};
-use typenum::{Unsigned, B1, U0, U12, U19};
+use typenum::*;
 
 // The root CNode radix is 19. Conservatively set aside 2^12 (the default root
 // cnode size) for system use. TODO: verify at build time that this is enough /
@@ -41,17 +39,23 @@ pub fn root_cnode(
     )
 }
 
-/// Currently assume that a BootInfo cannot be handed to child processes
-/// and thus its related structures always operate in a "Local" role.
-pub struct BootInfo<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned> {
-    pub page_directory: LocalCap<AssignedPageDirectory<PageDirFreeSlots, role::Local>>,
-    pub tcb: LocalCap<ThreadControlBlock>,
-    pub asid_pool: LocalCap<ASIDPool<ASIDPoolFreeSlots>>,
+// Encapsulate the user image information found in bootinfo
+pub struct UserImage {
+    frames_start: usize,
+    frames_end: usize,
+    paging_start: usize,
+    paging_end: usize,
+}
+
+/// A BootInfo cannot be handed to child processes and thus its related
+/// structures always operate in a "Local" role.
+pub struct BootInfo<ASIDControlFreePools: Unsigned, PageDirFreeSlots: Unsigned> {
+    pub root_page_directory: LocalCap<AssignedPageDirectory<PageDirFreeSlots, role::Local>>,
+    pub root_tcb: LocalCap<ThreadControlBlock>,
+
+    pub asid_control: LocalCap<ASIDControl<ASIDControlFreePools>>,
     pub irq_control: LocalCap<IRQControl>,
-    user_image_frames_start: usize,
-    user_image_frames_end: usize,
-    user_image_paging_start: usize,
-    user_image_paging_end: usize,
+    pub user_image: UserImage,
 }
 
 impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned> !Send
@@ -59,19 +63,12 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned> !Send
 {
 }
 
-impl BootInfo<paging::BaseASIDPoolFreeSlots, paging::RootTaskPageDirFreeSlots> {
-    pub fn wrap(
-        bootinfo: &'static seL4_BootInfo,
-        asid_pool_ut: LocalCap<Untyped<U12>>,
-        asid_pool_slot: LocalCNodeSlot,
-    ) -> Self {
+impl BootInfo<asid::PoolCount, paging::RootTaskPageDirFreeSlots> {
+    pub fn wrap(bootinfo: &'static seL4_BootInfo) -> Self {
         let asid_control = Cap::wrap_cptr(seL4_CapASIDControl as usize);
-        let asid_pool = asid_pool_ut
-            .retype_asid_pool(asid_control, asid_pool_slot)
-            .expect("retype asid pool");
 
         BootInfo {
-            page_directory: Cap {
+            root_page_directory: Cap {
                 cptr: seL4_CapInitThreadVSpace as usize,
                 _role: PhantomData,
                 cap_data: AssignedPageDirectory {
@@ -80,8 +77,9 @@ impl BootInfo<paging::BaseASIDPoolFreeSlots, paging::RootTaskPageDirFreeSlots> {
                     _role: PhantomData,
                 },
             },
-            tcb: Cap::wrap_cptr(seL4_CapInitThreadTCB as usize),
-            asid_pool,
+            root_tcb: Cap::wrap_cptr(seL4_CapInitThreadTCB as usize),
+            asid_control,
+            // asid_pool,
             irq_control: Cap {
                 cptr: seL4_CapIRQControl as usize,
                 cap_data: IRQControl {
@@ -89,24 +87,24 @@ impl BootInfo<paging::BaseASIDPoolFreeSlots, paging::RootTaskPageDirFreeSlots> {
                 },
                 _role: PhantomData,
             },
-            user_image_frames_start: bootinfo.userImageFrames.start,
-            user_image_frames_end: bootinfo.userImageFrames.end,
-            user_image_paging_start: bootinfo.userImagePaging.start,
-            user_image_paging_end: bootinfo.userImagePaging.end,
+            user_image: UserImage {
+                frames_start: bootinfo.userImageFrames.start,
+                frames_end: bootinfo.userImageFrames.end,
+                paging_start: bootinfo.userImagePaging.start,
+                paging_end: bootinfo.userImagePaging.end,
+            },
         }
     }
 }
 
-impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
-    BootInfo<ASIDPoolFreeSlots, PageDirFreeSlots>
-{
-    pub fn user_image_page_tables_iter(
+impl UserImage {
+    pub fn page_tables_iter(
         &self,
     ) -> impl Iterator<Item = LocalCap<MappedPageTable<U0, role::Local>>> {
         // TODO break out 100
         let vaddr_iter = (0..100).map(|slot_num| slot_num << paging::PageTableTotalBits::USIZE);
 
-        (self.user_image_paging_start..self.user_image_paging_end)
+        (self.paging_start..self.paging_end)
             .zip(vaddr_iter)
             .map(|(cptr, vaddr)| Cap {
                 cptr,
@@ -123,7 +121,7 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
     // TODO this doesn't enforce the aliasing constraints we want at the type
     // level. This can be modeled as an array (or other sized thing) once we
     // know how big the user image is.
-    pub fn user_image_pages_iter(
+    pub fn pages_iter(
         &self,
     ) -> impl Iterator<Item = LocalCap<MappedPage<role::Local, memory_kind::General>>> {
         // Iterate over the entire address space's page addresses, starting at
@@ -132,7 +130,7 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
         let vaddr_iter = (address_space::ProgramStart::USIZE..core::usize::MAX)
             .step_by(1 << paging::PageBits::USIZE);
 
-        (self.user_image_frames_start..self.user_image_frames_end)
+        (self.frames_start..self.frames_end)
             .zip(vaddr_iter)
             .map(|(cptr, vaddr)| Cap {
                 cptr,
@@ -143,108 +141,5 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
                 },
                 _role: PhantomData,
             })
-    }
-
-    /// Proxy to page_directory for convenience
-    pub fn map_page_table(
-        self,
-        unmapped_page_table: LocalCap<UnmappedPageTable>,
-    ) -> Result<
-        (
-            LocalCap<MappedPageTable<Pow<paging::PageTableBits>, role::Local>>,
-            BootInfo<ASIDPoolFreeSlots, Sub1<PageDirFreeSlots>>,
-        ),
-        SeL4Error,
-    >
-    where
-        PageDirFreeSlots: Sub<B1>,
-        Sub1<PageDirFreeSlots>: Unsigned,
-    {
-        let (mapped_page_table, page_dir) =
-            self.page_directory.map_page_table(unmapped_page_table)?;
-        Ok((
-            mapped_page_table,
-            BootInfo {
-                page_directory: page_dir,
-                tcb: self.tcb,
-                asid_pool: self.asid_pool,
-                irq_control: self.irq_control,
-                user_image_frames_start: self.user_image_frames_start,
-                user_image_frames_end: self.user_image_frames_end,
-                user_image_paging_start: self.user_image_paging_start,
-                user_image_paging_end: self.user_image_paging_end,
-            },
-        ))
-    }
-
-    /// Convenience wrapper allowing assignment of page dirs to the
-    /// ASID Pool while updating the type signature appropriately,
-    /// saving the caller from having to de/re-structure BootInfo
-    pub fn assign_minimal_page_dir(
-        self,
-        page_dir: LocalCap<UnassignedPageDirectory>,
-    ) -> Result<
-        (
-            LocalCap<AssignedPageDirectory<paging::BasePageDirFreeSlots, role::Child>>,
-            BootInfo<Sub1<ASIDPoolFreeSlots>, PageDirFreeSlots>,
-        ),
-        SeL4Error,
-    >
-    where
-        ASIDPoolFreeSlots: Sub<B1>,
-        Sub1<ASIDPoolFreeSlots>: Unsigned,
-    {
-        let (assigned_page_dir, asid_pool) = self.asid_pool.assign_minimal(page_dir)?;
-        Ok((
-            assigned_page_dir,
-            BootInfo {
-                page_directory: self.page_directory,
-                tcb: self.tcb,
-                asid_pool: asid_pool,
-                irq_control: self.irq_control,
-                user_image_frames_start: self.user_image_frames_start,
-                user_image_frames_end: self.user_image_frames_end,
-                user_image_paging_start: self.user_image_paging_start,
-                user_image_paging_end: self.user_image_paging_end,
-            },
-        ))
-    }
-}
-
-/// The ASID pool needs an untyped of exactly 4k.
-///
-/// Note that we fully consume the ASIDControl capability,
-/// (which is assumed to be a singleton as well)
-/// because there is a lightly-documented seL4 constraint
-/// that limits us to a single ASIDPool per application.
-impl LocalCap<Untyped<U12, memory_kind::General>> {
-    pub fn retype_asid_pool(
-        self,
-        asid_control: LocalCap<ASIDControl>,
-        dest_slot: LocalCNodeSlot,
-    ) -> Result<LocalCap<ASIDPool<paging::BaseASIDPoolFreeSlots>>, SeL4Error> {
-        let (dest_cptr, dest_offset, _) = dest_slot.elim();
-        let err = unsafe {
-            seL4_ARM_ASIDControl_MakePool(
-                asid_control.cptr,              // _service
-                self.cptr,                      // untyped
-                dest_cptr,                      // root
-                dest_offset,                    // index
-                (8 * size_of::<usize>()) as u8, // depth
-            )
-        };
-
-        if err != 0 {
-            return Err(SeL4Error::UntypedRetype(err));
-        }
-
-        Ok(Cap {
-            cptr: dest_offset,
-            cap_data: ASIDPool {
-                next_free_slot: 0,
-                _free_slots: PhantomData,
-            },
-            _role: PhantomData,
-        })
     }
 }
