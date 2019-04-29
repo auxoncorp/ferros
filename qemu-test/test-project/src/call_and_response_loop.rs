@@ -1,11 +1,8 @@
 use super::TopLevelError;
-use core::marker::PhantomData;
 use ferros::alloc::{self, micro_alloc, smart_alloc};
-use ferros::pow::Pow;
 use ferros::userland::{
-    call_channel, role, root_cnode, setup_fault_endpoint_pair, BootInfo, CNode, CNodeRole, Caller,
-    Cap, Consumer1, Endpoint, FaultSink, LocalCap, Producer, ProducerSetup, QueueFullError,
-    Responder, RetypeForSetup, SeL4Error, UnmappedPageTable, Untyped, VSpace, retype, retype_cnode
+    call_channel, retype, retype_cnode, role, root_cnode, BootInfo, CNodeRole, Caller, Consumer1,
+    Producer, Responder, RetypeForSetup, VSpace,
 };
 use selfe_sys::*;
 use typenum::*;
@@ -30,71 +27,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (child_b_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
     });
 
-    #[cfg(test_case = "shared_page_queue")]
-    let (
-        child_params_a,
-        proc_cnode_local_a,
-        child_a_vspace,
-        child_fault_source_a,
-        child_params_b,
-        proc_cnode_local_b,
-        child_b_vspace,
-        child_fault_source_b,
-        local_slots,
-        uts
-    ) = {
-        smart_alloc!(|slots from local_slots, ut from uts| {
-            let (producer_cnode, producer_slots) = retype_cnode::<U12>(ut, slots)?;
-            let (consumer_cnode, consumer_slots) = retype_cnode::<U12>(ut, slots)?;
-
-            let (slots_c, consumer_slots) = consumer_slots.alloc();
-            let (
-                consumer,
-                consumer_token,
-                producer_setup,
-                waker_setup,
-                consumer_vspace,
-            ) = Consumer1::new(
-                ut,
-                ut,
-                child_a_vspace,
-                &mut scratch_page_table,
-                &mut boot_info.page_directory,
-                &root_cnode,
-                slots,
-                slots_c
-            )?;
-
-            let consumer_params = ConsumerParams::<role::Child> { consumer };
-
-            let (slots_p, producer_slots) = producer_slots.alloc();
-            let (producer, producer_vspace) = Producer::new(
-                &producer_setup,
-                slots_p,
-                child_b_vspace,
-                &root_cnode,
-                slots,
-            )?;
-
-            let producer_params = ProducerParams::<role::Child> { producer };
-
-        });
-
-        (
-            consumer_params,
-            consumer_cnode,
-            consumer_vspace,
-            None,
-            producer_params,
-            producer_cnode,
-            producer_vspace,
-            None,
-            local_slots,
-            uts,
-        )
-    };
-
-    #[cfg(test_case = "call_and_response_loop")]
     let (
         child_params_a,
         proc_cnode_local_a,
@@ -103,16 +35,16 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         proc_cnode_local_b,
         child_fault_source_b,
         local_slots,
-        uts
+        uts,
     ) = {
         smart_alloc!(|slots from local_slots, ut from uts| {
             let (caller_cnode, caller_slots) = retype_cnode::<U12>(ut, slots)?;
             let (responder_cnode, responder_slots) = retype_cnode::<U12>(ut, slots)?;
 
-            let (slots_r, responder_slots) = responder_slots.alloc();
+            let (slots_r, _responder_slots) = responder_slots.alloc();
             let (ipc_setup, responder) = call_channel(ut, &root_cnode, slots, slots_r)?;
 
-            let (slots_c, caller_slots) = caller_slots.alloc();
+            let (slots_c, _caller_slots) = caller_slots.alloc();
             let caller = ipc_setup.create_caller(slots_c)?;
 
             let caller_params = CallerParams::<role::Child> {
@@ -221,50 +153,6 @@ impl RetypeForSetup for ProducerParams<role::Local> {
     type Output = ProducerParams<role::Child>;
 }
 
-#[cfg(test_case = "shared_page_queue")]
-pub extern "C" fn child_proc_a(p: ConsumerParams<role::Local>) {
-    debug_println!("Inside consumer");
-    let initial_state = 0;
-    p.consumer.consume(
-        initial_state,
-        |state| {
-            let fresh_state = state + 1;
-            debug_println!("Creating fresh state {} in the waker callback", fresh_state);
-            fresh_state
-        },
-        |x, state| {
-            let fresh_state = x.a + state;
-            debug_println!(
-                "Creating fresh state {} from {:?} and {} in the queue callback",
-                fresh_state,
-                x,
-                state
-            );
-            fresh_state
-        },
-    )
-}
-
-#[cfg(test_case = "shared_page_queue")]
-pub extern "C" fn child_proc_b(p: ProducerParams<role::Local>) {
-    debug_println!("Inside producer");
-    for i in 0..256 {
-        match p.producer.send(Xenon { a: i }) {
-            Ok(_) => {
-                debug_println!("The producer *thinks* it successfully sent {}", i);
-            }
-            Err(QueueFullError(x)) => {
-                debug_println!("Rejected sending {:?}", x);
-                unsafe {
-                    seL4_Yield();
-                }
-            }
-        }
-        debug_println!("done producing!");
-    }
-}
-
-#[cfg(test_case = "call_and_response_loop")]
 pub extern "C" fn child_proc_a(p: CallerParams<role::Local>) {
     debug_println!("Inside addition_requester");
     let mut current_sum: u32 = 1;
@@ -300,7 +188,6 @@ pub extern "C" fn child_proc_a(p: CallerParams<role::Local>) {
     );
 }
 
-#[cfg(test_case = "call_and_response_loop")]
 pub extern "C" fn child_proc_b(p: ResponderParams<role::Local>) {
     debug_println!("Inside addition_responder");
     let initial_state: usize = 0;

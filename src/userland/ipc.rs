@@ -1,6 +1,6 @@
 use crate::userland::cap::DirectRetype;
 use crate::userland::{
-    role, Badge, CNode, CNodeRole, Cap, CapRights, ChildCNodeSlot, ChildCap, Endpoint, LocalCNode,
+    role, Badge, CNodeRole, Cap, CapRights, ChildCNodeSlot, ChildCap, Endpoint, LocalCNode,
     LocalCNodeSlot, LocalCap, SeL4Error, Untyped,
 };
 use core::marker::PhantomData;
@@ -24,12 +24,18 @@ impl From<SeL4Error> for IPCError {
 #[derive(Debug)]
 pub enum FaultManagementError {
     SelfFaultHandlingForbidden,
+    SeL4Error(SeL4Error),
 }
 
-pub struct IpcSetup<Req, Rsp> {
+impl From<SeL4Error> for FaultManagementError {
+    fn from(s: SeL4Error) -> Self {
+        FaultManagementError::SeL4Error(s)
+    }
+}
+
+pub struct IpcSetup<'a, Req, Rsp> {
     endpoint: LocalCap<Endpoint>,
-    // Alias the cnode, but only so we can copy out of it
-    endpoint_cnode: LocalCap<LocalCNode>,
+    endpoint_cnode: &'a LocalCap<LocalCNode>,
     _req: PhantomData<Req>,
     _rsp: PhantomData<Rsp>,
 }
@@ -50,14 +56,7 @@ pub fn call_channel<Req: Send + Sync, Rsp: Send + Sync>(
     Ok((
         IpcSetup {
             endpoint: local_endpoint,
-            endpoint_cnode: Cap {
-                cptr: local_cnode.cptr,
-                _role: PhantomData,
-                cap_data: CNode {
-                    radix: local_cnode.cap_data.radix,
-                    _role: PhantomData,
-                },
-            },
+            endpoint_cnode: &local_cnode,
             _req: PhantomData,
             _rsp: PhantomData,
         },
@@ -70,7 +69,7 @@ pub fn call_channel<Req: Send + Sync, Rsp: Send + Sync>(
     ))
 }
 
-impl<Req, Rsp> IpcSetup<Req, Rsp> {
+impl<'a, Req, Rsp> IpcSetup<'a, Req, Rsp> {
     pub fn create_caller(
         &self,
         child_slot: ChildCNodeSlot,
@@ -451,23 +450,19 @@ impl FaultSinkSetup {
         untyped: LocalCap<Untyped<<Endpoint as DirectRetype>::SizeBits>>,
         endpoint_slot: LocalCNodeSlot,
         fault_sink_slot: ChildCNodeSlot,
-    ) -> Self {
+    ) -> Result<Self, SeL4Error> {
         let sink_cspace_local_cptr = fault_sink_slot.cptr;
 
-        // TODO relay these errors up
-        let local_endpoint: LocalCap<Endpoint> = untyped
-            .retype(endpoint_slot)
-            .expect("could not create local endpoint");
+        let local_endpoint: LocalCap<Endpoint> = untyped.retype(endpoint_slot)?;
 
-        let sink_child_endpoint = local_endpoint
-            .copy(&local_cnode, fault_sink_slot, CapRights::RW)
-            .expect("Could not copy to fault sink cnode");
+        let sink_child_endpoint =
+            local_endpoint.copy(&local_cnode, fault_sink_slot, CapRights::RW)?;
 
-        FaultSinkSetup {
+        Ok(FaultSinkSetup {
             local_endpoint,
             sink_child_endpoint,
             sink_cspace_local_cptr,
-        }
+        })
     }
 
     pub fn add_fault_source(
@@ -480,11 +475,9 @@ impl FaultSinkSetup {
             return Err(FaultManagementError::SelfFaultHandlingForbidden);
         }
 
-        // TODO Relay this error up
-        let child_endpoint_fault_source = self
-            .local_endpoint
-            .mint_new(local_cnode, fault_source_slot, CapRights::RWG, badge)
-            .expect("Could not copy to fault source cnode");
+        let child_endpoint_fault_source =
+            self.local_endpoint
+                .mint_new(local_cnode, fault_source_slot, CapRights::RWG, badge)?;
 
         Ok(FaultSource {
             endpoint: child_endpoint_fault_source,
@@ -507,12 +500,9 @@ pub fn setup_fault_endpoint_pair(
     endpoint_slot: LocalCNodeSlot,
     fault_source_slot: ChildCNodeSlot,
     fault_sink_slot: ChildCNodeSlot,
-) -> Result<(FaultSource<role::Child>, FaultSink<role::Child>), SeL4Error> {
-    let setup = FaultSinkSetup::new(&local_cnode, untyped, endpoint_slot, fault_sink_slot);
-    // TODO: Relay up this error
-    let fault_source = setup.add_fault_source(&local_cnode, fault_source_slot, Badge::from(0))
-        .expect("Should be impossible to generate a self-handler since we are consuming independent parameters for both the source and sink child cnodes");
-
+) -> Result<(FaultSource<role::Child>, FaultSink<role::Child>), FaultManagementError> {
+    let setup = FaultSinkSetup::new(&local_cnode, untyped, endpoint_slot, fault_sink_slot)?;
+    let fault_source = setup.add_fault_source(&local_cnode, fault_source_slot, Badge::from(0))?;
     Ok((fault_source, setup.sink()))
 }
 

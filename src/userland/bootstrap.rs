@@ -1,5 +1,7 @@
 use crate::arch::{address_space, asid, paging};
 use crate::pow::Pow;
+use crate::userland::cap::UnassignedPageDirectory;
+use crate::userland::process::NeitherSendNorSync;
 use crate::userland::{
     memory_kind, role, ASIDControl, AssignedPageDirectory, CNode, CNodeSlots, Cap, IRQControl,
     LocalCNode, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable, SeL4Error,
@@ -56,11 +58,9 @@ pub struct BootInfo<ASIDControlFreePools: Unsigned, PageDirFreeSlots: Unsigned> 
     pub asid_control: LocalCap<ASIDControl<ASIDControlFreePools>>,
     pub irq_control: LocalCap<IRQControl>,
     pub user_image: UserImage,
-}
 
-impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned> !Send
-    for BootInfo<ASIDPoolFreeSlots, PageDirFreeSlots>
-{
+    #[allow(dead_code)]
+    neither_send_nor_sync: NeitherSendNorSync,
 }
 
 impl BootInfo<asid::PoolCount, paging::RootTaskPageDirFreeSlots> {
@@ -93,6 +93,8 @@ impl BootInfo<asid::PoolCount, paging::RootTaskPageDirFreeSlots> {
                 paging_start: bootinfo.userImagePaging.start,
                 paging_end: bootinfo.userImagePaging.end,
             },
+
+            neither_send_nor_sync: Default::default(),
         }
     }
 }

@@ -1,13 +1,11 @@
 use super::TopLevelError;
-use ferros::alloc::{self, smart_alloc, micro_alloc};
+use ferros::alloc::{self, micro_alloc, smart_alloc};
 use ferros::userland::{
-    role, root_cnode, BootInfo, CNodeRole, Consumer1, Consumer2, LocalCap, Producer,
-    QueueFullError, RetypeForSetup, UnmappedPageTable, VSpace, Waker, retype, retype_cnode
+    retype, retype_cnode, role, root_cnode, BootInfo, CNodeRole, Consumer1, Consumer2, Producer,
+    QueueFullError, RetypeForSetup, VSpace, Waker,
 };
-use ferros::debug::DebugOutHandle;
 use selfe_sys::{seL4_BootInfo, seL4_Yield};
 use typenum::*;
-type U4095 = Diff<U4096, U1>;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     // wrap all untyped memory
@@ -39,8 +37,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
         // vspace setup
         let (consumer_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
-        let (producer_a_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
-        let (producer_b_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
+        let (producer_a_vspace, boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
+        let (producer_b_vspace, boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
         let (waker_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
 
         let (slots_c, consumer_slots) = consumer_slots.alloc();
