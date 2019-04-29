@@ -1,13 +1,16 @@
+// TODO - only consider cache op token for general memory, not device
+// - open up mapping attributes
+// - use CapRange instead of page-dir cap
+
 use core::fmt;
 use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Add, Sub};
 use core::slice;
-use crate::userland::SeL4Error;
+use crate::userland::{
+    role, AssignedPageDirectory, ImmobileIndelibleInertCapabilityReference, SeL4Error, VSpace,
+};
 use typenum::{Diff, IsLess, NonZero, Sum, True, Unsigned, U0};
-
-// TODO - replacing internal cap with CapRange or similar
-pub type DmaCacheOpCapToken = usize;
 
 #[derive(Debug)]
 pub enum MemoryRegionError {
@@ -29,47 +32,51 @@ pub enum Address {
     Physical(usize),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+//#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct MemoryRegion<VAddr: Unsigned = U0, PAddr: Unsigned = U0, SizeBytes: Unsigned = U0> {
-    _vaddr_marker: PhantomData<VAddr>,
-    _paddr_marker: PhantomData<PAddr>,
-    _size_marker: PhantomData<SizeBytes>,
+    _vaddr: PhantomData<VAddr>,
+    _paddr: PhantomData<PAddr>,
+    _size: PhantomData<SizeBytes>,
     // TODO - cap to page dir for now
-    pub(crate) cache_op_token: Option<DmaCacheOpCapToken>,
+    pub(crate) vspace_pagedir:
+        Option<ImmobileIndelibleInertCapabilityReference<AssignedPageDirectory<U0, role::Child>>>,
 }
 
 impl MemoryRegion {
     // TODO - there could be a world where paddr 0x0 is valid
     //
     /// Creates a new `MemoryRegion` without capabilities to perform
-    /// DMA cache operations (device memory for example).
+    /// cache operations (device memory for example).
     pub fn new<
         VAddr: Unsigned + NonZero,
         PAddr: Unsigned + NonZero,
         SizeBytes: Unsigned + NonZero,
     >() -> MemoryRegion<VAddr, PAddr, SizeBytes> {
         MemoryRegion {
-            _paddr_marker: PhantomData,
-            _vaddr_marker: PhantomData,
-            _size_marker: PhantomData,
-            cache_op_token: None,
+            _paddr: PhantomData,
+            _vaddr: PhantomData,
+            _size: PhantomData,
+            vspace_pagedir: None,
         }
     }
 
     /// Creates a new `MemoryRegion` with capabilities to perform
-    /// DMA cache operations.
+    /// cache operations.
     pub fn new_with_token<
         VAddr: Unsigned + NonZero,
         PAddr: Unsigned + NonZero,
         SizeBytes: Unsigned + NonZero,
+        ConsumerPageDirFreeSlots: Unsigned,
+        ConsumerPageTableFreeSlots: Unsigned,
     >(
-        token: DmaCacheOpCapToken,
+        consumer_vspace: &VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
     ) -> MemoryRegion<VAddr, PAddr, SizeBytes> {
         MemoryRegion {
-            _paddr_marker: PhantomData,
-            _vaddr_marker: PhantomData,
-            _size_marker: PhantomData,
-            cache_op_token: Some(token),
+            _paddr: PhantomData,
+            _vaddr: PhantomData,
+            _size: PhantomData,
+            vspace_pagedir: Some(consumer_vspace.identity_ref()),
         }
     }
 }
@@ -125,10 +132,10 @@ impl<VAddr: Unsigned, PAddr: Unsigned, SizeBytes: Unsigned> MemoryRegion<VAddr, 
         Size: Unsigned + NonZero + IsLess<SizeBytes, Output = True>,
     {
         MemoryRegion {
-            _paddr_marker: PhantomData,
-            _vaddr_marker: PhantomData,
-            _size_marker: PhantomData,
-            cache_op_token: self.cache_op_token,
+            _paddr: PhantomData,
+            _vaddr: PhantomData,
+            _size: PhantomData,
+            vspace_pagedir: self.vspace_pagedir,
         }
     }
 
@@ -152,18 +159,28 @@ impl<VAddr: Unsigned, PAddr: Unsigned, SizeBytes: Unsigned> MemoryRegion<VAddr, 
         Sum<PAddr, ByteOffset>: Unsigned,
         Diff<SizeBytes, ByteOffset>: Unsigned,
     {
+        let token = unsafe {
+            if let Some(cptr) = &self.vspace_pagedir {
+                Some(ImmobileIndelibleInertCapabilityReference::new(
+                    cptr.get_capability_pointer(),
+                ))
+            } else {
+                None
+            }
+        };
+
         (
             MemoryRegion {
-                _paddr_marker: PhantomData,
-                _vaddr_marker: PhantomData,
-                _size_marker: PhantomData,
-                cache_op_token: self.cache_op_token,
+                _paddr: PhantomData,
+                _vaddr: PhantomData,
+                _size: PhantomData,
+                vspace_pagedir: token,
             },
             MemoryRegion {
-                _paddr_marker: PhantomData,
-                _vaddr_marker: PhantomData,
-                _size_marker: PhantomData,
-                cache_op_token: self.cache_op_token,
+                _paddr: PhantomData,
+                _vaddr: PhantomData,
+                _size: PhantomData,
+                vspace_pagedir: self.vspace_pagedir,
             },
         )
     }

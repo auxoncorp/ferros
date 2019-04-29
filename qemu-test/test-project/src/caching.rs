@@ -3,11 +3,9 @@ use super::TopLevelError;
 use core::ptr;
 use ferros::alloc::{self, micro_alloc, smart_alloc};
 use ferros::userland::{
-    retype, retype_cnode, role, root_cnode, yield_forever, BootInfo, CapRights, LocalCap,
-    RetypeForSetup, Untyped, VSpace,
+    retype, retype_cnode, role, root_cnode, yield_forever, BootInfo, CacheOp, CacheableMemory,
+    CapRights, LocalCap, MemoryRegion, RetypeForSetup, Untyped, VSpace,
 };
-use ferros_hal::dma_cache_op::{DmaCacheOp, DmaCacheOpExt};
-use ferros_hal::memory_region::MemoryRegion;
 use selfe_sys::*;
 use typenum::*;
 
@@ -115,7 +113,8 @@ pub extern "C" fn test_page_directory_flush(p: ProcParams) {
     // Create two memory regions over the pages
     let mut mem = MemoryRegion::new::<ExpectedVaddr, ExpectedPaddr, PageSize>();
     let mut memc =
-        MemoryRegion::new_with_token::<PageCVaddr, ExpectedPaddr, PageSize>(p.cache_op_token);
+        //MemoryRegion::new_with_token::<PageCVaddr, ExpectedPaddr, PageSize>(p.cache_op_token);
+        MemoryRegion::new::<PageCVaddr, ExpectedPaddr, PageSize>();
 
     debug_println!("Non-cache mem:\n{}", mem);
     debug_println!("Cacheable mem:\n{}", memc);
@@ -131,7 +130,7 @@ pub extern "C" fn test_page_directory_flush(p: ProcParams) {
         unsafe { ptr::read_volatile(memc.as_mut_ptr::<u32>().unwrap()) },
         0xDEADBEEF
     );
-    memc.dma_cache_op(DmaCacheOp::Clean, memc.vaddr(), memc.size())
+    memc.cache_op(CacheOp::Clean, memc.vaddr(), memc.size())
         .unwrap();
     assert_eq!(
         unsafe { ptr::read_volatile(mem.as_mut_ptr::<u32>().unwrap()) },

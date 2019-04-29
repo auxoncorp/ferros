@@ -1,3 +1,6 @@
+//#[cfg(any(target_arch = "arm", target_arch = "aarch32"))]
+mod arm32;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CacheOp {
     CleanData,
