@@ -8,23 +8,32 @@ use selfe_sys::*;
 use typenum::*;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
+    let BootInfo {
+        root_page_directory,
+        asid_control,
+        user_image,
+        root_tcb,
+        ..
+    } = BootInfo::wrap(&raw_boot_info);
     let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
     let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
-
-    // find an untyped of size 20 bits (1 meg)
-    let ut20 = allocator
-        .get_untyped::<U20>()
-        .expect("Couldn't find initial untyped");
-    let uts = alloc::ut_buddy(ut20);
+    let uts = alloc::ut_buddy(
+        allocator
+            .get_untyped::<U20>()
+            .expect("initial alloc failure"),
+    );
 
     smart_alloc!(|slots from local_slots, ut from uts| {
-        let boot_info = BootInfo::wrap(raw_boot_info, ut, slots);
+        let unmapped_scratch_page_table = retype(ut, slots)?;
+        let (mut scratch_page_table, mut root_page_directory) =
+            root_page_directory.map_page_table(unmapped_scratch_page_table)?;
 
-        let scratch_page_table = retype(ut, slots)?;
-        let (mut scratch_page_table, mut boot_info) = boot_info.map_page_table(scratch_page_table)?;
+        let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
+        let (child_a_asid, asid_pool) = asid_pool.alloc();
+        let (child_b_asid, asid_pool) = asid_pool.alloc();
 
-        let (child_a_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
-        let (child_b_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
+        let child_a_vspace = VSpace::new(ut, slots, child_a_asid, &user_image, &root_cnode, &mut root_page_directory)?;
+        let child_b_vspace = VSpace::new(ut, slots, child_b_asid, &user_image, &root_cnode, &mut root_page_directory)?;
     });
 
     let (
@@ -55,7 +64,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
                 ut,
                 child_a_vspace,
                 &mut scratch_page_table,
-                &mut boot_info.page_directory,
+                &mut root_page_directory,
                 &root_cnode,
                 slots,
                 slots_c
@@ -97,12 +106,12 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             ut,
             slots,
             &mut scratch_page_table,
-            &mut boot_info.page_directory,
+            &mut root_page_directory,
         )?;
         child_a_process.start(
             proc_cnode_local_a,
             child_fault_source_a,
-            &boot_info.tcb,
+            &root_tcb,
             255,
         )?;
 
@@ -112,12 +121,12 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             ut,
             slots,
             &mut scratch_page_table,
-            &mut boot_info.page_directory,
+            &mut root_page_directory,
         )?;
         child_b_process.start(
             proc_cnode_local_b,
             child_fault_source_b,
-            &boot_info.tcb,
+            &root_tcb,
             255,
         )?;
     });

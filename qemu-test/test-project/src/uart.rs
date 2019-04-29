@@ -12,13 +12,21 @@ const UART1_PADDR: usize = 0x02020000;
 type Uart1IrqLine = U58;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
+    let BootInfo {
+        root_page_directory,
+        asid_control,
+        user_image,
+        root_tcb,
+        mut irq_control,
+        ..
+    } = BootInfo::wrap(&raw_boot_info);
     let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
     let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
-
-    let ut27 = allocator
-        .get_untyped::<U27>()
-        .expect("initial alloc failure");
-    let uts = alloc::ut_buddy(ut27);
+    let uts = alloc::ut_buddy(
+        allocator
+            .get_untyped::<U20>()
+            .expect("initial alloc failure"),
+    );
 
     // The UART1 region is 4 pages i.e. 14 bits.
     // C.f. i.MX 6ULL Reference Manual Table 2.2.
@@ -27,19 +35,21 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         .expect("find uart1 device memory");
 
     smart_alloc!(|slots from local_slots, ut from uts| {
-        let boot_info = BootInfo::wrap(raw_boot_info, ut, slots);
-
         let unmapped_scratch_page_table = retype(ut, slots)?;
-        let (mut scratch_page_table, boot_info) =
-            boot_info.map_page_table(unmapped_scratch_page_table)?;
+        let (mut scratch_page_table, mut root_page_directory) =
+            root_page_directory.map_page_table(unmapped_scratch_page_table)?;
+
+        let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
+        let (uart1_asid, asid_pool) = asid_pool.alloc();
+        let uart1_vspace = VSpace::new(ut, slots, uart1_asid, &user_image, &root_cnode,
+                                       &mut root_page_directory)?;
 
         let (uart1_cnode, uart1_slots) = retype_cnode::<U12>(ut, slots)?;
-        let (uart1_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
 
         let (slots_u, _uart1_slots) = uart1_slots.alloc();
         let (interrupt_consumer, _) = InterruptConsumer::new(
             ut,
-            &mut boot_info.irq_control,
+            &mut irq_control,
             &root_cnode,
             slots,
             slots_u
@@ -60,10 +70,10 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             ut,
             slots,
             &mut scratch_page_table,
-            &mut boot_info.page_directory,
+            &mut root_page_directory,
         )?;
 
-        uart1_thread.start(uart1_cnode, None, &boot_info.tcb, 255)?;
+        uart1_thread.start(uart1_cnode, None, &root_tcb, 255)?;
     });
 
     Ok(())

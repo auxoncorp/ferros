@@ -12,38 +12,39 @@ use selfe_sys::seL4_BootInfo;
 use super::TopLevelError;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
+    let BootInfo {
+        root_page_directory,
+        asid_control,
+        user_image,
+        root_tcb,
+        ..
+    } = BootInfo::wrap(&raw_boot_info);
     let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
     let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
-
-    let ut27 = allocator
-        .get_untyped::<U27>()
-        .expect("initial alloc failure");
-    let uts = alloc::ut_buddy(ut27);
+    let uts = alloc::ut_buddy(
+        allocator
+            .get_untyped::<U27>()
+            .expect("initial alloc failure"),
+    );
 
     smart_alloc!(|slots from local_slots, ut from uts| {
-        let boot_info = BootInfo::wrap(raw_boot_info, ut, slots);
-
         let unmapped_scratch_page_table = retype(ut, slots)?;
-        debug_println!("page table retyped");
-        let (mut scratch_page_table, boot_info) =
-            boot_info.map_page_table(unmapped_scratch_page_table)?;
+        let (mut scratch_page_table, mut root_page_directory) =
+            root_page_directory.map_page_table(unmapped_scratch_page_table)?;
 
         let (proc1_cspace, proc1_slots) = retype_cnode::<U12>(ut, slots)?;
-        debug_println!("proc 1 cspace retyped");
         let (proc2_cspace, proc2_slots) = retype_cnode::<U12>(ut, slots)?;
-        debug_println!("proc 2 cspace retyped");
 
-        let (proc1_vspace, boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
-        debug_println!("proc 1 vspace exists");
+        let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
+        let (proc1_asid, asid_pool) = asid_pool.alloc();
+        let (proc2_asid, asid_pool) = asid_pool.alloc();
 
-        let (proc2_vspace, mut boot_info) = VSpace::new_with_writable_user_image(
-            boot_info,
-            ut,
-            (&mut scratch_page_table, ut),
-            &root_cnode,
-            slots
+        let proc1_vspace = VSpace::new(ut, slots, proc1_asid, &user_image, &root_cnode,
+                                       &mut root_page_directory)?;
+        let proc2_vspace = VSpace::new_with_writable_user_image(
+            ut, slots, proc2_asid, &user_image, &root_cnode,
+            &mut root_page_directory, (&mut scratch_page_table, ut)
         )?;
-        debug_println!("proc 2 vspace exists");
 
         let (slots1, _) = proc1_slots.alloc();
         let (ipc_setup, responder) = call_channel(ut, &root_cnode, slots, slots1)?;
@@ -60,10 +61,10 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             ut,
             slots,
             &mut scratch_page_table,
-            &mut boot_info.page_directory,
+            &mut root_page_directory,
         )?;
 
-        proc1_thread.start(proc1_cspace, None, &boot_info.tcb, 255)?;
+        proc1_thread.start(proc1_cspace, None, &root_tcb, 255)?;
 
         let (proc2_thread, _) = proc2_vspace.prepare_thread(
             proc2::run,
@@ -71,10 +72,10 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             ut,
             slots,
             &mut scratch_page_table,
-            &mut boot_info.page_directory,
+            &mut root_page_directory,
         )?;
 
-        proc2_thread.start(proc2_cspace, None, &boot_info.tcb, 255)?;
+        proc2_thread.start(proc2_cspace, None, &root_tcb, 255)?;
     });
 
     Ok(())
