@@ -30,8 +30,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (proc_cnode, proc_slots) = retype_cnode::<U12>(ut, slots)?;
         let (proc_vspace, mut boot_info) = VSpace::new(boot_info, ut, &root_cnode, slots)?;
 
-        // Map two pages to a single page memory region
-        // The first page, will be mapped without cacheability attributes
+        // Map two pages to a single memory region
+        // The first page will be mapped without cacheability attributes,
         // and the second page (pagec) will be mapped with them
         let unmapped_page = retype(ut, slots)?;
         let unmapped_pagec = unmapped_page
@@ -50,8 +50,10 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         debug_println!("PageC vaddr {:#010X} paddr {:#010X}", pagec_vaddr, pagec_paddr);
 
         let proc_params = ProcParams {
-            // TODO - this won't work yet, need to mint
-            cache_op_token: proc_vspace.leak_page_dir_cap(),
+            // TODO - this won't work yet
+            // likley will evolve into a CapRange for the pages
+            //cache_op_token: proc_vspace.leak_page_dir_cap(),
+            cache_op_token: 0,
             page_vaddr,
             page_paddr,
             pagec_vaddr,

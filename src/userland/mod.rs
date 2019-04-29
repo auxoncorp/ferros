@@ -1,9 +1,11 @@
 mod bootstrap;
+mod cache;
 mod cap;
 mod cap_range;
 mod cnode;
 mod error;
 mod ipc;
+mod memory_region;
 mod multi_consumer;
 pub(crate) mod process;
 mod rights;
@@ -12,11 +14,13 @@ mod untyped;
 mod vspace;
 
 pub use crate::userland::bootstrap::*;
+pub use crate::userland::cache::*;
 pub use crate::userland::cap::*;
 pub use crate::userland::cap_range::*;
 pub use crate::userland::cnode::*;
 pub use crate::userland::error::*;
 pub use crate::userland::ipc::*;
+pub use crate::userland::memory_region::*;
 pub use crate::userland::multi_consumer::*;
 pub use crate::userland::process::*;
 pub use crate::userland::rights::*;

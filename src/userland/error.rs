@@ -19,5 +19,10 @@ pub enum SeL4Error {
     IRQHandlerSetNotification(u32),
     IRQHandlerAck(u32),
     GetPageAddr(u32),
+    PageCleanData(u32),
+    PageInvalidateData(u32),
     PageCleanInvalidateData(u32),
+    PageDirCleanData(u32),
+    PageDirInvalidateData(u32),
+    PageDirCleanInvalidateData(u32),
 }
