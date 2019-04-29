@@ -35,6 +35,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let unmapped_pagec = unmapped_page
             .copy(&root_cnode, slots, CapRights::RW)?;
 
+        // TODO - replace map_dma_page with map_with_attributes
         let (mapped_page, proc_vspace) = proc_vspace.map_dma_page(unmapped_page)?;
         let (mapped_pagec, proc_vspace) = proc_vspace.map_page(unmapped_pagec)?;
 
@@ -130,7 +131,7 @@ pub extern "C" fn test_page_directory_flush(p: ProcParams) {
         unsafe { ptr::read_volatile(memc.as_mut_ptr::<u32>().unwrap()) },
         0xDEADBEEF
     );
-    memc.cache_op(CacheOp::Clean, memc.vaddr(), memc.size())
+    memc.cache_op(CacheOp::CleanData, memc.vaddr(), memc.size())
         .unwrap();
     assert_eq!(
         unsafe { ptr::read_volatile(mem.as_mut_ptr::<u32>().unwrap()) },
@@ -141,7 +142,58 @@ pub extern "C" fn test_page_directory_flush(p: ProcParams) {
         0xDEADBEEF
     );
 
-    // TODO
+    // Clean/Invalidate makes data observable to non-cached page
+    unsafe { ptr::write_volatile(mem.as_mut_ptr::<u32>().unwrap(), 0xC0FFEE) };
+    unsafe { ptr::write_volatile(memc.as_mut_ptr::<u32>().unwrap(), 0xDEADBEEF) };
+    assert_eq!(
+        unsafe { ptr::read_volatile(mem.as_mut_ptr::<u32>().unwrap()) },
+        0xC0FFEE
+    );
+    assert_eq!(
+        unsafe { ptr::read_volatile(memc.as_mut_ptr::<u32>().unwrap()) },
+        0xDEADBEEF
+    );
+    memc.cache_op(CacheOp::CleanInvalidateData, memc.vaddr(), memc.size())
+        .unwrap();
+    assert_eq!(
+        unsafe { ptr::read_volatile(mem.as_mut_ptr::<u32>().unwrap()) },
+        0xDEADBEEF
+    );
+    assert_eq!(
+        unsafe { ptr::read_volatile(memc.as_mut_ptr::<u32>().unwrap()) },
+        0xDEADBEEF
+    );
+
+    // Invalidate makes RAM data observable to cached page
+    unsafe { ptr::write_volatile(mem.as_mut_ptr::<u32>().unwrap(), 0xC0FFEE) };
+    unsafe { ptr::write_volatile(memc.as_mut_ptr::<u32>().unwrap(), 0xDEADBEEF) };
+    assert_eq!(
+        unsafe { ptr::read_volatile(mem.as_mut_ptr::<u32>().unwrap()) },
+        0xC0FFEE
+    );
+    assert_eq!(
+        unsafe { ptr::read_volatile(memc.as_mut_ptr::<u32>().unwrap()) },
+        0xDEADBEEF
+    );
+    memc.cache_op(CacheOp::InvalidateData, memc.vaddr(), memc.size())
+        .unwrap();
+
+    // In case the invalidation performs an implicit clean, write a new
+    // value to RAM and make sure the cached read retrieves it.
+    // Need to do an invalidate before retrieving though to guard
+    // against speculative loads
+    unsafe { ptr::write_volatile(mem.as_mut_ptr::<u32>().unwrap(), 0xBEEFCAFE) };
+    memc.cache_op(CacheOp::InvalidateData, memc.vaddr(), memc.size())
+        .unwrap();
+
+    assert_eq!(
+        unsafe { ptr::read_volatile(mem.as_mut_ptr::<u32>().unwrap()) },
+        0xBEEFCAFE
+    );
+    assert_eq!(
+        unsafe { ptr::read_volatile(memc.as_mut_ptr::<u32>().unwrap()) },
+        0xBEEFCAFE
+    );
 
     debug_println!("All done");
 
