@@ -1,6 +1,7 @@
 use crate::arch::{address_space, paging};
 use crate::pow::Pow;
 use crate::userland::cap::UnassignedPageDirectory;
+use crate::userland::process::NeitherSendNorSync;
 use crate::userland::{
     memory_kind, role, ASIDControl, ASIDPool, AssignedPageDirectory, CNode, CNodeSlots, Cap,
     IRQControl, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable,
@@ -52,11 +53,9 @@ pub struct BootInfo<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned> {
     user_image_frames_end: usize,
     user_image_paging_start: usize,
     user_image_paging_end: usize,
-}
 
-impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned> !Send
-    for BootInfo<ASIDPoolFreeSlots, PageDirFreeSlots>
-{
+    #[allow(dead_code)]
+    neither_send_nor_sync: NeitherSendNorSync,
 }
 
 impl BootInfo<paging::BaseASIDPoolFreeSlots, paging::RootTaskPageDirFreeSlots> {
@@ -93,6 +92,8 @@ impl BootInfo<paging::BaseASIDPoolFreeSlots, paging::RootTaskPageDirFreeSlots> {
             user_image_frames_end: bootinfo.userImageFrames.end,
             user_image_paging_start: bootinfo.userImagePaging.start,
             user_image_paging_end: bootinfo.userImagePaging.end,
+
+            neither_send_nor_sync: Default::default(),
         }
     }
 }
@@ -173,6 +174,8 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
                 user_image_frames_end: self.user_image_frames_end,
                 user_image_paging_start: self.user_image_paging_start,
                 user_image_paging_end: self.user_image_paging_end,
+
+                neither_send_nor_sync: Default::default(),
             },
         ))
     }
@@ -206,6 +209,8 @@ impl<ASIDPoolFreeSlots: Unsigned, PageDirFreeSlots: Unsigned>
                 user_image_frames_end: self.user_image_frames_end,
                 user_image_paging_start: self.user_image_paging_start,
                 user_image_paging_end: self.user_image_paging_end,
+
+                neither_send_nor_sync: Default::default(),
             },
         ))
     }

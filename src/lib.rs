@@ -1,7 +1,4 @@
 #![no_std]
-// Necessary to mark as not-Send or not-Sync
-#![feature(optin_builtin_traits)]
-#![feature(associated_type_defaults)]
 #![recursion_limit = "128"]
 #![feature(proc_macro_hygiene)]
 
@@ -16,8 +13,6 @@ extern crate smart_alloc;
 
 #[macro_use]
 pub mod debug;
-
-pub mod drivers;
 
 pub mod alloc;
 pub mod arch;

@@ -820,42 +820,8 @@ impl<CT: CapType> LocalCap<CT> {
         }
     }
 
-    /// Migrate a capability from one CNode to another.
+    /// Migrate a capability from one CNode slot to another.
     pub fn move_to_slot<DestRole: CNodeRole>(
-        self,
-        src_cnode: &LocalCap<LocalCNode>,
-        dest_slot: CNodeSlot<DestRole>,
-    ) -> Result<Cap<CT, DestRole>, SeL4Error>
-    where
-        CT: Movable,
-    {
-        let (dest_cptr, dest_offset, _) = dest_slot.elim();
-        let err = unsafe {
-            seL4_CNode_Move(
-                dest_cptr,           // _service
-                dest_offset,         // index
-                seL4_WordBits as u8, // depth
-                // Since src_cnode is restricted to Root, the cptr must
-                // actually be the slot index
-                src_cnode.cptr,      // src_root
-                self.cptr,           // src_index
-                seL4_WordBits as u8, // src_depth
-            )
-        };
-
-        if err != 0 {
-            Err(SeL4Error::CNodeMove(err))
-        } else {
-            Ok(Cap {
-                cptr: dest_offset,
-                cap_data: self.cap_data,
-                _role: PhantomData,
-            })
-        }
-    }
-
-    /// Migrate a capability from one CNode to another.
-    pub fn move_to_cnode<DestRole: CNodeRole>(
         self,
         src_cnode: &LocalCap<LocalCNode>,
         dest_slot: CNodeSlot<DestRole>,

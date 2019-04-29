@@ -13,20 +13,24 @@ extern crate typenum;
 
 use selfe_sys::*;
 
+mod call_and_response_loop;
+mod child_process_cap_management;
+mod child_process_runs;
 mod dont_tread_on_me;
 mod double_door_backpressure;
-#[cfg(dual_process = "true")]
-mod dual_process;
 mod fault_pair;
-#[cfg(single_process = "true")]
-mod single_process;
+mod memory_read_protection;
+mod memory_write_protection;
+mod over_register_size_params;
+mod root_task_runs;
+mod shared_page_queue;
 mod uart;
 
-use ferros::alloc::micro_alloc::Error as AllocError;
-use ferros::userland::{IPCError, IRQError, MultiConsumerError, SeL4Error, VSpaceError};
-use ferros::debug::*;
-use core::fmt::Write;
 use core::panic::PanicInfo;
+use ferros::alloc::micro_alloc::Error as AllocError;
+use ferros::userland::{
+    FaultManagementError, IPCError, IRQError, MultiConsumerError, SeL4Error, VSpaceError,
+};
 
 fn yield_forever() {
     unsafe {
@@ -47,20 +51,31 @@ fn panic(info: &PanicInfo) -> ! {
     sel4_start::debug_panic_handler(&info)
 }
 
-
 pub fn run(raw_boot_info: &'static seL4_BootInfo) {
-    #[cfg(single_process = "true")]
-    single_process::run(raw_boot_info).expect("single_process run");
-    #[cfg(dual_process = "true")]
-    dual_process::run(raw_boot_info).expect("dual_process run");
-    #[cfg(test_case = "double_door_backpressure")]
-    double_door_backpressure::run(raw_boot_info).expect("double_door_backpressure run");
-    #[cfg(test_case = "uart")]
-    uart::run(raw_boot_info).expect("uart run");
-    #[cfg(test_case = "fault_pair")]
-    fault_pair::run(raw_boot_info).expect("fault_pair run");
+    #[cfg(test_case = "call_and_response_loop")]
+    call_and_response_loop::run(raw_boot_info).expect("run");
+    #[cfg(test_case = "child_process_cap_management")]
+    child_process_cap_management::run(raw_boot_info).expect("run");
+    #[cfg(test_case = "child_process_runs")]
+    child_process_runs::run(raw_boot_info).expect("run");
     #[cfg(test_case = "dont_tread_on_me")]
-    dont_tread_on_me::run(raw_boot_info).expect("dont_tread_on_me");
+    dont_tread_on_me::run(raw_boot_info).expect("run");
+    #[cfg(test_case = "double_door_backpressure")]
+    double_door_backpressure::run(raw_boot_info).expect("run");
+    #[cfg(test_case = "fault_pair")]
+    fault_pair::run(raw_boot_info).expect("run");
+    #[cfg(test_case = "memory_read_protection")]
+    memory_read_protection::run(raw_boot_info).expect("run");
+    #[cfg(test_case = "memory_write_protection")]
+    memory_write_protection::run(raw_boot_info).expect("run");
+    #[cfg(test_case = "over_register_size_params")]
+    over_register_size_params::run(raw_boot_info).expect("run");
+    #[cfg(test_case = "root_task_runs")]
+    root_task_runs::run(raw_boot_info).expect("run");
+    #[cfg(test_case = "shared_page_queue")]
+    shared_page_queue::run(raw_boot_info).expect("run");
+    #[cfg(test_case = "uart")]
+    uart::run(raw_boot_info).expect("run");
 
     yield_forever()
 }
@@ -73,6 +88,7 @@ pub enum TopLevelError {
     VSpaceError(VSpaceError),
     SeL4Error(SeL4Error),
     IRQError(IRQError),
+    FaultManagementError(FaultManagementError),
 }
 
 impl From<AllocError> for TopLevelError {
@@ -108,5 +124,11 @@ impl From<SeL4Error> for TopLevelError {
 impl From<IRQError> for TopLevelError {
     fn from(e: IRQError) -> Self {
         TopLevelError::IRQError(e)
+    }
+}
+
+impl From<FaultManagementError> for TopLevelError {
+    fn from(e: FaultManagementError) -> Self {
+        TopLevelError::FaultManagementError(e)
     }
 }
