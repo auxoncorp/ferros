@@ -38,7 +38,7 @@ use core::ops::Sub;
 use cross_queue::PushError;
 use cross_queue::{ArrayQueue, Slot};
 use generic_array::ArrayLength;
-use selfe_sys::{seL4_Signal, seL4_Wait};
+use selfe_sys::{seL4_Signal, seL4_Wait, seL4_Poll};
 use typenum::*;
 
 /// A multi-consumer that consumes interrupt-style notifications
@@ -812,6 +812,50 @@ where
     QLen: IsGreater<U0, Output = True>,
     QLen: ArrayLength<Slot<E>>,
 {
+    pub fn poll(&mut self) -> Option<E> {
+        let mut sender_badge: usize = 0;
+        let queue: &mut ArrayQueue<E, QLen> =
+            unsafe { core::mem::transmute(self.queue.shared_queue as *mut ArrayQueue<E, QLen>) };
+        if let Some(ref irq_handler) = self.irq_handler {
+            // Run an initial ack to clear out interrupt state ahead of waiting
+            match irq_handler.ack() {
+                Ok(_) => (),
+                Err(e) => {
+                    debug_println!("Ack error in InterruptConsumer::consume setup. {:?}", e);
+                    panic!()
+                }
+            };
+        }
+        unsafe {
+            seL4_Poll(self.notification.cptr, &mut sender_badge as *mut usize);
+            let current_badge = Badge::from(sender_badge);
+            if self
+                .interrupt_badge
+                .are_all_overlapping_bits_set(current_badge)
+            {
+                if let Some(ref irq_handler) = self.irq_handler {
+                    match irq_handler.ack() {
+                        Ok(_) => (),
+                        Err(e) => {
+                            debug_println!(
+                                "Ack error in InterruptConsumer::consume loop. {:?}",
+                                e
+                            );
+                            panic!()
+                        }
+                    };
+                }
+            }
+            // NOTE: instead of dequeue on a signal, we always try to dequeue because
+            // we don't get a signal from the sender if the queue is full
+            if let Ok(e) = queue.pop() {
+                Some(e)
+            } else {
+                None
+            }
+        }
+    }
+
     pub fn consume<State, WFn, EFn>(self, initial_state: State, waker_fn: WFn, queue_fn: EFn) -> !
     where
         WFn: Fn(State) -> State,
