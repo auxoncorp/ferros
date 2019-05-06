@@ -289,4 +289,16 @@ mod tests {
             );
         }
     }
+
+    sequential_test! {
+        fn reuse_untyped() {
+            run_qemu_test::<fn()>(
+                "reuse_untyped",
+                Regex::new(".*Successfully reused untyped multiple times.*").unwrap(),
+                Regex::new(".*Root task should never return from main.*").unwrap(),
+                None,
+                None,
+            );
+        }
+    }
 }

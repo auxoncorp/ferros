@@ -60,7 +60,7 @@ impl<FreePools: Unsigned> LocalCap<ASIDControl<FreePools>> {
     pub fn allocate_asid_pool(
         self,
         ut: LocalCap<Untyped<U13, memory_kind::General>>,
-        dest_slots: LocalCNodeSlots<U2>,
+        dest_slots: LocalCNodeSlots<U3>,
     ) -> Result<
         (
             LocalCap<ASIDPool<arch::asid::PoolSize>>,

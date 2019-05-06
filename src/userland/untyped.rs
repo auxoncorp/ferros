@@ -2,8 +2,8 @@ use crate::arch::paging;
 use crate::pow::{Pow, _Pow};
 use crate::userland::{
     memory_kind, role, CNode, CNodeRole, CNodeSlot, CNodeSlots, Cap, CapRange, CapType, ChildCNode,
-    ChildCNodeSlots, DirectRetype, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MemoryKind,
-    PhantomCap, SeL4Error, UnmappedPage, Untyped,
+    ChildCNodeSlots, DirectRetype, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap,
+    MemoryKind, PhantomCap, SeL4Error, UnmappedPage, Untyped,
 };
 use core::marker::PhantomData;
 use core::ops::{Add, Mul, Sub};
@@ -35,7 +35,7 @@ pub(crate) fn wrap_untyped<BitSize: Unsigned, Kind: MemoryKind>(
 impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
     pub fn split(
         self,
-        dest_slot: LocalCNodeSlot,
+        dest_slots: LocalCNodeSlots<U2>,
     ) -> Result<
         (
             LocalCap<Untyped<Diff<BitSize, U1>, Kind>>,
@@ -47,7 +47,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
         BitSize: Sub<U1>,
         Diff<BitSize, U1>: Unsigned,
     {
-        let (dest_cptr, dest_offset, _) = dest_slot.elim();
+        let (dest_cptr, dest_offset, _) = dest_slots.elim();
 
         let err = unsafe {
             seL4_Untyped_Retype(
@@ -58,7 +58,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
                 0,                                      // index
                 0,                                      // depth
                 dest_offset,                            // offset
-                1,                                      // num_objects
+                2,                                      // num_objects
             )
         };
         if err != 0 {
@@ -67,12 +67,12 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
 
         Ok((
             Cap {
-                cptr: self.cptr,
+                cptr: dest_offset,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
             Cap {
-                cptr: dest_offset,
+                cptr: dest_offset + 1,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
@@ -81,7 +81,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
 
     pub fn quarter(
         self,
-        dest_slots: LocalCNodeSlots<U3>,
+        dest_slots: LocalCNodeSlots<U4>,
     ) -> Result<
         (
             LocalCap<Untyped<Diff<BitSize, U2>, Kind>>,
@@ -105,7 +105,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
                 0,                                      // index
                 0,                                      // depth
                 dest_offset,                            // offset
-                3,                                      // num_objects
+                4,                                      // num_objects
             )
         };
         if err != 0 {
@@ -129,11 +129,47 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
                 _role: PhantomData,
             },
             Cap {
-                cptr: self.cptr,
+                cptr: dest_offset + 4,
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
         ))
+    }
+
+    /// Gain temporary access to an untyped capability for use in a function context.
+    /// When the passed function call is complete, all capabilities derived
+    /// from this untyped will be revoked (and thus destroyed).
+    ///
+    /// Be cautious not to return or store any capabilities created in this function, even in the error case.
+    pub unsafe fn with_temporary<E, F>(
+        self,
+        parent_cnode: &LocalCap<LocalCNode>,
+        mut f: F,
+    ) -> Result<(Result<(), E>, Self), SeL4Error>
+    where
+        F: FnOnce(Self) -> Result<(), E>,
+    {
+        // Call the function with an alias/copy of self
+        let r = f(Cap {
+            cptr: self.cptr,
+            cap_data: Untyped {
+                _bit_size: PhantomData,
+                _kind: PhantomData,
+            },
+            _role: PhantomData,
+        });
+
+        // Clean up any child/derived capabilities that may have been created.
+        let err = seL4_CNode_Revoke(
+            parent_cnode.cptr,   // _service
+            self.cptr,           // index
+            seL4_WordBits as u8, // depth
+        );
+        if err != 0 {
+            Err(SeL4Error::CNodeRevoke(err))
+        } else {
+            Ok((r, self))
+        }
     }
 }
 

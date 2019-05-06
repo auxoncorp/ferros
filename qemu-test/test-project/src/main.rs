@@ -22,6 +22,7 @@ mod fault_pair;
 mod memory_read_protection;
 mod memory_write_protection;
 mod over_register_size_params;
+mod reuse_untyped;
 mod root_task_runs;
 mod shared_page_queue;
 mod uart;
@@ -70,6 +71,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     memory_write_protection::run(raw_boot_info).expect("run");
     #[cfg(test_case = "over_register_size_params")]
     over_register_size_params::run(raw_boot_info).expect("run");
+    #[cfg(test_case = "reuse_untyped")]
+    reuse_untyped::run(raw_boot_info).expect("run");
     #[cfg(test_case = "root_task_runs")]
     root_task_runs::run(raw_boot_info).expect("run");
     #[cfg(test_case = "shared_page_queue")]

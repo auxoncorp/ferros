@@ -160,8 +160,8 @@ impl From<Badge> for usize {
 
 #[derive(Debug)]
 pub struct Untyped<BitSize: Unsigned, Kind: MemoryKind = memory_kind::General> {
-    _bit_size: PhantomData<BitSize>,
-    _kind: PhantomData<Kind>,
+    pub(crate) _bit_size: PhantomData<BitSize>,
+    pub(crate) _kind: PhantomData<Kind>,
 }
 
 impl<BitSize: Unsigned, Kind: MemoryKind> CapType for Untyped<BitSize, Kind> {}
