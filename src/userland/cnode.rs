@@ -83,6 +83,36 @@ impl<Size: Unsigned, Role: CNodeRole> CNodeSlots<Size, Role> {
             },
         })
     }
+
+    /// Gain temporary access to some slots for use in a function context.
+    /// When the passed function call is complete, all capabilities
+    /// in this range will be revoked and deleted.
+    pub unsafe fn with_temporary<E, F>(self, mut f: F) -> Result<(Result<(), E>, Self), SeL4Error>
+    where
+        F: FnOnce(Self) -> Result<(), E>,
+    {
+        // Call the function with an alias/copy of self
+        let r = f(Cap::internal_new(self.cptr, self.cap_data.offset));
+
+        // Blindly attempt to revoke and delete the contents of the slots,
+        // (in reverse order) ignoring errors related to empty slots.
+        for offset in (self.cap_data.offset..self.cap_data.offset + Size::USIZE).rev() {
+            // Clean up any child/derived capabilities that may have been created.
+            let _err = seL4_CNode_Revoke(
+                self.cptr,           // _service
+                offset,              // index
+                seL4_WordBits as u8, // depth
+            );
+
+            // Clean out the slot itself
+            let _err = seL4_CNode_Delete(
+                self.cptr,           // _service
+                offset,              // index
+                seL4_WordBits as u8, // depth
+            );
+        }
+        Ok((r, self))
+    }
 }
 
 impl LocalCap<ChildCNode> {

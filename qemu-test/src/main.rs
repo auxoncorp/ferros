@@ -301,4 +301,16 @@ mod tests {
             );
         }
     }
+
+    sequential_test! {
+        fn reuse_slots() {
+            run_qemu_test::<fn()>(
+                "reuse_slots",
+                Regex::new(".*Successfully reused slots multiple times.*").unwrap(),
+                Regex::new(".*Root task should never return from main.*").unwrap(),
+                None,
+                None,
+            );
+        }
+    }
 }
