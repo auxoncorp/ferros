@@ -1,6 +1,6 @@
 use crate::arch;
 use crate::userland::{
-    memory_kind, role, AssignedPageDirectory, Cap, CapType, LocalCNodeSlots, LocalCap, PhantomCap,
+    memory_kind, role, AssignedPageDirectory, Cap, CapType, LocalCNodeSlot, LocalCap, PhantomCap,
     SeL4Error, UnassignedPageDirectory, Untyped,
 };
 use core::marker::PhantomData;
@@ -54,13 +54,10 @@ pub struct ThreadID {
 }
 
 impl<FreePools: Unsigned> LocalCap<ASIDControl<FreePools>> {
-    // TODO: this takes a U13 instead of a U12 as a workaround for
-    // https://github.com/seL4/seL4/issues/128. This needs to be fixed in
-    // ut_buddy.rs.
     pub fn allocate_asid_pool(
         self,
-        ut: LocalCap<Untyped<U13, memory_kind::General>>,
-        dest_slots: LocalCNodeSlots<U3>,
+        ut12: LocalCap<Untyped<U12, memory_kind::General>>,
+        dest_slot: LocalCNodeSlot,
     ) -> Result<
         (
             LocalCap<ASIDPool<arch::asid::PoolSize>>,
@@ -72,9 +69,6 @@ impl<FreePools: Unsigned> LocalCap<ASIDControl<FreePools>> {
         FreePools: Sub<U1>,
         op! {FreePools - U1}: Unsigned,
     {
-        let (ut12_slot, dest_slot) = dest_slots.alloc();
-        let (_, ut12) = ut.split(ut12_slot)?;
-
         let (dest_cptr, dest_offset, _) = dest_slot.elim();
         let err = unsafe {
             seL4_ARM_ASIDControl_MakePool(
