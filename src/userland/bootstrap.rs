@@ -3,11 +3,9 @@ use crate::pow::Pow;
 use crate::userland::process::NeitherSendNorSync;
 use crate::userland::{
     memory_kind, role, ASIDControl, AssignedPageDirectory, CNode, CNodeSlots, Cap, IRQControl,
-    LocalCNode, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable, SeL4Error,
-    ThreadControlBlock, UnmappedPageTable,
+    LocalCNode, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable, ThreadControlBlock,
 };
 use core::marker::PhantomData;
-use core::ops::Sub;
 use selfe_sys::*;
 use typenum::operator_aliases::Diff;
 use typenum::*;

@@ -272,7 +272,7 @@ impl<Msg: Sized> FaultOrMessageHandler<Msg, role::Local> {
     pub fn await_message(&self) -> Result<FaultOrMessage<Msg>, IPCError> {
         // Using unchecked_new is acceptable here because we check the message size
         // constraints during the construction of FaultOrMessageHandler
-        let mut ipc_buffer: IPCBuffer<Msg, ()> = unsafe { IPCBuffer::unchecked_new() };
+        let ipc_buffer: IPCBuffer<Msg, ()> = unsafe { IPCBuffer::unchecked_new() };
         let mut sender: usize = 0;
         // Do a regular receive to seed our initial value
         let mut msg_info: MessageInfo =

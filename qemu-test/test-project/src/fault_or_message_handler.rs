@@ -2,7 +2,7 @@ use super::TopLevelError;
 use arrayvec::ArrayVec;
 use selfe_sys::{seL4_BootInfo, seL4_MessageInfo_new, seL4_Send};
 
-use ferros::alloc::{self, micro_alloc, smart_alloc, ut_buddy};
+use ferros::alloc::{micro_alloc, smart_alloc, ut_buddy};
 use typenum::*;
 
 use ferros::userland::*;
@@ -45,7 +45,9 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         asid_arr.push(asid_e);
     });
 
-    let mut resources = Some((local_slots, ut27));
+    let mut outer_slots = local_slots;
+    let mut outer_ut = ut27;
+
     for (c, child_asid) in [
         Command::ReportTrue,
         Command::ReportFalse,
@@ -55,11 +57,10 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     .iter()
     .zip(asid_arr.into_iter())
     {
-        let (outer_slots, outer_ut) = resources.take().unwrap();
         unsafe {
-            let (r, recycled_slots, recycled_ut) = with_temporary_resources(
-                outer_slots,
-                outer_ut,
+            with_temporary_resources(
+                &mut outer_slots,
+                &mut outer_ut,
                 |inner_slots, inner_ut| -> Result<(), TopLevelError> {
                     let uts = ut_buddy(inner_ut);
                     smart_alloc!(|slots from inner_slots, ut from uts| {
@@ -106,9 +107,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
                     }
                     Ok(())
                 },
-            )?;
-            r?;
-            resources.replace((recycled_slots, recycled_ut));
+            )??;
         }
     }
     debug_println!("Successfully received messages and faults");

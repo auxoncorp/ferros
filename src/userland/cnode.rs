@@ -89,14 +89,14 @@ impl<Size: Unsigned> LocalCNodeSlots<Size> {
     /// Gain temporary access to some slots for use in a function context.
     /// When the passed function call is complete, all capabilities
     /// in this range will be revoked and deleted.
-    pub unsafe fn with_temporary<E, F>(self, f: F) -> Result<(Result<(), E>, Self), SeL4Error>
+    pub fn with_temporary<E, F>(&mut self, f: F) -> Result<Result<(), E>, SeL4Error>
     where
         F: FnOnce(Self) -> Result<(), E>,
     {
         // Call the function with an alias/copy of self
         let r = f(Cap::internal_new(self.cptr, self.cap_data.offset));
-        self.revoke_in_reverse();
-        Ok((r, self))
+        unsafe { self.revoke_in_reverse() }
+        Ok(r)
     }
 
     /// Blindly attempt to revoke and delete the contents of the slots,
@@ -123,18 +123,11 @@ impl<Size: Unsigned> LocalCNodeSlots<Size> {
 /// Gain temporary access to some slots and memory for use in a function context.
 /// When the passed function call is complete, all capabilities
 /// in this range will be revoked and deleted and the memory reclaimed.
-pub unsafe fn with_temporary_resources<SlotCount: Unsigned, BitSize: Unsigned, E, F>(
-    slots: LocalCNodeSlots<SlotCount>,
-    untyped: LocalCap<crate::userland::cap::Untyped<BitSize>>,
+pub fn with_temporary_resources<SlotCount: Unsigned, BitSize: Unsigned, E, F>(
+    slots: &mut LocalCNodeSlots<SlotCount>,
+    untyped: &mut LocalCap<crate::userland::cap::Untyped<BitSize>>,
     f: F,
-) -> Result<
-    (
-        Result<(), E>,
-        LocalCNodeSlots<SlotCount>,
-        LocalCap<crate::userland::cap::Untyped<BitSize>>,
-    ),
-    SeL4Error,
->
+) -> Result<Result<(), E>, SeL4Error>
 where
     F: FnOnce(
         LocalCNodeSlots<SlotCount>,
@@ -153,20 +146,22 @@ where
             _role: PhantomData,
         },
     );
-    slots.revoke_in_reverse();
+    unsafe { slots.revoke_in_reverse() }
 
     // Clean up any child/derived capabilities that may have been created from the memory
     // Because the slots and the untyped are both Local, the slots' parent CNode capability pointer
     // must be the same as the untyped's parent CNode
-    let err = seL4_CNode_Revoke(
-        slots.cptr,          // _service
-        untyped.cptr,        // index
-        seL4_WordBits as u8, // depth
-    );
+    let err = unsafe {
+        seL4_CNode_Revoke(
+            slots.cptr,          // _service
+            untyped.cptr,        // index
+            seL4_WordBits as u8, // depth
+        )
+    };
     if err != 0 {
         return Err(SeL4Error::CNodeRevoke(err));
     }
-    Ok((r, slots, untyped))
+    Ok(r)
 }
 
 impl LocalCap<ChildCNode> {

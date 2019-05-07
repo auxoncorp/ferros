@@ -141,11 +141,11 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
     /// from this untyped will be revoked (and thus destroyed).
     ///
     /// Be cautious not to return or store any capabilities created in this function, even in the error case.
-    pub unsafe fn with_temporary<E, F>(
-        self,
+    pub fn with_temporary<E, F>(
+        &mut self,
         parent_cnode: &LocalCap<LocalCNode>,
         mut f: F,
-    ) -> Result<(Result<(), E>, Self), SeL4Error>
+    ) -> Result<Result<(), E>, SeL4Error>
     where
         F: FnOnce(Self) -> Result<(), E>,
     {
@@ -160,15 +160,17 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
         });
 
         // Clean up any child/derived capabilities that may have been created.
-        let err = seL4_CNode_Revoke(
-            parent_cnode.cptr,   // _service
-            self.cptr,           // index
-            seL4_WordBits as u8, // depth
-        );
+        let err = unsafe {
+            seL4_CNode_Revoke(
+                parent_cnode.cptr,   // _service
+                self.cptr,           // index
+                seL4_WordBits as u8, // depth
+            )
+        };
         if err != 0 {
             Err(SeL4Error::CNodeRevoke(err))
         } else {
-            Ok((r, self))
+            Ok(r)
         }
     }
 }
