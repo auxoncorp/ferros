@@ -57,58 +57,55 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     .iter()
     .zip(asid_arr.into_iter())
     {
-        unsafe {
-            with_temporary_resources(
-                &mut outer_slots,
-                &mut outer_ut,
-                |inner_slots, inner_ut| -> Result<(), TopLevelError> {
-                    let uts = ut_buddy(inner_ut);
-                    smart_alloc!(|slots from inner_slots, ut from uts| {
+        with_temporary_resources(
+            &mut outer_slots,
+            &mut outer_ut,
+            |inner_slots, inner_ut| -> Result<(), TopLevelError> {
+                let uts = ut_buddy(inner_ut);
+                smart_alloc!(|slots from inner_slots, ut from uts| {
 
-                        let (child_cnode, child_slots) = retype_cnode::<U12>(ut, slots)?;
-                        let (child_fault_source_slot, child_slots) = child_slots.alloc();
-                        let (source, sender, handler) = fault_or_message_channel(&root_cnode, ut, slots, child_fault_source_slot, slots)?;
-                        let params = ProcParams { command: c.clone(), sender };
+                    let (child_cnode, child_slots) = retype_cnode::<U12>(ut, slots)?;
+                    let (child_fault_source_slot, child_slots) = child_slots.alloc();
+                    let (source, sender, handler) = fault_or_message_channel(&root_cnode, ut, slots, child_fault_source_slot, slots)?;
+                    let params = ProcParams { command: c.clone(), sender };
 
-                        let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &root_cnode,
-                                                       &mut root_page_directory)?;
+                    let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &root_cnode,
+                                                   &mut root_page_directory)?;
 
-                        let (child_process, _) = child_vspace.prepare_thread(
-                            proc_main,
-                            params,
-                            ut,
-                            slots,
-                            &mut scratch_page_table,
-                            &mut root_page_directory,
-                        )?;
-                    });
-                    child_process.start(child_cnode, Some(source), &root_tcb, 255)?;
+                    let (child_process, _) = child_vspace.prepare_thread(
+                        proc_main,
+                        params,
+                        ut,
+                        slots,
+                        &mut scratch_page_table,
+                        &mut root_page_directory,
+                    )?;
+                });
+                child_process.start(child_cnode, Some(source), &root_tcb, 255)?;
 
-                    match handler.await_message()? {
-                        FaultOrMessage::Fault(f) => {
-                            if *c != Command::ThrowFault {
-                                panic!("Child process threw a fault when it should not have")
-                            } else {
-                                debug_println!("Successfully threw and caught a fault");
-                            }
+                match handler.await_message()? {
+                    FaultOrMessage::Fault(f) => {
+                        if *c != Command::ThrowFault {
+                            panic!("Child process threw a fault when it should not have")
+                        } else {
+                            debug_println!("Successfully threw and caught a fault");
                         }
-                        FaultOrMessage::Message(m) => match c {
-                            Command::ThrowFault => {
-                                panic!("Command expected a fault to be thrown, not a message sent")
-                            }
-                            Command::ReportTrue => {
-                                assert_eq!(true, m, "Command expected success true to be reported")
-                            }
-                            Command::ReportFalse => assert_eq!(
-                                false, m,
-                                "Command expected success false to be reported"
-                            ),
-                        },
                     }
-                    Ok(())
-                },
-            )??;
-        }
+                    FaultOrMessage::Message(m) => match c {
+                        Command::ThrowFault => {
+                            panic!("Command expected a fault to be thrown, not a message sent")
+                        }
+                        Command::ReportTrue => {
+                            assert_eq!(true, m, "Command expected success true to be reported")
+                        }
+                        Command::ReportFalse => {
+                            assert_eq!(false, m, "Command expected success false to be reported")
+                        }
+                    },
+                }
+                Ok(())
+            },
+        )??;
     }
     debug_println!("Successfully received messages and faults");
     Ok(())
