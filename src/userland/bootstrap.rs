@@ -1,6 +1,5 @@
 use crate::arch::{address_space, asid, paging};
 use crate::pow::Pow;
-use crate::userland::cap::UnassignedPageDirectory;
 use crate::userland::process::NeitherSendNorSync;
 use crate::userland::{
     memory_kind, role, ASIDControl, AssignedPageDirectory, CNode, CNodeSlots, Cap, IRQControl,
@@ -10,7 +9,7 @@ use crate::userland::{
 use core::marker::PhantomData;
 use core::ops::Sub;
 use selfe_sys::*;
-use typenum::operator_aliases::{Diff, Sub1};
+use typenum::operator_aliases::Diff;
 use typenum::*;
 
 // The root CNode radix is 19. Conservatively set aside 2^12 (the default root

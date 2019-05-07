@@ -1,7 +1,7 @@
 use crate::userland::cap::DirectRetype;
 use crate::userland::{
-    role, Badge, CNodeRole, Cap, CapRights, ChildCNodeSlot, ChildCap, Endpoint, LocalCNode,
-    LocalCNodeSlot, LocalCap, SeL4Error, Untyped,
+    role, CNodeRole, Cap, CapRights, ChildCNodeSlot, Endpoint, LocalCNode, LocalCNodeSlot,
+    LocalCap, SeL4Error, Untyped,
 };
 use core::marker::PhantomData;
 use selfe_sys::*;
@@ -18,18 +18,6 @@ pub enum IPCError {
 impl From<SeL4Error> for IPCError {
     fn from(s: SeL4Error) -> Self {
         IPCError::SeL4Error(s)
-    }
-}
-
-#[derive(Debug)]
-pub enum FaultManagementError {
-    SelfFaultHandlingForbidden,
-    SeL4Error(SeL4Error),
-}
-
-impl From<SeL4Error> for FaultManagementError {
-    fn from(s: SeL4Error) -> Self {
-        FaultManagementError::SeL4Error(s)
     }
 }
 
@@ -82,7 +70,6 @@ impl<'a, Req, Rsp> IpcSetup<'a, Req, Rsp> {
             endpoint: child_endpoint,
             _req: PhantomData,
             _rsp: PhantomData,
-            _role: PhantomData,
         })
     }
 }
@@ -92,13 +79,12 @@ pub struct Caller<Req: Sized, Rsp: Sized, Role: CNodeRole> {
     endpoint: Cap<Endpoint, Role>,
     _req: PhantomData<Req>,
     _rsp: PhantomData<Rsp>,
-    _role: PhantomData<Role>,
 }
 
 /// Internal convenience for working with IPC Buffer instances
 /// *Note:* In a given thread or process, all instances of
 /// IPCBuffer wrap a pointer to the very same underlying buffer.
-struct IPCBuffer<'a, Req: Sized, Rsp: Sized> {
+pub(crate) struct IPCBuffer<'a, Req: Sized, Rsp: Sized> {
     buffer: &'a mut seL4_IPCBuffer,
     _req: PhantomData<Req>,
     _rsp: PhantomData<Rsp>,
@@ -107,7 +93,7 @@ struct IPCBuffer<'a, Req: Sized, Rsp: Sized> {
 impl<'a, Req: Sized, Rsp: Sized> IPCBuffer<'a, Req, Rsp> {
     /// Don't forget that while this says `new` in the signature,
     /// it is still aliasing the thread-global IPC Buffer pointer
-    fn new() -> Result<Self, IPCError> {
+    pub(crate) fn new() -> Result<Self, IPCError> {
         let request_size = core::mem::size_of::<Req>();
         let response_size = core::mem::size_of::<Rsp>();
         let buffer = unchecked_raw_ipc_buffer();
@@ -126,12 +112,18 @@ impl<'a, Req: Sized, Rsp: Sized> IPCBuffer<'a, Req, Rsp> {
         })
     }
 
+    /// Maximum size of IPC Buffer message contents, in bytes
+    pub(crate) fn max_size() -> usize {
+        let buffer = unchecked_raw_ipc_buffer();
+        core::mem::size_of_val(&buffer.msg)
+    }
+
     /// Don't forget that while this says `new` in the signature,
     /// it is still aliasing the thread-global IPC Buffer pointer
     ///
     /// Use only when all possible prior paths have conclusively
     /// checked sizing constraints
-    unsafe fn unchecked_new() -> Self {
+    pub(crate) unsafe fn unchecked_new() -> Self {
         IPCBuffer {
             buffer: unchecked_raw_ipc_buffer(),
             _req: PhantomData,
@@ -172,11 +164,12 @@ impl<'a, Req: Sized, Rsp: Sized> IPCBuffer<'a, Req, Rsp> {
     }
 }
 
+#[inline]
 fn unchecked_raw_ipc_buffer<'a>() -> &'a mut seL4_IPCBuffer {
     unsafe { &mut *seL4_GetIPCBuffer() }
 }
 
-fn type_length_in_words<T>() -> usize {
+pub(crate) fn type_length_in_words<T>() -> usize {
     let t_bytes = core::mem::size_of::<T>();
     let usize_bytes = core::mem::size_of::<usize>();
     if t_bytes == 0 {
@@ -210,11 +203,6 @@ pub struct MessageInfo {
 }
 
 impl MessageInfo {
-    fn copy_inner(&self) -> seL4_MessageInfo_t {
-        seL4_MessageInfo_t {
-            words: [self.inner.words[0]],
-        }
-    }
     pub fn label(&self) -> usize {
         unsafe {
             seL4_MessageInfo_ptr_get_label(
@@ -226,7 +214,7 @@ impl MessageInfo {
     /// Length of the message in words, ought to be
     /// less than the length of the IPC Buffer's msg array,
     /// an array of `usize` words.
-    fn length_words(&self) -> usize {
+    pub(crate) fn length_words(&self) -> usize {
         unsafe {
             seL4_MessageInfo_ptr_get_length(
                 &self.inner as *const seL4_MessageInfo_t as *mut seL4_MessageInfo_t,
@@ -234,119 +222,17 @@ impl MessageInfo {
         }
     }
 
-    fn is_vm_fault(&self) -> bool {
-        1i8 == unsafe { seL4_isVMFault_tag(self.copy_inner()) }
-    }
-
-    fn is_unknown_syscall(&self) -> bool {
-        1i8 == unsafe { seL4_isUnknownSyscall_tag(self.copy_inner()) }
-    }
-
-    fn is_user_exception(&self) -> bool {
-        1i8 == unsafe { seL4_isUserException_tag(self.copy_inner()) }
-    }
-
-    fn is_null_fault(&self) -> bool {
-        1i8 == unsafe { seL4_isNullFault_tag(self.copy_inner()) }
-    }
-
-    fn is_cap_fault(&self) -> bool {
-        1i8 == unsafe { seL4_isCapFault_tag(self.copy_inner()) }
+    /// Does this message info have the label tag
+    /// that indicates that no fault has occurred?
+    pub(crate) fn has_null_fault_label(&self) -> bool {
+        const NULL_FAULT: usize = seL4_Fault_tag_seL4_Fault_NullFault as usize;
+        self.label() == NULL_FAULT
     }
 }
 
 impl From<seL4_MessageInfo_t> for MessageInfo {
     fn from(msg: seL4_MessageInfo_t) -> Self {
         MessageInfo { inner: msg }
-    }
-}
-
-/// TODO - consider dragging more information
-/// out of the fault message in the IPC Buffer
-/// and populating some inner fields
-#[derive(Debug)]
-pub enum Fault {
-    VMFault(fault::VMFault),
-    UnknownSyscall(fault::UnknownSyscall),
-    UserException(fault::UserException),
-    NullFault(fault::NullFault),
-    CapFault(fault::CapFault),
-    UnidentifiedFault(fault::UnidentifiedFault),
-}
-
-impl Fault {
-    pub fn sender(&self) -> Badge {
-        match self {
-            Fault::VMFault(f) => f.sender,
-            Fault::UnknownSyscall(f) => f.sender,
-            Fault::UserException(f) => f.sender,
-            Fault::NullFault(f) => f.sender,
-            Fault::CapFault(f) => f.sender,
-            Fault::UnidentifiedFault(f) => f.sender,
-        }
-    }
-}
-
-pub mod fault {
-    use super::Badge;
-    #[derive(Debug)]
-    pub struct VMFault {
-        pub sender: Badge,
-        pub program_counter: usize,
-        pub address: usize,
-        pub is_instruction_fault: bool,
-        pub fault_status_register: usize,
-    }
-    #[derive(Debug)]
-    pub struct UnknownSyscall {
-        pub sender: Badge,
-    }
-    #[derive(Debug)]
-    pub struct UserException {
-        pub sender: Badge,
-    }
-    #[derive(Debug)]
-    pub struct NullFault {
-        pub sender: Badge,
-    }
-    #[derive(Debug)]
-    pub struct CapFault {
-        pub sender: Badge,
-        pub in_receive_phase: bool,
-        pub cap_address: usize,
-    }
-    /// Grab bag for faults that don't fit the regular classification
-    #[derive(Debug)]
-    pub struct UnidentifiedFault {
-        pub sender: Badge,
-    }
-}
-
-impl From<(MessageInfo, Badge)> for Fault {
-    fn from(info_and_sender: (MessageInfo, Badge)) -> Self {
-        let (info, sender) = info_and_sender;
-        let buffer: &mut seL4_IPCBuffer = unsafe { &mut *seL4_GetIPCBuffer() };
-
-        match info {
-            _ if info.is_vm_fault() => Fault::VMFault(fault::VMFault {
-                sender,
-                program_counter: buffer.msg[seL4_VMFault_IP as usize],
-                address: buffer.msg[seL4_VMFault_Addr as usize],
-                is_instruction_fault: 1 == buffer.msg[seL4_VMFault_PrefetchFault as usize],
-                fault_status_register: buffer.msg[seL4_VMFault_FSR as usize],
-            }),
-            _ if info.is_unknown_syscall() => {
-                Fault::UnknownSyscall(fault::UnknownSyscall { sender })
-            }
-            _ if info.is_user_exception() => Fault::UserException(fault::UserException { sender }),
-            _ if info.is_null_fault() => Fault::NullFault(fault::NullFault { sender }),
-            _ if info.is_cap_fault() => Fault::CapFault(fault::CapFault {
-                sender,
-                cap_address: buffer.msg[seL4_CapFault_Addr as usize],
-                in_receive_phase: 1 == buffer.msg[seL4_CapFault_InRecvPhase as usize],
-            }),
-            _ => Fault::UnidentifiedFault(fault::UnidentifiedFault { sender }),
-        }
     }
 }
 
@@ -431,97 +317,21 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
     }
 }
 
-pub struct FaultSinkSetup {
-    // Local pointer to the endpoint, kept around for easy copying
-    local_endpoint: LocalCap<Endpoint>,
-    // Copy of the same endpoint, set up with the correct rights,
-    // living in the CSpace of a child CNode that will become
-    // the root of the fault-handling process.
-    sink_child_endpoint: ChildCap<Endpoint>,
-
-    // To enable checking whether there is an accidental attempt
-    // to wire up a process root CSpace as its own fault handler
-    sink_cspace_local_cptr: usize,
-}
-
-impl FaultSinkSetup {
-    pub fn new(
-        local_cnode: &LocalCap<LocalCNode>,
-        untyped: LocalCap<Untyped<<Endpoint as DirectRetype>::SizeBits>>,
-        endpoint_slot: LocalCNodeSlot,
-        fault_sink_slot: ChildCNodeSlot,
-    ) -> Result<Self, SeL4Error> {
-        let sink_cspace_local_cptr = fault_sink_slot.cptr;
-
-        let local_endpoint: LocalCap<Endpoint> = untyped.retype(endpoint_slot)?;
-
-        let sink_child_endpoint =
-            local_endpoint.copy(&local_cnode, fault_sink_slot, CapRights::RW)?;
-
-        Ok(FaultSinkSetup {
-            local_endpoint,
-            sink_child_endpoint,
-            sink_cspace_local_cptr,
-        })
-    }
-
-    pub fn add_fault_source(
-        &self,
-        local_cnode: &LocalCap<LocalCNode>,
-        fault_source_slot: ChildCNodeSlot,
-        badge: Badge,
-    ) -> Result<FaultSource<role::Child>, FaultManagementError> {
-        if fault_source_slot.cptr == self.sink_cspace_local_cptr {
-            return Err(FaultManagementError::SelfFaultHandlingForbidden);
-        }
-
-        let child_endpoint_fault_source =
-            self.local_endpoint
-                .mint_new(local_cnode, fault_source_slot, CapRights::RWG, badge)?;
-
-        Ok(FaultSource {
-            endpoint: child_endpoint_fault_source,
-        })
-    }
-
-    pub fn sink(self) -> FaultSink<role::Child> {
-        FaultSink {
-            endpoint: self.sink_child_endpoint,
-        }
-    }
-}
-
-/// Only supports establishing two child processes where one process will be watching for faults on the other.
-/// Requires a separate input signature if we want the local/current thread to be the watcher due to
-/// our consuming full instances of the local scratch CNode and the destination CNodes separately in this function.
-pub fn setup_fault_endpoint_pair(
-    local_cnode: &LocalCap<LocalCNode>,
-    untyped: LocalCap<Untyped<<Endpoint as DirectRetype>::SizeBits>>,
-    endpoint_slot: LocalCNodeSlot,
-    fault_source_slot: ChildCNodeSlot,
-    fault_sink_slot: ChildCNodeSlot,
-) -> Result<(FaultSource<role::Child>, FaultSink<role::Child>), FaultManagementError> {
-    let setup = FaultSinkSetup::new(&local_cnode, untyped, endpoint_slot, fault_sink_slot)?;
-    let fault_source = setup.add_fault_source(&local_cnode, fault_source_slot, Badge::from(0))?;
-    Ok((fault_source, setup.sink()))
-}
-
-/// The side of a fault endpoint that sends fault messages
 #[derive(Debug)]
-pub struct FaultSource<Role: CNodeRole> {
+pub struct Sender<Msg: Sized, Role: CNodeRole> {
     pub(crate) endpoint: Cap<Endpoint, Role>,
+    pub(crate) _msg: PhantomData<Msg>,
 }
 
-/// The side of a fault endpoint that receives fault messages
-#[derive(Debug)]
-pub struct FaultSink<Role: CNodeRole> {
-    pub(crate) endpoint: Cap<Endpoint, Role>,
-}
-
-impl FaultSink<role::Local> {
-    pub fn wait_for_fault(&self) -> Fault {
-        let mut sender: usize = 0;
-        let info = unsafe { seL4_Recv(self.endpoint.cptr, &mut sender as *mut usize) }.into();
-        (info, Badge::from(sender)).into()
+impl<Msg: Sized> Sender<Msg, role::Local> {
+    pub fn blocking_send<'a>(&self, message: &Msg) -> Result<(), IPCError> {
+        // Using unchecked_new is acceptable here because we check the message size
+        // constraints during the construction of Sender + FaultOrMessageHandler
+        let mut ipc_buffer: IPCBuffer<Msg, ()> = unsafe { IPCBuffer::unchecked_new() };
+        ipc_buffer.copy_req_into_buffer(message);
+        unsafe {
+            seL4_Send(self.endpoint.cptr, type_length_message_info::<Msg>());
+        }
+        Ok(())
     }
 }

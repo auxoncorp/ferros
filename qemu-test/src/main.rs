@@ -235,10 +235,21 @@ mod tests {
     }
 
     sequential_test! {
+        fn fault_or_message_handler() {
+            run_qemu_test::<fn()>(
+                "fault_or_message_handler",
+                Regex::new(".*Successfully received messages and faults.*").unwrap(),
+                Regex::new(".*Root task should never return from main.*").unwrap(),
+                None,
+                None,
+            );
+        }
+    }
+
+    sequential_test! {
         fn fault_pair() {
             run_qemu_test::<fn()>(
                 "fault_pair",
-
                 Regex::new(".*Caught a fault: CapFault\\(CapFault \\{ sender: Badge \\{ inner: 0 \\}, in_receive_phase: false, cap_address: 314159 \\}\\).*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
                 None,

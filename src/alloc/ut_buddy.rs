@@ -1,7 +1,7 @@
 /// UTBuddy is a type-safe static buddy allocator for Untyped capabilites.
 use arrayvec::ArrayVec;
 use core::marker::PhantomData;
-use core::ops::{Add, Div, Mul, Sub};
+use core::ops::{Add, Mul, Sub};
 use selfe_sys::*;
 use typenum::*;
 

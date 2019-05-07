@@ -18,6 +18,7 @@ mod child_process_cap_management;
 mod child_process_runs;
 mod dont_tread_on_me;
 mod double_door_backpressure;
+mod fault_or_message_handler;
 mod fault_pair;
 mod memory_read_protection;
 mod memory_write_protection;
@@ -64,6 +65,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     dont_tread_on_me::run(raw_boot_info).expect("run");
     #[cfg(test_case = "double_door_backpressure")]
     double_door_backpressure::run(raw_boot_info).expect("run");
+    #[cfg(test_case = "fault_or_message_handler")]
+    fault_or_message_handler::run(raw_boot_info).expect("run");
     #[cfg(test_case = "fault_pair")]
     fault_pair::run(raw_boot_info).expect("run");
     #[cfg(test_case = "memory_read_protection")]
