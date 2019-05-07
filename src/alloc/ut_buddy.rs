@@ -1,8 +1,7 @@
 /// UTBuddy is a type-safe static buddy allocator for Untyped capabilites.
 use arrayvec::ArrayVec;
 use core::marker::PhantomData;
-use core::ops::Add;
-use core::ops::Sub;
+use core::ops::{Add, Div, Mul, Sub};
 use selfe_sys::*;
 use typenum::*;
 
@@ -143,14 +142,14 @@ where
 
     UTBuddy {
         _pool_sizes: PhantomData,
-        pool: pool,
+        pool,
     }
 }
 
 impl<PoolSizes: UList> UTBuddy<PoolSizes> {
-    pub fn alloc<BitSize: Unsigned, SlotCount: Unsigned>(
+    pub fn alloc<BitSize: Unsigned, NumSplits: Unsigned>(
         self,
-        slots: LocalCNodeSlots<SlotCount>,
+        slots: LocalCNodeSlots<Prod<NumSplits, U2>>,
     ) -> Result<
         (
             LocalCap<Untyped<BitSize>>,
@@ -160,7 +159,9 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
     >
     where
         BitSize: Sub<kernel::MinUntypedSize>,
-        PoolSizes: _TakeUntyped<Diff<BitSize, kernel::MinUntypedSize>, NumSplits = SlotCount>,
+        NumSplits: Mul<U2>,
+        Prod<NumSplits, U2>: Unsigned,
+        PoolSizes: _TakeUntyped<Diff<BitSize, kernel::MinUntypedSize>, NumSplits = NumSplits>,
         TakeUntyped_ResultPoolSizes<PoolSizes, Diff<BitSize, kernel::MinUntypedSize>>: UList,
     {
         // The index in the pool array where Untypeds of the requested size are stored.
@@ -170,8 +171,11 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
 
         // If there's no cptr of the requested size, make one by splitting the larger ones.
         if pool[index].len() == 0 {
-            let split_start_index = index + SlotCount::USIZE;
-            for (i, slot) in (index..=split_start_index).rev().zip(slots.iter()) {
+            let split_start_index = index + NumSplits::USIZE;
+            for (i, slot) in (index..=split_start_index)
+                .rev()
+                .zip(slots.iter().step_by(2))
+            {
                 let cptr = pool[i].pop().unwrap();
                 let cptr_bitsize = i + kernel::MinUntypedSize::USIZE;
 
@@ -186,15 +190,15 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
                         0,                                      // index
                         0,                                      // depth
                         slot_offset,                            // offset
-                        1,                                      // num_objects
+                        2,                                      // num_objects
                     )
                 };
                 if err != 0 {
                     return Err(SeL4Error::UntypedRetype(err));
                 }
 
-                pool[i - 1].push(cptr);
                 pool[i - 1].push(slot_offset);
+                pool[i - 1].push(slot_offset + 1);
             }
         }
 
@@ -204,7 +208,7 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
             Cap::wrap_cptr(cptr),
             UTBuddy {
                 _pool_sizes: PhantomData,
-                pool: pool,
+                pool,
             },
         ))
     }
