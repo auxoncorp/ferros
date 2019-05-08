@@ -35,7 +35,7 @@ impl<FreeSlots: Unsigned> CapType for ASIDPool<FreeSlots> {}
 
 #[derive(Debug)]
 pub struct UnassignedASID {
-    asid: usize,
+    pub(crate) asid: usize,
 }
 
 impl CapType for UnassignedASID {}

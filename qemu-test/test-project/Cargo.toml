@@ -15,10 +15,6 @@ cross_queue = { path = "../../cross_queue" }
 typenum = { git = "ssh://github.com/auxoncorp/typenum.git" }
 registers = { git = "ssh://github.com/auxoncorp/registers.git" }
 
-[dependencies.arrayvec]
-version = "0.4.10"
-default-features = false
-
 [profile.dev]
 panic = "abort"
 

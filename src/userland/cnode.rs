@@ -126,12 +126,14 @@ impl<Size: Unsigned> LocalCNodeSlots<Size> {
 pub fn with_temporary_resources<SlotCount: Unsigned, BitSize: Unsigned, E, F>(
     slots: &mut LocalCNodeSlots<SlotCount>,
     untyped: &mut LocalCap<crate::userland::cap::Untyped<BitSize>>,
+    asid: &mut LocalCap<crate::userland::asid::UnassignedASID>,
     f: F,
 ) -> Result<Result<(), E>, SeL4Error>
 where
     F: FnOnce(
         LocalCNodeSlots<SlotCount>,
         LocalCap<crate::userland::cap::Untyped<BitSize>>,
+        LocalCap<crate::userland::asid::UnassignedASID>,
     ) -> Result<(), E>,
 {
     // Call the function with an alias/copy of self
@@ -144,6 +146,13 @@ where
                 _kind: PhantomData,
             },
             _role: PhantomData,
+        },
+        Cap {
+            cptr: asid.cptr,
+            _role: PhantomData,
+            cap_data: crate::userland::asid::UnassignedASID {
+                asid: asid.cap_data.asid,
+            },
         },
     );
     unsafe { slots.revoke_in_reverse() }

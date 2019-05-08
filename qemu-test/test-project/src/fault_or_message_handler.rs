@@ -1,5 +1,4 @@
 use super::TopLevelError;
-use arrayvec::ArrayVec;
 use selfe_sys::{seL4_BootInfo, seL4_MessageInfo_new, seL4_Send};
 
 use ferros::alloc::{micro_alloc, smart_alloc, ut_buddy};
@@ -31,36 +30,27 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (mut scratch_page_table, mut root_page_directory) =
             root_page_directory.map_page_table(unmapped_scratch_page_table)?;
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
-        // TODO - implement asid pool splitting and iteration
-        let (asid_a, asid_pool) = asid_pool.alloc();
-        let (asid_b, asid_pool) = asid_pool.alloc();
-        let (asid_c, asid_pool) = asid_pool.alloc();
-        let (asid_d, asid_pool) = asid_pool.alloc();
-        let (asid_e, asid_pool) = asid_pool.alloc();
-        let mut asid_arr = ArrayVec::<[_; 5]>::new();
-        asid_arr.push(asid_a);
-        asid_arr.push(asid_b);
-        asid_arr.push(asid_c);
-        asid_arr.push(asid_d);
-        asid_arr.push(asid_e);
+        let (mut asid_a, asid_pool) = asid_pool.alloc();
     });
 
     let mut outer_slots = local_slots;
     let mut outer_ut = ut27;
 
-    for (c, child_asid) in [
+    for c in [
         Command::ReportTrue,
         Command::ReportFalse,
         Command::ThrowFault,
         Command::ReportTrue,
+        Command::ThrowFault,
+        Command::ReportFalse,
     ]
-    .iter()
-    .zip(asid_arr.into_iter())
+    .iter().cycle().take(6)
     {
         with_temporary_resources(
             &mut outer_slots,
             &mut outer_ut,
-            |inner_slots, inner_ut| -> Result<(), TopLevelError> {
+            &mut asid_a,
+            |inner_slots, inner_ut, child_asid| -> Result<(), TopLevelError> {
                 let uts = ut_buddy(inner_ut);
                 smart_alloc!(|slots from inner_slots, ut from uts| {
 
@@ -85,7 +75,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
                 match handler.await_message()? {
                     FaultOrMessage::Fault(f) => {
-                        if *c != Command::ThrowFault {
+                        if c != &Command::ThrowFault {
                             panic!("Child process threw a fault when it should not have")
                         } else {
                             debug_println!("Successfully threw and caught a fault");
