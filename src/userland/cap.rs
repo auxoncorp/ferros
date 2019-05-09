@@ -215,6 +215,28 @@ impl CopyAliasable for ThreadControlBlock {
     type CopyOutput = Self;
 }
 
+#[derive(Debug)]
+pub struct VirtualCpu {}
+
+impl CapType for VirtualCpu {}
+
+impl PhantomCap for VirtualCpu {
+    fn phantom_instance() -> Self {
+        Self {}
+    }
+}
+
+impl DirectRetype for VirtualCpu {
+    type SizeBits = U12;
+    fn sel4_type_id() -> usize {
+        _object_seL4_ARM_VCPUObject as usize
+    }
+}
+
+impl CopyAliasable for VirtualCpu {
+    type CopyOutput = Self;
+}
+
 // TODO - consider moving IRQ code allocation tracking to compile-time,
 // which may be feasible since we treat IRQControl as a global
 // singleton.
@@ -614,6 +636,7 @@ mod private {
     impl<Role: CNodeRole> SealedCapType for super::CNode<Role> {}
     impl<Size: Unsigned, Role: CNodeRole> SealedCapType for super::CNodeSlotsData<Size, Role> {}
     impl SealedCapType for super::ThreadControlBlock {}
+    impl SealedCapType for super::VirtualCpu {}
     impl SealedCapType for super::Endpoint {}
     impl SealedCapType for super::Notification {}
     impl<FreePools: Unsigned> SealedCapType for super::ASIDControl<FreePools> {}
