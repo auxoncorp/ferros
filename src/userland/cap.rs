@@ -205,7 +205,7 @@ impl PhantomCap for ThreadControlBlock {
 }
 
 impl DirectRetype for ThreadControlBlock {
-    type SizeBits = U10;
+    type SizeBits = U11;
     fn sel4_type_id() -> usize {
         api_object_seL4_TCBObject as usize
     }
@@ -389,7 +389,7 @@ impl CopyAliasable for UnmappedPageTable {
 }
 
 impl DirectRetype for UnmappedPageTable {
-    type SizeBits = U10;
+    type SizeBits = U12;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_PageTableObject as usize
     }

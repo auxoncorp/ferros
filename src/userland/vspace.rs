@@ -51,7 +51,7 @@ type NewVSpaceCNodeSlots = Sum<Sum<paging::CodePageTableCount, paging::CodePageC
 
 impl VSpace {
     pub fn new<LocalPageDirFreeSlots: Unsigned>(
-        ut17: LocalCap<Untyped<U17>>,
+        ut19: LocalCap<Untyped<U19>>,
         dest_slots: LocalCNodeSlots<NewVSpaceCNodeSlots>,
         asid: LocalCap<UnassignedASID>,
         user_image: &UserImage,
@@ -78,7 +78,7 @@ impl VSpace {
         Sum<paging::CodePageTableCount, paging::CodePageCount>: Unsigned,
     {
         VSpace::new_internal::<_, U1>(
-            ut17,
+            ut19,
             dest_slots,
             asid,
             &user_image,
@@ -92,7 +92,7 @@ impl VSpace {
         LocalPageDirFreeSlots: Unsigned,
         ScratchPageTableSlots: Unsigned,
     >(
-        ut17: LocalCap<Untyped<U17>>,
+        ut19: LocalCap<Untyped<U19>>,
         dest_slots: LocalCNodeSlots<NewVSpaceCNodeSlots>,
         asid: LocalCap<UnassignedASID>,
         user_image: &UserImage,
@@ -126,7 +126,7 @@ impl VSpace {
         Sub1<ScratchPageTableSlots>: Unsigned,
     {
         VSpace::new_internal(
-            ut17,
+            ut19,
             dest_slots,
             asid,
             &user_image,
@@ -137,7 +137,7 @@ impl VSpace {
     }
 
     fn new_internal<LocalPageDirFreeSlots: Unsigned, ScratchPageTableSlots: Unsigned>(
-        ut17: LocalCap<Untyped<U17>>,
+        ut19: LocalCap<Untyped<U19>>,
         dest_slots: LocalCNodeSlots<NewVSpaceCNodeSlots>,
         asid: LocalCap<UnassignedASID>,
         user_image: &UserImage,
@@ -171,16 +171,16 @@ impl VSpace {
         Sub1<ScratchPageTableSlots>: Unsigned,
     {
         let (slots, dest_slots) = dest_slots.alloc();
-        let (ut16, page_tables_ut) = ut17.split(slots)?;
+        let (ut18, page_tables_ut) = ut19.split(slots)?;
+
+        let (slots, dest_slots) = dest_slots.alloc();
+        let (ut16, _, _, _) = ut18.quarter(slots)?;
 
         let (slots, dest_slots) = dest_slots.alloc();
         let (ut14, page_dir_ut, _, _) = ut16.quarter(slots)?;
 
         let (slots, dest_slots) = dest_slots.alloc();
-        let (ut12, _, _, _) = ut14.quarter(slots)?;
-
-        let (slots, dest_slots) = dest_slots.alloc();
-        let (_ut10, initial_page_table_ut, _, _) = ut12.quarter(slots)?;
+        let (initial_page_table_ut, _, _, _) = ut14.quarter(slots)?;
 
         // allocate and assign the page directory
         let (slots, dest_slots) = dest_slots.alloc();
@@ -570,7 +570,7 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
         let (ut12, ipc_buffer_ut, _, _) = ut14.quarter(slots)?;
 
         let (slots, dest_slots) = dest_slots.alloc();
-        let (_ut10, tcb_ut, _, _) = ut12.quarter(slots)?;
+        let (_ut11, tcb_ut) = ut12.split(slots)?;
 
         let (slots, dest_slots) = dest_slots.alloc();
         let stack_pages: CapRange<UnmappedPage<memory_kind::General>, role::Local, StackPageCount> =
