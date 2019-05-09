@@ -1,7 +1,8 @@
 use crate::userland::{
     irq_state, memory_kind, role, AssignedPageDirectory, Badge, CNodeRole, CNodeSlot, Cap,
     ChildCNode, FaultSource, IRQControl, IRQHandler, ImmobileIndelibleInertCapabilityReference,
-    LocalCap, MappedPage, Notification, SeL4Error, ThreadControlBlock,
+    LocalCap, MappedPage, Notification, PhantomCap, SeL4Error, ThreadControlBlock,
+    ThreadPriorityAuthority,
 };
 use core::cmp;
 use core::marker::PhantomData;
@@ -50,6 +51,18 @@ impl LocalCap<ThreadControlBlock> {
         }
     }
 }
+
+impl AsRef<LocalCap<ThreadPriorityAuthority>> for LocalCap<ThreadControlBlock> {
+    fn as_ref(&self) -> &LocalCap<ThreadPriorityAuthority> {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+//
+///// A struct representing the authority to set the
+///// priority of child thread control blocks
+//pub struct TCBPriorityAuthority<Role: CNodeRole> {
+//    thread_control_block: Cap<ThreadControlBlock, Role>
+//}
 
 // TODO - consider renaming for clarity
 pub trait RetypeForSetup: Sized + Send + Sync {

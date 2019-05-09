@@ -111,7 +111,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         child_a_process.start(
             proc_cnode_local_a,
             child_fault_source_a,
-            &root_tcb,
+            root_tcb.as_ref(),
             255,
         )?;
 
@@ -126,7 +126,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         child_b_process.start(
             proc_cnode_local_b,
             child_fault_source_b,
-            &root_tcb,
+            root_tcb.as_ref(),
             255,
         )?;
     });

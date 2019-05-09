@@ -146,10 +146,10 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             &mut root_page_directory,
         )?;
 
-        consumer_thread.start(consumer_cnode, None, &root_tcb, 255)?;
-        producer_a_thread.start(producer_a_cnode, None, &root_tcb, 255)?;
-        producer_b_thread.start(producer_b_cnode, None, &root_tcb, 255)?;
-        waker_thread.start(waker_cnode, None, &root_tcb, 255)?;
+        consumer_thread.start(consumer_cnode, None, root_tcb.as_ref(), 255)?;
+        producer_a_thread.start(producer_a_cnode, None, root_tcb.as_ref(), 255)?;
+        producer_b_thread.start(producer_b_cnode, None, root_tcb.as_ref(), 255)?;
+        waker_thread.start(waker_cnode, None, root_tcb.as_ref(), 255)?;
     });
     Ok(())
 }

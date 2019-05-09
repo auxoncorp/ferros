@@ -2,8 +2,10 @@ use super::TopLevelError;
 use selfe_sys::{seL4_BootInfo, seL4_MessageInfo_new, seL4_Send};
 
 use ferros::alloc::{micro_alloc, smart_alloc, ut_buddy};
+
 use typenum::*;
 
+use ferros::test_support::*;
 use ferros::userland::*;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
@@ -29,8 +31,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let unmapped_scratch_page_table = retype(ut, slots)?;
         let (mut scratch_page_table, mut root_page_directory) =
             root_page_directory.map_page_table(unmapped_scratch_page_table)?;
-        let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
-        let (mut asid_a, asid_pool) = asid_pool.alloc();
+        let (mut asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
     });
 
     let mut outer_slots = local_slots;
@@ -44,13 +45,15 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         Command::ThrowFault,
         Command::ReportFalse,
     ]
-    .iter().cycle().take(6)
+    .iter()
+    .cycle()
+    .take(6)
     {
         with_temporary_resources(
             &mut outer_slots,
             &mut outer_ut,
-            &mut asid_a,
-            |inner_slots, inner_ut, child_asid| -> Result<(), TopLevelError> {
+            &mut asid_pool,
+            |inner_slots, inner_ut, inner_asid_pool| -> Result<(), TopLevelError> {
                 let uts = ut_buddy(inner_ut);
                 smart_alloc!(|slots from inner_slots, ut from uts| {
 
@@ -59,6 +62,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
                     let (source, sender, handler) = fault_or_message_channel(&root_cnode, ut, slots, child_fault_source_slot, slots)?;
                     let params = ProcParams { command: c.clone(), sender };
 
+                    let (child_asid, _asid_pool) = inner_asid_pool.alloc();
                     let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &root_cnode,
                                                    &mut root_page_directory)?;
 
@@ -71,7 +75,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
                         &mut root_page_directory,
                     )?;
                 });
-                child_process.start(child_cnode, Some(source), &root_tcb, 255)?;
+                child_process.start(child_cnode, Some(source), root_tcb.as_ref(), 255)?;
 
                 match handler.await_message()? {
                     FaultOrMessage::Fault(f) => {

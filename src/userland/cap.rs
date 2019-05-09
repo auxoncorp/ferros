@@ -74,7 +74,7 @@ pub struct Cap<CT: CapType, Role: CNodeRole> {
     pub cptr: usize,
     // TODO: put this back to pub(super)
     pub(crate) cap_data: CT,
-    pub(super) _role: PhantomData<Role>,
+    pub(crate) _role: PhantomData<Role>,
 }
 
 pub trait CapType: private::SealedCapType {}
@@ -212,6 +212,24 @@ impl DirectRetype for ThreadControlBlock {
 }
 
 impl CopyAliasable for ThreadControlBlock {
+    type CopyOutput = Self;
+}
+
+/// A limited view on a ThreadControlBlock capability
+/// that is only intended for use in establishing
+/// the priority of child threads
+#[derive(Debug)]
+pub struct ThreadPriorityAuthority {}
+
+impl CapType for ThreadPriorityAuthority {}
+
+impl PhantomCap for ThreadPriorityAuthority {
+    fn phantom_instance() -> Self {
+        Self {}
+    }
+}
+
+impl CopyAliasable for ThreadPriorityAuthority {
     type CopyOutput = Self;
 }
 
@@ -614,6 +632,7 @@ mod private {
     impl<Role: CNodeRole> SealedCapType for super::CNode<Role> {}
     impl<Size: Unsigned, Role: CNodeRole> SealedCapType for super::CNodeSlotsData<Size, Role> {}
     impl SealedCapType for super::ThreadControlBlock {}
+    impl SealedCapType for super::ThreadPriorityAuthority {}
     impl SealedCapType for super::Endpoint {}
     impl SealedCapType for super::Notification {}
     impl<FreePools: Unsigned> SealedCapType for super::ASIDControl<FreePools> {}

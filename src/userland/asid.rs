@@ -26,9 +26,9 @@ impl<FreePools: Unsigned> PhantomCap for ASIDControl<FreePools> {
 
 #[derive(Debug)]
 pub struct ASIDPool<FreeSlots: Unsigned> {
-    pub(super) id: usize,
-    pub(super) next_free_slot: usize,
-    pub(super) _free_slots: PhantomData<FreeSlots>,
+    pub(crate) id: usize,
+    pub(crate) next_free_slot: usize,
+    pub(crate) _free_slots: PhantomData<FreeSlots>,
 }
 
 impl<FreeSlots: Unsigned> CapType for ASIDPool<FreeSlots> {}

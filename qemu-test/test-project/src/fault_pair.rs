@@ -61,7 +61,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         mischief_maker_process.start(
             mischief_maker_cnode,
             Some(fault_source),
-            &root_tcb,
+            root_tcb.as_ref(),
             255,
         )?;
 
@@ -78,7 +78,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         fault_handler_process.start(
             fault_handler_cnode,
             None,
-            &root_tcb,
+            root_tcb.as_ref(),
             255
         )?;
     });

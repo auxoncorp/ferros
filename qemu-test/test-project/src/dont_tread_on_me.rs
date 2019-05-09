@@ -64,7 +64,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             &mut root_page_directory,
         )?;
 
-        proc1_thread.start(proc1_cspace, None, &root_tcb, 255)?;
+        proc1_thread.start(proc1_cspace, None, root_tcb.as_ref(), 255)?;
 
         let (proc2_thread, _) = proc2_vspace.prepare_thread(
             proc2::run,
@@ -75,7 +75,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             &mut root_page_directory,
         )?;
 
-        proc2_thread.start(proc2_cspace, None, &root_tcb, 255)?;
+        proc2_thread.start(proc2_cspace, None, root_tcb.as_ref(), 255)?;
     });
 
     Ok(())

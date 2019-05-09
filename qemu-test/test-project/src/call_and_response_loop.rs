@@ -63,7 +63,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         child_a_process.start(
             caller_cnode,
             None,
-            &root_tcb,
+            root_tcb.as_ref(),
             255,
         )?;
 
@@ -78,7 +78,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         child_b_process.start(
             responder_cnode,
             None,
-            &root_tcb,
+            root_tcb.as_ref(),
             255,
         )?;
     });

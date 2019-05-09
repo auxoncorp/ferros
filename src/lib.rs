@@ -17,4 +17,5 @@ pub mod debug;
 pub mod alloc;
 pub mod arch;
 pub mod pow;
+pub mod test_support;
 pub mod userland;

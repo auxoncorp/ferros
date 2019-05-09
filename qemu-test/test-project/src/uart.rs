@@ -73,7 +73,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             &mut root_page_directory,
         )?;
 
-        uart1_thread.start(uart1_cnode, None, &root_tcb, 255)?;
+        uart1_thread.start(uart1_cnode, None, root_tcb.as_ref(), 255)?;
     });
 
     Ok(())

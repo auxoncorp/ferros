@@ -51,7 +51,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         )?;
     });
 
-    child_process.start(child_cnode, None, &root_tcb, 255)?;
+    child_process.start(child_cnode, None, root_tcb.as_ref(), 255)?;
 
     Ok(())
 }

@@ -10,8 +10,8 @@ use crate::userland::{
     memory_kind, role, AssignedPageDirectory, CNodeRole, Cap, CapRange, CapRights, ChildCNode,
     DirectRetype, FaultSource, ImmobileIndelibleInertCapabilityReference, LocalCNode,
     LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable, MappedSection,
-    MemoryKind, PhantomCap, SeL4Error, UnassignedASID, UnassignedPageDirectory, UnmappedPage,
-    UnmappedPageTable, UnmappedSection, Untyped, UserImage,
+    MemoryKind, PhantomCap, SeL4Error, ThreadPriorityAuthority, UnassignedASID,
+    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, UnmappedSection, Untyped, UserImage,
 };
 use generic_array::{ArrayLength, GenericArray};
 use selfe_sys::*;
@@ -780,8 +780,7 @@ impl<Role: CNodeRole> ReadyThread<Role> {
         cspace: LocalCap<ChildCNode>,
         fault_source: Option<FaultSource<role::Child>>,
         // TODO: index tcb by priority, so you can't set a higher priority than
-        // the authority (which is a runtime error)
-        priority_authority: &LocalCap<ThreadControlBlock>,
+        priority_authority: &LocalCap<ThreadPriorityAuthority>,
         priority: u8,
     ) -> Result<(), SeL4Error> {
         let mut tcb = self.tcb;
