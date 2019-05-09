@@ -2,8 +2,9 @@ use crate::arch::{address_space, asid, paging};
 use crate::pow::Pow;
 use crate::userland::process::NeitherSendNorSync;
 use crate::userland::{
-    memory_kind, role, ASIDControl, AssignedPageDirectory, CNode, CNodeSlots, Cap, IRQControl,
-    LocalCNode, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable, ThreadControlBlock,
+    memory_kind, role, ASIDControl, AssignedPageDirectory, CNode, CNodeRole, CNodeSlots, Cap,
+    CapRights, IRQControl, LocalCNode, LocalCNodeSlots, LocalCap, MappedPage, SeL4Error,
+    ThreadControlBlock,
 };
 use core::marker::PhantomData;
 use selfe_sys::*;
@@ -38,12 +39,20 @@ pub fn root_cnode(
     )
 }
 
-// Encapsulate the user image information found in bootinfo
-pub struct UserImage {
-    frames_start: usize,
-    frames_end: usize,
-    paging_start: usize,
-    paging_end: usize,
+/// Encapsulate the user image information found in bootinfo
+///
+/// This is very similar to a more dynamic CapRange, but presently distinct
+/// in that the related cap-type we want to iterate over (MappedPage)
+/// bears associated cap-data (namely the mapped virtual address).
+///
+/// Additionally, and importantly, the number of capabilities is not
+/// known until runtime and thus not represented in the type.
+#[derive(Debug)]
+pub struct UserImage<Role: CNodeRole> {
+    frames_start_cptr: usize,
+    frames_count: usize,
+    page_table_count: usize,
+    _role: PhantomData<Role>,
 }
 
 /// A BootInfo cannot be handed to child processes and thus its related
@@ -54,7 +63,7 @@ pub struct BootInfo<ASIDControlFreePools: Unsigned, PageDirFreeSlots: Unsigned> 
 
     pub asid_control: LocalCap<ASIDControl<ASIDControlFreePools>>,
     pub irq_control: LocalCap<IRQControl>,
-    pub user_image: UserImage,
+    pub user_image: UserImage<role::Local>,
 
     #[allow(dead_code)]
     neither_send_nor_sync: NeitherSendNorSync,
@@ -76,7 +85,6 @@ impl BootInfo<asid::PoolCount, paging::RootTaskPageDirFreeSlots> {
             },
             root_tcb: Cap::wrap_cptr(seL4_CapInitThreadTCB as usize),
             asid_control,
-            // asid_pool,
             irq_control: Cap {
                 cptr: seL4_CapIRQControl as usize,
                 cap_data: IRQControl {
@@ -85,10 +93,10 @@ impl BootInfo<asid::PoolCount, paging::RootTaskPageDirFreeSlots> {
                 _role: PhantomData,
             },
             user_image: UserImage {
-                frames_start: bootinfo.userImageFrames.start,
-                frames_end: bootinfo.userImageFrames.end,
-                paging_start: bootinfo.userImagePaging.start,
-                paging_end: bootinfo.userImagePaging.end,
+                frames_start_cptr: bootinfo.userImageFrames.start,
+                frames_count: bootinfo.userImageFrames.end - bootinfo.userImageFrames.start,
+                page_table_count: bootinfo.userImagePaging.end - bootinfo.userImagePaging.start,
+                _role: PhantomData,
             },
 
             neither_send_nor_sync: Default::default(),
@@ -96,25 +104,9 @@ impl BootInfo<asid::PoolCount, paging::RootTaskPageDirFreeSlots> {
     }
 }
 
-impl UserImage {
-    pub fn page_tables_iter(
-        &self,
-    ) -> impl Iterator<Item = LocalCap<MappedPageTable<U0, role::Local>>> {
-        // TODO break out 100
-        let vaddr_iter = (0..100).map(|slot_num| slot_num << paging::PageTableTotalBits::USIZE);
-
-        (self.paging_start..self.paging_end)
-            .zip(vaddr_iter)
-            .map(|(cptr, vaddr)| Cap {
-                cptr,
-                cap_data: MappedPageTable {
-                    vaddr,
-                    next_free_slot: 0,
-                    _role: PhantomData,
-                    _free_slots: PhantomData,
-                },
-                _role: PhantomData,
-            })
+impl UserImage<role::Local> {
+    pub fn page_table_count(&self) -> usize {
+        self.page_table_count
     }
 
     // TODO this doesn't enforce the aliasing constraints we want at the type
@@ -129,7 +121,7 @@ impl UserImage {
         let vaddr_iter = (address_space::ProgramStart::USIZE..core::usize::MAX)
             .step_by(1 << paging::PageBits::USIZE);
 
-        (self.frames_start..self.frames_end)
+        (self.frames_start_cptr..(self.frames_start_cptr + self.frames_count))
             .zip(vaddr_iter)
             .map(|(cptr, vaddr)| Cap {
                 cptr,
@@ -140,5 +132,23 @@ impl UserImage {
                 },
                 _role: PhantomData,
             })
+    }
+
+    pub fn copy<TargetRole: CNodeRole>(
+        &self,
+        src_cnode: &LocalCap<LocalCNode>,
+        slots: CNodeSlots<paging::CodePageCount, TargetRole>,
+    ) -> Result<UserImage<TargetRole>, SeL4Error> {
+        let frames_start_cptr = slots.cap_data.offset;
+        for (page, slot) in self.pages_iter().zip(slots.iter()) {
+            let _ = page.copy(src_cnode, slot, CapRights::RWG)?;
+        }
+
+        Ok(UserImage {
+            frames_start_cptr,
+            frames_count: self.frames_count,
+            page_table_count: self.page_table_count,
+            _role: PhantomData,
+        })
     }
 }

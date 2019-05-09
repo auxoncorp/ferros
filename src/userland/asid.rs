@@ -1,7 +1,7 @@
 use crate::arch;
 use crate::userland::{
-    memory_kind, role, AssignedPageDirectory, Cap, CapType, LocalCNodeSlot, LocalCap, PhantomCap,
-    SeL4Error, UnassignedPageDirectory, Untyped,
+    memory_kind, role, AssignedPageDirectory, Cap, CapType, LocalCNodeSlot, LocalCap, Movable,
+    PhantomCap, SeL4Error, UnassignedPageDirectory, Untyped,
 };
 use core::marker::PhantomData;
 use core::mem;
@@ -32,6 +32,8 @@ pub struct ASIDPool<FreeSlots: Unsigned> {
 }
 
 impl<FreeSlots: Unsigned> CapType for ASIDPool<FreeSlots> {}
+
+impl<FreeSlots: Unsigned> Movable for ASIDPool<FreeSlots> {}
 
 #[derive(Debug)]
 pub struct UnassignedASID {

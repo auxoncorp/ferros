@@ -1,8 +1,7 @@
 use crate::userland::{
     irq_state, memory_kind, role, AssignedPageDirectory, Badge, CNodeRole, CNodeSlot, Cap,
     ChildCNode, FaultSource, IRQControl, IRQHandler, ImmobileIndelibleInertCapabilityReference,
-    LocalCap, MappedPage, Notification, PhantomCap, SeL4Error, ThreadControlBlock,
-    ThreadPriorityAuthority,
+    LocalCap, MappedPage, Notification, SeL4Error, ThreadControlBlock, ThreadPriorityAuthority,
 };
 use core::cmp;
 use core::marker::PhantomData;

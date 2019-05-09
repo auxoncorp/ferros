@@ -28,9 +28,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         .expect("second alloc failure");
 
     smart_alloc!(|slots from local_slots, ut from shared_uts| {
-        let unmapped_scratch_page_table = retype(ut, slots)?;
-        let (mut scratch_page_table, mut root_page_directory) =
-            root_page_directory.map_page_table(unmapped_scratch_page_table)?;
+        let (mut local_vspace_scratch, root_page_directory) = VSpaceScratchSlice::from_parts(
+            slots, ut, root_page_directory)?;
         let (mut asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
     });
 
@@ -70,8 +69,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
                         params,
                         ut,
                         slots,
-                        &mut scratch_page_table,
-                        &mut root_page_directory,
+                        &mut local_vspace_scratch,
                     )?;
                 });
                 child_process.start(child_cnode, Some(source), root_tcb.as_ref(), 255)?;

@@ -3,7 +3,7 @@
 //! copy of the user image.
 
 use ferros::alloc::{self, micro_alloc, smart_alloc};
-use ferros::userland::{call_channel, retype, retype_cnode, root_cnode, BootInfo, VSpace};
+use ferros::userland::{call_channel, retype, retype_cnode, root_cnode, BootInfo, VSpace, VSpaceScratchSlice};
 
 use typenum::*;
 
@@ -28,9 +28,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     );
 
     smart_alloc!(|slots from local_slots, ut from uts| {
-        let unmapped_scratch_page_table = retype(ut, slots)?;
-        let (mut scratch_page_table, mut root_page_directory) =
-            root_page_directory.map_page_table(unmapped_scratch_page_table)?;
+        let (mut local_vspace_scratch, root_page_directory) = VSpaceScratchSlice::from_parts(
+            slots, ut, root_page_directory)?;
 
         let (proc1_cspace, proc1_slots) = retype_cnode::<U12>(ut, slots)?;
         let (proc2_cspace, proc2_slots) = retype_cnode::<U12>(ut, slots)?;
@@ -42,7 +41,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let proc1_vspace = VSpace::new(ut, slots, proc1_asid, &user_image, &root_cnode)?;
         let proc2_vspace = VSpace::new_with_writable_user_image(
             ut, slots, proc2_asid, &user_image, &root_cnode,
-            (&mut root_page_directory, &mut scratch_page_table, ut)
+            (&mut local_vspace_scratch, ut)
         )?;
 
         let (slots1, _) = proc1_slots.alloc();
@@ -59,8 +58,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             proc1_params,
             ut,
             slots,
-            &mut scratch_page_table,
-            &mut root_page_directory,
+            &mut local_vspace_scratch,
         )?;
 
         proc1_thread.start(proc1_cspace, None, root_tcb.as_ref(), 255)?;
@@ -70,8 +68,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             proc2_params,
             ut,
             slots,
-            &mut scratch_page_table,
-            &mut root_page_directory,
+            &mut local_vspace_scratch,
         )?;
 
         proc2_thread.start(proc2_cspace, None, root_tcb.as_ref(), 255)?;
