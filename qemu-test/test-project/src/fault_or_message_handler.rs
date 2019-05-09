@@ -63,8 +63,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
                     let params = ProcParams { command: c.clone(), sender };
 
                     let (child_asid, _asid_pool) = inner_asid_pool.alloc();
-                    let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &root_cnode,
-                                                   &mut root_page_directory)?;
+                    let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &root_cnode)?;
 
                     let (child_process, _) = child_vspace.prepare_thread(
                         proc_main,

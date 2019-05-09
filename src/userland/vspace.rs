@@ -50,15 +50,12 @@ pub struct VSpace<
 type NewVSpaceCNodeSlots = Sum<Sum<paging::CodePageTableCount, paging::CodePageCount>, U16>;
 
 impl VSpace {
-    pub fn new<LocalPageDirFreeSlots: Unsigned>(
+    pub fn new(
         ut17: LocalCap<Untyped<U17>>,
         dest_slots: LocalCNodeSlots<NewVSpaceCNodeSlots>,
         asid: LocalCap<UnassignedASID>,
         user_image: &UserImage,
         parent_cnode: &LocalCap<LocalCNode>,
-        mut local_page_directory: &mut LocalCap<
-            AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>,
-        >,
     ) -> Result<
         VSpace<
             Diff<paging::BasePageDirFreeSlots, Sum<paging::CodePageTableCount, U1>>,
@@ -77,15 +74,7 @@ impl VSpace {
         paging::CodePageTableCount: Add<paging::CodePageCount>,
         Sum<paging::CodePageTableCount, paging::CodePageCount>: Unsigned,
     {
-        VSpace::new_internal::<_, U1>(
-            ut17,
-            dest_slots,
-            asid,
-            &user_image,
-            &parent_cnode,
-            local_page_directory,
-            None,
-        )
+        VSpace::new_internal::<U0, U1>(ut17, dest_slots, asid, &user_image, &parent_cnode, None)
     }
 
     pub fn new_with_writable_user_image<
@@ -97,10 +86,8 @@ impl VSpace {
         asid: LocalCap<UnassignedASID>,
         user_image: &UserImage,
         parent_cnode: &LocalCap<LocalCNode>,
-        mut local_page_directory: &mut LocalCap<
-            AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>,
-        >,
-        code_untyped_and_scratch_pt: (
+        code_copy_support_items: (
+            &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
             &mut LocalCap<MappedPageTable<ScratchPageTableSlots, role::Local>>,
             LocalCap<Untyped<paging::TotalCodeSizeBits>>,
         ),
@@ -131,8 +118,7 @@ impl VSpace {
             asid,
             &user_image,
             &parent_cnode,
-            local_page_directory,
-            Some(code_untyped_and_scratch_pt),
+            Some(code_copy_support_items),
         )
     }
 
@@ -142,10 +128,8 @@ impl VSpace {
         asid: LocalCap<UnassignedASID>,
         user_image: &UserImage,
         parent_cnode: &LocalCap<LocalCNode>,
-        mut local_page_directory: &mut LocalCap<
-            AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>,
-        >,
-        code_untyped_and_scratch_pt: Option<(
+        code_copy_support_items: Option<(
+            &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
             &mut LocalCap<MappedPageTable<ScratchPageTableSlots, role::Local>>,
             LocalCap<Untyped<paging::TotalCodeSizeBits>>,
         )>,
@@ -217,8 +201,8 @@ impl VSpace {
         // scratch page table and a 26-bit untyped in which we can
         // retype into pages to hold the user image.
         let (slots, dest_slots) = dest_slots.alloc::<paging::CodePageCount>();
-        match code_untyped_and_scratch_pt {
-            Some((scratch_page_table, code_ut)) => {
+        match code_copy_support_items {
+            Some((local_page_directory, scratch_page_table, code_ut)) => {
                 // First, retype the untyped into `CodePageCount`
                 // pages.
                 let fresh_pages: CapRange<
@@ -232,7 +216,7 @@ impl VSpace {
                     // from `user_image` to the new page.
                     let (_, fresh_unmapped_page) = scratch_page_table.temporarily_map_page(
                         fresh_page,
-                        &mut local_page_directory,
+                        local_page_directory,
                         |temp_mapped_page| {
                             unsafe {
                                 *(mem::transmute::<usize, *mut [usize; paging::WORDS_PER_PAGE]>(

@@ -39,11 +39,10 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (proc1_asid, asid_pool) = asid_pool.alloc();
         let (proc2_asid, asid_pool) = asid_pool.alloc();
 
-        let proc1_vspace = VSpace::new(ut, slots, proc1_asid, &user_image, &root_cnode,
-                                       &mut root_page_directory)?;
+        let proc1_vspace = VSpace::new(ut, slots, proc1_asid, &user_image, &root_cnode)?;
         let proc2_vspace = VSpace::new_with_writable_user_image(
             ut, slots, proc2_asid, &user_image, &root_cnode,
-            &mut root_page_directory, (&mut scratch_page_table, ut)
+            (&mut root_page_directory, &mut scratch_page_table, ut)
         )?;
 
         let (slots1, _) = proc1_slots.alloc();

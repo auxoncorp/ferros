@@ -32,13 +32,11 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
 
         let (mischief_maker_asid, asid_pool) = asid_pool.alloc();
-        let mischief_maker_vspace = VSpace::new(ut, slots, mischief_maker_asid, &user_image, &root_cnode,
-                                                &mut root_page_directory)?;
+        let mischief_maker_vspace = VSpace::new(ut, slots, mischief_maker_asid, &user_image, &root_cnode)?;
         let (mischief_maker_cnode, mischief_maker_slots) = retype_cnode::<U12>(ut, slots)?;
 
         let (fault_handler_asid, asid_pool) = asid_pool.alloc();
-        let fault_handler_vspace = VSpace::new(ut, slots, fault_handler_asid, &user_image, &root_cnode,
-                                               &mut root_page_directory)?;
+        let fault_handler_vspace = VSpace::new(ut, slots, fault_handler_asid, &user_image, &root_cnode)?;
         let (fault_handler_cnode, fault_handler_slots) = retype_cnode::<U12>(ut, slots)?;
 
         let (slots_source, _mischief_maker_slots) = mischief_maker_slots.alloc();

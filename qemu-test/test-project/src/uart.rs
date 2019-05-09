@@ -41,8 +41,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (uart1_asid, asid_pool) = asid_pool.alloc();
-        let uart1_vspace = VSpace::new(ut, slots, uart1_asid, &user_image, &root_cnode,
-                                       &mut root_page_directory)?;
+        let uart1_vspace = VSpace::new(ut, slots, uart1_asid, &user_image, &root_cnode)?;
 
         let (uart1_cnode, uart1_slots) = retype_cnode::<U12>(ut, slots)?;
 

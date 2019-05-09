@@ -32,8 +32,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (child_a_asid, asid_pool) = asid_pool.alloc();
         let (child_b_asid, asid_pool) = asid_pool.alloc();
 
-        let child_a_vspace = VSpace::new(ut, slots, child_a_asid, &user_image, &root_cnode, &mut root_page_directory)?;
-        let child_b_vspace = VSpace::new(ut, slots, child_b_asid, &user_image, &root_cnode, &mut root_page_directory)?;
+        let child_a_vspace = VSpace::new(ut, slots, child_a_asid, &user_image, &root_cnode)?;
+        let child_b_vspace = VSpace::new(ut, slots, child_b_asid, &user_image, &root_cnode)?;
 
         let (caller_cnode, caller_slots) = retype_cnode::<U12>(ut, slots)?;
         let (responder_cnode, responder_slots) = retype_cnode::<U12>(ut, slots)?;

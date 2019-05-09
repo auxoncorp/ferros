@@ -41,14 +41,10 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (waker_cnode, waker_slots) = retype_cnode::<U12>(ut, slots)?;
 
         // vspace setup
-        let consumer_vspace = VSpace::new(ut, slots, consumer_asid, &user_image, &root_cnode,
-                                          &mut root_page_directory)?;
-        let producer_a_vspace = VSpace::new(ut, slots, producer_a_asid, &user_image, &root_cnode,
-                                            &mut root_page_directory)?;
-        let producer_b_vspace = VSpace::new(ut, slots, producer_b_asid, &user_image, &root_cnode,
-                                            &mut root_page_directory)?;
-        let waker_vspace = VSpace::new(ut, slots, waker_asid, &user_image, &root_cnode,
-                                       &mut root_page_directory)?;
+        let consumer_vspace = VSpace::new(ut, slots, consumer_asid, &user_image, &root_cnode)?;
+        let producer_a_vspace = VSpace::new(ut, slots, producer_a_asid, &user_image, &root_cnode)?;
+        let producer_b_vspace = VSpace::new(ut, slots, producer_b_asid, &user_image, &root_cnode)?;
+        let waker_vspace = VSpace::new(ut, slots, waker_asid, &user_image, &root_cnode)?;
 
         let (slots_c, consumer_slots) = consumer_slots.alloc();
         let (
