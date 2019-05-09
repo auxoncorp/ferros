@@ -20,4 +20,5 @@ pub enum SeL4Error {
     IRQHandlerAck(u32),
     GetPageAddr(u32),
     PageCleanInvalidateData(u32),
+    CNodeRevoke(u32),
 }

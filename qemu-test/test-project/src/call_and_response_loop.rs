@@ -34,77 +34,50 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
         let child_a_vspace = VSpace::new(ut, slots, child_a_asid, &user_image, &root_cnode, &mut root_page_directory)?;
         let child_b_vspace = VSpace::new(ut, slots, child_b_asid, &user_image, &root_cnode, &mut root_page_directory)?;
-    });
 
-    // TODO don't need this let block anymore
-    let (
-        child_params_a,
-        proc_cnode_local_a,
-        child_fault_source_a,
-        child_params_b,
-        proc_cnode_local_b,
-        child_fault_source_b,
-        local_slots,
-        uts,
-    ) = {
-        smart_alloc!(|slots from local_slots, ut from uts| {
-            let (caller_cnode, caller_slots) = retype_cnode::<U12>(ut, slots)?;
-            let (responder_cnode, responder_slots) = retype_cnode::<U12>(ut, slots)?;
+        let (caller_cnode, caller_slots) = retype_cnode::<U12>(ut, slots)?;
+        let (responder_cnode, responder_slots) = retype_cnode::<U12>(ut, slots)?;
 
-            let (slots_r, _responder_slots) = responder_slots.alloc();
-            let (ipc_setup, responder) = call_channel(ut, &root_cnode, slots, slots_r)?;
+        let (slots_r, _responder_slots) = responder_slots.alloc();
+        let (ipc_setup, responder) = call_channel(ut, &root_cnode, slots, slots_r)?;
 
-            let (slots_c, _caller_slots) = caller_slots.alloc();
-            let caller = ipc_setup.create_caller(slots_c)?;
+        let (slots_c, _caller_slots) = caller_slots.alloc();
+        let caller = ipc_setup.create_caller(slots_c)?;
 
-            let caller_params = CallerParams::<role::Child> {
-                caller,
-            };
+        let caller_params = CallerParams::<role::Child> {
+            caller,
+        };
 
-            let responder_params = ResponderParams::<role::Child> {
-                responder,
-            };
-        });
+        let responder_params = ResponderParams::<role::Child> {
+            responder,
+        };
 
-        (
-            caller_params,
-            caller_cnode,
-            None,
-            responder_params,
-            responder_cnode,
-            None,
-            local_slots,
-            uts,
-        )
-    };
-
-    smart_alloc!(|slots from local_slots, ut from uts| {
         let (child_a_process, _) = child_a_vspace.prepare_thread(
             child_proc_a,
-            child_params_a,
+            caller_params,
             ut,
             slots,
             &mut scratch_page_table,
             &mut root_page_directory,
         )?;
         child_a_process.start(
-            proc_cnode_local_a,
-            child_fault_source_a,
+            caller_cnode,
+            None,
             &root_tcb,
             255,
         )?;
 
         let (child_b_process, _) = child_b_vspace.prepare_thread(
             child_proc_b,
-            child_params_b,
+            responder_params,
             ut,
             slots,
             &mut scratch_page_table,
             &mut root_page_directory,
         )?;
         child_b_process.start(
-            proc_cnode_local_b,
-            child_fault_source_b,
+            responder_cnode,
+            None,
             &root_tcb,
             255,
         )?;
