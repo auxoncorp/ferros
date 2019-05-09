@@ -24,9 +24,10 @@ fn main() {
 }
 
 fn generate_root_task_stack_types(out_dir: &Path, config: &Contextualized) {
-    if &SeL4Arch::Aarch32 != &config.context.sel4_arch {
-        panic!("ferros is not yet portable across architectures. aarch32, please.")
-    }
+    // arm-hyp masquerades as an aarch32 build
+    //if &SeL4Arch::Aarch32 != &config.context.sel4_arch {
+    //    panic!("ferros is not yet portable across architectures. aarch32, please.")
+    //}
     if env::var("CARGO_CFG_TARGET_ARCH").unwrap() != "arm" {
         panic!("ferros should not compile if the target_arch is not arm")
     }
