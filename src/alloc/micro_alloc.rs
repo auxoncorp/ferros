@@ -13,7 +13,7 @@ pub const MIN_UNTYPED_SIZE_BITS: u8 = 4;
 pub const MAX_UNTYPED_SIZE_BITS: u8 = 32;
 
 // TODO - pull from configs
-pub const MAX_INIT_UNTYPED_ITEMS: usize = 256;
+pub const MAX_INIT_UNTYPED_ITEMS: usize = 512;
 
 struct UntypedItem {
     cptr: usize,
