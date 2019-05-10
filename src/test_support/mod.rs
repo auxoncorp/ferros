@@ -15,11 +15,12 @@ type MaxTestUntypedSize = U27;
 type MaxTestCNodeSlots = Pow<U15>;
 type RunTest = Fn(
     &LocalCap<LocalCNode>,
-    Untyped<MaxTestUntypedSize>,
     LocalCNodeSlots<MaxTestCNodeSlots>,
+    Untyped<MaxTestUntypedSize>,
     ASIDPool<super::arch::asid::PoolSize>,
-    // TODO - a TCB authority just allowing children - a priority-authority? with only read? grant
-    LocalCap<ThreadControlBlock>,
+    UserImage<role::Local>,
+    VSpaceScratchSlice<role::Local>,
+    LocalCap<ThreadPriorityAuthority>,
 ) -> TestOutcome;
 
 /// Gain temporary access to some slots and memory for use in a function context.
