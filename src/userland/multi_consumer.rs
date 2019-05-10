@@ -26,13 +26,13 @@
 use crate::arch::paging::PageBytes;
 use crate::userland::cap::AssignedPageDirectory;
 use crate::userland::cap::Badge;
-use crate::userland::role;
 use crate::userland::{
     irq_state, memory_kind, CNodeRole, Cap, CapRights, ChildCNodeSlot, ChildCNodeSlots,
     DirectRetype, IRQControl, IRQError, IRQHandler, ImmobileIndelibleInertCapabilityReference,
-    LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable,
-    Notification, PhantomCap, SeL4Error, UnmappedPage, Untyped, VSpace,
+    LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, Notification, PhantomCap,
+    SeL4Error, UnmappedPage, Untyped, VSpace,
 };
+use crate::userland::{role, VSpaceScratchSlice};
 use core::marker::PhantomData;
 use core::ops::Sub;
 use cross_queue::PushError;
@@ -256,8 +256,6 @@ where
     pub fn add_queue<
         E: Sized + Send + Sync,
         ELen: Unsigned,
-        LocalPageDirFreeSlots: Unsigned,
-        LocalPageTableFreeSlots: Unsigned,
         ConsumerPageDirFreeSlots: Unsigned,
         ConsumerPageTableFreeSlots: Unsigned,
     >(
@@ -267,8 +265,7 @@ where
             Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
         >,
         consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
-        local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
-        local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
+        vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
     ) -> Result<
@@ -283,9 +280,6 @@ where
         ELen: ArrayLength<Slot<E>>,
         ELen: IsGreater<U0, Output = True>,
 
-        LocalPageTableFreeSlots: Sub<B1>,
-        Sub1<LocalPageTableFreeSlots>: Unsigned,
-
         ConsumerPageTableFreeSlots: Sub<B1>,
         Sub1<ConsumerPageTableFreeSlots>: Unsigned,
     {
@@ -295,11 +289,10 @@ where
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
         let (shared_page, consumer_shared_page, consumer_vspace) =
-            create_page_filled_with_array_queue::<E, ELen, _, _, _, _>(
+            create_page_filled_with_array_queue::<E, ELen, _, _>(
                 shared_page_ut,
                 consumer_vspace,
-                local_page_table,
-                local_page_dir,
+                vspace_scratch,
                 &local_cnode,
                 dest_slots,
             )?;
@@ -347,19 +340,13 @@ where
     ELen: IsGreater<U0, Output = True>,
     ELen: ArrayLength<Slot<E>>,
 {
-    pub fn new<
-        LocalPageDirFreeSlots: Unsigned,
-        LocalPageTableFreeSlots: Unsigned,
-        ConsumerPageDirFreeSlots: Unsigned,
-        ConsumerPageTableFreeSlots: Unsigned,
-    >(
+    pub fn new<ConsumerPageDirFreeSlots: Unsigned, ConsumerPageTableFreeSlots: Unsigned>(
         notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
         shared_page_ut: LocalCap<
             Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
         >,
         consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
-        local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
-        local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
+        vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
         local_cnode: &LocalCap<LocalCNode>,
         local_slots: LocalCNodeSlots<U3>,
         consumer_slot: ChildCNodeSlots<U1>,
@@ -377,9 +364,6 @@ where
         ELen: ArrayLength<Slot<E>>,
         ELen: IsGreater<U0, Output = True>,
 
-        LocalPageTableFreeSlots: Sub<B1>,
-        Sub1<LocalPageTableFreeSlots>: Unsigned,
-
         ConsumerPageTableFreeSlots: Sub<B1>,
         Sub1<ConsumerPageTableFreeSlots>: Unsigned,
     {
@@ -389,11 +373,10 @@ where
         }
         let (slots, local_slots) = local_slots.alloc();
         let (shared_page, consumer_shared_page, consumer_vspace) =
-            create_page_filled_with_array_queue::<E, ELen, _, _, _, _>(
+            create_page_filled_with_array_queue::<E, ELen, _, _>(
                 shared_page_ut,
                 consumer_vspace,
-                local_page_table,
-                local_page_dir,
+                vspace_scratch,
                 &local_cnode,
                 slots,
             )?;
@@ -461,8 +444,6 @@ where
     pub fn add_queue<
         F: Sized + Send + Sync,
         FLen: Unsigned,
-        LocalPageDirFreeSlots: Unsigned,
-        LocalPageTableFreeSlots: Unsigned,
         ConsumerPageDirFreeSlots: Unsigned,
         ConsumerPageTableFreeSlots: Unsigned,
     >(
@@ -472,8 +453,7 @@ where
             Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
         >,
         consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
-        local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
-        local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
+        vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
     ) -> Result<
@@ -487,9 +467,6 @@ where
     where
         FLen: ArrayLength<Slot<F>>,
         FLen: IsGreater<U0, Output = True>,
-
-        LocalPageTableFreeSlots: Sub<B1>,
-        Sub1<LocalPageTableFreeSlots>: Unsigned,
 
         ConsumerPageTableFreeSlots: Sub<B1>,
         Sub1<ConsumerPageTableFreeSlots>: Unsigned,
@@ -505,11 +482,10 @@ where
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
         let (shared_page, consumer_shared_page, consumer_vspace) =
-            create_page_filled_with_array_queue::<F, FLen, _, _, _, _>(
+            create_page_filled_with_array_queue::<F, FLen, _, _>(
                 shared_page_ut,
                 consumer_vspace,
-                local_page_table,
-                local_page_dir,
+                vspace_scratch,
                 &local_cnode,
                 dest_slots,
             )?;
@@ -571,8 +547,6 @@ where
         G: Sized + Send + Sync,
         GLen: Unsigned,
         LocalCNodeFreeSlots: Unsigned,
-        LocalPageDirFreeSlots: Unsigned,
-        LocalPageTableFreeSlots: Unsigned,
         ConsumerPageDirFreeSlots: Unsigned,
         ConsumerPageTableFreeSlots: Unsigned,
     >(
@@ -582,8 +556,7 @@ where
             Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
         >,
         consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
-        local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
-        local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
+        vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
     ) -> Result<
@@ -600,9 +573,6 @@ where
         GLen: ArrayLength<Slot<G>>,
         GLen: IsGreater<U0, Output = True>,
 
-        LocalPageTableFreeSlots: Sub<B1>,
-        Sub1<LocalPageTableFreeSlots>: Unsigned,
-
         ConsumerPageTableFreeSlots: Sub<B1>,
         Sub1<ConsumerPageTableFreeSlots>: Unsigned,
     {
@@ -617,11 +587,10 @@ where
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
         let (shared_page, consumer_shared_page, consumer_vspace) =
-            create_page_filled_with_array_queue::<F, FLen, _, _, _, _>(
+            create_page_filled_with_array_queue::<F, FLen, _, _>(
                 shared_page_ut,
                 consumer_vspace,
-                local_page_table,
-                local_page_dir,
+                vspace_scratch,
                 &local_cnode,
                 dest_slots,
             )?;
@@ -669,8 +638,6 @@ where
 fn create_page_filled_with_array_queue<
     T: Sized + Send + Sync,
     QLen: Unsigned,
-    LocalPageDirFreeSlots: Unsigned,
-    LocalPageTableFreeSlots: Unsigned,
     ConsumerPageDirFreeSlots: Unsigned,
     ConsumerPageTableFreeSlots: Unsigned,
 >(
@@ -678,8 +645,7 @@ fn create_page_filled_with_array_queue<
         Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
     >,
     consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
-    local_page_table: &mut LocalCap<MappedPageTable<LocalPageTableFreeSlots, role::Local>>,
-    mut local_page_dir: &mut LocalCap<AssignedPageDirectory<LocalPageDirFreeSlots, role::Local>>,
+    vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
     local_cnode: &LocalCap<LocalCNode>,
     dest_slots: LocalCNodeSlots<U2>,
 ) -> Result<
@@ -694,9 +660,6 @@ where
     QLen: ArrayLength<Slot<T>>,
     QLen: IsGreater<U0, Output = True>,
 
-    LocalPageTableFreeSlots: Sub<B1>,
-    Sub1<LocalPageTableFreeSlots>: Unsigned,
-
     ConsumerPageTableFreeSlots: Sub<B1>,
     Sub1<ConsumerPageTableFreeSlots>: Unsigned,
 {
@@ -708,19 +671,17 @@ where
     let (slot, dest_slots) = dest_slots.alloc();
     let shared_page: LocalCap<UnmappedPage<memory_kind::General>> = shared_page_ut.retype(slot)?;
     // Put some data in there. Specifically, an `ArrayQueue`.
-    let (_, shared_page) =
-        local_page_table.temporarily_map_page(shared_page, &mut local_page_dir, |mapped_page| {
-            unsafe {
-                let aq_ptr = core::mem::transmute::<usize, *mut ArrayQueue<T, QLen>>(
-                    mapped_page.cap_data.vaddr,
-                );
-                // Operate directly on a pointer to an uninitialized/zeroed pointer
-                // in order to reduces odds of the full ArrayQueue instance
-                // materializing all at once on the local stack (potentially blowing it)
-                ArrayQueue::<T, QLen>::new_at_ptr(aq_ptr);
-                core::mem::forget(aq_ptr);
-            }
-        })?;
+    let (_, shared_page) = vspace_scratch.temporarily_map_page(shared_page, |mapped_page| {
+        unsafe {
+            let aq_ptr =
+                core::mem::transmute::<usize, *mut ArrayQueue<T, QLen>>(mapped_page.cap_data.vaddr);
+            // Operate directly on a pointer to an uninitialized/zeroed pointer
+            // in order to reduces odds of the full ArrayQueue instance
+            // materializing all at once on the local stack (potentially blowing it)
+            ArrayQueue::<T, QLen>::new_at_ptr(aq_ptr);
+            core::mem::forget(aq_ptr);
+        }
+    })?;
 
     let (slot, _) = dest_slots.alloc();
     let consumer_shared_page = shared_page.copy(&local_cnode, slot, CapRights::RW)?;

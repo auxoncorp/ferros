@@ -74,7 +74,7 @@ pub struct Cap<CT: CapType, Role: CNodeRole> {
     pub cptr: usize,
     // TODO: put this back to pub(super)
     pub(crate) cap_data: CT,
-    pub(super) _role: PhantomData<Role>,
+    pub(crate) _role: PhantomData<Role>,
 }
 
 pub trait CapType: private::SealedCapType {}
@@ -213,6 +213,30 @@ impl DirectRetype for ThreadControlBlock {
 
 impl CopyAliasable for ThreadControlBlock {
     type CopyOutput = Self;
+}
+
+/// A limited view on a ThreadControlBlock capability
+/// that is only intended for use in establishing
+/// the priority of child threads
+#[derive(Debug)]
+pub struct ThreadPriorityAuthority {}
+
+impl CapType for ThreadPriorityAuthority {}
+
+impl PhantomCap for ThreadPriorityAuthority {
+    fn phantom_instance() -> Self {
+        Self {}
+    }
+}
+
+impl CopyAliasable for ThreadPriorityAuthority {
+    type CopyOutput = Self;
+}
+
+impl AsRef<LocalCap<ThreadPriorityAuthority>> for LocalCap<ThreadControlBlock> {
+    fn as_ref(&self) -> &LocalCap<ThreadPriorityAuthority> {
+        unsafe { core::mem::transmute(self) }
+    }
 }
 
 // TODO - consider moving IRQ code allocation tracking to compile-time,
@@ -386,6 +410,8 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> CapType for MappedPageTable<FreeSlots
 impl<FreeSlots: Unsigned, Role: CNodeRole> CopyAliasable for MappedPageTable<FreeSlots, Role> {
     type CopyOutput = UnmappedPageTable;
 }
+
+impl<FreeSlots: Unsigned, Role: CNodeRole> Movable for MappedPageTable<FreeSlots, Role> {}
 
 /////////////////////////
 // Paging object: Page //
@@ -614,6 +640,7 @@ mod private {
     impl<Role: CNodeRole> SealedCapType for super::CNode<Role> {}
     impl<Size: Unsigned, Role: CNodeRole> SealedCapType for super::CNodeSlotsData<Size, Role> {}
     impl SealedCapType for super::ThreadControlBlock {}
+    impl SealedCapType for super::ThreadPriorityAuthority {}
     impl SealedCapType for super::Endpoint {}
     impl SealedCapType for super::Notification {}
     impl<FreePools: Unsigned> SealedCapType for super::ASIDControl<FreePools> {}
@@ -662,13 +689,30 @@ impl<CT: CapType> LocalCap<CT> {
         CT: CopyAliasable,
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
+        let dest_offset = self.unchecked_copy(src_cnode, dest_slot, rights)?;
+        Ok(Cap {
+            cptr: dest_offset,
+            cap_data: PhantomCap::phantom_instance(),
+            _role: PhantomData,
+        })
+    }
+
+    /// Super dangerous! Not for public use.
+    ///
+    /// Returns the destination offset
+    pub(crate) fn unchecked_copy<DestRole: CNodeRole>(
+        &self,
+        src_cnode: &LocalCap<LocalCNode>,
+        dest_slot: CNodeSlot<DestRole>,
+        rights: CapRights,
+    ) -> Result<usize, SeL4Error> {
         let (dest_cptr, dest_offset, _) = dest_slot.elim();
         let err = unsafe {
             seL4_CNode_Copy(
                 dest_cptr,           // _service
                 dest_offset,         // index
                 seL4_WordBits as u8, // depth
-                // Since src_cnode is restricted to Root, the cptr must
+                // Since src_cnode is restricted to CSpace Local Root, the cptr must
                 // actually be the slot index
                 src_cnode.cptr,      // src_root
                 self.cptr,           // src_index
@@ -676,15 +720,10 @@ impl<CT: CapType> LocalCap<CT> {
                 rights.into(),       // rights
             )
         };
-
         if err != 0 {
             Err(SeL4Error::CNodeCopy(err))
         } else {
-            Ok(Cap {
-                cptr: dest_offset,
-                cap_data: PhantomCap::phantom_instance(),
-                _role: PhantomData,
-            })
+            Ok(dest_offset)
         }
     }
 

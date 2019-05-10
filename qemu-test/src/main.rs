@@ -259,6 +259,18 @@ mod tests {
     }
 
     sequential_test! {
+        fn grandkid_process_runs() {
+            run_qemu_test::<fn()>(
+                "grandkid_process_runs",
+                Regex::new(".*Grandkid process successfully ran.*").unwrap(),
+                Regex::new(".*Root task should never return from main.*").unwrap(),
+                None,
+                None,
+            );
+        }
+    }
+
+    sequential_test! {
         fn double_door_backpressure() {
             run_qemu_test::<fn()>(
                 "double_door_backpressure",

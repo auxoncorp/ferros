@@ -1,6 +1,6 @@
-mod asid;
+pub(crate) mod asid;
 mod bootstrap;
-mod cap;
+pub(crate) mod cap;
 mod cap_range;
 mod cnode;
 mod error;

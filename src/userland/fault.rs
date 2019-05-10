@@ -275,7 +275,7 @@ impl<Msg: Sized> FaultOrMessageHandler<Msg, role::Local> {
         let ipc_buffer: IPCBuffer<Msg, ()> = unsafe { IPCBuffer::unchecked_new() };
         let mut sender: usize = 0;
         // Do a regular receive to seed our initial value
-        let mut msg_info: MessageInfo =
+        let msg_info: MessageInfo =
             unsafe { seL4_Recv(self.endpoint.cptr, &mut sender as *mut usize) }.into();
 
         let badge = Badge::from(sender);

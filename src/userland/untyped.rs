@@ -144,7 +144,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
     pub fn with_temporary<E, F>(
         &mut self,
         parent_cnode: &LocalCap<LocalCNode>,
-        mut f: F,
+        f: F,
     ) -> Result<Result<(), E>, SeL4Error>
     where
         F: FnOnce(Self) -> Result<(), E>,

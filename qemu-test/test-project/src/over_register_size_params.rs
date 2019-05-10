@@ -3,7 +3,9 @@ use super::TopLevelError;
 use ferros::alloc::{self, micro_alloc, smart_alloc};
 use typenum::*;
 
-use ferros::userland::{retype, retype_cnode, root_cnode, BootInfo, RetypeForSetup, VSpace};
+use ferros::userland::{
+    retype_cnode, root_cnode, BootInfo, RetypeForSetup, VSpace, VSpaceScratchSlice,
+};
 use selfe_sys::*;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
@@ -23,14 +25,12 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     );
 
     smart_alloc!(|slots from local_slots, ut from uts| {
-        let unmapped_scratch_page_table = retype(ut, slots)?;
-        let (mut scratch_page_table, mut root_page_directory) =
-            root_page_directory.map_page_table(unmapped_scratch_page_table)?;
+        let (mut local_vspace_scratch, root_page_directory) = VSpaceScratchSlice::from_parts(
+            slots, ut, root_page_directory)?;
 
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (child_asid, asid_pool) = asid_pool.alloc();
-        let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &root_cnode,
-                                       &mut root_page_directory)?;
+        let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &root_cnode)?;
 
         let (child_cnode, _child_slots) = retype_cnode::<U12>(ut, slots)?;
 
@@ -46,12 +46,11 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             params,
             ut,
             slots,
-            &mut scratch_page_table,
-            &mut root_page_directory,
+            &mut local_vspace_scratch,
         )?;
     });
 
-    child_process.start(child_cnode, None, &root_tcb, 255)?;
+    child_process.start(child_cnode, None, root_tcb.as_ref(), 255)?;
 
     Ok(())
 }

@@ -1,8 +1,8 @@
 use super::TopLevelError;
 use ferros::alloc::{self, micro_alloc, smart_alloc};
 use ferros::userland::{
-    retype, retype_cnode, role, root_cnode, BootInfo, CNodeRole, Consumer1, Consumer2, Producer,
-    QueueFullError, RetypeForSetup, VSpace, Waker,
+    retype_cnode, role, root_cnode, BootInfo, CNodeRole, Consumer1, Consumer2, Producer,
+    QueueFullError, RetypeForSetup, VSpace, VSpaceScratchSlice, Waker,
 };
 use selfe_sys::{seL4_BootInfo, seL4_Yield};
 use typenum::*;
@@ -24,9 +24,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     );
 
     smart_alloc!(|slots from local_slots, ut from uts| {
-        let unmapped_scratch_page_table = retype(ut, slots)?;
-        let (mut scratch_page_table, mut root_page_directory) =
-            root_page_directory.map_page_table(unmapped_scratch_page_table)?;
+        let (mut local_vspace_scratch, root_page_directory) = VSpaceScratchSlice::from_parts(
+            slots, ut, root_page_directory)?;
 
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
 
@@ -41,14 +40,10 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (waker_cnode, waker_slots) = retype_cnode::<U12>(ut, slots)?;
 
         // vspace setup
-        let consumer_vspace = VSpace::new(ut, slots, consumer_asid, &user_image, &root_cnode,
-                                          &mut root_page_directory)?;
-        let producer_a_vspace = VSpace::new(ut, slots, producer_a_asid, &user_image, &root_cnode,
-                                            &mut root_page_directory)?;
-        let producer_b_vspace = VSpace::new(ut, slots, producer_b_asid, &user_image, &root_cnode,
-                                            &mut root_page_directory)?;
-        let waker_vspace = VSpace::new(ut, slots, waker_asid, &user_image, &root_cnode,
-                                       &mut root_page_directory)?;
+        let consumer_vspace = VSpace::new(ut, slots, consumer_asid, &user_image, &root_cnode)?;
+        let producer_a_vspace = VSpace::new(ut, slots, producer_a_asid, &user_image, &root_cnode)?;
+        let producer_b_vspace = VSpace::new(ut, slots, producer_b_asid, &user_image, &root_cnode)?;
+        let waker_vspace = VSpace::new(ut, slots, waker_asid, &user_image, &root_cnode)?;
 
         let (slots_c, consumer_slots) = consumer_slots.alloc();
         let (
@@ -61,8 +56,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             ut,
             ut,
             consumer_vspace,
-            &mut scratch_page_table,
-            &mut root_page_directory,
+            &mut local_vspace_scratch,
             &root_cnode,
             slots,
             slots_c
@@ -72,8 +66,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             &consumer_token,
             ut,
             consumer_vspace,
-            &mut scratch_page_table,
-            &mut root_page_directory,
+            &mut local_vspace_scratch,
             &root_cnode,
             slots
         )?;
@@ -115,8 +108,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             consumer_params,
             ut,
             slots,
-            &mut scratch_page_table,
-            &mut root_page_directory,
+            &mut local_vspace_scratch,
         )?;
 
         let (producer_a_thread, _) = producer_a_vspace.prepare_thread(
@@ -124,8 +116,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             producer_a_params,
             ut,
             slots,
-            &mut scratch_page_table,
-            &mut root_page_directory,
+            &mut local_vspace_scratch,
         )?;
 
         let (producer_b_thread, _) = producer_b_vspace.prepare_thread(
@@ -133,8 +124,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             producer_b_params,
             ut,
             slots,
-            &mut scratch_page_table,
-            &mut root_page_directory,
+            &mut local_vspace_scratch,
         )?;
 
         let (waker_thread, _) = waker_vspace.prepare_thread(
@@ -142,14 +132,13 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             waker_params,
             ut,
             slots,
-            &mut scratch_page_table,
-            &mut root_page_directory,
+            &mut local_vspace_scratch,
         )?;
 
-        consumer_thread.start(consumer_cnode, None, &root_tcb, 255)?;
-        producer_a_thread.start(producer_a_cnode, None, &root_tcb, 255)?;
-        producer_b_thread.start(producer_b_cnode, None, &root_tcb, 255)?;
-        waker_thread.start(waker_cnode, None, &root_tcb, 255)?;
+        consumer_thread.start(consumer_cnode, None, root_tcb.as_ref(), 255)?;
+        producer_a_thread.start(producer_a_cnode, None, root_tcb.as_ref(), 255)?;
+        producer_b_thread.start(producer_b_cnode, None, root_tcb.as_ref(), 255)?;
+        waker_thread.start(waker_cnode, None, root_tcb.as_ref(), 255)?;
     });
     Ok(())
 }
