@@ -70,7 +70,7 @@ impl AddressBuddy {
 fn single_resource() -> Result<(), ()> {
     let cslots = CNodeSlots::new(10);
 
-    smart_alloc! {|slot_please from cslots | {
+    smart_alloc! {|slot_please: cslots | {
         slot_please;
         let gamma = consume_slot(slot_please);
         let alpha = 3;
@@ -86,7 +86,7 @@ fn single_resource() -> Result<(), ()> {
 fn single_resource_kinded() -> Result<(), ()> {
     let cslots = CNodeSlots::new(10);
 
-    smart_alloc! {|slot_please from cslots: CNodeSlots | {
+    smart_alloc! {|slot_please: cslots<CNodeSlots> | {
         slot_please;
         let gamma = consume_slot(slot_please);
         let alpha = 3;
@@ -104,7 +104,7 @@ fn two_resources_custom_request_id_unkinded() -> Result<(), ()> {
     let cslots = CNodeSlots::new(5);
     let untypeds = UntypedBuddy::new(5);
 
-    smart_alloc! {|s from cslots, u from untypeds | {
+    smart_alloc! {|s:cslots, u: untypeds | {
         let alpha_prime = alpha;
         s;
         let gamma = consume_slot(s);
@@ -126,7 +126,7 @@ fn two_resources_custom_request_id_both_kinded() -> Result<(), ()> {
     let cslots = CNodeSlots::new(5);
     let untypeds = UntypedBuddy::new(5);
 
-    smart_alloc! {|c from cslots: CNodeSlots, u from untypeds: UntypedBuddy | {
+    smart_alloc! {|c :cslots< CNodeSlots>, u :untypeds< UntypedBuddy >| {
         c;
         let gamma = consume_slot(c);
         let eta = consume_untyped(u);
@@ -146,7 +146,7 @@ fn two_resources_custom_request_id_first_kinded() -> Result<(), ()> {
     let cslots = CNodeSlots::new(5);
     let untypeds = UntypedBuddy::new(5);
 
-    smart_alloc! {|slot_please from cslots: CNodeSlots, ut_please from untypeds | {
+    smart_alloc! {|slot_please : cslots< CNodeSlots>, ut_please: untypeds | {
         slot_please;
         let gamma = consume_slot(slot_please);
         let eta = consume_untyped(ut_please);
@@ -166,7 +166,7 @@ fn two_resources_second_kinded() -> Result<(), ()> {
     let cslots = CNodeSlots::new(5);
     let untypeds = UntypedBuddy::new(5);
 
-    smart_alloc! {|c from cslots, u from untypeds: UntypedBuddy | {
+    smart_alloc! {|c : cslots, u : untypeds<UntypedBuddy> | {
         c;
         let gamma = consume_slot(c);
         let eta = consume_untyped(u);
@@ -186,7 +186,7 @@ fn two_resources_second_kinded_unordered() -> Result<(), ()> {
     let cslots = CNodeSlots::new(5);
     let untypeds = UntypedBuddy::new(5);
 
-    smart_alloc! {|u from untypeds, c from cslots: CNodeSlots  | {
+    smart_alloc! {|u :untypeds, c :cslots< CNodeSlots> | {
         c;
         let gamma = consume_slot(c);
         let eta = consume_untyped(u);
@@ -207,7 +207,7 @@ fn three_resources_kinded() -> Result<(), ()> {
     let untypeds = UntypedBuddy::new(5);
     let addresses = AddressBuddy::new(5);
 
-    smart_alloc! {|cs from cslots: CNodeSlots, ut from untypeds: UntypedBuddy, ad from addresses: AddressBuddy | {
+    smart_alloc! {|cs :cslots< CNodeSlots>, ut :untypeds< UntypedBuddy>, ad :addresses<AddressBuddy> | {
         cs;
         let gamma = consume_slot(cs);
         let eta = consume_untyped(ut);
@@ -231,7 +231,7 @@ fn three_resources_kinded_unordered() -> Result<(), ()> {
     let untypeds = UntypedBuddy::new(5);
     let addresses = AddressBuddy::new(5);
 
-    smart_alloc! {|ad from addresses: AddressBuddy, cs from cslots: CNodeSlots, ut from untypeds: UntypedBuddy  | {
+    smart_alloc! {|ad :addresses< AddressBuddy>, cs : cslots<CNodeSlots>, ut : untypeds< UntypedBuddy>  | {
         cs;
         let gamma = consume_slot(cs);
         let eta = consume_untyped(ut);
@@ -255,7 +255,7 @@ fn three_resources_custom_request_ids_kinded_unordered() -> Result<(), ()> {
     let untypeds = UntypedBuddy::new(5);
     let addresses = AddressBuddy::new(5);
 
-    smart_alloc! {|vaddr from addresses: AddressBuddy, slots from cslots: CNodeSlots, uuu from untypeds: UntypedBuddy  | {
+    smart_alloc! {|vaddr :addresses< AddressBuddy>, slots :cslots< CNodeSlots>, uuu :untypeds< UntypedBuddy>  | {
         slots;
         let gamma = consume_slot(slots);
         let eta = consume_untyped(uuu);
@@ -279,7 +279,7 @@ fn three_resources_unkinded() -> Result<(), ()> {
     let untypeds = UntypedBuddy::new(5);
     let addresses = AddressBuddy::new(5);
 
-    smart_alloc! {|slots from cslots, ut from untypeds, ad from addresses | {
+    smart_alloc! {|slots :cslots, ut :untypeds, ad :addresses | {
         slots;
         let gamma = consume_slot(slots);
         let eta = consume_untyped(ut);
@@ -301,11 +301,11 @@ fn three_resources_unkinded() -> Result<(), ()> {
 fn single_resources_nested() -> Result<(), ()> {
     let cslots = CNodeSlots::new(10);
 
-    smart_alloc! {|outer_slot_please from cslots | {
+    smart_alloc! {|outer_slot_please :cslots | {
         outer_slot_please;
         let gamma = consume_slot(outer_slot_please);
         let cslots_inner = CNodeSlots::new(5);
-        smart_alloc! { | inner_slot_please from cslots_inner | {
+        smart_alloc! { | inner_slot_please :cslots_inner | {
             let delta = inner_slot_please;
             let epsilon = consume_slot(inner_slot_please);
             let alpha = 3;
@@ -329,12 +329,12 @@ fn single_resources_deeply_nested() -> Result<(), ()> {
     let cslots_mantle = CNodeSlots::new(5);
     let cslots_core = CNodeSlots::new(5);
 
-    smart_alloc! {|crust from cslots_crust | {
+    smart_alloc! {|crust :cslots_crust | {
         let beta = crust;
-        smart_alloc! { | mantle from cslots_mantle | {
+        smart_alloc! { | mantle :cslots_mantle | {
             let gamma = crust;
             let delta = mantle;
-            smart_alloc! { | core from cslots_core | {
+            smart_alloc! { | core :cslots_core | {
                 let epsilon = crust;
                 let zeta = mantle;
                 let eta = core;
