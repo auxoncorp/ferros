@@ -34,9 +34,9 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         .get_device_untyped::<U14>(UART1_PADDR)
         .expect("find uart1 device memory");
 
-    smart_alloc!(|slots from local_slots, ut from uts| {
-        let (mut local_vspace_scratch, root_page_directory) = VSpaceScratchSlice::from_parts(
-            slots, ut, root_page_directory)?;
+    smart_alloc!(|slots: local_slots, ut: uts| {
+        let (mut local_vspace_scratch, root_page_directory) =
+            VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
 
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (uart1_asid, asid_pool) = asid_pool.alloc();
@@ -45,13 +45,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (uart1_cnode, uart1_slots) = retype_cnode::<U12>(ut, slots)?;
 
         let (slots_u, _uart1_slots) = uart1_slots.alloc();
-        let (interrupt_consumer, _) = InterruptConsumer::new(
-            ut,
-            &mut irq_control,
-            &root_cnode,
-            slots,
-            slots_u
-        )?;
+        let (interrupt_consumer, _) =
+            InterruptConsumer::new(ut, &mut irq_control, &root_cnode, slots, slots_u)?;
 
         let (uart1_page_1_untyped, _, _, _) = uart1_base_untyped.quarter(slots)?;
         let uart1_page_1 = uart1_page_1_untyped.retype_device_page(slots)?;

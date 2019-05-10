@@ -25,9 +25,9 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             .expect("initial alloc failure"),
     );
 
-    smart_alloc!(|slots from local_slots, ut from uts| {
-        let (mut local_vspace_scratch, root_page_directory) = VSpaceScratchSlice::from_parts(
-            slots, ut, root_page_directory)?;
+    smart_alloc!(|slots: local_slots, ut: uts| {
+        let (mut local_vspace_scratch, root_page_directory) =
+            VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
 
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (child_asid, _asid_pool) = asid_pool.alloc();
@@ -35,8 +35,9 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
         let ut5: LocalCap<Untyped<U5>> = ut;
 
-        smart_alloc!(|slots_c from child_slots| {
-            let (cnode_for_child, slots_for_child) = child_cnode.generate_self_reference(&root_cnode, slots_c)?;
+        smart_alloc!(|slots_c: child_slots| {
+            let (cnode_for_child, slots_for_child) =
+                child_cnode.generate_self_reference(&root_cnode, slots_c)?;
             let child_ut5 = ut5.move_to_slot(&root_cnode, slots_c)?;
         });
 
@@ -48,13 +49,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
         let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &root_cnode)?;
 
-        let (child_process, _) = child_vspace.prepare_thread(
-            proc_main,
-            params,
-            ut,
-            slots,
-            &mut local_vspace_scratch,
-        )?;
+        let (child_process, _) =
+            child_vspace.prepare_thread(proc_main, params, ut, slots, &mut local_vspace_scratch)?;
     });
 
     child_process.start(child_cnode, None, root_tcb.as_ref(), 255)?;
@@ -85,19 +81,20 @@ pub extern "C" fn proc_main(params: CapManagementParams<role::Local>) {
         my_ut,
     } = params;
 
-    smart_alloc!(|slots from my_cnode_slots| {
+    smart_alloc!(|slots: my_cnode_slots| {
         debug_println!("Let's split an untyped inside child process");
-        let (ut_kid_a, ut_kid_b) = my_ut
-            .split(slots)
-            .expect("child process split untyped");
+        let (ut_kid_a, ut_kid_b) = my_ut.split(slots).expect("child process split untyped");
         debug_println!("We got past the split in a child process\n");
 
         debug_println!("Let's make an Endpoint");
-        let _endpoint: LocalCap<Endpoint> = retype(ut_kid_a, slots).expect("Retype local in a child process failure");
+        let _endpoint: LocalCap<Endpoint> =
+            retype(ut_kid_a, slots).expect("Retype local in a child process failure");
         debug_println!("Successfully built an Endpoint\n");
 
         debug_println!("And now for a delete in a child process");
-        ut_kid_b.delete(&my_cnode).expect("child process delete a cap");
+        ut_kid_b
+            .delete(&my_cnode)
+            .expect("child process delete a cap");
         debug_println!("Hey, we deleted a cap in a child process");
         debug_println!("Split, retyped, and deleted caps in a child process");
     });

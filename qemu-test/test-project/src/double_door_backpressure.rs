@@ -23,9 +23,9 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             .expect("initial alloc failure"),
     );
 
-    smart_alloc!(|slots from local_slots, ut from uts| {
-        let (mut local_vspace_scratch, root_page_directory) = VSpaceScratchSlice::from_parts(
-            slots, ut, root_page_directory)?;
+    smart_alloc!(|slots: local_slots, ut: uts| {
+        let (mut local_vspace_scratch, root_page_directory) =
+            VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
 
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
 
@@ -46,21 +46,16 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let waker_vspace = VSpace::new(ut, slots, waker_asid, &user_image, &root_cnode)?;
 
         let (slots_c, consumer_slots) = consumer_slots.alloc();
-        let (
-            consumer,
-            consumer_token,
-            producer_setup_a,
-            waker_setup,
-            consumer_vspace,
-        ) = Consumer1::new(
-            ut,
-            ut,
-            consumer_vspace,
-            &mut local_vspace_scratch,
-            &root_cnode,
-            slots,
-            slots_c
-        )?;
+        let (consumer, consumer_token, producer_setup_a, waker_setup, consumer_vspace) =
+            Consumer1::new(
+                ut,
+                ut,
+                consumer_vspace,
+                &mut local_vspace_scratch,
+                &root_cnode,
+                slots,
+                slots_c,
+            )?;
 
         let (consumer, producer_setup_b, consumer_vspace) = consumer.add_queue(
             &consumer_token,
@@ -68,7 +63,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             consumer_vspace,
             &mut local_vspace_scratch,
             &root_cnode,
-            slots
+            slots,
         )?;
 
         let consumer_params = ConsumerParams::<role::Child> { consumer };
@@ -79,7 +74,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             slots_a,
             producer_a_vspace,
             &root_cnode,
-            slots
+            slots,
         )?;
 
         let producer_a_params = ProducerXParams::<role::Child> {
@@ -92,7 +87,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             slots_b,
             producer_b_vspace,
             &root_cnode,
-            slots
+            slots,
         )?;
 
         let producer_b_params = ProducerYParams::<role::Child> {

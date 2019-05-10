@@ -23,9 +23,9 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             .expect("initial alloc failure"),
     );
 
-    smart_alloc!(|slots from local_slots, ut from uts| {
-        let (mut local_vspace_scratch, root_page_directory) = VSpaceScratchSlice::from_parts(
-            slots, ut, root_page_directory)?;
+    smart_alloc!(|slots: local_slots, ut: uts| {
+        let (mut local_vspace_scratch, root_page_directory) =
+            VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
 
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (child_a_asid, asid_pool) = asid_pool.alloc();
@@ -43,13 +43,9 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (slots_c, _caller_slots) = caller_slots.alloc();
         let caller = ipc_setup.create_caller(slots_c)?;
 
-        let caller_params = CallerParams::<role::Child> {
-            caller,
-        };
+        let caller_params = CallerParams::<role::Child> { caller };
 
-        let responder_params = ResponderParams::<role::Child> {
-            responder,
-        };
+        let responder_params = ResponderParams::<role::Child> { responder };
 
         let (child_a_process, _) = child_a_vspace.prepare_thread(
             child_proc_a,
@@ -58,12 +54,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             slots,
             &mut local_vspace_scratch,
         )?;
-        child_a_process.start(
-            caller_cnode,
-            None,
-            root_tcb.as_ref(),
-            255,
-        )?;
+        child_a_process.start(caller_cnode, None, root_tcb.as_ref(), 255)?;
 
         let (child_b_process, _) = child_b_vspace.prepare_thread(
             child_proc_b,
@@ -72,12 +63,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             slots,
             &mut local_vspace_scratch,
         )?;
-        child_b_process.start(
-            responder_cnode,
-            None,
-            root_tcb.as_ref(),
-            255,
-        )?;
+        child_b_process.start(responder_cnode, None, root_tcb.as_ref(), 255)?;
     });
 
     Ok(())

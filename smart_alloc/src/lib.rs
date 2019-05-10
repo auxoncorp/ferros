@@ -1,6 +1,6 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
-use proc_macro2::{Span, TokenTree};
+use proc_macro2::Span;
 use quote::TokenStreamExt;
 use std::fmt::{Display, Formatter};
 use syn::export::TokenStream2;
@@ -23,9 +23,10 @@ smart_alloc! { |cs: cslots, ut: untypeds, ad: address_buddy | {
     let id_that_will_leak = something_requiring_slots(cs);
     op_requiring_memory(ut);
     top_fn(cs, nested_fn(cs, ut));
-}}";
-const RESOURCE_DECLARATION_LAYOUT_MESSAGE: &str =
-    r"When a resource is declared, it should be in one of the following forms:
+}}
+
+When a resource is declared in the closure-signature-like header,
+it should be in one of the following forms:
 * `request_id: resource_id`
 * `request_id: resource_id<ResourceKind>`
 
@@ -45,7 +46,7 @@ fn smart_alloc_impl(tokens: TokenStream2) -> Result<TokenStream2, Error> {
 }
 
 fn smart_alloc_structured(tokens: TokenStream2) -> Result<Vec<Stmt>, Error> {
-    let mut closure: ExprClosure = syn_parse(tokens.into())?;
+    let closure: ExprClosure = syn_parse(tokens.into())?;
     if closure.output != ReturnType::Default {
         return Err(Error::NoReturnTypeAllowed);
     }
@@ -236,37 +237,35 @@ fn parse_fnarg_to_intermediate(arg: &FnArg) -> Result<IntermediateResource, Erro
                 .into_value();
             if seg.arguments.is_empty() {
                 (seg.ident.clone(), None)
-            } else {
-                if let PathArguments::AngleBracketed(abga) = &seg.arguments {
-                    let gen_arg = abga
-                        .args
-                        .first()
-                        .ok_or_else(|| Error::InvalidResourceFormat {
-                            msg: format!(
-                                "{:?} was associated with a resource with an empty resource kind",
-                                request_id
-                            ),
-                        })?
-                        .into_value();
-                    if let GenericArgument::Type(Type::Path(res_kind_ty)) = gen_arg {
-                        let res_kind_seg = res_kind_ty.path.segments.last().ok_or_else(|| Error::InvalidResourceFormat {  msg: format!("{:?} was associated with a resource with a resource kind with a nonexistent name", request_id )})?.into_value();
-                        (seg.ident.clone(), Some(res_kind_seg.ident.clone()))
-                    } else {
-                        return Err(Error::InvalidResourceFormat {
-                            msg: format!(
-                                "{:?} was associated with a complex invalid resource kind",
-                                request_id
-                            ),
-                        });
-                    }
+            } else if let PathArguments::AngleBracketed(abga) = &seg.arguments {
+                let gen_arg = abga
+                    .args
+                    .first()
+                    .ok_or_else(|| Error::InvalidResourceFormat {
+                        msg: format!(
+                            "{:?} was associated with a resource with an empty resource kind",
+                            request_id
+                        ),
+                    })?
+                    .into_value();
+                if let GenericArgument::Type(Type::Path(res_kind_ty)) = gen_arg {
+                    let res_kind_seg = res_kind_ty.path.segments.last().ok_or_else(|| Error::InvalidResourceFormat {  msg: format!("{:?} was associated with a resource with a resource kind with a nonexistent name", request_id )})?.into_value();
+                    (seg.ident.clone(), Some(res_kind_seg.ident.clone()))
                 } else {
                     return Err(Error::InvalidResourceFormat {
                         msg: format!(
-                            "{:?} was associated with a non-angle-bracketed resource kind",
+                            "{:?} was associated with a complex invalid resource kind",
                             request_id
                         ),
                     });
                 }
+            } else {
+                return Err(Error::InvalidResourceFormat {
+                    msg: format!(
+                        "{:?} was associated with a non-angle-bracketed resource kind",
+                        request_id
+                    ),
+                });
             }
         } else {
             return Err(Error::InvalidResourceFormat {
