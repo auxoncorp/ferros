@@ -20,6 +20,7 @@ mod dont_tread_on_me;
 mod double_door_backpressure;
 mod fault_or_message_handler;
 mod fault_pair;
+mod grandkid_process_runs;
 mod memory_read_protection;
 mod memory_write_protection;
 mod over_register_size_params;
@@ -69,6 +70,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     fault_or_message_handler::run(raw_boot_info).expect("run");
     #[cfg(test_case = "fault_pair")]
     fault_pair::run(raw_boot_info).expect("run");
+    #[cfg(test_case = "grandkid_process_runs")]
+    grandkid_process_runs::run(raw_boot_info).expect("run");
     #[cfg(test_case = "memory_read_protection")]
     memory_read_protection::run(raw_boot_info).expect("run");
     #[cfg(test_case = "memory_write_protection")]

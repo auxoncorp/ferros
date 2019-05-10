@@ -3,7 +3,9 @@
 //! copy of the user image.
 
 use ferros::alloc::{self, micro_alloc, smart_alloc};
-use ferros::userland::{call_channel, retype, retype_cnode, root_cnode, BootInfo, VSpace, VSpaceScratchSlice};
+use ferros::userland::{
+    call_channel, retype_cnode, root_cnode, BootInfo, VSpace, VSpaceScratchSlice,
+};
 
 use typenum::*;
 

@@ -1,8 +1,8 @@
 use super::TopLevelError;
 use ferros::alloc::{self, micro_alloc, smart_alloc};
 use ferros::userland::{
-    retype, retype_cnode, role, root_cnode, BootInfo, CNodeRole, Consumer1, Consumer2, Producer,
-    QueueFullError, RetypeForSetup, VSpace, Waker, VSpaceScratchSlice
+    retype_cnode, role, root_cnode, BootInfo, CNodeRole, Consumer1, Consumer2, Producer,
+    QueueFullError, RetypeForSetup, VSpace, VSpaceScratchSlice, Waker,
 };
 use selfe_sys::{seL4_BootInfo, seL4_Yield};
 use typenum::*;

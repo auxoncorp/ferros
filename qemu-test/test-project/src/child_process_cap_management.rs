@@ -6,7 +6,7 @@ use typenum::*;
 
 use ferros::userland::{
     retype, retype_cnode, role, root_cnode, BootInfo, CNode, CNodeRole, CNodeSlotsData, Cap,
-    Endpoint, LocalCap, RetypeForSetup, Untyped, VSpace, VSpaceScratchSlice
+    Endpoint, LocalCap, RetypeForSetup, Untyped, VSpace, VSpaceScratchSlice,
 };
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {

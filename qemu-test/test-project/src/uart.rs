@@ -2,8 +2,7 @@ use selfe_sys::*;
 
 use ferros::alloc::{self, micro_alloc, smart_alloc};
 use ferros::userland::{
-    retype, retype_cnode, role, root_cnode, BootInfo, InterruptConsumer, VSpace,
-    VSpaceScratchSlice
+    retype_cnode, role, root_cnode, BootInfo, InterruptConsumer, VSpace, VSpaceScratchSlice,
 };
 use typenum::*;
 

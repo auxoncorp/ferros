@@ -8,9 +8,9 @@ use crate::userland::cap::ThreadControlBlock;
 use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, SetupVer};
 use crate::userland::{
     memory_kind, role, AssignedPageDirectory, CNodeRole, Cap, CapRange, CapRights, ChildCNode,
-    DirectRetype, FaultSource, ImmobileIndelibleInertCapabilityReference, LocalCNode,
-    LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable, MappedSection,
-    MemoryKind, PhantomCap, SeL4Error, ThreadPriorityAuthority, UnassignedASID,
+    ChildCNodeSlots, DirectRetype, FaultSource, ImmobileIndelibleInertCapabilityReference,
+    LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable,
+    MappedSection, MemoryKind, PhantomCap, SeL4Error, ThreadPriorityAuthority, UnassignedASID,
     UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, UnmappedSection, Untyped, UserImage,
 };
 use generic_array::{ArrayLength, GenericArray};
@@ -258,7 +258,7 @@ impl VSpace {
 impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
     VSpace<PageDirFreeSlots, PageTableFreeSlots, Role>
 {
-    pub fn next_page_table<CNodeFreeSlots: Unsigned>(
+    pub fn next_page_table(
         self,
         new_page_table_ut: LocalCap<Untyped<<UnmappedPageTable as DirectRetype>::SizeBits>>,
         dest_slot: LocalCNodeSlot,
@@ -725,6 +725,79 @@ impl<PageDirFreeSlots: Unsigned, Role: CNodeRole> VSpace<PageDirFreeSlots, U0, R
         });
 
         Ok((page_slot_iter, vspace))
+    }
+}
+impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned>
+    VSpace<PageDirFreeSlots, PageTableFreeSlots, role::Child>
+{
+    pub fn create_child_scratch(
+        self,
+        page_tables_ut: LocalCap<Untyped<Sum<<UnmappedPageTable as DirectRetype>::SizeBits, U1>>>,
+        local_slots: LocalCNodeSlots<U4>,
+        child_slots: ChildCNodeSlots<U2>,
+        parent_cnode: &LocalCap<LocalCNode>,
+    ) -> Result<
+        (
+            VSpaceScratchSlice<role::Child>,
+            VSpace<Sub1<Sub1<PageDirFreeSlots>>, paging::BasePageTableFreeSlots, role::Child>,
+        ),
+        SeL4Error,
+    >
+    where
+        PageDirFreeSlots: Sub<B1>,
+        Sub1<PageDirFreeSlots>: Unsigned,
+        Sub1<PageDirFreeSlots>: Sub<B1>,
+        Sub1<Sub1<PageDirFreeSlots>>: Unsigned,
+
+        PageTableFreeSlots: Sub<PageTableFreeSlots, Output = U0>,
+    {
+        let (page_table_ut_slots, local_slots) = local_slots.alloc();
+        let (pt_ut_a, pt_ut_b) = page_tables_ut.split(page_table_ut_slots)?;
+        let (page_table_slot, local_slots) = local_slots.alloc();
+        // Skip ahead to a fresh page table
+        let VSpace {
+            page_dir,
+            current_page_table,
+        } = self.next_page_table(pt_ut_a, page_table_slot)?;
+
+        // Move the (now-fresh) current page table to the child CSpace
+        let (child_page_table_slot, child_slots) = child_slots.alloc();
+        let child_page_table =
+            current_page_table.move_to_slot(parent_cnode, child_page_table_slot)?;
+
+        // Make an effectively immutable copy of the page directory capability
+        // in the child CSpace.
+        //
+        // NB: we don't really want to make AssignedPageDirectory copy-alias-able in public
+        // so we use an internal copy method to do the copy-work and get the destination offset.
+        // Then we manually create a page directory alias instance that lacks
+        // any visible capacity for mutability.
+        let child_page_dir = Cap {
+            cptr: page_dir.unchecked_copy(parent_cnode, child_slots, CapRights::RWG)?,
+            _role: PhantomData,
+            cap_data: AssignedPageDirectory {
+                next_free_slot: core::usize::MAX,
+                _free_slots: PhantomData,
+                _role: PhantomData,
+            },
+        };
+
+        let (new_page_table, page_dir) = page_dir.map_page_table(pt_ut_b.retype(local_slots)?)?;
+        //let new_page_table: LocalCap<UnmappedPageTable> = new_page_table_ut.retype(local_page_table_slot)?;
+
+        //let (new_page_table, page_dir) = self.page_dir.map_page_table(new_page_table)?;
+        //let _former_current_page_table = self.current_page_table.skip_remaining_pages();
+
+        Ok((
+            VSpaceScratchSlice {
+                page_dir: child_page_dir,
+                page_table: child_page_table,
+            },
+            VSpace {
+                page_dir,
+                current_page_table: new_page_table,
+            },
+        ))
     }
 }
 
@@ -1349,6 +1422,7 @@ pub fn yield_forever() -> ! {
 }
 
 type ScratchPageTableSlots = Pow<paging::PageTableBits>;
+#[derive(Debug)]
 pub struct VSpaceScratchSlice<Role: CNodeRole> {
     page_dir: Cap<AssignedPageDirectory<U0, Role>, Role>,
     page_table: Cap<MappedPageTable<ScratchPageTableSlots, Role>, Role>,

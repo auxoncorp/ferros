@@ -51,18 +51,6 @@ impl LocalCap<ThreadControlBlock> {
     }
 }
 
-impl AsRef<LocalCap<ThreadPriorityAuthority>> for LocalCap<ThreadControlBlock> {
-    fn as_ref(&self) -> &LocalCap<ThreadPriorityAuthority> {
-        unsafe { core::mem::transmute(self) }
-    }
-}
-//
-///// A struct representing the authority to set the
-///// priority of child thread control blocks
-//pub struct TCBPriorityAuthority<Role: CNodeRole> {
-//    thread_control_block: Cap<ThreadControlBlock, Role>
-//}
-
 // TODO - consider renaming for clarity
 pub trait RetypeForSetup: Sized + Send + Sync {
     type Output: Sized + Send + Sync;

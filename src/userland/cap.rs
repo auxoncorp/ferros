@@ -233,6 +233,12 @@ impl CopyAliasable for ThreadPriorityAuthority {
     type CopyOutput = Self;
 }
 
+impl AsRef<LocalCap<ThreadPriorityAuthority>> for LocalCap<ThreadControlBlock> {
+    fn as_ref(&self) -> &LocalCap<ThreadPriorityAuthority> {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+
 // TODO - consider moving IRQ code allocation tracking to compile-time,
 // which may be feasible since we treat IRQControl as a global
 // singleton.
@@ -404,6 +410,8 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> CapType for MappedPageTable<FreeSlots
 impl<FreeSlots: Unsigned, Role: CNodeRole> CopyAliasable for MappedPageTable<FreeSlots, Role> {
     type CopyOutput = UnmappedPageTable;
 }
+
+impl<FreeSlots: Unsigned, Role: CNodeRole> Movable for MappedPageTable<FreeSlots, Role> {}
 
 /////////////////////////
 // Paging object: Page //
@@ -681,13 +689,30 @@ impl<CT: CapType> LocalCap<CT> {
         CT: CopyAliasable,
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
+        let dest_offset = self.unchecked_copy(src_cnode, dest_slot, rights)?;
+        Ok(Cap {
+            cptr: dest_offset,
+            cap_data: PhantomCap::phantom_instance(),
+            _role: PhantomData,
+        })
+    }
+
+    /// Super dangerous! Not for public use.
+    ///
+    /// Returns the destination offset
+    pub(crate) fn unchecked_copy<DestRole: CNodeRole>(
+        &self,
+        src_cnode: &LocalCap<LocalCNode>,
+        dest_slot: CNodeSlot<DestRole>,
+        rights: CapRights,
+    ) -> Result<usize, SeL4Error> {
         let (dest_cptr, dest_offset, _) = dest_slot.elim();
         let err = unsafe {
             seL4_CNode_Copy(
                 dest_cptr,           // _service
                 dest_offset,         // index
                 seL4_WordBits as u8, // depth
-                // Since src_cnode is restricted to Root, the cptr must
+                // Since src_cnode is restricted to CSpace Local Root, the cptr must
                 // actually be the slot index
                 src_cnode.cptr,      // src_root
                 self.cptr,           // src_index
@@ -695,15 +720,10 @@ impl<CT: CapType> LocalCap<CT> {
                 rights.into(),       // rights
             )
         };
-
         if err != 0 {
             Err(SeL4Error::CNodeCopy(err))
         } else {
-            Ok(Cap {
-                cptr: dest_offset,
-                cap_data: PhantomCap::phantom_instance(),
-                _role: PhantomData,
-            })
+            Ok(dest_offset)
         }
     }
 

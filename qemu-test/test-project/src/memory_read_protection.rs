@@ -4,7 +4,9 @@ use selfe_sys::seL4_BootInfo;
 use ferros::alloc::{self, micro_alloc, smart_alloc};
 use typenum::*;
 
-use ferros::userland::{retype, retype_cnode, root_cnode, BootInfo, RetypeForSetup, VSpace,VSpaceScratchSlice};
+use ferros::userland::{
+    retype_cnode, root_cnode, BootInfo, RetypeForSetup, VSpace, VSpaceScratchSlice,
+};
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let BootInfo {

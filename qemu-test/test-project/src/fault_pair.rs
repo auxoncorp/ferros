@@ -2,8 +2,8 @@ use super::TopLevelError;
 use core::marker::PhantomData;
 use ferros::alloc::{self, micro_alloc, smart_alloc};
 use ferros::userland::{
-    retype, retype_cnode, role, root_cnode, setup_fault_endpoint_pair, BootInfo, CNodeRole,
-    FaultSink, RetypeForSetup, VSpace, VSpaceScratchSlice
+    retype_cnode, role, root_cnode, setup_fault_endpoint_pair, BootInfo, CNodeRole, FaultSink,
+    RetypeForSetup, VSpace, VSpaceScratchSlice,
 };
 use selfe_sys::*;
 use typenum::*;
