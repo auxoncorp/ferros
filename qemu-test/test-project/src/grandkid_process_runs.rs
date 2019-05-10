@@ -50,7 +50,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             let thread_priority_authority_for_child = root_tcb.as_ref().copy(&cnode, slots_c, CapRights::RWG)?;
         });
 
-
         let params = ChildParams {
             cnode: cnode_for_child,
             cnode_slots: slots_for_child,
@@ -60,9 +59,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             vspace_scratch: vspace_scratch_for_child,
             thread_priority_authority: thread_priority_authority_for_child
         };
-
-
-
 
         let (child_process, _) = child_vspace.prepare_thread(
             child_main,

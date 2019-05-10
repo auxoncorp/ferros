@@ -783,10 +783,6 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned>
         };
 
         let (new_page_table, page_dir) = page_dir.map_page_table(pt_ut_b.retype(local_slots)?)?;
-        //let new_page_table: LocalCap<UnmappedPageTable> = new_page_table_ut.retype(local_page_table_slot)?;
-
-        //let (new_page_table, page_dir) = self.page_dir.map_page_table(new_page_table)?;
-        //let _former_current_page_table = self.current_page_table.skip_remaining_pages();
 
         Ok((
             VSpaceScratchSlice {
