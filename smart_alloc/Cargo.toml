@@ -3,6 +3,7 @@ name = "smart_alloc"
 version = "0.1.0"
 authors = ["Zachary Pierce <zack@auxon.io>"]
 edition = "2018"
+readme = "README.md"
 
 [lib]
 proc-macro = true

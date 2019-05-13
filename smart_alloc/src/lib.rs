@@ -16,21 +16,20 @@ use uuid::Uuid;
 
 const RESOURCE_TYPE_HINT_CSLOTS: &str = "CNodeSlots";
 const RESOURCE_TYPE_HINT_UNTYPED: &str = "UntypedBuddy";
-const RESOURCE_TYPE_HINT_ADDR: &str = "AddressBuddy";
 
 const EXPECTED_LAYOUT_MESSAGE: &str = r"smart_alloc expects to be invoked like:
-smart_alloc! { |cs: cslots, ut: untypeds, ad: address_buddy | {
+smart_alloc!(  |cs: cslots, ut: untypeds| {
     let id_that_will_leak = something_requiring_slots(cs);
     op_requiring_memory(ut);
     top_fn(cs, nested_fn(cs, ut));
-}}
+});
 
 When a resource is declared in the closure-signature-like header,
 it should be in one of the following forms:
 * `request_id: resource_id`
 * `request_id: resource_id<ResourceKind>`
 
-where ResourceKind is one of CNodeSlots, UntypedBuddy, or AddressBuddy.";
+where ResourceKind is one of CNodeSlots or UntypedBuddy.";
 
 #[proc_macro]
 pub fn smart_alloc(tokens: TokenStream) -> TokenStream {
@@ -75,7 +74,6 @@ fn materialize_alloc_statements(
     let ResolvedResourceIds {
         cslots_resource,
         untyped_resource,
-        address_resource,
     } = resource_ids;
     let mut output_stmts = Vec::new();
     for plan in planned_allocs {
@@ -92,20 +90,6 @@ fn materialize_alloc_statements(
                     let (#ut, #untyped_resource) = #untyped_resource.alloc(#cslot)?;
                 }};
                 output_stmts.extend(alloc_both.stmts);
-            }
-            PlannedAlloc::AddressRange {
-                addr,
-                cslot_for_addr,
-                ut,
-                cslot_for_ut,
-            } => {
-                let alloc_addr: Block = parse_quote! { {
-                    let (#cslot_for_ut, #cslots_resource) = #cslots_resource.alloc();
-                    let (#ut, #untyped_resource) = #untyped_resource.alloc(#cslot_for_ut)?;
-                    let (#cslot_for_addr, #cslots_resource) = #cslots_resource.alloc();
-                    let (#addr, #address_resource) = #address_resource.alloc(#cslot_for_addr, #ut)?;
-                }};
-                output_stmts.extend(alloc_addr.stmts);
             }
         }
     }
@@ -124,7 +108,6 @@ enum Error {
     InvalidRequestId { id: String },
     MissingResourceId { request_id: String },
     TooManyResources,
-    AllPositionalOrAllExplicitResourceKinds,
     SynParse(SynError),
 }
 
@@ -139,10 +122,9 @@ impl Display for Error {
                 "{}\nbut the contents following the closure-like header were not a block",
                 EXPECTED_LAYOUT_MESSAGE
             ),
-            Error::InvalidResourceFormat { msg } => format!(
-                "{}\nbut {}",
-                EXPECTED_LAYOUT_MESSAGE, msg
-            ),
+            Error::InvalidResourceFormat { msg } => {
+                format!("{}\nbut {}", EXPECTED_LAYOUT_MESSAGE, msg)
+            }
             Error::InvalidResourceKind { found } => format!(
                 "{}\nbut an invalid resource kind {} was found",
                 EXPECTED_LAYOUT_MESSAGE, found
@@ -168,10 +150,9 @@ impl Display for Error {
                 EXPECTED_LAYOUT_MESSAGE, request_id
             ),
             Error::TooManyResources => format!(
-                "{}\nbut more than three resources without explicit resource kinds were requested",
+                "{}\nbut more than two resources without explicit resource kinds were requested",
                 EXPECTED_LAYOUT_MESSAGE
             ),
-            Error::AllPositionalOrAllExplicitResourceKinds => format!("{}\nbut when there are three resources to allocate from, their kinds must either be entirely positionally determined ({}, {}, {}) or entirely explicit and unique", EXPECTED_LAYOUT_MESSAGE, RESOURCE_TYPE_HINT_CSLOTS, RESOURCE_TYPE_HINT_UNTYPED, RESOURCE_TYPE_HINT_ADDR),
             Error::SynParse(se) => se.to_compile_error().to_string(),
         };
         f.write_str(&s)
@@ -296,49 +277,6 @@ fn header_from_intermediate_resources(resources: &[IntermediateResource]) -> Res
         }),
         1 => Header::from_single_resource(&resources[0]),
         2 => Header::from_resource_pair(&resources[0], &resources[1]),
-        3 => {
-            let first = &resources[0];
-            let second = &resources[1];
-            let third = &resources[2];
-            match (
-                first.kind.as_ref(),
-                second.kind.as_ref(),
-                third.kind.as_ref(),
-            ) {
-                (None, None, None) => Header::from_known_triple(first, second, third),
-                (
-                    Some(ResKind::CNodeSlots),
-                    Some(ResKind::Untyped),
-                    Some(ResKind::AddressRange),
-                ) => Header::from_known_triple(first, second, third),
-                (
-                    Some(ResKind::CNodeSlots),
-                    Some(ResKind::AddressRange),
-                    Some(ResKind::Untyped),
-                ) => Header::from_known_triple(first, third, second),
-                (
-                    Some(ResKind::Untyped),
-                    Some(ResKind::CNodeSlots),
-                    Some(ResKind::AddressRange),
-                ) => Header::from_known_triple(second, first, third),
-                (
-                    Some(ResKind::AddressRange),
-                    Some(ResKind::CNodeSlots),
-                    Some(ResKind::Untyped),
-                ) => Header::from_known_triple(second, third, first),
-                (
-                    Some(ResKind::AddressRange),
-                    Some(ResKind::Untyped),
-                    Some(ResKind::CNodeSlots),
-                ) => Header::from_known_triple(third, second, first),
-                (
-                    Some(ResKind::Untyped),
-                    Some(ResKind::AddressRange),
-                    Some(ResKind::CNodeSlots),
-                ) => Header::from_known_triple(third, first, second),
-                _ => Err(Error::AllPositionalOrAllExplicitResourceKinds),
-            }
-        }
         _ => Err(Error::TooManyResources),
     }
 }
@@ -364,7 +302,6 @@ fn parse_resource_kind(ident: Ident) -> Result<ResKind, Error> {
     match raw_kind.as_ref() {
         RESOURCE_TYPE_HINT_CSLOTS => Ok(ResKind::CNodeSlots),
         RESOURCE_TYPE_HINT_UNTYPED => Ok(ResKind::Untyped),
-        RESOURCE_TYPE_HINT_ADDR => Ok(ResKind::AddressRange),
         _ => Err(Error::InvalidResourceKind { found: raw_kind }),
     }
 }
@@ -379,20 +316,17 @@ struct IntermediateResource {
 enum ResKind {
     CNodeSlots,
     Untyped,
-    AddressRange,
 }
 
 #[derive(Debug, PartialEq)]
 struct Header {
     pub(crate) cnode_slots: ResourceRequest,
     pub(crate) untypeds: Option<ResourceRequest>,
-    pub(crate) address_ranges: Option<ResourceRequest>,
 }
 
 struct ResolvedResourceIds {
     cslots_resource: Ident,
     untyped_resource: Ident,
-    address_resource: Ident,
 }
 
 impl ResolvedResourceIds {
@@ -418,24 +352,9 @@ impl ResolvedResourceIds {
             .unwrap_or_else(|| {
                 Ident::new("untyped_buddy_not_provided_to_macro", Span::call_site())
             });
-        if planned_allocs.iter().any(|p| match p {
-            PlannedAlloc::AddressRange { .. } => true,
-            _ => false,
-        }) && header.address_ranges == None
-        {
-            return Err(format!("{}\nbut address allocations were requested and the {} resource not provided to smart_alloc", EXPECTED_LAYOUT_MESSAGE, RESOURCE_TYPE_HINT_ADDR));
-        }
-        let address_resource = header
-            .address_ranges
-            .as_ref()
-            .map(|ar_rr| Ident::new(&ar_rr.resource_id.to_string(), ar_rr.resource_id.span()))
-            .unwrap_or_else(|| {
-                Ident::new("address_buddy_not_provided_to_macro", Span::call_site())
-            });
         Ok(ResolvedResourceIds {
             cslots_resource,
             untyped_resource,
-            address_resource,
         })
     }
 }
@@ -461,7 +380,6 @@ impl Header {
                 request_id: first.request_id.clone(),
             },
             untypeds: None,
-            address_ranges: None,
         })
     }
 
@@ -469,23 +387,19 @@ impl Header {
         first: &IntermediateResource,
         second: &IntermediateResource,
     ) -> Result<Header, Error> {
-        let error = format!("Addresses can only be smart-allocated with access to {}, an {}, and an {}, but only two such resources were supplied", RESOURCE_TYPE_HINT_CSLOTS, RESOURCE_TYPE_HINT_UNTYPED, RESOURCE_TYPE_HINT_ADDR);
         match (first.kind.as_ref(), second.kind.as_ref()) {
             (None, None) => Header::from_known_kinds_resource_pair(first, second),
             (Some(fk), None) => match fk {
                 ResKind::CNodeSlots => Header::from_known_kinds_resource_pair(first, second),
                 ResKind::Untyped => Header::from_known_kinds_resource_pair(second, first),
-                ResKind::AddressRange => Err(Error::MissingRequiredResourceKind { msg: error }),
             },
             (None, Some(sk)) => match sk {
                 ResKind::CNodeSlots => Header::from_known_kinds_resource_pair(second, first),
                 ResKind::Untyped => Header::from_known_kinds_resource_pair(first, second),
-                ResKind::AddressRange => Err(Error::MissingRequiredResourceKind { msg: error }),
             },
             (Some(fk), Some(_sk)) => match fk {
                 ResKind::CNodeSlots => Header::from_known_kinds_resource_pair(first, second),
                 ResKind::Untyped => Header::from_known_kinds_resource_pair(second, first),
-                ResKind::AddressRange => Err(Error::MissingRequiredResourceKind { msg: error }),
             },
         }
     }
@@ -526,72 +440,6 @@ impl Header {
                 resource_id: untypeds.resource_id.clone(),
                 request_id: untypeds.request_id.clone(),
             }),
-            address_ranges: None,
-        })
-    }
-    fn from_known_triple(
-        cnode_slots: &IntermediateResource,
-        untypeds: &IntermediateResource,
-        addrs: &IntermediateResource,
-    ) -> Result<Header, Error> {
-        // Check for duplicates
-        match (
-            cnode_slots.resource_id.to_string(),
-            untypeds.resource_id.to_string(),
-            addrs.resource_id.to_string(),
-        ) {
-            (ref a, ref b, ref c) if a == b || a == c => {
-                return Err(Error::AmbiguousResourceId { id: a.to_string() })
-            }
-            (_, ref b, ref c) if b == c => {
-                return Err(Error::AmbiguousResourceId { id: b.to_string() })
-            }
-            _ => (),
-        };
-        match (
-            cnode_slots.request_id.to_string(),
-            untypeds.request_id.to_string(),
-            addrs.request_id.to_string(),
-        ) {
-            (ref a, ref b, ref c) if a == b || a == c => {
-                return Err(Error::AmbiguousRequestId { id: a.to_string() })
-            }
-            (_, ref b, ref c) if b == c => {
-                return Err(Error::AmbiguousRequestId { id: b.to_string() })
-            }
-            _ => (),
-        };
-
-        // Confirm assumptions about resource kinds
-        if !(cnode_slots.kind == None || cnode_slots.kind == Some(ResKind::CNodeSlots)) {
-            return Err(Error::MissingRequiredResourceKind {
-                msg: RESOURCE_TYPE_HINT_CSLOTS.to_string(),
-            });
-        };
-        if !(untypeds.kind == None || untypeds.kind == Some(ResKind::Untyped)) {
-            return Err(Error::MissingRequiredResourceKind {
-                msg: RESOURCE_TYPE_HINT_UNTYPED.to_string(),
-            });
-        };
-        if !(addrs.kind == None || addrs.kind == Some(ResKind::AddressRange)) {
-            return Err(Error::MissingRequiredResourceKind {
-                msg: RESOURCE_TYPE_HINT_ADDR.to_string(),
-            });
-        };
-
-        Ok(Header {
-            cnode_slots: ResourceRequest {
-                resource_id: cnode_slots.resource_id.clone(),
-                request_id: cnode_slots.request_id.clone(),
-            },
-            untypeds: Some(ResourceRequest {
-                resource_id: untypeds.resource_id.clone(),
-                request_id: untypeds.request_id.clone(),
-            }),
-            address_ranges: Some(ResourceRequest {
-                resource_id: addrs.resource_id.clone(),
-                request_id: addrs.request_id.clone(),
-            }),
         })
     }
 }
@@ -605,22 +453,12 @@ struct ResourceRequest {
 struct IdTracker {
     cslot_request_id: Ident,
     untyped_request_id: Option<Ident>,
-    address_request_id: Option<Ident>,
     planned_allocs: Vec<PlannedAlloc>,
 }
 
 enum PlannedAlloc {
     CSlot(Ident),
-    Untyped {
-        ut: Ident,
-        cslot: Ident,
-    },
-    AddressRange {
-        addr: Ident,
-        cslot_for_addr: Ident,
-        ut: Ident,
-        cslot_for_ut: Ident,
-    },
+    Untyped { ut: Ident, cslot: Ident },
 }
 
 impl From<&Header> for IdTracker {
@@ -630,23 +468,15 @@ impl From<&Header> for IdTracker {
             h.untypeds
                 .as_ref()
                 .map(|rr| Ident::new(&rr.request_id.to_string(), Span::call_site())),
-            h.address_ranges
-                .as_ref()
-                .map(|rr| Ident::new(&rr.request_id.to_string(), Span::call_site())),
         )
     }
 }
 
 impl IdTracker {
-    fn new(
-        cslot_request_id: Ident,
-        untyped_request_id: Option<Ident>,
-        address_request_id: Option<Ident>,
-    ) -> Self {
+    fn new(cslot_request_id: Ident, untyped_request_id: Option<Ident>) -> Self {
         IdTracker {
             cslot_request_id,
             untyped_request_id,
-            address_request_id,
             planned_allocs: vec![],
         }
     }
@@ -715,23 +545,6 @@ impl Fold for IdTracker {
                 return fresh_id;
             }
         }
-
-        if let Some(addr_request_id) = &self.address_request_id {
-            if node == *addr_request_id {
-                let fresh_id = make_ident(Uuid::new_v4(), "address_range");
-                self.planned_allocs.push(PlannedAlloc::AddressRange {
-                    addr: fresh_id.clone(),
-                    cslot_for_addr: make_ident(Uuid::new_v4(), "cslots_for_address_range"),
-                    ut: make_ident(Uuid::new_v4(), "untyped_for_address_range"),
-                    cslot_for_ut: make_ident(
-                        Uuid::new_v4(),
-                        "cslots_for_untyped_for_address_range",
-                    ),
-                });
-                return fresh_id;
-            }
-        }
-
         node
     }
 }

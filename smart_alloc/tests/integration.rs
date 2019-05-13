@@ -41,31 +41,6 @@ impl UntypedBuddy {
     }
 }
 
-struct AddressBuddy {
-    capacity: usize,
-}
-
-impl AddressBuddy {
-    fn alloc(
-        self,
-        cslots: CNodeSlots,
-        untypeds: UntypedBuddy,
-    ) -> Result<(AddressBuddy, AddressBuddy), ()> {
-        assert!(cslots.capacity > 0);
-        assert!(untypeds.capacity > 0);
-        Ok((
-            AddressBuddy { capacity: 1 },
-            AddressBuddy {
-                capacity: self.capacity - 1,
-            },
-        ))
-    }
-
-    fn new(capacity: usize) -> Self {
-        AddressBuddy { capacity }
-    }
-}
-
 #[test]
 fn single_resource() -> Result<(), ()> {
     let cslots = CNodeSlots::new(10);
@@ -202,108 +177,6 @@ fn two_resources_second_kinded_unordered() -> Result<(), ()> {
 }
 
 #[test]
-fn three_resources_kinded() -> Result<(), ()> {
-    let cslots = CNodeSlots::new(5);
-    let untypeds = UntypedBuddy::new(5);
-    let addresses = AddressBuddy::new(5);
-
-    smart_alloc!(|cs: cslots<CNodeSlots>,
-                  ut: untypeds<UntypedBuddy>,
-                  ad: addresses<AddressBuddy>| {
-        cs;
-        let gamma = consume_slot(cs);
-        let eta = consume_untyped(ut);
-        let alpha = 3;
-        let delta = consume_address(ad);
-    });
-
-    assert_eq!(3, alpha);
-    assert_eq!(1, gamma);
-    assert_eq!(0, cslots.capacity);
-    assert_eq!(3, untypeds.capacity);
-    assert_eq!(1, eta);
-    assert_eq!(1, delta);
-    assert_eq!(4, addresses.capacity);
-    Ok(())
-}
-
-#[test]
-fn three_resources_kinded_unordered() -> Result<(), ()> {
-    let cslots = CNodeSlots::new(5);
-    let untypeds = UntypedBuddy::new(5);
-    let addresses = AddressBuddy::new(5);
-
-    smart_alloc!(|ad: addresses<AddressBuddy>,
-                  cs: cslots<CNodeSlots>,
-                  ut: untypeds<UntypedBuddy>| {
-        cs;
-        let gamma = consume_slot(cs);
-        let eta = consume_untyped(ut);
-        let alpha = 3;
-        let delta = consume_address(ad);
-    });
-
-    assert_eq!(3, alpha);
-    assert_eq!(1, gamma);
-    assert_eq!(0, cslots.capacity);
-    assert_eq!(3, untypeds.capacity);
-    assert_eq!(1, eta);
-    assert_eq!(1, delta);
-    assert_eq!(4, addresses.capacity);
-    Ok(())
-}
-
-#[test]
-fn three_resources_custom_request_ids_kinded_unordered() -> Result<(), ()> {
-    let cslots = CNodeSlots::new(5);
-    let untypeds = UntypedBuddy::new(5);
-    let addresses = AddressBuddy::new(5);
-
-    smart_alloc!(|vaddr: addresses<AddressBuddy>,
-                  slots: cslots<CNodeSlots>,
-                  uuu: untypeds<UntypedBuddy>| {
-        slots;
-        let gamma = consume_slot(slots);
-        let eta = consume_untyped(uuu);
-        let alpha = 3;
-        let delta = consume_address(vaddr);
-    });
-
-    assert_eq!(3, alpha);
-    assert_eq!(1, gamma);
-    assert_eq!(0, cslots.capacity);
-    assert_eq!(3, untypeds.capacity);
-    assert_eq!(1, eta);
-    assert_eq!(1, delta);
-    assert_eq!(4, addresses.capacity);
-    Ok(())
-}
-
-#[test]
-fn three_resources_unkinded() -> Result<(), ()> {
-    let cslots = CNodeSlots::new(5);
-    let untypeds = UntypedBuddy::new(5);
-    let addresses = AddressBuddy::new(5);
-
-    smart_alloc!(|slots: cslots, ut: untypeds, ad: addresses| {
-        slots;
-        let gamma = consume_slot(slots);
-        let eta = consume_untyped(ut);
-        let alpha = 3;
-        let delta = consume_address(ad);
-    });
-
-    assert_eq!(3, alpha);
-    assert_eq!(1, gamma);
-    assert_eq!(0, cslots.capacity);
-    assert_eq!(3, untypeds.capacity);
-    assert_eq!(1, eta);
-    assert_eq!(1, delta);
-    assert_eq!(4, addresses.capacity);
-    Ok(())
-}
-
-#[test]
 fn single_resources_nested() -> Result<(), ()> {
     let cslots = CNodeSlots::new(10);
 
@@ -378,8 +251,4 @@ fn consume_slot(cslots: CNodeSlots) -> usize {
 
 fn consume_untyped(ut: UntypedBuddy) -> usize {
     ut.capacity
-}
-
-fn consume_address(ad: AddressBuddy) -> usize {
-    ad.capacity
 }
