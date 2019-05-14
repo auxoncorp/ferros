@@ -26,9 +26,9 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             .expect("initial alloc failure"),
     );
 
-    smart_alloc!(|slots from local_slots, ut from uts| {
-        let (mut local_vspace_scratch, root_page_directory) = VSpaceScratchSlice::from_parts(
-            slots, ut, root_page_directory)?;
+    smart_alloc!(|slots: local_slots, ut: uts| {
+        let (mut local_vspace_scratch, root_page_directory) =
+            VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
 
         let (child_cnode, child_slots) = retype_cnode::<U20>(ut, slots)?;
 
@@ -41,13 +41,20 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (child_asid, asid_pool) = asid_pool.alloc();
         let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &cnode)?;
 
-        smart_alloc!(|slots_c from child_slots| {
-            let (cnode_for_child, slots_for_child) = child_cnode.generate_self_reference(&cnode, slots_c)?;
+        smart_alloc!(|slots_c: child_slots| {
+            let (cnode_for_child, slots_for_child) =
+                child_cnode.generate_self_reference(&cnode, slots_c)?;
             let untyped_for_child = untyped_for_child.move_to_slot(&cnode, slots_c)?;
             let asid_pool_for_child = asid_pool_for_child.move_to_slot(&cnode, slots_c)?;
             let user_image_for_child = user_image.copy(&cnode, slots_c)?;
-            let (vspace_scratch_for_child, child_vspace) = child_vspace.create_child_scratch(untyped_for_scratch, slots_for_scratch, slots_c, &cnode)?;
-            let thread_priority_authority_for_child = root_tcb.as_ref().copy(&cnode, slots_c, CapRights::RWG)?;
+            let (vspace_scratch_for_child, child_vspace) = child_vspace.create_child_scratch(
+                untyped_for_scratch,
+                slots_for_scratch,
+                slots_c,
+                &cnode,
+            )?;
+            let thread_priority_authority_for_child =
+                root_tcb.as_ref().copy(&cnode, slots_c, CapRights::RWG)?;
         });
 
         let params = ChildParams {
@@ -57,7 +64,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             asid_pool: asid_pool_for_child,
             user_image: user_image_for_child,
             vspace_scratch: vspace_scratch_for_child,
-            thread_priority_authority: thread_priority_authority_for_child
+            thread_priority_authority: thread_priority_authority_for_child,
         };
 
         let (child_process, _) = child_vspace.prepare_thread(
@@ -106,20 +113,14 @@ fn child_run(params: ChildParams<role::Local>) -> Result<(), TopLevelError> {
     } = params;
     let uts = alloc::ut_buddy(untyped);
 
-    smart_alloc!(|slots from cnode_slots, ut from uts| {
-
+    smart_alloc!(|slots: cnode_slots, ut: uts| {
         let (child_cnode, child_slots) = retype_cnode::<U8>(ut, slots)?;
         let params = GrandkidParams { value: 42 };
 
         let (child_asid, asid_pool) = asid_pool.alloc();
         let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &cnode)?;
-        let (child_process, _) = child_vspace.prepare_thread(
-            grandkid_main,
-            params,
-            ut,
-            slots,
-            &mut vspace_scratch,
-        )?;
+        let (child_process, _) =
+            child_vspace.prepare_thread(grandkid_main, params, ut, slots, &mut vspace_scratch)?;
     });
     child_process.start(child_cnode, None, &thread_priority_authority, 255)?;
 

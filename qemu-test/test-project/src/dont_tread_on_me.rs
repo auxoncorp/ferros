@@ -29,9 +29,9 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             .expect("initial alloc failure"),
     );
 
-    smart_alloc!(|slots from local_slots, ut from uts| {
-        let (mut local_vspace_scratch, root_page_directory) = VSpaceScratchSlice::from_parts(
-            slots, ut, root_page_directory)?;
+    smart_alloc!(|slots: local_slots, ut: uts| {
+        let (mut local_vspace_scratch, root_page_directory) =
+            VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
 
         let (proc1_cspace, proc1_slots) = retype_cnode::<U12>(ut, slots)?;
         let (proc2_cspace, proc2_slots) = retype_cnode::<U12>(ut, slots)?;
@@ -42,8 +42,12 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
         let proc1_vspace = VSpace::new(ut, slots, proc1_asid, &user_image, &root_cnode)?;
         let proc2_vspace = VSpace::new_with_writable_user_image(
-            ut, slots, proc2_asid, &user_image, &root_cnode,
-            (&mut local_vspace_scratch, ut)
+            ut,
+            slots,
+            proc2_asid,
+            &user_image,
+            &root_cnode,
+            (&mut local_vspace_scratch, ut),
         )?;
 
         let (slots1, _) = proc1_slots.alloc();

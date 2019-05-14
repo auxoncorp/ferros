@@ -24,9 +24,9 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             .expect("initial alloc failure"),
     );
 
-    smart_alloc!(|slots from local_slots, ut from uts| {
-        let (mut local_vspace_scratch, root_page_directory) = VSpaceScratchSlice::from_parts(
-            slots, ut, root_page_directory)?;
+    smart_alloc!(|slots: local_slots, ut: uts| {
+        let (mut local_vspace_scratch, root_page_directory) =
+            VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
 
         let (child_cnode, child_slots) = retype_cnode::<U12>(ut, slots)?;
         let params = ProcParams { value: 42 };
@@ -35,13 +35,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (child_asid, asid_pool) = asid_pool.alloc();
         let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &root_cnode)?;
 
-        let (child_process, _) = child_vspace.prepare_thread(
-            proc_main,
-            params,
-            ut,
-            slots,
-            &mut local_vspace_scratch,
-        )?;
+        let (child_process, _) =
+            child_vspace.prepare_thread(proc_main, params, ut, slots, &mut local_vspace_scratch)?;
     });
 
     child_process.start(child_cnode, None, root_tcb.as_ref(), 255)?;

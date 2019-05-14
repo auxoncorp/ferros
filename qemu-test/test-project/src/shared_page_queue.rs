@@ -23,9 +23,9 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             .expect("initial alloc failure"),
     );
 
-    smart_alloc!(|slots from local_slots, ut from uts| {
-        let (mut local_vspace_scratch, root_page_directory) = VSpaceScratchSlice::from_parts(
-            slots, ut, root_page_directory)?;
+    smart_alloc!(|slots: local_slots, ut: uts| {
+        let (mut local_vspace_scratch, root_page_directory) =
+            VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
 
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (child_a_asid, asid_pool) = asid_pool.alloc();
@@ -47,40 +47,29 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         local_slots,
         uts,
     ) = {
-        smart_alloc!(|slots from local_slots, ut from uts| {
+        smart_alloc!(|slots: local_slots, ut: uts| {
             let (producer_cnode, producer_slots) = retype_cnode::<U12>(ut, slots)?;
             let (consumer_cnode, consumer_slots) = retype_cnode::<U12>(ut, slots)?;
 
             let (slots_c, consumer_slots) = consumer_slots.alloc();
-            let (
-                consumer,
-                _consumer_token,
-                producer_setup,
-                _waker_setup,
-                consumer_vspace,
-            ) = Consumer1::new(
-                ut,
-                ut,
-                child_a_vspace,
-                &mut local_vspace_scratch,
-                &root_cnode,
-                slots,
-                slots_c
-            )?;
+            let (consumer, _consumer_token, producer_setup, _waker_setup, consumer_vspace) =
+                Consumer1::new(
+                    ut,
+                    ut,
+                    child_a_vspace,
+                    &mut local_vspace_scratch,
+                    &root_cnode,
+                    slots,
+                    slots_c,
+                )?;
 
             let consumer_params = ConsumerParams::<role::Child> { consumer };
 
             let (slots_p, _producer_slots) = producer_slots.alloc();
-            let (producer, producer_vspace) = Producer::new(
-                &producer_setup,
-                slots_p,
-                child_b_vspace,
-                &root_cnode,
-                slots,
-            )?;
+            let (producer, producer_vspace) =
+                Producer::new(&producer_setup, slots_p, child_b_vspace, &root_cnode, slots)?;
 
             let producer_params = ProducerParams::<role::Child> { producer };
-
         });
 
         (
@@ -97,7 +86,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         )
     };
 
-    smart_alloc!(|slots from local_slots, ut from uts| {
+    smart_alloc!(|slots: local_slots, ut: uts| {
         let (child_a_process, _) = child_a_vspace.prepare_thread(
             child_proc_a,
             child_params_a,

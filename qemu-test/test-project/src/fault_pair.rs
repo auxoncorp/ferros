@@ -24,18 +24,20 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             .expect("initial alloc failure"),
     );
 
-    smart_alloc!(|slots from local_slots, ut from uts| {
-        let (mut local_vspace_scratch, root_page_directory) = VSpaceScratchSlice::from_parts(
-            slots, ut, root_page_directory)?;
+    smart_alloc!(|slots: local_slots, ut: uts| {
+        let (mut local_vspace_scratch, root_page_directory) =
+            VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
 
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
 
         let (mischief_maker_asid, asid_pool) = asid_pool.alloc();
-        let mischief_maker_vspace = VSpace::new(ut, slots, mischief_maker_asid, &user_image, &root_cnode)?;
+        let mischief_maker_vspace =
+            VSpace::new(ut, slots, mischief_maker_asid, &user_image, &root_cnode)?;
         let (mischief_maker_cnode, mischief_maker_slots) = retype_cnode::<U12>(ut, slots)?;
 
         let (fault_handler_asid, asid_pool) = asid_pool.alloc();
-        let fault_handler_vspace = VSpace::new(ut, slots, fault_handler_asid, &user_image, &root_cnode)?;
+        let fault_handler_vspace =
+            VSpace::new(ut, slots, fault_handler_asid, &user_image, &root_cnode)?;
         let (fault_handler_cnode, fault_handler_slots) = retype_cnode::<U12>(ut, slots)?;
 
         let (slots_source, _mischief_maker_slots) = mischief_maker_slots.alloc();
@@ -61,7 +63,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             255,
         )?;
 
-
         let (fault_handler_process, _) = fault_handler_vspace.prepare_thread(
             fault_handler_proc,
             fault_handler_params,
@@ -70,12 +71,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             &mut local_vspace_scratch,
         )?;
 
-        fault_handler_process.start(
-            fault_handler_cnode,
-            None,
-            root_tcb.as_ref(),
-            255
-        )?;
+        fault_handler_process.start(fault_handler_cnode, None, root_tcb.as_ref(), 255)?;
     });
 
     Ok(())
