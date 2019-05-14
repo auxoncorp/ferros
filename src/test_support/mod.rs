@@ -11,17 +11,54 @@ pub enum TestOutcome {
     Failure,
 }
 
-type MaxTestUntypedSize = U27;
-type MaxTestCNodeSlots = Pow<U15>;
-type RunTest = Fn(
-    &LocalCap<LocalCNode>,
+pub type MaxTestUntypedSize = U27;
+pub type MaxTestCNodeSlots = Pow<U15>;
+pub type MaxTestASIDPoolSize = super::arch::asid::PoolSize;
+pub type RunTest = Fn(
     LocalCNodeSlots<MaxTestCNodeSlots>,
-    Untyped<MaxTestUntypedSize>,
-    ASIDPool<super::arch::asid::PoolSize>,
-    UserImage<role::Local>,
-    VSpaceScratchSlice<role::Local>,
-    LocalCap<ThreadPriorityAuthority>,
-) -> TestOutcome;
+    LocalCap<Untyped<MaxTestUntypedSize>>,
+    LocalCap<ASIDPool<MaxTestASIDPoolSize>>,
+    &mut VSpaceScratchSlice<role::Local>,
+    &LocalCap<LocalCNode>,
+    &LocalCap<ThreadPriorityAuthority>,
+    &UserImage<role::Local>,
+) -> (&'static str, TestOutcome);
+
+pub trait RunnableTest {
+    fn run_test(
+        &self,
+        slots: LocalCNodeSlots<MaxTestCNodeSlots>,
+        untyped: LocalCap<Untyped<MaxTestUntypedSize>>,
+        asid_pool: LocalCap<ASIDPool<MaxTestASIDPoolSize>>,
+        scratch: &mut VSpaceScratchSlice<role::Local>,
+        local_cnode: &LocalCap<LocalCNode>,
+        thread_authority: &LocalCap<ThreadPriorityAuthority>,
+        user_image: &UserImage<role::Local>,
+    ) -> (&'static str, TestOutcome);
+}
+
+impl RunnableTest for RunTest {
+    fn run_test(
+        &self,
+        slots: Cap<CNodeSlotsData<MaxTestCNodeSlots, role::Local>, role::Local>,
+        untyped: Cap<Untyped<MaxTestUntypedSize, memory_kind::General>, role::Local>,
+        asid_pool: Cap<ASIDPool<MaxTestASIDPoolSize>, role::Local>,
+        scratch: &mut VSpaceScratchSlice<role::Local>,
+        local_cnode: &Cap<CNode<role::Local>, role::Local>,
+        thread_authority: &Cap<ThreadPriorityAuthority, role::Local>,
+        user_image: &UserImage<role::Local>,
+    ) -> (&'static str, TestOutcome) {
+        self(
+            slots,
+            untyped,
+            asid_pool,
+            scratch,
+            local_cnode,
+            thread_authority,
+            user_image,
+        )
+    }
+}
 
 /// Gain temporary access to some slots and memory for use in a function context.
 /// When the passed function call is complete, all capabilities
