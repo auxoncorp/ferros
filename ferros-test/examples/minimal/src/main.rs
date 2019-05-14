@@ -6,10 +6,12 @@ use core::panic::PanicInfo;
 use ferros::alloc::micro_alloc::Error as AllocError;
 use ferros::test_support::{RunTest, RunnableTest, TestOutcome};
 use ferros::userland::{
-    FaultManagementError, IPCError, IRQError, MultiConsumerError, SeL4Error, VSpaceError,
+    CNodeSlots, FaultManagementError, IPCError, IRQError, LocalCNode, LocalCNodeSlots, LocalCap,
+    MultiConsumerError, SeL4Error, Untyped, VSpaceError,
 };
 use ferros_test::ferros_test;
 use selfe_sys::*;
+use typenum::*;
 
 fn yield_forever() {
     unsafe {
@@ -19,6 +21,36 @@ fn yield_forever() {
     }
 }
 
+#[ferros_test]
+fn zero_parameters() {}
+
+#[ferros_test]
+fn zero_parameters_returns_testoutcome() -> TestOutcome {}
+
+#[ferros_test]
+fn zero_parameters_returns_result() -> Result<(), ()> {}
+
+#[ferros_test]
+fn zero_parameters_returns_unit() -> () {}
+
+#[ferros_test]
+fn localcap_untyped_parameter(slots: LocalCap<Untyped<U5>>) {}
+
+#[ferros_test]
+fn localcnodeslots_parameter(slots: LocalCNodeSlots<U5>) {}
+
+#[ferros_test]
+fn localcap_asidpool_parameter(slots: LocalCap<ASIDPool<U1024>>) {}
+
+#[ferros_test]
+fn localcap_localcnode_parameter(slots: LocalCap<LocalCNode>) {}
+
+#[ferros_test]
+fn localcap_threadpriorityauthority_parameter(slots: LocalCap<ThreadPriorityAuthority>) {}
+
+#[ferros_test]
+fn userimage_parameter(slots: UserImage<ferros::userland::role::Local>) {}
+
 fn main() {
     let bootinfo = unsafe { &*sel4_start::BOOTINFO };
     run(bootinfo);
@@ -26,10 +58,16 @@ fn main() {
 
 fn static_assertion_checks() {
     let _: &RunTest = &zero_parameters;
+    let _: &RunTest = &zero_parameters_returns_result;
+    let _: &RunTest = &zero_parameters_returns_testoutcome;
+    let _: &RunTest = &zero_parameters_returns_unit;
+    let _: &RunTest = &localcap_asidpool_parameter;
+    let _: &RunTest = &localcap_localcnode_parameter;
+    let _: &RunTest = &localcap_threadpriorityauthority_parameter;
+    let _: &RunTest = &localcap_untyped_parameter;
+    let _: &RunTest = &localcnodeslots_parameter;
+    let _: &RunTest = &userimage_parameter;
 }
-
-#[ferros_test]
-fn zero_parameters() {}
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {

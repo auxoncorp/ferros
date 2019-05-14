@@ -1,18 +1,26 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
-use quote::{quote, TokenStreamExt};
+use proc_macro2::{Span, TokenStream as TokenStream2};
+use quote::quote;
 use std::fmt::Display;
-use syn::{parse_quote, FnDecl, Ident, ItemFn};
+use syn::spanned::Spanned;
+use syn::{parse_quote, Error as SynError, FnDecl, Ident, ItemFn, ReturnType, Type};
+
+mod resource;
 
 #[proc_macro_attribute]
 pub fn ferros_test(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(item as ItemFn);
-    let test_context = parse_test_context(attr.into()).unwrap_or_else(|e| panic!("{}", e));
-    let transformed =
-        transform_into_runnable_test(input, test_context).unwrap_or_else(|e| panic!("{}", e));
+    let test_context = match parse_test_context(attr.into()) {
+        Ok(c) => c,
+        Err(e) => return e.to_compile_error().into(),
+    };
+    let test = match transform_into_runnable_test(input, test_context) {
+        Ok(t) => t,
+        Err(e) => return e.to_compile_error().into(),
+    };
     let output = quote! {
-        #transformed
+        #test
     };
     output.into()
 }
@@ -22,7 +30,8 @@ fn transform_into_runnable_test(
     maybe_test_context: Option<TestContext>,
 ) -> Result<ItemFn, Error> {
     let test_context = maybe_test_context.unwrap_or_else(|| TestContext::Process);
-    // TODO - parse param-based resource requests
+    let resource_params = resource::extract_expected_resources(&input.decl.inputs)?;
+    let user_fn_output_kind = UserTestFnOutput::interpret(&input.decl.output)?;
     // TODO - map original fn output to TestOutcome -> if original output is Default (unit), must run in a child thread/process
     let original_fn_name_literal = proc_macro2::Literal::string(&input.ident.to_string());
     let transformed_block = Box::new(parse_quote! { {
@@ -96,6 +105,7 @@ fn parse_test_context(attr: TokenStream2) -> Result<Option<TestContext>, Error> 
         syn::parse_macro_input::parse(attr.clone().into()).map_err(|_e| {
             Error::InvalidTestContext {
                 found: attr.to_string(),
+                span: attr.span(),
             }
         })?;
     if let Some(ident) = maybe_ident {
@@ -104,7 +114,10 @@ fn parse_test_context(attr: TokenStream2) -> Result<Option<TestContext>, Error> 
             "local" => Ok(Some(TestContext::Local)),
             "process" => Ok(Some(TestContext::Process)),
             "thread" => Ok(Some(TestContext::Thread)),
-            _ => Err(Error::InvalidTestContext { found }),
+            _ => Err(Error::InvalidTestContext {
+                found,
+                span: ident.span(),
+            }),
         }
     } else {
         Ok(None)
@@ -120,26 +133,88 @@ enum TestContext {
     /// Runs in a distinct thread in the test harness' virtual address space (often the root task process)
     Thread,
 }
+#[derive(Debug, Clone, Copy)]
+enum UserTestFnOutput {
+    Unit,
+    TestOutcome,
+    Result,
+}
+
+impl UserTestFnOutput {
+    fn interpret(return_type: &ReturnType) -> Result<Self, Error> {
+        match return_type {
+            ReturnType::Default => Ok(UserTestFnOutput::Unit),
+            ReturnType::Type(_, box_ty) => {
+                match box_ty.as_ref() {
+                    Type::Tuple(tuple) => {
+                        // allow the explicit unit tuple, `()` case
+                        if tuple.elems.is_empty() {
+                            Ok(UserTestFnOutput::Unit)
+                        } else {
+                            Err(Error::InvalidReturnType { span: tuple.span() })
+                        }
+                    }
+                    Type::Path(type_path) => {
+                        let segment = type_path
+                            .path
+                            .segments
+                            .last()
+                            .ok_or_else(|| Error::InvalidReturnType {
+                                span: type_path.span(),
+                            })?
+                            .into_value();
+                        match segment.ident.to_string().as_ref() {
+                            "Result" => Ok(UserTestFnOutput::Result),
+                            "TestOutcome" => Ok(UserTestFnOutput::TestOutcome),
+                            _ => Err(Error::InvalidReturnType {
+                                span: type_path.span(),
+                            }),
+                        }
+                    }
+                    _ => Err(Error::InvalidReturnType {
+                        span: return_type.span(),
+                    }),
+                }
+            }
+        }
+    }
+}
 
 #[derive(Debug)]
-enum Error {
-    UnknownParameterType { fn_name: String, param: String },
-    InvalidTestContext { found: String },
+pub(crate) enum Error {
+    InvalidArgumentType { msg: String, span: Span },
+    InvalidTestContext { found: String, span: Span },
+    InvalidReturnType { span: Span },
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
         let s = match self {
-            Error::UnknownParameterType { fn_name, param } => format!(
-                "{} contained a parameter {} with an unrecognized type",
-                fn_name, param
-            ),
-            Error::InvalidTestContext { found } => format!(
+            Error::InvalidArgumentType { msg, .. } => msg.clone(),
+            Error::InvalidTestContext { found, .. } => format!(
                 "Invalid test context found: {}. Select one of local or process",
                 found
             ),
+            Error::InvalidReturnType { .. } => {
+                "Invalid return type, prefer returning either TestOutcome or a Result<T, E> type"
+                    .to_string()
+            }
         };
         f.write_str(&s)
+    }
+}
+
+impl Error {
+    fn span(&self) -> Span {
+        match self {
+            Error::InvalidArgumentType { span, .. } => *span,
+            Error::InvalidTestContext { span, .. } => *span,
+            Error::InvalidReturnType { span, .. } => *span,
+        }
+    }
+
+    fn to_compile_error(&self) -> TokenStream2 {
+        SynError::new(self.span(), self).to_compile_error()
     }
 }
 
