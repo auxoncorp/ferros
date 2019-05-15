@@ -31,17 +31,18 @@ impl Model {
         let execution_context = if let Some(ident) = context_attr {
             TestExecutionContext::parse(ident)?
         } else {
-            // Default to execution in a child process
-            TestExecutionContext::Process
+            // TODO - switch default to execution in a child process
+            TestExecutionContext::Local
         };
         let fn_under_test_output = UserTestFnOutput::parse(&fn_under_test.decl.output)?;
-        if fn_under_test_output == UserTestFnOutput::Unit
-            && execution_context == TestExecutionContext::Local
-        {
-            return Err(ParseError::TestsReturningUnitMustRunInAChildContext {
-                span: fn_under_test.decl.output.span(),
-            });
-        }
+        // TODO - URGENT- restore the following check once process-based test execution is supported!
+        //if fn_under_test_output == UserTestFnOutput::Unit
+        //    && execution_context == TestExecutionContext::Local
+        //{
+        //    return Err(ParseError::TestsReturningUnitMustRunInAChildContext {
+        //        span: fn_under_test.decl.output.span(),
+        //    });
+        //}
         let resources = extract_expected_resources(&fn_under_test.decl.inputs)?;
         Ok(Model {
             execution_context,
@@ -92,9 +93,21 @@ impl Param {
             }
         };
         let kind = match &ac.ty {
-            Type::Path(type_path) => ParamKind::parse(type_path)?,
-            // TODO - optional convenience to support passing references as well as fully owned instances
-            // Type::Reference(type_reference) => unimplemented!(),
+            Type::Path(type_path) => ParamKind::parse(type_path, ArgKind::Owned)?,
+            Type::Reference(type_ref) => {
+                let arg_kind = if type_ref.mutability.is_some() {
+                    ArgKind::RefMut
+                } else {
+                    ArgKind::Ref
+                };
+                match type_ref.elem.as_ref() {
+                    Type::Path(type_path) => ParamKind::parse(type_path, arg_kind)?,
+                    _ => return Err(ParseError::InvalidArgumentType {
+                        msg: "test function arguments passed by reference must be of explicit format `identifier: &Test`".to_string(),
+                        span: arg.span()
+                    })
+                }
+            }
             _ => {
                 return Err(ParseError::InvalidArgumentType {
                     msg: SIMPLE_ARGUMENTS_ONLY.to_string(),
@@ -110,7 +123,7 @@ impl Param {
 }
 
 impl ParamKind {
-    fn parse(type_path: &TypePath) -> Result<ParamKind, ParseError> {
+    fn parse(type_path: &TypePath, arg_kind: ArgKind) -> Result<ParamKind, ParseError> {
         let segment = type_path
             .path
             .segments
@@ -124,16 +137,29 @@ impl ParamKind {
             "LocalCNodeSlots" => ParamKind::CNodeSlots {
                 count: extract_first_argument_as_unsigned(&segment.arguments)?,
             },
-            "LocalCap" => parse_localcap_param_kind(&segment.arguments)?,
+            "LocalCap" => parse_localcap_param_kind(&segment.arguments, arg_kind)?,
             "UserImage" => {
                 let seg_name = extract_first_arg_type_path_last_segment(&segment.arguments)?
                     .ident
                     .to_string();
-                if &seg_name == "Local" {
+                if &seg_name == "Local" && arg_kind == ArgKind::Ref {
                     ParamKind::UserImage
                 } else {
                     return Err(ParseError::InvalidArgumentType {
-                        msg: "The only supported test function variant of UserImage is UserImage<ferros::userland::role::Local>".to_string(),
+                        msg: "The only supported test function argument for UserImage is &UserImage<ferros::userland::role::Local>".to_string(),
+                        span: segment.span(),
+                    });
+                }
+            }
+            "VSpaceScratchSlice" => {
+                let seg_name = extract_first_arg_type_path_last_segment(&segment.arguments)?
+                    .ident
+                    .to_string();
+                if &seg_name == "Local" && arg_kind == ArgKind::RefMut {
+                    ParamKind::VSpaceScratch
+                } else {
+                    return Err(ParseError::InvalidArgumentType {
+                        msg: "The only supported test function argument for VSpaceScratchSlice is &mut VSpaceScratchSlice<ferros::userland::role::Local>".to_string(),
                         span: segment.span(),
                     });
                 }
@@ -158,7 +184,17 @@ impl ParamKind {
     }
 }
 
-fn parse_localcap_param_kind(arguments: &PathArguments) -> Result<ParamKind, ParseError> {
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ArgKind {
+    Owned,
+    Ref,
+    RefMut,
+}
+
+fn parse_localcap_param_kind(
+    arguments: &PathArguments,
+    arg_kind: ArgKind,
+) -> Result<ParamKind, ParseError> {
     let segment = extract_first_arg_type_path_last_segment(arguments)?;
     let type_name = segment.ident.to_string();
     match type_name.as_ref() {
@@ -168,8 +204,22 @@ fn parse_localcap_param_kind(arguments: &PathArguments) -> Result<ParamKind, Par
         "ASIDPool" => Ok(ParamKind::ASIDPool {
             count: extract_first_argument_as_unsigned(&segment.arguments)?,
         }),
-        "ThreadPriorityAuthority" => Ok(ParamKind::ThreadPriorityAuthority),
-        "LocalCNode" => Ok(ParamKind::CNode),
+        "ThreadPriorityAuthority" => {
+            if arg_kind == ArgKind::Ref {
+                Ok(ParamKind::ThreadPriorityAuthority)
+            } else {
+                Err(ParseError::InvalidArgumentType {msg: format!("{} is only available as a type parameter of &LocalCap<>, not an owned LocalCap<>", &type_name),
+            span: segment.span() })
+            }
+        }
+        "LocalCNode" => {
+            if arg_kind == ArgKind::Ref {
+                Ok(ParamKind::CNode)
+            } else {
+                Err(ParseError::InvalidArgumentType {msg: format!("{} is only available as a type parameter of &LocalCap<>, not an owned LocalCap<>", &type_name),
+                span: segment.span() })
+            }
+        }
         // TODO - expand the set of convenience aliases
         // "CNode" => unimplemented!(),
         // "CNodeSlotsData" => unimplemented!(),
@@ -178,7 +228,7 @@ fn parse_localcap_param_kind(arguments: &PathArguments) -> Result<ParamKind, Par
                 "Found an unsupported LocalCap type parameter, {}",
                 &type_name
             ),
-            span: arguments.span(),
+            span: segment.span(),
         }),
     }
 }

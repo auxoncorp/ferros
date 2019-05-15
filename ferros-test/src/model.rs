@@ -41,6 +41,7 @@ pub(crate) enum ParamKind {
     CNodeSlots { count: usize },
     Untyped { bits: usize },
     ASIDPool { count: usize },
+    VSpaceScratch,
     CNode,
     ThreadPriorityAuthority,
     UserImage,

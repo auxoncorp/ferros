@@ -1,0 +1,9 @@
+[package]
+name = "mock"
+version = "0.1.0"
+authors = ["Zachary Pierce <zack@auxon.io>"]
+edition = "2018"
+
+[dependencies]
+ferros-test = { path = "../.." }
+typenum = { git = "ssh://github.com/auxoncorp/typenum.git" }
