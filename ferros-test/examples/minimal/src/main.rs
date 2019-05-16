@@ -1,15 +1,16 @@
 #![no_std]
 #![recursion_limit = "128"]
-//#![feature(proc_macro_hygiene)]
+
+#[macro_use]
+extern crate ferros;
 
 use core::panic::PanicInfo;
-use ferros::alloc::micro_alloc::Error as AllocError;
-use ferros::test_support::{RunTest, RunnableTest, TestOutcome};
+use ferros::test_support::{execute_tests, Resources, RunTest, TestOutcome, TestSetupError};
 use ferros::userland::{
-    ASIDPool, CNodeSlots, FaultManagementError, IPCError, IRQError, LocalCNode, LocalCNodeSlots,
-    LocalCap, MultiConsumerError, SeL4Error, ThreadPriorityAuthority, Untyped, UserImage,
-    VSpaceError, VSpaceScratchSlice,
+    ASIDPool, LocalCNode, LocalCNodeSlots, LocalCap, ThreadPriorityAuthority, Untyped, UserImage,
+    VSpaceScratchSlice,
 };
+
 use ferros_test::ferros_test;
 use selfe_sys::*;
 use typenum::*;
@@ -55,13 +56,13 @@ fn localcap_untyped_parameter(untyped: LocalCap<Untyped<U5>>) {}
 fn localcnodeslots_parameter(slots: LocalCNodeSlots<U5>) {}
 
 #[ferros_test]
-fn localcap_asidpool_parameter(slots: LocalCap<ASIDPool<U1024>>) {}
+fn localcap_asidpool_parameter(pool: LocalCap<ASIDPool<U1024>>) {}
 
 #[ferros_test]
-fn localcap_asidpool_smaller_than_max(slots: LocalCap<ASIDPool<U512>>) {}
+fn localcap_asidpool_parameter_smaller_than_max(slots: LocalCap<ASIDPool<U512>>) {}
 
 #[ferros_test]
-fn localcap_localcnode_parameter(slots: &LocalCap<LocalCNode>) {}
+fn localcap_localcnode_parameter(cnode: &LocalCap<LocalCNode>) {}
 
 #[ferros_test]
 fn localcap_threadpriorityauthority_parameter(tpa: &LocalCap<ThreadPriorityAuthority>) {}
@@ -72,9 +73,47 @@ fn userimage_parameter(image: &UserImage<ferros::userland::role::Local>) {}
 #[ferros_test]
 fn vspacescratch_parameter(scratch: &mut VSpaceScratchSlice<ferros::userland::role::Local>) {}
 
+#[ferros_test]
+fn multiple_mixed_parameters(
+    untyped: LocalCap<Untyped<U5>>,
+    scratch: &mut VSpaceScratchSlice<ferros::userland::role::Local>,
+    slots: LocalCNodeSlots<U5>,
+    image: &UserImage<ferros::userland::role::Local>,
+    pool: LocalCap<ASIDPool<U1024>>,
+    cnode: &LocalCap<LocalCNode>,
+) {
+}
+
 fn main() {
+    debug_println!("\n\n");
     let bootinfo = unsafe { &*sel4_start::BOOTINFO };
-    run(bootinfo);
+    run(bootinfo).expect("Test setup failure");
+    yield_forever()
+}
+
+pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TestSetupError> {
+    let (mut resources, reporter) = Resources::with_debug_reporting(raw_boot_info)?;
+    execute_tests(
+        reporter,
+        resources.as_mut_ref(),
+        &[
+            &zero_parameters,
+            &zero_parameters_returns_result_ok,
+            &zero_parameters_returns_result_err,
+            &zero_parameters_returns_testoutcome_success,
+            &zero_parameters_returns_testoutcome_failure,
+            &zero_parameters_returns_unit,
+            &localcap_asidpool_parameter,
+            &localcap_asidpool_parameter_smaller_than_max,
+            &localcap_localcnode_parameter,
+            &localcap_threadpriorityauthority_parameter,
+            &localcap_untyped_parameter,
+            &localcnodeslots_parameter,
+            &userimage_parameter,
+            &vspacescratch_parameter,
+        ],
+    )?;
+    Ok(())
 }
 
 fn static_assertion_checks() {
@@ -85,60 +124,16 @@ fn static_assertion_checks() {
     let _: &RunTest = &zero_parameters_returns_testoutcome_failure;
     let _: &RunTest = &zero_parameters_returns_unit;
     let _: &RunTest = &localcap_asidpool_parameter;
-    // TODO - restore
-    //let _: &RunTest = &localcap_localcnode_parameter;
-    //let _: &RunTest = &localcap_threadpriorityauthority_parameter;
-    //let _: &RunTest = &localcap_untyped_parameter;
-    //let _: &RunTest = &localcnodeslots_parameter;
-    //let _: &RunTest = &userimage_parameter;
-    //let _: &RunTest = &vspacescratch_parameter;
+    let _: &RunTest = &localcap_asidpool_parameter_smaller_than_max;
+    let _: &RunTest = &localcap_localcnode_parameter;
+    let _: &RunTest = &localcap_threadpriorityauthority_parameter;
+    let _: &RunTest = &localcap_untyped_parameter;
+    let _: &RunTest = &localcnodeslots_parameter;
+    let _: &RunTest = &userimage_parameter;
+    let _: &RunTest = &vspacescratch_parameter;
 }
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     sel4_start::debug_panic_handler(&info)
-}
-
-pub fn run(_raw_boot_info: &'static seL4_BootInfo) {
-    static_assertion_checks();
-    yield_forever()
-}
-
-#[derive(Debug)]
-pub enum TopLevelError {
-    AllocError(AllocError),
-    IPCError(IPCError),
-    VSpaceError(VSpaceError),
-    SeL4Error(SeL4Error),
-    FaultManagementError(FaultManagementError),
-}
-
-impl From<AllocError> for TopLevelError {
-    fn from(e: AllocError) -> Self {
-        TopLevelError::AllocError(e)
-    }
-}
-
-impl From<IPCError> for TopLevelError {
-    fn from(e: IPCError) -> Self {
-        TopLevelError::IPCError(e)
-    }
-}
-
-impl From<VSpaceError> for TopLevelError {
-    fn from(e: VSpaceError) -> Self {
-        TopLevelError::VSpaceError(e)
-    }
-}
-
-impl From<SeL4Error> for TopLevelError {
-    fn from(e: SeL4Error) -> Self {
-        TopLevelError::SeL4Error(e)
-    }
-}
-
-impl From<FaultManagementError> for TopLevelError {
-    fn from(e: FaultManagementError) -> Self {
-        TopLevelError::FaultManagementError(e)
-    }
 }

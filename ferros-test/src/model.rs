@@ -21,8 +21,6 @@ pub(crate) enum TestExecutionContext {
     Local,
     /// Runs in an isolated child process
     Process,
-    /// Runs in a distinct thread in the test harness' virtual address space (often the root task process)
-    Thread,
 }
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum UserTestFnOutput {

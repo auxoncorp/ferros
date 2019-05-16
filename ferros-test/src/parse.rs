@@ -35,7 +35,7 @@ impl Model {
             TestExecutionContext::Local
         };
         let fn_under_test_output = UserTestFnOutput::parse(&fn_under_test.decl.output)?;
-        // TODO - URGENT- restore the following check once process-based test execution is supported!
+        // TODO - RESTORE
         //if fn_under_test_output == UserTestFnOutput::Unit
         //    && execution_context == TestExecutionContext::Local
         //{
@@ -59,7 +59,6 @@ impl TestExecutionContext {
         match found.as_ref() {
             "local" => Ok(TestExecutionContext::Local),
             "process" => Ok(TestExecutionContext::Process),
-            "thread" => Ok(TestExecutionContext::Thread),
             _ => Err(ParseError::InvalidTestAttribute { span: ident.span() }),
         }
     }

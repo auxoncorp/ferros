@@ -30,6 +30,13 @@ fn zero_parameters_returns_result_err() -> Result<(), ()> {
 fn zero_parameters_returns_unit() -> () {}
 
 #[ferros_test]
+fn localcap_slots_before_untyped_parameter(
+    slots: LocalCNodeSlots<U5>,
+    untyped: LocalCap<Untyped<U5>>,
+) {
+}
+
+#[ferros_test]
 fn localcap_untyped_parameter(untyped: LocalCap<Untyped<U5>>) {}
 
 #[ferros_test]

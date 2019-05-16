@@ -1,63 +1,88 @@
-use super::alloc::*;
-use super::userland::*;
-use crate::pow::Pow;
+use crate::userland::*;
 use core::marker::PhantomData;
 use selfe_sys::*;
 use typenum::*;
 
-#[derive(Debug, Clone, Copy)]
-pub enum TestOutcome {
-    Success,
-    Failure,
+mod resources;
+mod types;
+
+pub use resources::*;
+pub use types::*;
+
+impl TestReporter for crate::debug::DebugOutHandle {
+    fn report(&mut self, test_name: &'static str, outcome: TestOutcome) {
+        use core::fmt::Write;
+        let _ = writeln!(
+            self,
+            "test {} ... {}",
+            test_name,
+            if outcome == TestOutcome::Success {
+                "ok"
+            } else {
+                "FAILED"
+            }
+        );
+    }
+
+    fn summary(&mut self, passed: u32, failed: u32) {
+        use core::fmt::Write;
+        let _ = writeln!(
+            self,
+            "test result: {}. {} passed; {} failed;",
+            if failed == 0 { "ok" } else { "FAILED" },
+            passed,
+            failed
+        );
+    }
 }
 
-pub type MaxTestUntypedSize = U27;
-pub type MaxTestCNodeSlots = Pow<U15>;
-pub type MaxTestASIDPoolSize = super::arch::asid::PoolSize;
-pub type RunTest = Fn(
-    LocalCNodeSlots<MaxTestCNodeSlots>,
-    LocalCap<Untyped<MaxTestUntypedSize>>,
-    LocalCap<ASIDPool<MaxTestASIDPoolSize>>,
-    &mut VSpaceScratchSlice<role::Local>,
-    &LocalCap<LocalCNode>,
-    &LocalCap<ThreadPriorityAuthority>,
-    &UserImage<role::Local>,
-) -> (&'static str, TestOutcome);
+// TODO - a TestReporter impl for a UART
 
-pub trait RunnableTest {
-    fn run_test(
-        &self,
-        slots: LocalCNodeSlots<MaxTestCNodeSlots>,
-        untyped: LocalCap<Untyped<MaxTestUntypedSize>>,
-        asid_pool: LocalCap<ASIDPool<MaxTestASIDPoolSize>>,
-        scratch: &mut VSpaceScratchSlice<role::Local>,
-        local_cnode: &LocalCap<LocalCNode>,
-        thread_authority: &LocalCap<ThreadPriorityAuthority>,
-        user_image: &UserImage<role::Local>,
-    ) -> (&'static str, TestOutcome);
-}
-
-impl RunnableTest for RunTest {
-    fn run_test(
-        &self,
-        slots: Cap<CNodeSlotsData<MaxTestCNodeSlots, role::Local>, role::Local>,
-        untyped: Cap<Untyped<MaxTestUntypedSize, memory_kind::General>, role::Local>,
-        asid_pool: Cap<ASIDPool<MaxTestASIDPoolSize>, role::Local>,
-        scratch: &mut VSpaceScratchSlice<role::Local>,
-        local_cnode: &Cap<CNode<role::Local>, role::Local>,
-        thread_authority: &Cap<ThreadPriorityAuthority, role::Local>,
-        user_image: &UserImage<role::Local>,
-    ) -> (&'static str, TestOutcome) {
-        self(
+/// Execute multiple tests, reporting their results
+/// in a streaming fashion followed by a final summary.
+///
+/// The &RunTest instances are expected to be references
+/// to functions annotated with `#[ferros_test]`, which
+/// transforms said tests to conform with the RunTest signature
+pub fn execute_tests<'t, R: types::TestReporter>(
+    mut reporter: R,
+    resources: resources::TestResourceRefs<'t>,
+    tests: &[&types::RunTest],
+) -> Result<types::TestOutcome, SeL4Error> {
+    let resources::TestResourceRefs {
+        slots,
+        untyped,
+        asid_pool,
+        scratch,
+        cnode,
+        thread_authority,
+        user_image,
+    } = resources;
+    let mut successes = 0;
+    let mut failures = 0;
+    for t in tests {
+        with_temporary_resources(
             slots,
             untyped,
             asid_pool,
-            scratch,
-            local_cnode,
-            thread_authority,
-            user_image,
-        )
+            |s, u, a| -> Result<(), SeL4Error> {
+                let (name, outcome) = t(s, u, a, scratch, cnode, thread_authority, user_image);
+                reporter.report(name, outcome);
+                if outcome == types::TestOutcome::Success {
+                    successes += 1;
+                } else {
+                    failures += 1;
+                }
+                Ok(())
+            },
+        )??;
     }
+    reporter.summary(successes, failures);
+    Ok(if failures == 0 {
+        types::TestOutcome::Success
+    } else {
+        types::TestOutcome::Failure
+    })
 }
 
 /// Gain temporary access to some slots and memory for use in a function context.

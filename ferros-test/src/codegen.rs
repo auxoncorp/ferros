@@ -30,15 +30,19 @@ impl Model {
     }
 
     fn map_under_test_invocation_to_outcome(self, fn_under_test_ident: Ident) -> Block {
-        // TODO - if Process or Thread, produce a Proc/ThreadParams structure and RetypeForSetup impl
-        // TODO - if Process or Thread, generate a test thread entry point function
         match self.execution_context {
             TestExecutionContext::Local => local_test_execution(self, fn_under_test_ident),
-            TestExecutionContext::Process => unimplemented!(),
-            TestExecutionContext::Thread => unimplemented!(),
+            TestExecutionContext::Process => process_test_execution(self, fn_under_test_ident),
         }
     }
 }
+
+#[derive(Debug, Clone)]
+struct AllocatedParam {
+    param: Param,
+    output_ident: Ident,
+}
+
 fn single_segment_exprpath(ident: Ident) -> ExprPath {
     ExprPath {
         attrs: Vec::new(),
@@ -55,11 +59,21 @@ fn single_segment_path(ident: Ident) -> syn::Path {
     }
 }
 
-fn local_test_execution(model: Model, fn_under_test_ident: Ident) -> Block {
-    let (mut alloc_block, allocated_params) = local_allocations(&model.resources);
+fn process_test_execution(model: Model, fn_under_test_ident: Ident) -> Block {
+    assert_eq!(model.execution_context, TestExecutionContext::Process);
+    // TODO - produce a Proc/ThreadParams structure and RetypeForSetup impl
+    // TODO - if Process, generate a test thread entry point function
+    unimplemented!()
+}
+
+fn call_fn_under_test(
+    fn_under_test_ident: Ident,
+    fn_under_test_output: UserTestFnOutput,
+    param_ids: impl Iterator<Item = Ident>,
+) -> Block {
     let mut args = syn::punctuated::Punctuated::new();
-    for p in allocated_params {
-        args.push(Expr::Path(single_segment_exprpath(p.output_ident)))
+    for id in param_ids {
+        args.push(Expr::Path(single_segment_exprpath(id)))
     }
     let call = ExprCall {
         attrs: Vec::new(),
@@ -67,7 +81,7 @@ fn local_test_execution(model: Model, fn_under_test_ident: Ident) -> Block {
         paren_token: syn::token::Paren::default(),
         args,
     };
-    let call_block: Block = match model.fn_under_test_output {
+    match fn_under_test_output {
         UserTestFnOutput::Unit => parse_quote! { {
             #call;
             ferros::test_support::TestOutcome::Success
@@ -81,15 +95,19 @@ fn local_test_execution(model: Model, fn_under_test_ident: Ident) -> Block {
                 Err(_) => ferros::test_support::TestOutcome::Failure,
             }
         }},
-    };
-    alloc_block.stmts.extend(call_block.stmts);
-    alloc_block
+    }
 }
 
-#[derive(Debug, Clone)]
-struct AllocatedParam {
-    param: Param,
-    output_ident: Ident,
+fn local_test_execution(model: Model, fn_under_test_ident: Ident) -> Block {
+    assert_eq!(model.execution_context, TestExecutionContext::Local);
+    let (mut alloc_block, allocated_params) = local_allocations(&model.resources);
+    let call_block = call_fn_under_test(
+        fn_under_test_ident,
+        model.fn_under_test_output,
+        allocated_params.into_iter().map(|p| p.output_ident),
+    );
+    alloc_block.stmts.extend(call_block.stmts);
+    alloc_block
 }
 
 fn local_allocations(params: &[Param]) -> (Block, Vec<AllocatedParam>) {
@@ -226,5 +244,13 @@ fn run_test_decl() -> FnDecl {
                 ferros::test_support::TestOutcome
             ))),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn oh_no() {
+        panic!("boom")
     }
 }
