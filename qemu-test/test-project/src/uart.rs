@@ -35,11 +35,11 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         .expect("find uart1 device memory");
 
     smart_alloc!(|slots: local_slots, ut: uts| {
-        let (mut local_vspace_scratch, root_page_directory) =
+        let (mut local_vspace_scratch, _root_page_directory) =
             VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
 
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
-        let (uart1_asid, asid_pool) = asid_pool.alloc();
+        let (uart1_asid, _asid_pool) = asid_pool.alloc();
         let uart1_vspace = VSpace::new(ut, slots, uart1_asid, &user_image, &root_cnode)?;
 
         let (uart1_cnode, uart1_slots) = retype_cnode::<U12>(ut, slots)?;

@@ -24,7 +24,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     );
 
     smart_alloc!(|slots: local_slots, ut: uts| {
-        let (mut local_vspace_scratch, root_page_directory) =
+        let (mut local_vspace_scratch, _root_page_directory) =
             VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
 
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
@@ -32,7 +32,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (consumer_asid, asid_pool) = asid_pool.alloc();
         let (producer_a_asid, asid_pool) = asid_pool.alloc();
         let (producer_b_asid, asid_pool) = asid_pool.alloc();
-        let (waker_asid, asid_pool) = asid_pool.alloc();
+        let (waker_asid, _asid_pool) = asid_pool.alloc();
 
         let (consumer_cnode, consumer_slots) = retype_cnode::<U12>(ut, slots)?;
         let (producer_a_cnode, producer_a_slots) = retype_cnode::<U12>(ut, slots)?;
@@ -45,7 +45,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let producer_b_vspace = VSpace::new(ut, slots, producer_b_asid, &user_image, &root_cnode)?;
         let waker_vspace = VSpace::new(ut, slots, waker_asid, &user_image, &root_cnode)?;
 
-        let (slots_c, consumer_slots) = consumer_slots.alloc();
+        let (slots_c, _consumer_slots) = consumer_slots.alloc();
         let (consumer, consumer_token, producer_setup_a, waker_setup, consumer_vspace) =
             Consumer1::new(
                 ut,
@@ -68,7 +68,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
         let consumer_params = ConsumerParams::<role::Child> { consumer };
 
-        let (slots_a, producer_a_slots) = producer_a_slots.alloc();
+        let (slots_a, _producer_a_slots) = producer_a_slots.alloc();
         let (producer_a, producer_a_vspace) = Producer::new(
             &producer_setup_a,
             slots_a,
@@ -81,7 +81,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             producer: producer_a,
         };
 
-        let (slots_b, producer_b_slots) = producer_b_slots.alloc();
+        let (slots_b, _producer_b_slots) = producer_b_slots.alloc();
         let (producer_b, producer_b_vspace) = Producer::new(
             &producer_setup_b,
             slots_b,
@@ -94,7 +94,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             producer: producer_b,
         };
 
-        let (slots_w, waker_slots) = waker_slots.alloc();
+        let (slots_w, _waker_slots) = waker_slots.alloc();
         let waker = Waker::new(&waker_setup, slots_w, &root_cnode)?;
         let waker_params = WakerParams::<role::Child> { waker };
 

@@ -17,7 +17,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         ..
     } = BootInfo::wrap(&raw_boot_info);
     let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
-    let (root_cnode, mut local_slots) = root_cnode(&raw_boot_info);
+    let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
     let mut shared_uts = ut_buddy(
         allocator
             .get_untyped::<U18>()
@@ -28,7 +28,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         .expect("second alloc failure");
 
     smart_alloc!(|slots: local_slots, ut: shared_uts| {
-        let (mut local_vspace_scratch, root_page_directory) =
+        let (mut local_vspace_scratch, _root_page_directory) =
             VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
         let (mut asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
     });
@@ -56,7 +56,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
                 let uts = ut_buddy(inner_ut);
                 smart_alloc!(|slots: inner_slots, ut: uts| {
                     let (child_cnode, child_slots) = retype_cnode::<U12>(ut, slots)?;
-                    let (child_fault_source_slot, child_slots) = child_slots.alloc();
+                    let (child_fault_source_slot, _child_slots) = child_slots.alloc();
                     let (source, sender, handler) = fault_or_message_channel(
                         &root_cnode,
                         ut,
@@ -84,7 +84,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
                 child_process.start(child_cnode, Some(source), root_tcb.as_ref(), 255)?;
 
                 match handler.await_message()? {
-                    FaultOrMessage::Fault(f) => {
+                    FaultOrMessage::Fault(_) => {
                         if c != &Command::ThrowFault {
                             panic!("Child process threw a fault when it should not have")
                         } else {
