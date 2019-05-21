@@ -1,6 +1,6 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
-use quote::quote;
+use quote::ToTokens;
 
 mod codegen;
 mod model;
@@ -14,14 +14,9 @@ pub fn ferros_test(attr: TokenStream, item: TokenStream) -> TokenStream {
         Ok(c) => c,
         Err(e) => return e.to_compile_error().into(),
     };
-    let model = match Model::parse(syn_content) {
+    let model = match TestModel::parse(syn_content) {
         Ok(m) => m,
         Err(e) => return e.to_compile_error().into(),
     };
-    let test = match model.generate_runnable_test() {
-        Ok(t) => t,
-        Err(e) => return e.to_compile_error().into(),
-    };
-    let output = quote!(#test);
-    output.into()
+    model.generate_runnable_test().into_token_stream().into()
 }

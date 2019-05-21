@@ -2,8 +2,8 @@ use crate::model::*;
 use proc_macro2::Span;
 use syn::{parse_quote, Block, Expr, ExprCall, ExprPath, FnDecl, Ident, ItemFn};
 
-impl Model {
-    pub(crate) fn generate_runnable_test(self) -> Result<ItemFn, CodegenError> {
+impl TestModel {
+    pub(crate) fn generate_runnable_test(self) -> ItemFn {
         let original_fn_name = self.fn_under_test.ident.clone();
         let original_fn_name_literal = proc_macro2::Literal::string(&original_fn_name.to_string());
         let mut fn_under_test = self.fn_under_test.clone();
@@ -26,7 +26,7 @@ impl Model {
             decl: Box::new(run_test_decl()),
             block: transformed_block,
         };
-        Ok(parse_quote!(#transformed_fn))
+        parse_quote!(#transformed_fn)
     }
 
     fn map_under_test_invocation_to_outcome(self, fn_under_test_ident: Ident) -> Block {
@@ -59,7 +59,7 @@ fn single_segment_path(ident: Ident) -> syn::Path {
     }
 }
 
-fn process_test_execution(model: Model, fn_under_test_ident: Ident) -> Block {
+fn process_test_execution(model: TestModel, fn_under_test_ident: Ident) -> Block {
     assert_eq!(model.execution_context, TestExecutionContext::Process);
     // TODO - produce a Proc/ThreadParams structure and RetypeForSetup impl
     // TODO - if Process, generate a test thread entry point function
@@ -98,7 +98,7 @@ fn call_fn_under_test(
     }
 }
 
-fn local_test_execution(model: Model, fn_under_test_ident: Ident) -> Block {
+fn local_test_execution(model: TestModel, fn_under_test_ident: Ident) -> Block {
     assert_eq!(model.execution_context, TestExecutionContext::Local);
     let (mut alloc_block, allocated_params) = local_allocations(&model.resources);
     let call_block = call_fn_under_test(

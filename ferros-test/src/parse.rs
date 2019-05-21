@@ -21,8 +21,8 @@ impl SynContent {
     }
 }
 
-impl Model {
-    pub(crate) fn parse(syn_content: SynContent) -> Result<Model, ParseError> {
+impl TestModel {
+    pub(crate) fn parse(syn_content: SynContent) -> Result<TestModel, ParseError> {
         let SynContent {
             context_attr,
             fn_under_test,
@@ -31,20 +31,16 @@ impl Model {
         let execution_context = if let Some(ident) = context_attr {
             TestExecutionContext::parse(ident)?
         } else {
-            // TODO - switch default to execution in a child process
+            // NB - If test isolation by default becomes a design requirement,
+            // this is the correct place switch the default execution context.
             TestExecutionContext::Local
         };
         let fn_under_test_output = UserTestFnOutput::parse(&fn_under_test.decl.output)?;
-        // TODO - RESTORE
-        //if fn_under_test_output == UserTestFnOutput::Unit
-        //    && execution_context == TestExecutionContext::Local
-        //{
-        //    return Err(ParseError::TestsReturningUnitMustRunInAChildContext {
-        //        span: fn_under_test.decl.output.span(),
-        //    });
-        //}
+        // NB - If test isolation or harness robustness increase in priority as a design goal,
+        // it would likely behoove us to disallow tests that execute in the same process as the
+        // test harness and communicate failure through panics (i.e. tests that return unit).
         let resources = extract_expected_resources(&fn_under_test.decl.inputs)?;
-        Ok(Model {
+        Ok(TestModel {
             execution_context,
             fn_under_test,
             fn_under_test_output,
@@ -132,11 +128,18 @@ impl ParamKind {
                 span: type_path.span(),
             })?
             .into_value();
+        // NB - This match region is a rich location for convenience enhancements
+        // to expand or restrict the range of injectable objects.
+        // E.G:
+        //    * Increase validation of generic parameters, like enforce that Role must be Local
+        //    * Support Cap<T, role::Local> in addition to LocalCap
+        //    * Support &LocalCap<CNode<role::Local>> in addition to &LocalCap<LocalCNode>
         let kind = match segment.ident.to_string().as_ref() {
             "LocalCNodeSlots" => ParamKind::CNodeSlots {
                 count: extract_first_argument_as_unsigned(&segment.arguments)?,
             },
             "LocalCap" => parse_localcap_param_kind(&segment.arguments, arg_kind)?,
+            "Cap" => parse_localcap_param_kind(&segment.arguments, arg_kind)?,
             "UserImage" => {
                 let seg_name = extract_first_arg_type_path_last_segment(&segment.arguments)?
                     .ident
@@ -163,15 +166,9 @@ impl ParamKind {
                     });
                 }
             }
-            // TODO - as a convenience, support CNodeSlots<Size, role::Local>
-            "CNodeSlots" => {
-                // TODO - enforce that Role must be local, CNodeSlots<Size, Role>
-                ParamKind::CNodeSlots {
-                    count: extract_first_argument_as_unsigned(&segment.arguments)?,
-                }
-            }
-            // TODO - as a convenience, support Cap<T, role::Local>
-            "Cap" => unimplemented!(),
+            "CNodeSlots" => ParamKind::CNodeSlots {
+                count: extract_first_argument_as_unsigned(&segment.arguments)?,
+            },
             t => {
                 return Err(ParseError::InvalidArgumentType {
                     msg: format!("test function argument type was not recognized: {}", t),
@@ -219,9 +216,6 @@ fn parse_localcap_param_kind(
                 span: segment.span() })
             }
         }
-        // TODO - expand the set of convenience aliases
-        // "CNode" => unimplemented!(),
-        // "CNodeSlotsData" => unimplemented!(),
         _ => Err(ParseError::InvalidArgumentType {
             msg: format!(
                 "Found an unsupported LocalCap type parameter, {}",
@@ -236,7 +230,6 @@ fn parse_localcap_param_kind(
 fn extract_first_arg_type_path_last_segment(
     arguments: &PathArguments,
 ) -> Result<&PathSegment, ParseError> {
-    // TODO - consider iterating on the error message usefulness
     const EXPECTED: &str =
         "Expected a ferros type argument (e.g. `Unsigned<U5>`, `ASIDPool<U1024>`)";
     if let PathArguments::AngleBracketed(abga) = arguments {

@@ -10,7 +10,7 @@ edition = "2018"
 # libsel4-sys = "0.5"
 selfe-sys = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
 sel4-start = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
-ferros = { path = "../.." }
+ferros = { path = "../.." , features = ["test_support"]}
 cross_queue = { path = "../../cross_queue" }
 typenum = { git = "ssh://github.com/auxoncorp/typenum.git" }
 registers = { git = "ssh://github.com/auxoncorp/registers.git" }

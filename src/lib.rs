@@ -17,5 +17,6 @@ pub mod debug;
 pub mod alloc;
 pub mod arch;
 pub mod pow;
+#[cfg(feature = "test_support")]
 pub mod test_support;
 pub mod userland;
