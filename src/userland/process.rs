@@ -1,14 +1,67 @@
-use crate::userland::{
-    irq_state, memory_kind, role, AssignedPageDirectory, Badge, CNodeRole, CNodeSlot, Cap,
-    ChildCNode, FaultSource, IRQControl, IRQHandler, ImmobileIndelibleInertCapabilityReference,
-    LocalCap, MappedPage, Notification, SeL4Error, ThreadControlBlock, ThreadPriorityAuthority,
-};
 use core::cmp;
 use core::marker::PhantomData;
 use core::mem::{self, size_of};
 use core::ptr;
+
 use selfe_sys::*;
+
 use typenum::*;
+
+use crate::cap::{
+    role, CNodeRole, Cap, CapType, CopyAliasable, DirectRetype,
+    ImmobileIndelibleInertCapabilityReference, LocalCap, PhantomCap,
+};
+use crate::error::SeL4Error;
+use crate::userland::{
+    irq_state, memory_kind, AssignedPageDirectory, Badge, CNodeSlot, ChildCNode, FaultSource,
+    IRQControl, IRQHandler, MappedPage,
+};
+
+#[derive(Debug)]
+pub struct ThreadControlBlock {}
+
+impl CapType for ThreadControlBlock {}
+
+impl PhantomCap for ThreadControlBlock {
+    fn phantom_instance() -> Self {
+        Self {}
+    }
+}
+
+impl DirectRetype for ThreadControlBlock {
+    type SizeBits = U10;
+    fn sel4_type_id() -> usize {
+        api_object_seL4_TCBObject as usize
+    }
+}
+
+impl CopyAliasable for ThreadControlBlock {
+    type CopyOutput = Self;
+}
+
+/// A limited view on a ThreadControlBlock capability
+/// that is only intended for use in establishing
+/// the priority of child threads
+#[derive(Debug)]
+pub struct ThreadPriorityAuthority {}
+
+impl CapType for ThreadPriorityAuthority {}
+
+impl PhantomCap for ThreadPriorityAuthority {
+    fn phantom_instance() -> Self {
+        Self {}
+    }
+}
+
+impl CopyAliasable for ThreadPriorityAuthority {
+    type CopyOutput = Self;
+}
+
+impl AsRef<LocalCap<ThreadPriorityAuthority>> for LocalCap<ThreadControlBlock> {
+    fn as_ref(&self) -> &LocalCap<ThreadPriorityAuthority> {
+        unsafe { core::mem::transmute(self) }
+    }
+}
 
 impl LocalCap<ThreadControlBlock> {
     pub fn downgrade_to_thread_priority_authority(self) -> LocalCap<ThreadPriorityAuthority> {

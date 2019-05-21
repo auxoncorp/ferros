@@ -1,13 +1,16 @@
-use crate::arch;
-use crate::userland::{
-    memory_kind, role, AssignedPageDirectory, Cap, CapType, LocalCNodeSlot, LocalCap, Movable,
-    PhantomCap, SeL4Error, UnassignedPageDirectory, Untyped,
-};
 use core::marker::PhantomData;
 use core::mem;
 use core::ops::Sub;
+
 use selfe_sys::*;
+
 use typenum::*;
+
+use crate::arch;
+use crate::cap::{role, Cap, CapType, LocalCap, Movable, PhantomCap};
+use crate::userland::{
+    memory_kind, AssignedPageDirectory, LocalCNodeSlot, SeL4Error, UnassignedPageDirectory, Untyped,
+};
 
 #[derive(Debug)]
 pub struct ASIDControl<FreePools: Unsigned> {

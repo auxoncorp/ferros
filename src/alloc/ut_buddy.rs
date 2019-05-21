@@ -6,7 +6,9 @@ use selfe_sys::*;
 use typenum::*;
 
 use crate::arch::{self, kernel};
-use crate::userland::{Cap, LocalCNodeSlots, LocalCap, SeL4Error, Untyped};
+use crate::cap::{Cap, LocalCap};
+use crate::error::SeL4Error;
+use crate::userland::{LocalCNodeSlots, Untyped};
 
 /// A type-level linked list of typenum::Unsigned.
 pub trait UList {

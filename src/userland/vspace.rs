@@ -2,21 +2,27 @@ use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Add, Sub};
 
-use crate::arch::paging;
-use crate::pow::Pow;
-use crate::userland::cap::ThreadControlBlock;
-use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, SetupVer};
-use crate::userland::{
-    memory_kind, role, AssignedPageDirectory, CNodeRole, Cap, CapRange, CapRights, ChildCNode,
-    ChildCNodeSlots, DirectRetype, FaultSource, ImmobileIndelibleInertCapabilityReference,
-    LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable,
-    MappedSection, MemoryKind, PhantomCap, SeL4Error, ThreadPriorityAuthority, UnassignedASID,
-    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, UnmappedSection, Untyped, UserImage,
-};
 use generic_array::{ArrayLength, GenericArray};
+
 use selfe_sys::*;
+
 use typenum::operator_aliases::{Diff, Sub1, Sum};
 use typenum::*;
+
+use crate::arch::paging;
+use crate::cap::{
+    role, CNodeRole, Cap, DirectRetype, ImmobileIndelibleInertCapabilityReference, LocalCap,
+    PhantomCap,
+};
+use crate::error::SeL4Error;
+use crate::pow::Pow;
+use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, SetupVer};
+use crate::userland::{
+    memory_kind, AssignedPageDirectory, CapRights, ChildCNode, ChildCNodeSlots, FaultSource,
+    LocalCNode, LocalCNodeSlot, LocalCNodeSlots, MappedPage, MappedPageTable, MappedSection,
+    MemoryKind, ThreadControlBlock, ThreadPriorityAuthority, UnassignedASID,
+    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, UnmappedSection, Untyped, UserImage,
+};
 
 #[derive(Debug)]
 pub enum VSpaceError {

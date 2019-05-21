@@ -1,15 +1,19 @@
+use core::marker::PhantomData;
+
+use selfe_sys::*;
+
+use typenum::operator_aliases::Diff;
+use typenum::*;
+
 use crate::arch::{address_space, asid, paging};
+use crate::cap::{role, CNodeRole, Cap, LocalCap};
+use crate::error::SeL4Error;
 use crate::pow::Pow;
 use crate::userland::process::NeitherSendNorSync;
 use crate::userland::{
-    memory_kind, role, ASIDControl, AssignedPageDirectory, CNode, CNodeRole, CNodeSlots, Cap,
-    CapRights, IRQControl, LocalCNode, LocalCNodeSlots, LocalCap, MappedPage, SeL4Error,
-    ThreadControlBlock,
+    memory_kind, ASIDControl, AssignedPageDirectory, CNode, CNodeSlots, CapRights, IRQControl,
+    LocalCNode, LocalCNodeSlots, MappedPage, ThreadControlBlock,
 };
-use core::marker::PhantomData;
-use selfe_sys::*;
-use typenum::operator_aliases::Diff;
-use typenum::*;
 
 // The root CNode radix is 19. Conservatively set aside 2^12 (the default root
 // cnode size) for system use. TODO: verify at build time that this is enough /

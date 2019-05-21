@@ -1,9 +1,14 @@
-use crate::userland::{role, CNodeRole, Cap, CapRights, ChildCap, LocalCap, SeL4Error};
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
+
 use selfe_sys::*;
+
 use typenum::operator_aliases::Diff;
 use typenum::*;
+
+use crate::cap::{role, CNodeRole, Cap, ChildCap, LocalCap};
+use crate::error::SeL4Error;
+use crate::userland::CapRights;
 
 /// There will only ever be one CNode in a process with Role = Root. The
 /// cptrs any regular Cap are /also/ offsets into that cnode, because of

@@ -1,7 +1,13 @@
-use crate::userland::*;
 use core::marker::PhantomData;
+
 use selfe_sys::*;
 use typenum::*;
+
+use crate::error::SeL4Error;
+use crate::pow::Pow;
+
+use super::cap::*;
+use super::userland::*;
 
 mod resources;
 mod types;
@@ -34,6 +40,12 @@ impl TestReporter for crate::debug::DebugOutHandle {
             failed
         );
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum TestOutcome {
+    Success,
+    Failure,
 }
 
 // TODO - a TestReporter impl for a UART
@@ -90,14 +102,14 @@ pub fn execute_tests<'t, R: types::TestReporter>(
 /// in this range will be revoked and deleted and the memory reclaimed.
 pub fn with_temporary_resources<SlotCount: Unsigned, BitSize: Unsigned, E, F>(
     slots: &mut LocalCNodeSlots<SlotCount>,
-    untyped: &mut LocalCap<cap::Untyped<BitSize>>,
+    untyped: &mut LocalCap<Untyped<BitSize>>,
     asid_pool: &mut LocalCap<asid::ASIDPool<super::arch::asid::PoolSize>>,
     f: F,
 ) -> Result<Result<(), E>, SeL4Error>
 where
     F: FnOnce(
         LocalCNodeSlots<SlotCount>,
-        LocalCap<cap::Untyped<BitSize>>,
+        LocalCap<Untyped<BitSize>>,
         LocalCap<asid::ASIDPool<super::arch::asid::PoolSize>>,
     ) -> Result<(), E>,
 {
@@ -106,7 +118,7 @@ where
         Cap::internal_new(slots.cptr, slots.cap_data.offset),
         Cap {
             cptr: untyped.cptr,
-            cap_data: crate::userland::cap::Untyped {
+            cap_data: Untyped {
                 _bit_size: PhantomData,
                 _kind: PhantomData,
             },

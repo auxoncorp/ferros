@@ -1,11 +1,9 @@
 pub(crate) mod asid;
 mod bootstrap;
-pub(crate) mod cap;
-mod cap_range;
 mod cnode;
-mod error;
 mod fault;
 mod ipc;
+mod irq;
 mod multi_consumer;
 pub(crate) mod process;
 mod rights;
@@ -15,12 +13,10 @@ mod vspace;
 
 pub use crate::userland::asid::*;
 pub use crate::userland::bootstrap::*;
-pub use crate::userland::cap::*;
-pub use crate::userland::cap_range::*;
 pub use crate::userland::cnode::*;
-pub use crate::userland::error::*;
 pub use crate::userland::fault::*;
 pub use crate::userland::ipc::*;
+pub use crate::userland::irq::*;
 pub use crate::userland::multi_consumer::*;
 pub use crate::userland::process::*;
 pub use crate::userland::rights::*;

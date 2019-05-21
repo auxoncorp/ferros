@@ -1,21 +1,63 @@
-use crate::arch::paging;
-use crate::pow::{Pow, _Pow};
-use crate::userland::{
-    memory_kind, role, CNode, CNodeRole, CNodeSlot, CNodeSlots, Cap, CapRange, CapType, ChildCNode,
-    ChildCNodeSlots, DirectRetype, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap,
-    MemoryKind, PhantomCap, SeL4Error, UnmappedPage, Untyped,
-};
 use core::marker::PhantomData;
 use core::ops::{Add, Mul, Sub};
+
 use selfe_sys::*;
+
 use typenum::operator_aliases::{Diff, Prod, Sum};
+
 use typenum::*;
+
+use crate::arch::paging;
+use crate::cap::{
+    role, CNodeRole, Cap, CapRange, CapType, Delible, DirectRetype, LocalCap, Movable, PhantomCap,
+};
+use crate::error::SeL4Error;
+use crate::pow::{Pow, _Pow};
+use crate::userland::{
+    CNode, CNodeSlot, CNodeSlots, ChildCNode, ChildCNodeSlots, LocalCNode, LocalCNodeSlot,
+    LocalCNodeSlots, UnmappedPage,
+};
 
 // The seL4 kernel's maximum amount of retypes per system call is configurable
 // in the sel4.toml, particularly by the KernelRetypeFanOutLimit property.
 // This configuration is turned into a generated Rust type of the same name
 // that implements `typenum::Unsigned` in the `build.rs` file.
 include!(concat!(env!("OUT_DIR"), "/KERNEL_RETYPE_FAN_OUT_LIMIT"));
+
+#[derive(Debug)]
+pub struct Untyped<BitSize: Unsigned, Kind: MemoryKind = memory_kind::General> {
+    pub(crate) _bit_size: PhantomData<BitSize>,
+    pub(crate) _kind: PhantomData<Kind>,
+}
+
+impl<BitSize: Unsigned, Kind: MemoryKind> CapType for Untyped<BitSize, Kind> {}
+
+impl<BitSize: Unsigned, Kind: MemoryKind> PhantomCap for Untyped<BitSize, Kind> {
+    fn phantom_instance() -> Self {
+        Untyped::<BitSize, Kind> {
+            _bit_size: PhantomData::<BitSize>,
+            _kind: PhantomData::<Kind>,
+        }
+    }
+}
+
+impl<BitSize: Unsigned, Kind: MemoryKind> Movable for Untyped<BitSize, Kind> {}
+
+impl<BitSize: Unsigned, Kind: MemoryKind> Delible for Untyped<BitSize, Kind> {}
+
+pub(crate) trait MemoryKind {}
+
+pub mod memory_kind {
+    use super::MemoryKind;
+
+    #[derive(Debug, PartialEq)]
+    pub struct General;
+    impl MemoryKind for General {}
+
+    #[derive(Debug, PartialEq)]
+    pub struct Device;
+    impl MemoryKind for Device {}
+}
 
 pub(crate) fn wrap_untyped<BitSize: Unsigned, Kind: MemoryKind>(
     cptr: usize,
