@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::ToTokens;
@@ -18,5 +19,8 @@ pub fn ferros_test(attr: TokenStream, item: TokenStream) -> TokenStream {
         Ok(m) => m,
         Err(e) => return e.to_compile_error().into(),
     };
-    model.generate_runnable_test().into_token_stream().into()
+    model
+        .generate_runnable_test(codegen::UuidGenerator::default())
+        .into_token_stream()
+        .into()
 }

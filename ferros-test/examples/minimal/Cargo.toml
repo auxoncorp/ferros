@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 selfe-sys = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
 sel4-start = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
-ferros = { path = "../../.." }
+ferros = { path = "../../.." , features = ["test_support"] }
 ferros-test = { path = "../.." }
 typenum = { git = "ssh://github.com/auxoncorp/typenum.git" }
 

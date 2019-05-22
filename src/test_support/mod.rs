@@ -28,7 +28,7 @@ impl TestReporter for crate::debug::DebugOutHandle {
         use core::fmt::Write;
         let _ = writeln!(
             self,
-            "test result: {}. {} passed; {} failed;",
+            "\ntest result: {}. {} passed; {} failed;",
             if failed == 0 { "ok" } else { "FAILED" },
             passed,
             failed

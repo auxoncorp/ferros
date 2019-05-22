@@ -9,11 +9,11 @@ use syn::{
 impl SynContent {
     pub(crate) fn parse(attr: TokenStream2, item: TokenStream2) -> Result<Self, ParseError> {
         let attr_span = attr.span();
-        let context_attr = syn::parse_macro_input::parse(attr.into())
-            .map_err(|_e| ParseError::InvalidTestAttribute { span: attr_span })?;
+        let context_attr =
+            syn::parse2(attr).map_err(|_e| ParseError::InvalidTestAttribute { span: attr_span })?;
         let item_span = item.span();
-        let fn_under_test = syn::parse_macro_input::parse(item.into())
-            .map_err(|_e| ParseError::InvalidTestFn { span: item_span })?;
+        let fn_under_test =
+            syn::parse2(item).map_err(|_e| ParseError::InvalidTestFn { span: item_span })?;
         Ok(SynContent {
             context_attr,
             fn_under_test,
@@ -334,6 +334,69 @@ impl UserTestFnOutput {
 mod tests {
     use super::*;
     use proc_macro2::{Ident, Span};
+    use quote::quote;
+    use std::mem::discriminant;
+
+    #[test]
+    fn syn_content_parse_happy_path_empty() {
+        let attr = quote!();
+        let user_fn = quote! {
+            fn user_fn() {
+            }
+        };
+
+        let content = SynContent::parse(attr, user_fn).unwrap();
+        assert!(content.context_attr.is_none());
+    }
+
+    #[test]
+    fn syn_content_parse_happy_path_non_empty() {
+        let attr = quote!(arbitrary);
+        let user_fn = quote! {
+            fn user_fn() {
+            }
+        };
+
+        let content = SynContent::parse(attr, user_fn).unwrap();
+        assert!(content.context_attr.is_some());
+        assert_eq!("arbitrary", &content.context_attr.unwrap().to_string());
+    }
+
+    #[test]
+    fn syn_content_parse_rejects_non_fn() {
+        let attr = quote!();
+        let user_fn = quote! {
+            struct Foo {
+                bar: u32
+            }
+        };
+
+        let e = SynContent::parse(attr, user_fn).expect_err("Expected an err");
+        assert_eq!(
+            discriminant(&ParseError::InvalidTestFn {
+                span: Span::call_site()
+            }),
+            discriminant(&e)
+        );
+    }
+
+    #[test]
+    fn syn_content_parse_rejects_non_ident_attr() {
+        let attr = quote!(Foo { bar: 314 });
+        let user_fn = quote! {
+            fn user_fn() {
+            }
+        };
+
+        let e = SynContent::parse(attr, user_fn).expect_err("Expected an err");
+        assert_eq!(
+            discriminant(&ParseError::InvalidTestAttribute {
+                span: Span::call_site()
+            }),
+            discriminant(&e)
+        );
+    }
+
     #[test]
     fn test_execution_context_parse() {
         assert_eq!(
@@ -345,12 +408,12 @@ mod tests {
             TestExecutionContext::parse(Ident::new("Process", Span::call_site())).unwrap()
         );
         assert_eq!(
-            TestExecutionContext::Thread,
-            TestExecutionContext::parse(Ident::new("thread", Span::call_site())).unwrap()
+            TestExecutionContext::Local,
+            TestExecutionContext::parse(Ident::new("local", Span::call_site())).unwrap()
         );
         assert_eq!(
             TestExecutionContext::Local,
-            TestExecutionContext::parse(Ident::new("local", Span::call_site())).unwrap()
+            TestExecutionContext::parse(Ident::new("LOCAL", Span::call_site())).unwrap()
         );
         assert!(TestExecutionContext::parse(Ident::new("whatever", Span::call_site())).is_err());
     }
