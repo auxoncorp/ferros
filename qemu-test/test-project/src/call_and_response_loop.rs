@@ -1,9 +1,9 @@
 use super::TopLevelError;
 use ferros::alloc::{self, micro_alloc, smart_alloc};
-use ferros::userland::{
-    call_channel, retype_cnode, role, root_cnode, BootInfo, CNodeRole, Caller, Consumer1, Producer,
-    Responder, RetypeForSetup, VSpace, VSpaceScratchSlice,
-};
+use ferros::bootstrap::{root_cnode, BootInfo};
+use ferros::cap::{retype_cnode, role, CNodeRole};
+use ferros::userland::{call_channel, Caller, Consumer1, Producer, Responder, RetypeForSetup};
+use ferros::vspace::{VSpace, VSpaceScratchSlice};
 use selfe_sys::*;
 use typenum::*;
 

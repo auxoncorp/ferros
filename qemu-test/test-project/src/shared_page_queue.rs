@@ -1,11 +1,14 @@
-use super::TopLevelError;
-use ferros::alloc::{self, micro_alloc, smart_alloc};
-use ferros::userland::{
-    retype_cnode, role, root_cnode, BootInfo, CNodeRole, Caller, Consumer1, Producer,
-    QueueFullError, Responder, RetypeForSetup, VSpace, VSpaceScratchSlice,
-};
 use selfe_sys::*;
+
 use typenum::*;
+
+use ferros::alloc::{self, micro_alloc, smart_alloc};
+use ferros::bootstrap::{root_cnode, BootInfo};
+use ferros::cap::{retype_cnode, role, CNodeRole};
+use ferros::userland::{Caller, Consumer1, Producer, QueueFullError, Responder, RetypeForSetup};
+use ferros::vspace::{VSpace, VSpaceScratchSlice};
+
+use super::TopLevelError;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let BootInfo {

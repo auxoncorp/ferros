@@ -1,12 +1,15 @@
-use super::TopLevelError;
 use selfe_sys::{seL4_BootInfo, seL4_MessageInfo_new, seL4_Send};
 
 use ferros::alloc::{micro_alloc, smart_alloc, ut_buddy};
+use ferros::bootstrap::*;
+use ferros::cap::*;
+use ferros::test_support::*;
+use ferros::userland::*;
+use ferros::vspace::*;
 
 use typenum::*;
 
-use ferros::test_support::*;
-use ferros::userland::*;
+use super::TopLevelError;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let BootInfo {

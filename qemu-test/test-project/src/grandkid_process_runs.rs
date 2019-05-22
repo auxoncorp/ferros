@@ -1,14 +1,17 @@
-use super::TopLevelError;
 use selfe_sys::seL4_BootInfo;
 
-use ferros::alloc::{self, micro_alloc, smart_alloc};
 use typenum::*;
 
-use ferros::userland::{
-    retype_cnode, role, root_cnode, ASIDPool, BootInfo, CNode, CNodeRole, CNodeSlotsData, Cap,
-    CapRights, RetypeForSetup, ThreadPriorityAuthority, Untyped, UserImage, VSpace,
-    VSpaceScratchSlice,
+use ferros::alloc::{self, micro_alloc, smart_alloc};
+use ferros::bootstrap::{root_cnode, BootInfo, UserImage};
+use ferros::cap::{
+    retype_cnode, role, ASIDPool, CNode, CNodeRole, CNodeSlotsData, Cap, ThreadPriorityAuthority,
+    Untyped,
 };
+use ferros::userland::{CapRights, RetypeForSetup};
+use ferros::vspace::{NewVSpaceCNodeSlots, VSpace, VSpaceScratchSlice};
+
+use super::TopLevelError;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let BootInfo {
@@ -84,7 +87,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 #[derive(Debug)]
 pub struct ChildParams<Role: CNodeRole> {
     cnode: Cap<CNode<Role>, Role>,
-    cnode_slots: Cap<CNodeSlotsData<Sum<ferros::userland::NewVSpaceCNodeSlots, U70>, Role>, Role>,
+    cnode_slots: Cap<CNodeSlotsData<Sum<NewVSpaceCNodeSlots, U70>, Role>, Role>,
     untyped: Cap<Untyped<U25>, Role>,
     asid_pool: Cap<ASIDPool<U1024>, Role>,
     user_image: UserImage<Role>,

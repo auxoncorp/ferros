@@ -1,10 +1,12 @@
 use selfe_sys::*;
 
-use ferros::alloc::{self, micro_alloc, smart_alloc};
-use ferros::userland::{
-    retype_cnode, role, root_cnode, BootInfo, InterruptConsumer, VSpace, VSpaceScratchSlice,
-};
 use typenum::*;
+
+use ferros::alloc::{self, micro_alloc, smart_alloc};
+use ferros::bootstrap::{root_cnode, BootInfo};
+use ferros::cap::{retype_cnode, role, CNodeRole};
+use ferros::userland::{InterruptConsumer, RetypeForSetup};
+use ferros::vspace::{VSpace, VSpaceScratchSlice};
 
 use super::TopLevelError;
 
@@ -72,10 +74,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 }
 
 pub mod uart {
-    use ferros::userland::{role, CNodeRole, InterruptConsumer, RetypeForSetup};
-
-    use typenum::consts::{True, U1, U256};
-    use typenum::{IsLess, Unsigned};
+    use super::*;
 
     use registers::{ReadOnlyRegister, ReadWriteRegister, WriteOnlyRegister};
 

@@ -1,8 +1,13 @@
-use super::TopLevelError;
-use ferros::alloc::micro_alloc::Allocator;
-use ferros::userland::{root_cnode, LocalCNodeSlots, SeL4Error};
 use selfe_sys::seL4_BootInfo;
+
 use typenum::*;
+
+use ferros::alloc::micro_alloc::Allocator;
+use ferros::bootstrap::{root_cnode, BootInfo};
+use ferros::cap::LocalCNodeSlots;
+use ferros::error::SeL4Error;
+
+use super::TopLevelError;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let mut allocator = Allocator::bootstrap(&raw_boot_info)?;

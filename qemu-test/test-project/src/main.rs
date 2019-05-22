@@ -32,9 +32,10 @@ mod uart;
 
 use core::panic::PanicInfo;
 use ferros::alloc::micro_alloc::Error as AllocError;
-use ferros::userland::{
-    FaultManagementError, IPCError, IRQError, MultiConsumerError, SeL4Error, VSpaceError,
-};
+use ferros::cap::IRQError;
+use ferros::error::SeL4Error;
+use ferros::userland::{FaultManagementError, IPCError, MultiConsumerError};
+use ferros::vspace::VSpaceError;
 
 fn yield_forever() {
     unsafe {
