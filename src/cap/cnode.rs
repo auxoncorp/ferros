@@ -6,7 +6,7 @@ use selfe_sys::*;
 use typenum::operator_aliases::Diff;
 use typenum::*;
 
-use crate::cap::{role, CNodeRole, Cap, ChildCap, LocalCap};
+use crate::cap::{role, CNodeRole, Cap, CapType, ChildCap, LocalCap};
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
 
@@ -15,8 +15,8 @@ use crate::userland::CapRights;
 /// how we're configuring each CNode's guard.
 #[derive(Debug)]
 pub struct CNode<Role: CNodeRole> {
-    pub(super) radix: u8,
-    pub(super) _role: PhantomData<Role>,
+    pub(crate) radix: u8,
+    pub(crate) _role: PhantomData<Role>,
 }
 
 pub type LocalCNode = CNode<role::Local>;
@@ -28,6 +28,10 @@ pub struct CNodeSlotsData<Size: Unsigned, Role: CNodeRole> {
     pub(crate) _size: PhantomData<Size>,
     pub(crate) _role: PhantomData<Role>,
 }
+
+impl<Role: CNodeRole> CapType for CNode<Role> {}
+
+impl<Size: Unsigned, Role: CNodeRole> CapType for CNodeSlotsData<Size, Role> {}
 
 pub type CNodeSlots<Size, Role> = LocalCap<CNodeSlotsData<Size, Role>>;
 pub type LocalCNodeSlots<Size> = CNodeSlots<Size, role::Local>;

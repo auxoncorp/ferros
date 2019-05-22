@@ -3,11 +3,9 @@ use core::marker::PhantomData;
 use selfe_sys::*;
 use typenum::*;
 
+use crate::arch;
+use crate::cap::*;
 use crate::error::SeL4Error;
-use crate::pow::Pow;
-
-use super::cap::*;
-use super::userland::*;
 
 mod resources;
 mod types;
@@ -103,14 +101,14 @@ pub fn execute_tests<'t, R: types::TestReporter>(
 pub fn with_temporary_resources<SlotCount: Unsigned, BitSize: Unsigned, E, F>(
     slots: &mut LocalCNodeSlots<SlotCount>,
     untyped: &mut LocalCap<Untyped<BitSize>>,
-    asid_pool: &mut LocalCap<asid::ASIDPool<super::arch::asid::PoolSize>>,
+    asid_pool: &mut LocalCap<ASIDPool<arch::ASIDPoolSize>>,
     f: F,
 ) -> Result<Result<(), E>, SeL4Error>
 where
     F: FnOnce(
         LocalCNodeSlots<SlotCount>,
         LocalCap<Untyped<BitSize>>,
-        LocalCap<asid::ASIDPool<super::arch::asid::PoolSize>>,
+        LocalCap<ASIDPool<arch::ASIDPoolSize>>,
     ) -> Result<(), E>,
 {
     // Call the function with an alias/copy of self

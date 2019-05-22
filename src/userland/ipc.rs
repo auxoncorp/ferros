@@ -1,94 +1,13 @@
 use core::marker::PhantomData;
 
-use typenum::consts::U4;
-
 use selfe_sys::*;
 
 use crate::cap::{
-    role, CNodeRole, Cap, CapType, CopyAliasable, DirectRetype, LocalCap, Mintable, PhantomCap,
+    role, CNodeRole, Cap, ChildCNodeSlot, DirectRetype, Endpoint, LocalCNode, LocalCNodeSlot,
+    LocalCap, Untyped,
 };
 use crate::error::SeL4Error;
-use crate::userland::{CapRights, ChildCNodeSlot, LocalCNode, LocalCNodeSlot, Untyped};
-
-#[derive(Debug)]
-pub struct Endpoint {}
-
-impl CapType for Endpoint {}
-
-impl PhantomCap for Endpoint {
-    fn phantom_instance() -> Self {
-        Self {}
-    }
-}
-
-impl CopyAliasable for Endpoint {
-    type CopyOutput = Self;
-}
-
-impl Mintable for Endpoint {}
-
-impl DirectRetype for Endpoint {
-    type SizeBits = U4;
-    fn sel4_type_id() -> usize {
-        api_object_seL4_EndpointObject as usize
-    }
-}
-
-#[derive(Debug)]
-pub struct Notification {}
-
-impl CapType for Notification {}
-
-impl PhantomCap for Notification {
-    fn phantom_instance() -> Self {
-        Self {}
-    }
-}
-
-impl CopyAliasable for Notification {
-    type CopyOutput = Self;
-}
-
-impl Mintable for Notification {}
-
-impl DirectRetype for Notification {
-    type SizeBits = U4;
-    fn sel4_type_id() -> usize {
-        api_object_seL4_NotificationObject as usize
-    }
-}
-
-/// Wrapper for an Endpoint or Notification badge.
-/// Note that the kernel will ignore any use of the high 4 bits
-#[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Debug, Hash)]
-pub struct Badge {
-    pub(crate) inner: usize,
-}
-
-impl Badge {
-    pub fn are_all_overlapping_bits_set(self, other: Badge) -> bool {
-        if self.inner == 0 && other.inner == 0 {
-            return true;
-        }
-        let overlap = self.inner & other.inner;
-        overlap != 0
-    }
-}
-
-impl From<usize> for Badge {
-    fn from(u: usize) -> Self {
-        let shifted_left = u << 4;
-        Badge {
-            inner: shifted_left >> 4,
-        }
-    }
-}
-
-impl From<Badge> for usize {
-    fn from(b: Badge) -> Self {
-        b.inner
-    }
-}
+use crate::userland::CapRights;
 
 #[derive(Debug)]
 pub enum IPCError {

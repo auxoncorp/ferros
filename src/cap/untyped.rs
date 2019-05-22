@@ -7,16 +7,15 @@ use typenum::operator_aliases::{Diff, Prod, Sum};
 
 use typenum::*;
 
-use crate::arch::paging;
+use crate::arch::cap::UnmappedPage;
+use crate::arch::PageBits;
 use crate::cap::{
-    role, CNodeRole, Cap, CapRange, CapType, Delible, DirectRetype, LocalCap, Movable, PhantomCap,
+    role, CNode, CNodeRole, CNodeSlot, CNodeSlots, Cap, CapRange, CapType, ChildCNode,
+    ChildCNodeSlots, Delible, DirectRetype, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap,
+    Movable, PhantomCap,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
-use crate::userland::{
-    CNode, CNodeSlot, CNodeSlots, ChildCNode, ChildCNodeSlots, LocalCNode, LocalCNodeSlot,
-    LocalCNodeSlots, UnmappedPage,
-};
 
 // The seL4 kernel's maximum amount of retypes per system call is configurable
 // in the sel4.toml, particularly by the KernelRetypeFanOutLimit property.
@@ -45,7 +44,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> Movable for Untyped<BitSize, Kind> {}
 
 impl<BitSize: Unsigned, Kind: MemoryKind> Delible for Untyped<BitSize, Kind> {}
 
-pub(crate) trait MemoryKind {}
+pub trait MemoryKind {}
 
 pub mod memory_kind {
     use super::MemoryKind;
@@ -427,7 +426,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
     }
 }
 
-impl LocalCap<Untyped<paging::PageBits, memory_kind::Device>> {
+impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
     /// The only thing memory_kind::Device memory can be used to make
     /// is a page/frame.
     pub fn retype_device_page(

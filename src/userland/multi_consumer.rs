@@ -33,17 +33,16 @@ use selfe_sys::{seL4_Signal, seL4_Wait};
 
 use typenum::*;
 
-use crate::arch::paging::PageBytes;
+use crate::arch::cap::{AssignedPageDirectory, MappedPage, UnmappedPage};
+use crate::arch::PageBytes;
 use crate::cap::{
-    role, CNodeRole, Cap, DirectRetype, ImmobileIndelibleInertCapabilityReference, LocalCap,
-    PhantomCap,
+    irq_state, memory_kind, role, Badge, CNodeRole, Cap, ChildCNodeSlot, ChildCNodeSlots,
+    DirectRetype, IRQControl, IRQError, IRQHandler, ImmobileIndelibleInertCapabilityReference,
+    LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, Notification, PhantomCap, Untyped,
 };
 use crate::error::SeL4Error;
-use crate::userland::{
-    irq_state, memory_kind, Badge, CapRights, ChildCNodeSlot, ChildCNodeSlots, IRQControl,
-    IRQError, IRQHandler, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, MappedPage, Notification,
-    UnmappedPage, Untyped, VSpace, VSpaceScratchSlice,
-};
+use crate::userland::CapRights;
+use crate::vspace::{VSpace, VSpaceScratchSlice};
 
 /// A multi-consumer that consumes interrupt-style notifications
 ///

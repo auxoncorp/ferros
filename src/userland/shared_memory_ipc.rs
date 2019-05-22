@@ -5,12 +5,14 @@ use selfe_sys::{seL4_Signal, seL4_Wait};
 use typenum::operator_aliases::Sub1;
 use typenum::{Unsigned, B1, U2, U5};
 
-use crate::arch::paging::PageBytes;
-use crate::cap::{role, CNodeRole, Cap, DirectRetype, LocalCap};
-use crate::userland::{
-    memory_kind, Badge, CapRights, ChildCNodeSlots, IPCError, LocalCNode, LocalCNodeSlots,
-    Notification, UnmappedPage, Untyped, VSpace,
+use crate::arch::cap::UnmappedPage;
+use crate::arch::PageBytes;
+use crate::cap::{
+    memory_kind, role, Badge, CNodeRole, Cap, ChildCNodeSlots, DirectRetype, LocalCNode,
+    LocalCNodeSlots, LocalCap, Notification, Untyped,
 };
+use crate::userland::{CapRights, IPCError};
+use crate::vspace::VSpace;
 
 pub mod sync {
     use super::*;

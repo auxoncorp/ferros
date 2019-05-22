@@ -4,7 +4,31 @@ use selfe_sys::*;
 use typenum::*;
 
 use crate::error::SeL4Error;
-use crate::userland::{Badge, CNodeSlot, CapRights, LocalCNode, LocalCNodeSlot};
+use crate::userland::CapRights;
+
+mod asid;
+mod asid_control;
+mod asid_pool;
+mod badge;
+mod cnode;
+mod endpoint;
+mod irq_control;
+mod irq_handler;
+mod notification;
+mod tcb;
+mod untyped;
+
+pub use asid::*;
+pub use asid_control::*;
+pub use asid_pool::*;
+pub use badge::*;
+pub use cnode::*;
+pub use endpoint::*;
+pub use irq_control::*;
+pub use irq_handler::*;
+pub use notification::*;
+pub use tcb::*;
+pub use untyped::*;
 
 /// Type-level enum indicating the relative location / Capability Pointer addressing
 /// scheme that should be used for the objects parameterized by it.
