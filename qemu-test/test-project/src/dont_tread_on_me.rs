@@ -30,7 +30,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     );
 
     smart_alloc!(|slots: local_slots, ut: uts| {
-        let (mut local_vspace_scratch, root_page_directory) =
+        let (mut local_vspace_scratch, _root_page_directory) =
             VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
 
         let (proc1_cspace, proc1_slots) = retype_cnode::<U12>(ut, slots)?;
@@ -38,7 +38,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (proc1_asid, asid_pool) = asid_pool.alloc();
-        let (proc2_asid, asid_pool) = asid_pool.alloc();
+        let (proc2_asid, _asid_pool) = asid_pool.alloc();
 
         let proc1_vspace = VSpace::new(ut, slots, proc1_asid, &user_image, &root_cnode)?;
         let proc2_vspace = VSpace::new_with_writable_user_image(

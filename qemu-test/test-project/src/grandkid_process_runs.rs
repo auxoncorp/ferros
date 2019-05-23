@@ -6,8 +6,8 @@ use typenum::*;
 
 use ferros::userland::{
     retype_cnode, role, root_cnode, ASIDPool, BootInfo, CNode, CNodeRole, CNodeSlotsData, Cap,
-    CapRights, LocalCNodeSlots, LocalCap, RetypeForSetup, ThreadPriorityAuthority, Untyped,
-    UserImage, VSpace, VSpaceScratchSlice,
+    CapRights, RetypeForSetup, ThreadPriorityAuthority, Untyped, UserImage, VSpace,
+    VSpaceScratchSlice,
 };
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
@@ -27,7 +27,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     );
 
     smart_alloc!(|slots: local_slots, ut: uts| {
-        let (mut local_vspace_scratch, root_page_directory) =
+        let (mut local_vspace_scratch, _root_page_directory) =
             VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
 
         let (child_cnode, child_slots) = retype_cnode::<U20>(ut, slots)?;
@@ -38,7 +38,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let slots_for_scratch = slots;
 
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
-        let (child_asid, asid_pool) = asid_pool.alloc();
+        let (child_asid, _asid_pool) = asid_pool.alloc();
         let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &cnode)?;
 
         smart_alloc!(|slots_c: child_slots| {
@@ -114,10 +114,10 @@ fn child_run(params: ChildParams<role::Local>) -> Result<(), TopLevelError> {
     let uts = alloc::ut_buddy(untyped);
 
     smart_alloc!(|slots: cnode_slots, ut: uts| {
-        let (child_cnode, child_slots) = retype_cnode::<U8>(ut, slots)?;
+        let (child_cnode, _child_slots) = retype_cnode::<U8>(ut, slots)?;
         let params = GrandkidParams { value: 42 };
 
-        let (child_asid, asid_pool) = asid_pool.alloc();
+        let (child_asid, _asid_pool) = asid_pool.alloc();
         let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &cnode)?;
         let (child_process, _) =
             child_vspace.prepare_thread(grandkid_main, params, ut, slots, &mut vspace_scratch)?;
@@ -135,6 +135,6 @@ impl RetypeForSetup for GrandkidParams {
     type Output = GrandkidParams;
 }
 
-pub extern "C" fn grandkid_main(params: GrandkidParams) {
+pub extern "C" fn grandkid_main(_params: GrandkidParams) {
     debug_println!("Grandkid process successfully ran")
 }

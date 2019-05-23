@@ -11,6 +11,10 @@ use selfe_sys::*;
 use typenum::*;
 
 impl LocalCap<ThreadControlBlock> {
+    pub fn downgrade_to_thread_priority_authority(self) -> LocalCap<ThreadPriorityAuthority> {
+        unsafe { core::mem::transmute(self) }
+    }
+
     pub(super) fn configure<VSpaceRole: CNodeRole>(
         &mut self,
         cspace_root: LocalCap<ChildCNode>,

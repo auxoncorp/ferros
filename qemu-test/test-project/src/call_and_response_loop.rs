@@ -24,12 +24,12 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     );
 
     smart_alloc!(|slots: local_slots, ut: uts| {
-        let (mut local_vspace_scratch, root_page_directory) =
+        let (mut local_vspace_scratch, _root_page_directory) =
             VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
 
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (child_a_asid, asid_pool) = asid_pool.alloc();
-        let (child_b_asid, asid_pool) = asid_pool.alloc();
+        let (child_b_asid, _asid_pool) = asid_pool.alloc();
 
         let child_a_vspace = VSpace::new(ut, slots, child_a_asid, &user_image, &root_cnode)?;
         let child_b_vspace = VSpace::new(ut, slots, child_b_asid, &user_image, &root_cnode)?;

@@ -132,6 +132,22 @@ impl<FreeSlots: Unsigned> LocalCap<ASIDPool<FreeSlots>> {
             },
         )
     }
+
+    pub fn truncate<OutFreeSlots: Unsigned>(self) -> LocalCap<ASIDPool<OutFreeSlots>>
+    where
+        FreeSlots: IsGreaterOrEqual<OutFreeSlots, Output = True>,
+    {
+        Cap {
+            cptr: self.cptr,
+            _role: PhantomData,
+            cap_data: ASIDPool {
+                id: self.cap_data.id,
+                next_free_slot: self.cap_data.next_free_slot
+                    + (FreeSlots::USIZE - OutFreeSlots::USIZE),
+                _free_slots: PhantomData,
+            },
+        }
+    }
 }
 
 impl LocalCap<UnassignedASID> {

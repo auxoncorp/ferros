@@ -1,24 +1,17 @@
 use super::TopLevelError;
 use ferros::alloc::micro_alloc::Allocator;
-use ferros::userland::{root_cnode, BootInfo, LocalCNodeSlots, SeL4Error};
+use ferros::userland::{root_cnode, LocalCNodeSlots, SeL4Error};
 use selfe_sys::seL4_BootInfo;
 use typenum::*;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
-    let BootInfo {
-        root_page_directory,
-        asid_control,
-        user_image,
-        root_tcb,
-        ..
-    } = BootInfo::wrap(&raw_boot_info);
     let mut allocator = Allocator::bootstrap(&raw_boot_info)?;
-    let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
+    let (_root_cnode, local_slots) = root_cnode(&raw_boot_info);
     let ut_20 = allocator.get_untyped::<U20>().expect("alloc failure a");
     let (slots, local_slots) = local_slots.alloc();
     let (ut_a, ut_b, ut_c, ut_18) = ut_20.quarter(slots)?;
     let (slots, mut local_slots) = local_slots.alloc();
-    let (ut_d, ut_e, ut_f, ut_g) = ut_18.quarter(slots)?;
+    let (ut_d, ut_e, ut_f, _ut_g) = ut_18.quarter(slots)?;
 
     let track = core::cell::Cell::new(0);
     let track_ref = &track;
@@ -28,7 +21,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     // TODO - check correct reuse following inner error
     local_slots.with_temporary(move |inner_slots| -> Result<(), SeL4Error> {
         let (slots, _inner_slots) = inner_slots.alloc();
-        let (a, b) = ut_a.split(slots)?;
+        let (_a, _b) = ut_a.split(slots)?;
         track_ref.set(track_ref.get() + 1);
         Ok(())
     })??;
@@ -36,7 +29,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
     local_slots.with_temporary(move |inner_slots| -> Result<(), SeL4Error> {
         let (slots, _inner_slots) = inner_slots.alloc();
-        let (a, b) = ut_b.split(slots)?; // Expect it to blow up here
+        let (_a, _b) = ut_b.split(slots)?; // Expect it to blow up here
         track_ref.set(track_ref.get() + 1);
         Ok(())
     })??;
@@ -47,7 +40,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         // Nested use (left)
         slots_a.with_temporary(move |inner_slots_a| -> Result<(), SeL4Error> {
             let (slots, _) = inner_slots_a.alloc();
-            let (a, b) = ut_c.split(slots)?;
+            let (_a, _b) = ut_c.split(slots)?;
             track_ref.set(track_ref.get() + 1);
             Ok(())
         })??;
@@ -56,7 +49,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         // Nested reuse (left)
         slots_a.with_temporary(move |inner_slots_a| -> Result<(), SeL4Error> {
             let (slots, _) = inner_slots_a.alloc();
-            let (a, b) = ut_d.split(slots)?;
+            let (_a, _b) = ut_d.split(slots)?;
             track_ref.set(track_ref.get() + 1);
             Ok(())
         })??;
@@ -65,7 +58,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         // Nested use (right)
         slots_b.with_temporary(move |inner_slots_b| -> Result<(), SeL4Error> {
             let (slots, _) = inner_slots_b.alloc();
-            let (a, b) = ut_e.split(slots)?;
+            let (_a, _b) = ut_e.split(slots)?;
             track_ref.set(track_ref.get() + 1);
             Ok(())
         })??;
@@ -74,7 +67,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         // Nested reuse (right)
         slots_b.with_temporary(move |inner_slots_b| -> Result<(), SeL4Error> {
             let (slots, _) = inner_slots_b.alloc();
-            let (a, b) = ut_f.split(slots)?;
+            let (_a, _b) = ut_f.split(slots)?;
             track_ref.set(track_ref.get() + 1);
             Ok(())
         })??;

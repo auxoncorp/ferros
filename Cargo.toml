@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["Russell Mull <russell@auxon.io>", "Zack Pierce <zack@auxon.io"]
 edition = "2018"
 
+[features]
+default = []
+test_support = []
+
 [dependencies]
 # NOTE: We use a git dependency directly since the git submodules
 # don't currently work when pulled down from crates.io

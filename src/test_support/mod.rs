@@ -1,27 +1,89 @@
-use super::alloc::*;
-use super::userland::*;
-use crate::pow::Pow;
+use crate::userland::*;
 use core::marker::PhantomData;
 use selfe_sys::*;
 use typenum::*;
 
-#[derive(Debug, Clone, Copy)]
-pub enum TestOutcome {
-    Success,
-    Failure,
+mod resources;
+mod types;
+
+pub use resources::*;
+pub use types::*;
+
+impl TestReporter for crate::debug::DebugOutHandle {
+    fn report(&mut self, test_name: &'static str, outcome: TestOutcome) {
+        use core::fmt::Write;
+        let _ = writeln!(
+            self,
+            "test {} ... {}",
+            test_name,
+            if outcome == TestOutcome::Success {
+                "ok"
+            } else {
+                "FAILED"
+            }
+        );
+    }
+
+    fn summary(&mut self, passed: u32, failed: u32) {
+        use core::fmt::Write;
+        let _ = writeln!(
+            self,
+            "\ntest result: {}. {} passed; {} failed;",
+            if failed == 0 { "ok" } else { "FAILED" },
+            passed,
+            failed
+        );
+    }
 }
 
-type MaxTestUntypedSize = U27;
-type MaxTestCNodeSlots = Pow<U15>;
-type RunTest = Fn(
-    &LocalCap<LocalCNode>,
-    LocalCNodeSlots<MaxTestCNodeSlots>,
-    Untyped<MaxTestUntypedSize>,
-    ASIDPool<super::arch::asid::PoolSize>,
-    UserImage<role::Local>,
-    VSpaceScratchSlice<role::Local>,
-    LocalCap<ThreadPriorityAuthority>,
-) -> TestOutcome;
+// TODO - a TestReporter impl for a UART
+
+/// Execute multiple tests, reporting their results
+/// in a streaming fashion followed by a final summary.
+///
+/// The &RunTest instances are expected to be references
+/// to functions annotated with `#[ferros_test]`, which
+/// transforms said tests to conform with the RunTest signature
+pub fn execute_tests<'t, R: types::TestReporter>(
+    mut reporter: R,
+    resources: resources::TestResourceRefs<'t>,
+    tests: &[&types::RunTest],
+) -> Result<types::TestOutcome, SeL4Error> {
+    let resources::TestResourceRefs {
+        slots,
+        untyped,
+        asid_pool,
+        scratch,
+        cnode,
+        thread_authority,
+        user_image,
+    } = resources;
+    let mut successes = 0;
+    let mut failures = 0;
+    for t in tests {
+        with_temporary_resources(
+            slots,
+            untyped,
+            asid_pool,
+            |s, u, a| -> Result<(), SeL4Error> {
+                let (name, outcome) = t(s, u, a, scratch, cnode, thread_authority, user_image);
+                reporter.report(name, outcome);
+                if outcome == types::TestOutcome::Success {
+                    successes += 1;
+                } else {
+                    failures += 1;
+                }
+                Ok(())
+            },
+        )??;
+    }
+    reporter.summary(successes, failures);
+    Ok(if failures == 0 {
+        types::TestOutcome::Success
+    } else {
+        types::TestOutcome::Failure
+    })
+}
 
 /// Gain temporary access to some slots and memory for use in a function context.
 /// When the passed function call is complete, all capabilities
