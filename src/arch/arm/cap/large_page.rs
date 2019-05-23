@@ -1,3 +1,13 @@
+use core::marker::PhantomData;
+
+use selfe_sys::*;
+
+use typenum::*;
+
+use crate::cap::{
+    memory_kind, role, CNodeRole, Cap, CapType, CopyAliasable, DirectRetype, MemoryKind, PhantomCap,
+};
+
 #[derive(Debug)]
 pub struct UnmappedLargePage<Kind: MemoryKind> {
     _kind: PhantomData<Kind>,

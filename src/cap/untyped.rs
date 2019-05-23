@@ -44,7 +44,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> Movable for Untyped<BitSize, Kind> {}
 
 impl<BitSize: Unsigned, Kind: MemoryKind> Delible for Untyped<BitSize, Kind> {}
 
-pub trait MemoryKind {}
+pub trait MemoryKind: private::SealedMemoryKind {}
 
 pub mod memory_kind {
     use super::MemoryKind;
@@ -463,4 +463,10 @@ impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
             _role: PhantomData,
         })
     }
+}
+
+mod private {
+    pub trait SealedMemoryKind {}
+    impl SealedMemoryKind for super::memory_kind::Device {}
+    impl SealedMemoryKind for super::memory_kind::General {}
 }

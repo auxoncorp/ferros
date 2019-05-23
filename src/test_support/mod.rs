@@ -40,12 +40,6 @@ impl TestReporter for crate::debug::DebugOutHandle {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum TestOutcome {
-    Success,
-    Failure,
-}
-
 // TODO - a TestReporter impl for a UART
 
 /// Execute multiple tests, reporting their results

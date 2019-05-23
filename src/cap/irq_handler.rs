@@ -8,7 +8,7 @@ use crate::cap::{Cap, CapType, LocalCap, Movable, Notification};
 use crate::error::SeL4Error;
 
 /// Whether or not an IRQ Handle has been set to a particular Notification
-pub trait IRQSetState {}
+pub trait IRQSetState: private::SealedIRQSetState {}
 
 pub mod irq_state {
     use super::IRQSetState;
@@ -76,4 +76,10 @@ where
         }
         Ok(())
     }
+}
+
+mod private {
+    pub trait SealedIRQSetState {}
+    impl SealedIRQSetState for super::irq_state::Unset {}
+    impl SealedIRQSetState for super::irq_state::Set {}
 }
