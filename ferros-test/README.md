@@ -36,7 +36,7 @@ ferros-test = { git = "ssh://git@github.com/auxoncorp/ferros.git"}
 ### Creating Tests
 
 In the source of that project, you define tests as functions that accept zero or more ferros 
-capabilities return a Result, annotated with a `#[ferros_test]` attribute.
+capabilities as arguments and return a Result, annotated with a `#[ferros_test]` attribute.
 
 ```rust
 use ferros::*;
