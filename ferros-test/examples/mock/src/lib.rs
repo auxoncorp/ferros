@@ -1,5 +1,7 @@
+use ferros::bootstrap::*;
+use ferros::cap::*;
 use ferros::test_support::*;
-use ferros::userland::*;
+use ferros::vspace::*;
 use ferros_test::ferros_test;
 use typenum::*;
 
@@ -55,14 +57,14 @@ fn localcap_localcnode_parameter(node: &LocalCap<LocalCNode>) {}
 fn localcap_threadpriorityauthority_parameter(tpa: &LocalCap<ThreadPriorityAuthority>) {}
 
 #[ferros_test]
-fn userimage_parameter(image: &UserImage<ferros::userland::role::Local>) {}
+fn userimage_parameter(image: &UserImage<ferros::cap::role::Local>) {}
 
 #[ferros_test]
-fn vspacescratch_parameter(scratch: &mut VSpaceScratchSlice<ferros::userland::role::Local>) {}
+fn vspacescratch_parameter(scratch: &mut VSpaceScratchSlice<ferros::cap::role::Local>) {}
 
 pub mod ferros {
     pub mod alloc {
-        use super::userland::*;
+        use super::cap::*;
         use core::marker::PhantomData;
         use typenum::*;
 
@@ -81,7 +83,15 @@ pub mod ferros {
             }
         }
     }
-    pub mod userland {
+    pub mod bootstrap {
+        use core::marker::PhantomData;
+        pub struct UserImage<T>(pub PhantomData<T>);
+    }
+    pub mod vspace {
+        use core::marker::PhantomData;
+        pub struct VSpaceScratchSlice<T>(pub PhantomData<T>);
+    }
+    pub mod cap {
         use core::marker::PhantomData;
         use core::ops::Sub;
         use typenum::*;
@@ -89,8 +99,6 @@ pub mod ferros {
         pub struct LocalCap<T>(pub PhantomData<T>);
         pub struct Untyped<T>(pub PhantomData<T>);
         pub struct ASIDPool<T>(pub PhantomData<T>);
-        pub struct UserImage<T>(pub PhantomData<T>);
-        pub struct VSpaceScratchSlice<T>(pub PhantomData<T>);
         pub struct LocalCNode;
         pub struct ThreadPriorityAuthority;
 

@@ -1,11 +1,12 @@
 #![no_std]
 #![recursion_limit = "128"]
 
-use ferros::test_support::TestOutcome;
-use ferros::userland::{
-    ASIDPool, LocalCNode, LocalCNodeSlots, LocalCap, ThreadPriorityAuthority, Untyped, UserImage,
-    VSpaceScratchSlice,
+use ferros::bootstrap::UserImage;
+use ferros::cap::{
+    ASIDPool, LocalCNode, LocalCNodeSlots, LocalCap, ThreadPriorityAuthority, Untyped,
 };
+use ferros::test_support::TestOutcome;
+use ferros::vspace::VSpaceScratchSlice;
 
 use ferros_test::{ferros_test, ferros_test_main};
 use typenum::*;
@@ -55,17 +56,17 @@ fn localcap_localcnode_parameter(cnode: &LocalCap<LocalCNode>) {}
 fn localcap_threadpriorityauthority_parameter(tpa: &LocalCap<ThreadPriorityAuthority>) {}
 
 #[ferros_test]
-fn userimage_parameter(image: &UserImage<ferros::userland::role::Local>) {}
+fn userimage_parameter(image: &UserImage<ferros::cap::role::Local>) {}
 
 #[ferros_test]
-fn vspacescratch_parameter(scratch: &mut VSpaceScratchSlice<ferros::userland::role::Local>) {}
+fn vspacescratch_parameter(scratch: &mut VSpaceScratchSlice<ferros::cap::role::Local>) {}
 
 #[ferros_test]
 fn multiple_mixed_parameters(
     untyped: LocalCap<Untyped<U5>>,
-    scratch: &mut VSpaceScratchSlice<ferros::userland::role::Local>,
+    scratch: &mut VSpaceScratchSlice<ferros::cap::role::Local>,
     slots: LocalCNodeSlots<U5>,
-    image: &UserImage<ferros::userland::role::Local>,
+    image: &UserImage<ferros::cap::role::Local>,
     pool: LocalCap<ASIDPool<U1024>>,
     cnode: &LocalCap<LocalCNode>,
 ) {

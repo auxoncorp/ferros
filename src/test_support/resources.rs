@@ -4,7 +4,6 @@ use typenum::*;
 use crate::arch::cap::*;
 use crate::bootstrap::*;
 use crate::cap::*;
-use crate::userland::*;
 use crate::vspace::*;
 
 pub struct Resources {

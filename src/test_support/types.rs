@@ -1,7 +1,6 @@
 use typenum::*;
 
 use crate::alloc::micro_alloc::Error as AllocError;
-use crate::arch::cap::*;
 use crate::bootstrap::*;
 use crate::cap::*;
 use crate::error::SeL4Error;
