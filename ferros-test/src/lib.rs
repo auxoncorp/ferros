@@ -1,26 +1,49 @@
-#![recursion_limit = "256"]
-extern crate proc_macro;
-use proc_macro::TokenStream;
-use quote::ToTokens;
+#![no_std]
+#![allow(dead_code)]
 
-mod codegen;
-mod model;
-mod parse;
+pub use test_macro_impl::ferros_test;
 
-use model::*;
+#[cfg(feature = "sel4_start_main")]
+#[doc(hidden)]
+pub fn sel4_start_main(tests: &[&ferros::test_support::RunTest]) {
+    let raw_boot_info = unsafe { &*sel4_start::BOOTINFO };
+    let (mut resources, reporter) =
+        ferros::test_support::Resources::with_debug_reporting(raw_boot_info)
+            .expect("Test resource setup failure");
 
-#[proc_macro_attribute]
-pub fn ferros_test(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let syn_content = match SynContent::parse(attr.into(), item.into()) {
-        Ok(c) => c,
-        Err(e) => return e.to_compile_error().into(),
+    ferros::test_support::execute_tests(reporter, resources.as_mut_ref(), tests)
+        .expect("Test execution failure");
+
+    let suspend_error =
+        unsafe { ::selfe_sys::seL4_TCB_Suspend(::selfe_sys::seL4_CapInitThreadTCB as usize) };
+    if suspend_error != 0 {
+        use core::fmt::Write;
+        writeln!(
+            sel4_start::DebugOutHandle,
+            "Error suspending root task thread: {}",
+            suspend_error
+        )
+        .unwrap();
+    }
+}
+
+#[cfg(feature = "sel4_start_main")]
+#[doc(hidden)]
+pub fn sel4_start_panic_handler(info: &core::panic::PanicInfo) -> ! {
+    sel4_start::debug_panic_handler(&info)
+}
+
+#[cfg(feature = "sel4_start_main")]
+#[macro_export]
+macro_rules! ferros_test_main {
+    ($tests:expr) => {
+        fn main() {
+            $crate::sel4_start_main($tests)
+        }
+
+        #[panic_handler]
+        fn panic(info: &core::panic::PanicInfo) -> ! {
+            $crate::sel4_start_panic_handler(info)
+        }
     };
-    let model = match TestModel::parse(syn_content) {
-        Ok(m) => m,
-        Err(e) => return e.to_compile_error().into(),
-    };
-    model
-        .generate_runnable_test(codegen::UuidGenerator::default())
-        .into_token_stream()
-        .into()
 }

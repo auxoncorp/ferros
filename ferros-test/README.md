@@ -76,6 +76,7 @@ supplied with test-resources extracted from a `seL4_BootInfo` object. [sel4-star
 a handle on a boot info object.
 
 ```rust
+#![no_std]
 use ferros::test_support::{execute_tests, Resources};
 
 fn main() {
@@ -91,11 +92,25 @@ fn main() {
             &more_detailed_integration_test
         ]).expect("Test execution failed");
 }
+
+// ... panic handler decisions left to the user
 ```
 
 Once you execute this application with, say, `selfe simulate --platform sabre --sel4_arch aarch32`,
 the outcome of executing the tests should be printed.
 See the `minimal` application in the examples subdirectory for a full demonstration.
+
+For a simplified harness that uses `selfe_sys::DebugPutChar` based reporting
+and relies on `sel4-start` to acquire a boot info and manage panics, consider 
+using the `ferros_test_main` macro.
+
+```rust
+ferros_test_main!(&[
+    &example_test,
+    &other_example_test,
+    &more_detailed_integration_test
+]);
+```
 
 ## Tests
 
