@@ -8,8 +8,8 @@ use typenum::*;
 use crate::arch::cap::*;
 use crate::arch::*;
 use crate::cap::{
-    memory_kind, role, ASIDControl, CNode, CNodeRole, CNodeSlots, Cap, IRQControl, LocalCNode,
-    LocalCNodeSlots, LocalCap, ThreadControlBlock,
+    memory_kind, role, CNode, CNodeRole, CNodeSlots, Cap, IRQControl, LocalCNode, LocalCNodeSlots,
+    LocalCap, ThreadControlBlock,
 };
 use crate::error::SeL4Error;
 use crate::pow::Pow;

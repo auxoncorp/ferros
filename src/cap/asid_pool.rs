@@ -4,7 +4,7 @@ use core::ops::Sub;
 use typenum::*;
 
 use crate::arch;
-use crate::cap::{Cap, CapType, LocalCap, Movable, UnassignedASID};
+use crate::cap::{Cap, CapType, LocalCap, Movable};
 
 #[derive(Debug)]
 pub struct ASIDPool<FreeSlots: Unsigned> {
@@ -21,7 +21,7 @@ impl<FreeSlots: Unsigned> LocalCap<ASIDPool<FreeSlots>> {
     pub fn alloc(
         self,
     ) -> (
-        LocalCap<UnassignedASID>,
+        LocalCap<arch::cap::UnassignedASID>,
         LocalCap<ASIDPool<op!(FreeSlots - U1)>>,
     )
     where
@@ -32,7 +32,7 @@ impl<FreeSlots: Unsigned> LocalCap<ASIDPool<FreeSlots>> {
             Cap {
                 cptr: self.cptr,
                 _role: PhantomData,
-                cap_data: UnassignedASID {
+                cap_data: arch::cap::UnassignedASID {
                     asid: (self.cap_data.id << arch::ASIDPoolBits::USIZE)
                         | self.cap_data.next_free_slot,
                 },

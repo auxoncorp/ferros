@@ -6,8 +6,6 @@ use typenum::*;
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
 
-mod asid;
-mod asid_control;
 mod asid_pool;
 mod badge;
 mod cnode;
@@ -18,8 +16,6 @@ mod notification;
 mod tcb;
 mod untyped;
 
-pub use asid::*;
-pub use asid_control::*;
 pub use asid_pool::*;
 pub use badge::*;
 pub use cnode::*;
@@ -406,10 +402,7 @@ mod private {
     impl SealedCapType for ThreadPriorityAuthority {}
     impl SealedCapType for Endpoint {}
     impl SealedCapType for Notification {}
-    impl<FreePools: Unsigned> SealedCapType for ASIDControl<FreePools> {}
     impl<FreeSlots: Unsigned> SealedCapType for ASIDPool<FreeSlots> {}
-    impl SealedCapType for UnassignedASID {}
-    impl<ThreadCount: Unsigned> SealedCapType for AssignedASID<ThreadCount> {}
     impl SealedCapType for IRQControl {}
     impl<IRQ: Unsigned, SetState: IRQSetState> SealedCapType for IRQHandler<IRQ, SetState> where
         IRQ: IsLess<U256, Output = True>
@@ -468,6 +461,9 @@ mod private {
 
         impl<Kind: MemoryKind> super::SealedCapType for UnmappedLargePage<Kind> {}
         impl<Role: CNodeRole, Kind: MemoryKind> super::SealedCapType for MappedLargePage<Role, Kind> {}
+        impl<FreePools: Unsigned> super::SealedCapType for ASIDControl<FreePools> {}
+        impl super::SealedCapType for UnassignedASID {}
+        impl<ThreadCount: Unsigned> super::SealedCapType for AssignedASID<ThreadCount> {}
 
     }
 

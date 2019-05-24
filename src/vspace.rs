@@ -11,15 +11,14 @@ use typenum::*;
 
 use crate::arch;
 use crate::arch::cap::{
-    AssignedPageDirectory, MappedPage, MappedPageTable, MappedSection, UnassignedPageDirectory,
-    UnmappedPage, UnmappedPageTable, UnmappedSection,
+    AssignedPageDirectory, MappedPage, MappedPageTable, MappedSection, UnassignedASID,
+    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, UnmappedSection,
 };
 use crate::bootstrap::UserImage;
 use crate::cap::{
     self, memory_kind, role, CNodeRole, Cap, CapRange, ChildCNode, ChildCNodeSlots, DirectRetype,
     ImmobileIndelibleInertCapabilityReference, LocalCNode, LocalCNodeSlot, LocalCNodeSlots,
-    LocalCap, MemoryKind, PhantomCap, ThreadControlBlock, ThreadPriorityAuthority, UnassignedASID,
-    Untyped,
+    LocalCap, MemoryKind, PhantomCap, ThreadControlBlock, ThreadPriorityAuthority, Untyped,
 };
 use crate::error::SeL4Error;
 use crate::pow::Pow;
