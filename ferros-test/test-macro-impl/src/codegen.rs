@@ -309,15 +309,13 @@ mod tests {
             fn original_target(
                 slots: ferros::cap::LocalCNodeSlots<ferros::test_support::MaxTestCNodeSlots>,
                 untyped: ferros::cap::LocalCap<
-                    ferros::cap::Untyped<ferros::test_support::MaxTestUntypedSize>,
-                >,
+                    ferros::cap::Untyped<ferros::test_support::MaxTestUntypedSize>>,
                 asid_pool: ferros::cap::LocalCap<
-                    ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>,
-                >,
+                    ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>>,
                 scratch: &mut ferros::vspace::VSpaceScratchSlice<ferros::cap::role::Local>,
                 local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
                 thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
-                user_image: &ferros::cap::UserImage<ferros::cap::role::Local>
+                user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>
             ) -> (&'static str, ferros::test_support::TestOutcome) {
                 fn under_test() {
                     assert!(true);
@@ -369,11 +367,9 @@ mod tests {
             fn original_target(
                 slots: ferros::cap::LocalCNodeSlots<ferros::test_support::MaxTestCNodeSlots>,
                 untyped: ferros::cap::LocalCap<
-                    ferros::cap::Untyped<ferros::test_support::MaxTestUntypedSize>,
-                >,
+                    ferros::cap::Untyped<ferros::test_support::MaxTestUntypedSize>>,
                 asid_pool: ferros::cap::LocalCap<
-                    ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>,
-                >,
+                    ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>>,
                 scratch: &mut ferros::vspace::VSpaceScratchSlice<ferros::cap::role::Local>,
                 local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
                 thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
