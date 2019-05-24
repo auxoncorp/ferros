@@ -22,24 +22,27 @@
 //! let (consumer_params_member, queue_producer_setup, waker_setup,  ...leftovers) = double_door(...)
 //! let (waker_params_member, ...leftovers) = Waker::new(waker_setup,waker_thread_cnode)
 //! let (producer_params_member, ...leftovers) = Producer::new(queue_producer_setup, producer_thread_cnode, producer_thread_vspace)
-
-use crate::arch::paging::PageBytes;
-use crate::userland::cap::AssignedPageDirectory;
-use crate::userland::cap::Badge;
-use crate::userland::{
-    irq_state, memory_kind, CNodeRole, Cap, CapRights, ChildCNodeSlot, ChildCNodeSlots,
-    DirectRetype, IRQControl, IRQError, IRQHandler, ImmobileIndelibleInertCapabilityReference,
-    LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, Notification, PhantomCap,
-    SeL4Error, UnmappedPage, Untyped, VSpace,
-};
-use crate::userland::{role, VSpaceScratchSlice};
 use core::marker::PhantomData;
 use core::ops::Sub;
-use cross_queue::PushError;
-use cross_queue::{ArrayQueue, Slot};
+
+use cross_queue::{ArrayQueue, PushError, Slot};
+
 use generic_array::ArrayLength;
+
 use selfe_sys::{seL4_Signal, seL4_Wait};
+
 use typenum::*;
+
+use crate::arch::cap::{AssignedPageDirectory, MappedPage, UnmappedPage};
+use crate::arch::PageBytes;
+use crate::cap::{
+    irq_state, memory_kind, role, Badge, CNodeRole, Cap, ChildCNodeSlot, ChildCNodeSlots,
+    DirectRetype, IRQControl, IRQError, IRQHandler, ImmobileIndelibleInertCapabilityReference,
+    LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, Notification, PhantomCap, Untyped,
+};
+use crate::error::SeL4Error;
+use crate::userland::CapRights;
+use crate::vspace::{VSpace, VSpaceScratchSlice};
 
 /// A multi-consumer that consumes interrupt-style notifications
 ///

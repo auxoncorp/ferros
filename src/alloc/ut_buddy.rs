@@ -5,8 +5,11 @@ use core::ops::{Add, Mul, Sub};
 use selfe_sys::*;
 use typenum::*;
 
-use crate::arch::{self, kernel};
-use crate::userland::{Cap, LocalCNodeSlots, LocalCap, SeL4Error, Untyped};
+use crate::arch::{MaxUntypedSize, MinUntypedSize};
+use crate::cap::{Cap, LocalCNodeSlots, LocalCap, Untyped};
+use crate::error::SeL4Error;
+
+type UTPoolSlotsPerSize = U4;
 
 /// A type-level linked list of typenum::Unsigned.
 pub trait UList {
@@ -110,15 +113,11 @@ type TakeUntyped_NumSplits<PoolSizes, Index> = <PoolSizes as _TakeUntyped<Index>
 // Buddy alloc
 pub struct UTBuddy<PoolSizes: UList> {
     _pool_sizes: PhantomData<PoolSizes>,
-    pool: [ArrayVec<[usize; arch::ut_buddy::UTPoolSlotsPerSize::USIZE]>;
-        kernel::MaxUntypedSize::USIZE],
+    pool: [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE],
 }
 
 #[allow(dead_code)]
-fn print_pool(
-    pool: &[ArrayVec<[usize; arch::ut_buddy::UTPoolSlotsPerSize::USIZE]>;
-         kernel::MaxUntypedSize::USIZE],
-) {
+fn print_pool(pool: &[ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE]) {
     debug_print!("Pool[ ");
     for av in pool {
         debug_print!("{} ", av.len());
@@ -135,10 +134,10 @@ where
     Diff<BitSize, U4>: _OneHotUList,
     OneHotUList<Diff<BitSize, U4>>: UList,
 {
-    let mut pool: [ArrayVec<[usize; arch::ut_buddy::UTPoolSlotsPerSize::USIZE]>;
-        kernel::MaxUntypedSize::USIZE] = Default::default();
+    let mut pool: [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE] =
+        Default::default();
 
-    pool[BitSize::USIZE - kernel::MinUntypedSize::USIZE].push(ut.cptr);
+    pool[BitSize::USIZE - MinUntypedSize::USIZE].push(ut.cptr);
 
     UTBuddy {
         _pool_sizes: PhantomData,
@@ -153,19 +152,19 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
     ) -> Result<
         (
             LocalCap<Untyped<BitSize>>,
-            UTBuddy<TakeUntyped_ResultPoolSizes<PoolSizes, Diff<BitSize, kernel::MinUntypedSize>>>,
+            UTBuddy<TakeUntyped_ResultPoolSizes<PoolSizes, Diff<BitSize, MinUntypedSize>>>,
         ),
         SeL4Error,
     >
     where
-        BitSize: Sub<kernel::MinUntypedSize>,
+        BitSize: Sub<MinUntypedSize>,
         NumSplits: Mul<U2>,
         Prod<NumSplits, U2>: Unsigned,
-        PoolSizes: _TakeUntyped<Diff<BitSize, kernel::MinUntypedSize>, NumSplits = NumSplits>,
-        TakeUntyped_ResultPoolSizes<PoolSizes, Diff<BitSize, kernel::MinUntypedSize>>: UList,
+        PoolSizes: _TakeUntyped<Diff<BitSize, MinUntypedSize>, NumSplits = NumSplits>,
+        TakeUntyped_ResultPoolSizes<PoolSizes, Diff<BitSize, MinUntypedSize>>: UList,
     {
         // The index in the pool array where Untypeds of the requested size are stored.
-        let index = BitSize::USIZE - kernel::MinUntypedSize::USIZE;
+        let index = BitSize::USIZE - MinUntypedSize::USIZE;
 
         let mut pool = self.pool;
 
@@ -177,7 +176,7 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
                 .zip(slots.iter().step_by(2))
             {
                 let cptr = pool[i].pop().unwrap();
-                let cptr_bitsize = i + kernel::MinUntypedSize::USIZE;
+                let cptr_bitsize = i + MinUntypedSize::USIZE;
 
                 let (slot_cptr, slot_offset, _) = slot.elim();
 

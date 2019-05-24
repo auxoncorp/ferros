@@ -2,7 +2,7 @@
 //! This one doesn't split anything; it just hands out the smallest untyped item
 //! that's big enough for the request.
 
-use crate::userland::{memory_kind, wrap_untyped, LocalCap, MemoryKind, Untyped};
+use crate::cap::{memory_kind, wrap_untyped, LocalCap, MemoryKind, Untyped};
 use arrayvec::ArrayVec;
 use typenum::Unsigned;
 

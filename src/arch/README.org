@@ -1,0 +1,24 @@
+#+TITLE: Cross-Architecture support for Ferros
+
+This module contains the architecture specific details for cross
+architecture support in Ferros. In most cases, this support is made
+available automatically as ~arch~ conditionally compiles and reëxports
+the its enclosed architecture specific items. Those items can be made
+available by ~use~-ing ~ferros::arch~.
+
+* Notes on the archtiectures supported by seL4 and Rust
+
+| seL4 calls it | Rust calls it |
+|---------------+---------------|
+| aarch32       | arm           |
+| aarch64       | aarch64       |
+| IA-32         | x86           |
+| x64           | x86_64        |
+|               | powerpc       |
+|               | powerpc64     |
+| RISC-V 32-bit |               |
+| RISC-V 64-bit |               |
+
+*Cf.*
+  - seL4 Manual 7.1.1
+  - https://doc.rust-lang.org/reference/conditional-compilation.html#target_arch

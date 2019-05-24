@@ -1,11 +1,13 @@
 //! A test verifying that, should a process need a writable copy of
 //! the user image, that such a write cannot affect another process'
 //! copy of the user image.
+use core::ptr;
 
 use ferros::alloc::{self, micro_alloc, smart_alloc};
-use ferros::userland::{
-    call_channel, retype_cnode, root_cnode, BootInfo, VSpace, VSpaceScratchSlice,
-};
+use ferros::bootstrap::{root_cnode, BootInfo};
+use ferros::cap::{retype_cnode, role, CNodeRole};
+use ferros::userland::{call_channel, Caller, Responder, RetypeForSetup};
+use ferros::vspace::{VSpace, VSpaceScratchSlice};
 
 use typenum::*;
 
@@ -89,9 +91,7 @@ fn to_be_changed() {
 }
 
 pub mod proc1 {
-    use ferros::userland::{role, CNodeRole, Responder, RetypeForSetup};
-
-    use super::to_be_changed;
+    use super::*;
 
     pub struct Proc1Params<Role: CNodeRole> {
         pub rspdr: Responder<(), (), Role>,
@@ -112,10 +112,7 @@ pub mod proc1 {
 }
 
 pub mod proc2 {
-    use core::ptr;
-    use ferros::userland::{role, CNodeRole, Caller, RetypeForSetup};
-
-    use super::to_be_changed;
+    use super::*;
 
     pub struct Proc2Params<Role: CNodeRole> {
         pub cllr: Caller<(), (), Role>,

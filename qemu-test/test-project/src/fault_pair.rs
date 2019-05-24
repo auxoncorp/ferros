@@ -1,12 +1,16 @@
-use super::TopLevelError;
 use core::marker::PhantomData;
-use ferros::alloc::{self, micro_alloc, smart_alloc};
-use ferros::userland::{
-    retype_cnode, role, root_cnode, setup_fault_endpoint_pair, BootInfo, CNodeRole, FaultSink,
-    RetypeForSetup, VSpace, VSpaceScratchSlice,
-};
+
 use selfe_sys::*;
+
 use typenum::*;
+
+use ferros::alloc::{self, micro_alloc, smart_alloc};
+use ferros::bootstrap::{root_cnode, BootInfo};
+use ferros::cap::{retype_cnode, role, CNodeRole};
+use ferros::userland::{setup_fault_endpoint_pair, FaultSink, RetypeForSetup};
+use ferros::vspace::{VSpace, VSpaceScratchSlice};
+
+use super::TopLevelError;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let BootInfo {

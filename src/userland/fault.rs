@@ -1,11 +1,13 @@
-use crate::userland::cap::DirectRetype;
-use crate::userland::{
-    role, type_length_in_words, Badge, CNodeRole, CNodeSlot, Cap, CapRights, ChildCNodeSlot,
-    Endpoint, IPCBuffer, IPCError, LocalCNode, LocalCNodeSlot, LocalCap, MessageInfo, SeL4Error,
-    Sender, Untyped,
-};
 use core::marker::PhantomData;
+
 use selfe_sys::*;
+
+use crate::cap::{
+    role, Badge, CNodeRole, CNodeSlot, Cap, ChildCNodeSlot, DirectRetype, Endpoint, LocalCNode,
+    LocalCNodeSlot, LocalCap, Untyped,
+};
+use crate::error::SeL4Error;
+use crate::userland::{type_length_in_words, CapRights, IPCBuffer, IPCError, MessageInfo, Sender};
 
 #[derive(Debug)]
 pub enum FaultManagementError {
