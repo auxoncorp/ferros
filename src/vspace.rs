@@ -2,21 +2,28 @@ use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Add, Sub};
 
-use crate::arch::paging;
-use crate::pow::Pow;
-use crate::userland::cap::ThreadControlBlock;
-use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, SetupVer};
-use crate::userland::{
-    memory_kind, role, AssignedPageDirectory, CNodeRole, Cap, CapRange, CapRights, ChildCNode,
-    ChildCNodeSlots, DirectRetype, FaultSource, ImmobileIndelibleInertCapabilityReference,
-    LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, MappedPage, MappedPageTable,
-    MappedSection, MemoryKind, PhantomCap, SeL4Error, ThreadPriorityAuthority, UnassignedASID,
-    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, UnmappedSection, Untyped, UserImage,
-};
 use generic_array::{ArrayLength, GenericArray};
+
 use selfe_sys::*;
+
 use typenum::operator_aliases::{Diff, Sub1, Sum};
 use typenum::*;
+
+use crate::arch;
+use crate::arch::cap::{
+    AssignedPageDirectory, MappedPage, MappedPageTable, MappedSection, UnassignedASID,
+    UnassignedPageDirectory, UnmappedPage, UnmappedPageTable, UnmappedSection,
+};
+use crate::bootstrap::UserImage;
+use crate::cap::{
+    self, memory_kind, role, CNodeRole, Cap, CapRange, ChildCNode, ChildCNodeSlots, DirectRetype,
+    ImmobileIndelibleInertCapabilityReference, LocalCNode, LocalCNodeSlot, LocalCNodeSlots,
+    LocalCap, MemoryKind, PhantomCap, ThreadControlBlock, ThreadPriorityAuthority, Untyped,
+};
+use crate::error::SeL4Error;
+use crate::pow::Pow;
+use crate::userland::process::{setup_initial_stack_and_regs, RetypeForSetup, SetupVer};
+use crate::userland::{CapRights, FaultSource};
 
 #[derive(Debug)]
 pub enum VSpaceError {
@@ -47,7 +54,7 @@ pub struct VSpace<
     current_page_table: LocalCap<MappedPageTable<PageTableFreeSlots, Role>>,
 }
 
-pub type NewVSpaceCNodeSlots = Sum<Sum<paging::CodePageTableCount, paging::CodePageCount>, U16>;
+pub type NewVSpaceCNodeSlots = Sum<Sum<arch::CodePageTableCount, arch::CodePageCount>, U16>;
 
 impl VSpace {
     pub fn new(
@@ -58,21 +65,21 @@ impl VSpace {
         parent_cnode: &LocalCap<LocalCNode>,
     ) -> Result<
         VSpace<
-            Diff<paging::BasePageDirFreeSlots, Sum<paging::CodePageTableCount, U1>>,
-            paging::BasePageTableFreeSlots,
+            Diff<arch::BasePageDirFreeSlots, Sum<arch::CodePageTableCount, U1>>,
+            arch::BasePageTableFreeSlots,
             role::Child,
         >,
         SeL4Error,
     >
     where
-        paging::CodePageTableCount: Add<U1>,
-        Sum<paging::CodePageTableCount, U1>: Unsigned,
+        arch::CodePageTableCount: Add<U1>,
+        Sum<arch::CodePageTableCount, U1>: Unsigned,
 
-        paging::BasePageTableFreeSlots: Sub<Sum<paging::CodePageTableCount, U1>>,
-        Diff<paging::BasePageTableFreeSlots, Sum<paging::CodePageTableCount, U1>>: Unsigned,
+        arch::BasePageTableFreeSlots: Sub<Sum<arch::CodePageTableCount, U1>>,
+        Diff<arch::BasePageTableFreeSlots, Sum<arch::CodePageTableCount, U1>>: Unsigned,
 
-        paging::CodePageTableCount: Add<paging::CodePageCount>,
-        Sum<paging::CodePageTableCount, paging::CodePageCount>: Unsigned,
+        arch::CodePageTableCount: Add<arch::CodePageCount>,
+        Sum<arch::CodePageTableCount, arch::CodePageCount>: Unsigned,
     {
         VSpace::new_internal(ut17, dest_slots, asid, &user_image, &parent_cnode, None)
     }
@@ -85,25 +92,25 @@ impl VSpace {
         parent_cnode: &LocalCap<LocalCNode>,
         code_copy_support_items: (
             &mut VSpaceScratchSlice<role::Local>,
-            LocalCap<Untyped<paging::TotalCodeSizeBits>>,
+            LocalCap<Untyped<arch::TotalCodeSizeBits>>,
         ),
     ) -> Result<
         VSpace<
-            Diff<paging::BasePageDirFreeSlots, Sum<paging::CodePageTableCount, U1>>,
-            paging::BasePageTableFreeSlots,
+            Diff<arch::BasePageDirFreeSlots, Sum<arch::CodePageTableCount, U1>>,
+            arch::BasePageTableFreeSlots,
             role::Child,
         >,
         SeL4Error,
     >
     where
-        paging::CodePageTableCount: Add<U1>,
-        Sum<paging::CodePageTableCount, U1>: Unsigned,
+        arch::CodePageTableCount: Add<U1>,
+        Sum<arch::CodePageTableCount, U1>: Unsigned,
 
-        paging::BasePageTableFreeSlots: Sub<Sum<paging::CodePageTableCount, U1>>,
-        Diff<paging::BasePageTableFreeSlots, Sum<paging::CodePageTableCount, U1>>: Unsigned,
+        arch::BasePageTableFreeSlots: Sub<Sum<arch::CodePageTableCount, U1>>,
+        Diff<arch::BasePageTableFreeSlots, Sum<arch::CodePageTableCount, U1>>: Unsigned,
 
-        paging::CodePageTableCount: Add<paging::CodePageCount>,
-        Sum<paging::CodePageTableCount, paging::CodePageCount>: Unsigned,
+        arch::CodePageTableCount: Add<arch::CodePageCount>,
+        Sum<arch::CodePageTableCount, arch::CodePageCount>: Unsigned,
     {
         VSpace::new_internal(
             ut17,
@@ -123,25 +130,25 @@ impl VSpace {
         parent_cnode: &LocalCap<LocalCNode>,
         code_copy_support_items: Option<(
             &mut VSpaceScratchSlice<role::Local>,
-            LocalCap<Untyped<paging::TotalCodeSizeBits>>,
+            LocalCap<Untyped<arch::TotalCodeSizeBits>>,
         )>,
     ) -> Result<
         VSpace<
-            Diff<paging::BasePageDirFreeSlots, Sum<paging::CodePageTableCount, U1>>,
-            paging::BasePageTableFreeSlots,
+            Diff<arch::BasePageDirFreeSlots, Sum<arch::CodePageTableCount, U1>>,
+            arch::BasePageTableFreeSlots,
             role::Child,
         >,
         SeL4Error,
     >
     where
-        paging::CodePageTableCount: Add<U1>,
-        Sum<paging::CodePageTableCount, U1>: Unsigned,
+        arch::CodePageTableCount: Add<U1>,
+        Sum<arch::CodePageTableCount, U1>: Unsigned,
 
-        paging::BasePageTableFreeSlots: Sub<Sum<paging::CodePageTableCount, U1>>,
-        Diff<paging::BasePageTableFreeSlots, Sum<paging::CodePageTableCount, U1>>: Unsigned,
+        arch::BasePageTableFreeSlots: Sub<Sum<arch::CodePageTableCount, U1>>,
+        Diff<arch::BasePageTableFreeSlots, Sum<arch::CodePageTableCount, U1>>: Unsigned,
 
-        paging::CodePageTableCount: Add<paging::CodePageCount>,
-        Sum<paging::CodePageTableCount, paging::CodePageCount>: Unsigned,
+        arch::CodePageTableCount: Add<arch::CodePageCount>,
+        Sum<arch::CodePageTableCount, arch::CodePageCount>: Unsigned,
 
         ScratchPageTableSlots: Sub<B1>,
         Sub1<ScratchPageTableSlots>: Unsigned,
@@ -171,11 +178,11 @@ impl VSpace {
         // Allocate the maximum number of page tables we could possibly need,
         // and reserve that many slots in the page directory.
         let (slots, dest_slots) = dest_slots.alloc();
-        let page_tables: CapRange<UnmappedPageTable, role::Local, paging::CodePageTableCount> =
+        let page_tables: CapRange<UnmappedPageTable, role::Local, arch::CodePageTableCount> =
             page_tables_ut.retype_multi(slots)?;
 
         let (page_dir_slot_reservation_iter, mut page_dir) =
-            page_dir.reservation_iter::<paging::CodePageTableCount>();
+            page_dir.reservation_iter::<arch::CodePageTableCount>();
 
         for (pt, page_dir_slot) in page_tables
             .iter()
@@ -190,7 +197,7 @@ impl VSpace {
         // variables). We're signalled to this by the presence of a
         // scratch page table and a 26-bit untyped in which we can
         // retype into pages to hold the user image.
-        let (slots, dest_slots) = dest_slots.alloc::<paging::CodePageCount>();
+        let (slots, dest_slots) = dest_slots.alloc::<arch::CodePageCount>();
         match code_copy_support_items {
             Some((scratch, code_ut)) => {
                 // First, retype the untyped into `CodePageCount`
@@ -198,7 +205,7 @@ impl VSpace {
                 let fresh_pages: CapRange<
                     UnmappedPage<memory_kind::General>,
                     role::Local,
-                    paging::CodePageCount,
+                    arch::CodePageCount,
                 > = code_ut.retype_multi(slots)?;
                 // Then, zip up the pages with the user image pages
                 for (ui_page, fresh_page) in user_image.pages_iter().zip(fresh_pages.iter()) {
@@ -207,11 +214,11 @@ impl VSpace {
                     let (_, fresh_unmapped_page) =
                         scratch.temporarily_map_page(fresh_page, |temp_mapped_page| {
                             unsafe {
-                                *(mem::transmute::<usize, *mut [usize; paging::WORDS_PER_PAGE]>(
+                                *(mem::transmute::<usize, *mut [usize; arch::WORDS_PER_PAGE]>(
                                     temp_mapped_page.cap_data.vaddr,
                                 )) = *(mem::transmute::<
                                     usize,
-                                    *const [usize; paging::WORDS_PER_PAGE],
+                                    *const [usize; arch::WORDS_PER_PAGE],
                                 >(ui_page.cap_data.vaddr))
                             };
                         })?;
@@ -262,7 +269,7 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
         self,
         new_page_table_ut: LocalCap<Untyped<<UnmappedPageTable as DirectRetype>::SizeBits>>,
         dest_slot: LocalCNodeSlot,
-    ) -> Result<VSpace<Sub1<PageDirFreeSlots>, paging::BasePageTableFreeSlots, Role>, SeL4Error>
+    ) -> Result<VSpace<Sub1<PageDirFreeSlots>, arch::BasePageTableFreeSlots, Role>, SeL4Error>
     where
         PageDirFreeSlots: Sub<B1>,
         Sub1<PageDirFreeSlots>: Unsigned,
@@ -509,8 +516,7 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
         // TODO - lift these checks to compile-time, as static assertions
         // Note - This comparison is conservative because technically
         // we can fit some of the params into available registers.
-        if core::mem::size_of::<SetupVer<T>>() > (StackPageCount::USIZE * paging::PageBytes::USIZE)
-        {
+        if core::mem::size_of::<SetupVer<T>>() > (StackPageCount::USIZE * arch::PageBytes::USIZE) {
             return Err(VSpaceError::ProcessParameterTooBigForStack);
         }
         if core::mem::size_of::<SetupVer<T>>() != core::mem::size_of::<T>() {
@@ -547,14 +553,14 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
                     &process_parameter as *const SetupVer<T> as *const usize,
                     core::mem::size_of::<SetupVer<T>>(),
                     (mapped_pages[StackPageCount::USIZE - 1].cap_data.vaddr
-                        + (1 << paging::PageBits::USIZE)) as *mut usize,
+                        + (1 << arch::PageBits::USIZE)) as *mut usize,
                 )
             })?;
 
         // Map the stack to the target address space
         let (mapped_stack_pages, vspace) = vspace.map_pages(stack_pages)?;
         let stack_pointer = mapped_stack_pages[StackPageCount::USIZE - 1].cap_data.vaddr
-            + (1 << paging::PageBits::USIZE)
+            + (1 << arch::PageBits::USIZE)
             - param_size_on_stack;
 
         registers.sp = stack_pointer;
@@ -596,7 +602,7 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
 impl<PageDirFreeSlots: Unsigned, Role: CNodeRole> VSpace<PageDirFreeSlots, U0, Role> {
     pub fn next_section_vaddr(&self) -> usize {
         self.page_dir.cap_data.next_free_slot
-            << (paging::PageBits::USIZE + paging::PageTableBits::USIZE)
+            << (arch::PageBits::USIZE + arch::PageTableBits::USIZE)
     }
 
     pub fn map_section<Kind: MemoryKind>(
@@ -682,8 +688,7 @@ impl<PageDirFreeSlots: Unsigned, Role: CNodeRole> VSpace<PageDirFreeSlots, U0, R
     where
         PageDirFreeSlots: Sub<PageTableCount>,
         Diff<PageDirFreeSlots, PageTableCount>: Unsigned,
-        PageTableCount:
-            ArrayLength<LocalCap<MappedPageTable<paging::BasePageTableFreeSlots, Role>>>,
+        PageTableCount: ArrayLength<LocalCap<MappedPageTable<arch::BasePageTableFreeSlots, Role>>>,
     {
         // map all the page tables
         let (page_dir_slot_iter, vspace) = self.page_dir_slot_reservation_iter::<PageTableCount>();
@@ -739,7 +744,7 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned>
     ) -> Result<
         (
             VSpaceScratchSlice<role::Child>,
-            VSpace<Sub1<Sub1<PageDirFreeSlots>>, paging::BasePageTableFreeSlots, role::Child>,
+            VSpace<Sub1<Sub1<PageDirFreeSlots>>, arch::BasePageTableFreeSlots, role::Child>,
         ),
         SeL4Error,
     >
@@ -864,7 +869,7 @@ impl<Role: CNodeRole> PageDirSlot<Role> {
     pub fn map_page_table(
         self,
         page_table: LocalCap<UnmappedPageTable>,
-    ) -> Result<LocalCap<MappedPageTable<paging::BasePageTableFreeSlots, Role>>, SeL4Error> {
+    ) -> Result<LocalCap<MappedPageTable<arch::BasePageTableFreeSlots, Role>>, SeL4Error> {
         let (mapped_page_table, _) = self.page_dir.map_page_table(page_table)?;
         Ok(mapped_page_table)
     }
@@ -940,7 +945,7 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<AssignedPageDirectory<FreeSl
         page_table: LocalCap<UnmappedPageTable>,
     ) -> Result<
         (
-            LocalCap<MappedPageTable<Pow<paging::PageTableBits>, Role>>,
+            LocalCap<MappedPageTable<Pow<arch::PageTableBits>, Role>>,
             LocalCap<AssignedPageDirectory<Sub1<FreeSlots>, Role>>,
         ),
         SeL4Error,
@@ -949,8 +954,8 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<AssignedPageDirectory<FreeSl
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
     {
-        let page_table_vaddr = self.cap_data.next_free_slot
-            << (paging::PageBits::USIZE + paging::PageTableBits::USIZE);
+        let page_table_vaddr =
+            self.cap_data.next_free_slot << (arch::PageBits::USIZE + arch::PageTableBits::USIZE);
 
         // map the page table
         let err = unsafe {
@@ -1006,8 +1011,8 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<AssignedPageDirectory<FreeSl
         FreeSlots: Sub<U1>,
         Diff<FreeSlots, U1>: Unsigned,
     {
-        let section_vaddr = self.cap_data.next_free_slot
-            << (paging::PageBits::USIZE + paging::PageTableBits::USIZE);
+        let section_vaddr =
+            self.cap_data.next_free_slot << (arch::PageBits::USIZE + arch::PageTableBits::USIZE);
 
         let err = unsafe {
             seL4_ARM_Page_Map(
@@ -1214,7 +1219,7 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<MappedPageTable<FreeSlots, R
         attrs: u32,
     ) -> Result<LocalCap<MappedPage<Role, Kind>>, SeL4Error> {
         let page_vaddr =
-            self.cap_data.vaddr + (self.cap_data.next_free_slot << paging::PageBits::USIZE);
+            self.cap_data.vaddr + (self.cap_data.next_free_slot << arch::PageBits::USIZE);
 
         let err = unsafe {
             seL4_ARM_Page_Map(page.cptr, page_dir.cptr, page_vaddr, rights.into(), attrs)
@@ -1309,7 +1314,7 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<MappedPageTable<FreeSlots, R
         // Use page_dir.map_page_direct to avoid altering the type of page_dir.
         // We know from the type constraints that the pages will fit
 
-        let vaddr_iter = (self.cap_data.vaddr..core::usize::MAX).step_by(paging::PageBytes::USIZE);
+        let vaddr_iter = (self.cap_data.vaddr..core::usize::MAX).step_by(arch::PageBytes::USIZE);
 
         // this will panic if the sizes are different, but they are the same.
         let mapped_pages = unmapped_pages
@@ -1417,7 +1422,7 @@ pub fn yield_forever() -> ! {
     }
 }
 
-type ScratchPageTableSlots = Pow<paging::PageTableBits>;
+type ScratchPageTableSlots = Pow<arch::PageTableBits>;
 #[derive(Debug)]
 pub struct VSpaceScratchSlice<Role: CNodeRole> {
     page_dir: Cap<AssignedPageDirectory<U0, Role>, Role>,
@@ -1440,7 +1445,7 @@ impl VSpaceScratchSlice<role::Local> {
         FreePageDirSlots: Sub<B1>,
         Sub1<FreePageDirSlots>: Unsigned,
     {
-        let unmapped_scratch_page_table: LocalCap<UnmappedPageTable> = super::retype(ut, slot)?;
+        let unmapped_scratch_page_table: LocalCap<UnmappedPageTable> = cap::retype(ut, slot)?;
         let (page_table, page_directory) =
             page_directory.map_page_table(unmapped_scratch_page_table)?;
 

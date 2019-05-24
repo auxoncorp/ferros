@@ -1,7 +1,13 @@
+use typenum::*;
+
 use crate::alloc::micro_alloc::Error as AllocError;
+use crate::arch::cap::*;
+use crate::bootstrap::*;
+use crate::cap::*;
+use crate::error::SeL4Error;
 use crate::pow::Pow;
 use crate::userland::*;
-use typenum::*;
+use crate::vspace::*;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TestOutcome {
@@ -11,7 +17,7 @@ pub enum TestOutcome {
 
 pub type MaxTestUntypedSize = U27;
 pub type MaxTestCNodeSlots = Pow<U15>;
-pub type MaxTestASIDPoolSize = crate::arch::asid::PoolSize;
+pub type MaxTestASIDPoolSize = crate::arch::ASIDPoolSize;
 pub type RunTest = Fn(
     LocalCNodeSlots<MaxTestCNodeSlots>,
     LocalCap<Untyped<MaxTestUntypedSize>>,

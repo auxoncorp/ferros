@@ -1,7 +1,11 @@
-use crate::userland::*;
 use core::marker::PhantomData;
+
 use selfe_sys::*;
 use typenum::*;
+
+use crate::arch;
+use crate::cap::*;
+use crate::error::SeL4Error;
 
 mod resources;
 mod types;
@@ -90,15 +94,15 @@ pub fn execute_tests<'t, R: types::TestReporter>(
 /// in this range will be revoked and deleted and the memory reclaimed.
 pub fn with_temporary_resources<SlotCount: Unsigned, BitSize: Unsigned, E, F>(
     slots: &mut LocalCNodeSlots<SlotCount>,
-    untyped: &mut LocalCap<cap::Untyped<BitSize>>,
-    asid_pool: &mut LocalCap<asid::ASIDPool<super::arch::asid::PoolSize>>,
+    untyped: &mut LocalCap<Untyped<BitSize>>,
+    asid_pool: &mut LocalCap<ASIDPool<arch::ASIDPoolSize>>,
     f: F,
 ) -> Result<Result<(), E>, SeL4Error>
 where
     F: FnOnce(
         LocalCNodeSlots<SlotCount>,
-        LocalCap<cap::Untyped<BitSize>>,
-        LocalCap<asid::ASIDPool<super::arch::asid::PoolSize>>,
+        LocalCap<Untyped<BitSize>>,
+        LocalCap<ASIDPool<arch::ASIDPoolSize>>,
     ) -> Result<(), E>,
 {
     // Call the function with an alias/copy of self
@@ -106,7 +110,7 @@ where
         Cap::internal_new(slots.cptr, slots.cap_data.offset),
         Cap {
             cptr: untyped.cptr,
-            cap_data: crate::userland::cap::Untyped {
+            cap_data: Untyped {
                 _bit_size: PhantomData,
                 _kind: PhantomData,
             },

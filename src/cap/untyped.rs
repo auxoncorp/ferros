@@ -1,21 +1,62 @@
-use crate::arch::paging;
-use crate::pow::{Pow, _Pow};
-use crate::userland::{
-    memory_kind, role, CNode, CNodeRole, CNodeSlot, CNodeSlots, Cap, CapRange, CapType, ChildCNode,
-    ChildCNodeSlots, DirectRetype, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap,
-    MemoryKind, PhantomCap, SeL4Error, UnmappedPage, Untyped,
-};
 use core::marker::PhantomData;
 use core::ops::{Add, Mul, Sub};
+
 use selfe_sys::*;
+
 use typenum::operator_aliases::{Diff, Prod, Sum};
+
 use typenum::*;
+
+use crate::arch::cap::UnmappedPage;
+use crate::arch::PageBits;
+use crate::cap::{
+    role, CNode, CNodeRole, CNodeSlot, CNodeSlots, Cap, CapRange, CapType, ChildCNode,
+    ChildCNodeSlots, Delible, DirectRetype, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap,
+    Movable, PhantomCap,
+};
+use crate::error::SeL4Error;
+use crate::pow::{Pow, _Pow};
 
 // The seL4 kernel's maximum amount of retypes per system call is configurable
 // in the sel4.toml, particularly by the KernelRetypeFanOutLimit property.
 // This configuration is turned into a generated Rust type of the same name
 // that implements `typenum::Unsigned` in the `build.rs` file.
 include!(concat!(env!("OUT_DIR"), "/KERNEL_RETYPE_FAN_OUT_LIMIT"));
+
+#[derive(Debug)]
+pub struct Untyped<BitSize: Unsigned, Kind: MemoryKind = memory_kind::General> {
+    pub(crate) _bit_size: PhantomData<BitSize>,
+    pub(crate) _kind: PhantomData<Kind>,
+}
+
+impl<BitSize: Unsigned, Kind: MemoryKind> CapType for Untyped<BitSize, Kind> {}
+
+impl<BitSize: Unsigned, Kind: MemoryKind> PhantomCap for Untyped<BitSize, Kind> {
+    fn phantom_instance() -> Self {
+        Untyped::<BitSize, Kind> {
+            _bit_size: PhantomData::<BitSize>,
+            _kind: PhantomData::<Kind>,
+        }
+    }
+}
+
+impl<BitSize: Unsigned, Kind: MemoryKind> Movable for Untyped<BitSize, Kind> {}
+
+impl<BitSize: Unsigned, Kind: MemoryKind> Delible for Untyped<BitSize, Kind> {}
+
+pub trait MemoryKind: private::SealedMemoryKind {}
+
+pub mod memory_kind {
+    use super::MemoryKind;
+
+    #[derive(Debug, PartialEq)]
+    pub struct General;
+    impl MemoryKind for General {}
+
+    #[derive(Debug, PartialEq)]
+    pub struct Device;
+    impl MemoryKind for Device {}
+}
 
 pub(crate) fn wrap_untyped<BitSize: Unsigned, Kind: MemoryKind>(
     cptr: usize,
@@ -385,7 +426,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
     }
 }
 
-impl LocalCap<Untyped<paging::PageBits, memory_kind::Device>> {
+impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
     /// The only thing memory_kind::Device memory can be used to make
     /// is a page/frame.
     pub fn retype_device_page(
@@ -422,4 +463,10 @@ impl LocalCap<Untyped<paging::PageBits, memory_kind::Device>> {
             _role: PhantomData,
         })
     }
+}
+
+mod private {
+    pub trait SealedMemoryKind {}
+    impl SealedMemoryKind for super::memory_kind::Device {}
+    impl SealedMemoryKind for super::memory_kind::General {}
 }

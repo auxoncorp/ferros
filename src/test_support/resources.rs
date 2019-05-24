@@ -1,6 +1,11 @@
-use crate::userland::*;
 use selfe_sys::seL4_BootInfo;
 use typenum::*;
+
+use crate::arch::cap::*;
+use crate::bootstrap::*;
+use crate::cap::*;
+use crate::userland::*;
+use crate::vspace::*;
 
 pub struct Resources {
     pub(super) slots: LocalCNodeSlots<super::types::MaxTestCNodeSlots>,

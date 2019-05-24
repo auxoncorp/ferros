@@ -1,15 +1,20 @@
-use crate::arch::{address_space, asid, paging};
-use crate::pow::Pow;
-use crate::userland::process::NeitherSendNorSync;
-use crate::userland::{
-    memory_kind, role, ASIDControl, AssignedPageDirectory, CNode, CNodeRole, CNodeSlots, Cap,
-    CapRights, IRQControl, LocalCNode, LocalCNodeSlots, LocalCap, MappedPage, SeL4Error,
-    ThreadControlBlock,
-};
 use core::marker::PhantomData;
+
 use selfe_sys::*;
+
 use typenum::operator_aliases::Diff;
 use typenum::*;
+
+use crate::arch::cap::*;
+use crate::arch::*;
+use crate::cap::{
+    memory_kind, role, CNode, CNodeRole, CNodeSlots, Cap, IRQControl, LocalCNode, LocalCNodeSlots,
+    LocalCap, ThreadControlBlock,
+};
+use crate::error::SeL4Error;
+use crate::pow::Pow;
+use crate::userland::process::NeitherSendNorSync;
+use crate::userland::CapRights;
 
 // The root CNode radix is 19. Conservatively set aside 2^12 (the default root
 // cnode size) for system use. TODO: verify at build time that this is enough /
@@ -69,7 +74,7 @@ pub struct BootInfo<ASIDControlFreePools: Unsigned, PageDirFreeSlots: Unsigned> 
     neither_send_nor_sync: NeitherSendNorSync,
 }
 
-impl BootInfo<asid::PoolCount, paging::RootTaskPageDirFreeSlots> {
+impl BootInfo<ASIDPoolCount, RootTaskPageDirFreeSlots> {
     pub fn wrap(bootinfo: &'static seL4_BootInfo) -> Self {
         let asid_control = Cap::wrap_cptr(seL4_CapASIDControl as usize);
 
@@ -78,7 +83,7 @@ impl BootInfo<asid::PoolCount, paging::RootTaskPageDirFreeSlots> {
                 cptr: seL4_CapInitThreadVSpace as usize,
                 _role: PhantomData,
                 cap_data: AssignedPageDirectory {
-                    next_free_slot: paging::RootTaskReservedPageDirSlots::USIZE,
+                    next_free_slot: RootTaskReservedPageDirSlots::USIZE,
                     _free_slots: PhantomData,
                     _role: PhantomData,
                 },
@@ -118,8 +123,7 @@ impl UserImage<role::Local> {
         // Iterate over the entire address space's page addresses, starting at
         // ProgramStart. This is truncated to the number of actual pages in the
         // user image by zipping it with the range of frame cptrs below.
-        let vaddr_iter = (address_space::ProgramStart::USIZE..core::usize::MAX)
-            .step_by(1 << paging::PageBits::USIZE);
+        let vaddr_iter = (ProgramStart::USIZE..core::usize::MAX).step_by(1 << PageBits::USIZE);
 
         (self.frames_start_cptr..(self.frames_start_cptr + self.frames_count))
             .zip(vaddr_iter)
@@ -137,7 +141,7 @@ impl UserImage<role::Local> {
     pub fn copy<TargetRole: CNodeRole>(
         &self,
         src_cnode: &LocalCap<LocalCNode>,
-        slots: CNodeSlots<paging::CodePageCount, TargetRole>,
+        slots: CNodeSlots<CodePageCount, TargetRole>,
     ) -> Result<UserImage<TargetRole>, SeL4Error> {
         let frames_start_cptr = slots.cap_data.offset;
         for (page, slot) in self.pages_iter().zip(slots.iter()) {

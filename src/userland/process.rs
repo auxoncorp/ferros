@@ -1,59 +1,9 @@
-use crate::userland::{
-    irq_state, memory_kind, role, AssignedPageDirectory, Badge, CNodeRole, CNodeSlot, Cap,
-    ChildCNode, FaultSource, IRQControl, IRQHandler, ImmobileIndelibleInertCapabilityReference,
-    LocalCap, MappedPage, Notification, SeL4Error, ThreadControlBlock, ThreadPriorityAuthority,
-};
 use core::cmp;
 use core::marker::PhantomData;
 use core::mem::{self, size_of};
 use core::ptr;
+
 use selfe_sys::*;
-use typenum::*;
-
-impl LocalCap<ThreadControlBlock> {
-    pub fn downgrade_to_thread_priority_authority(self) -> LocalCap<ThreadPriorityAuthority> {
-        unsafe { core::mem::transmute(self) }
-    }
-
-    pub(super) fn configure<VSpaceRole: CNodeRole>(
-        &mut self,
-        cspace_root: LocalCap<ChildCNode>,
-        fault_source: Option<FaultSource<role::Child>>,
-        vspace_cptr: ImmobileIndelibleInertCapabilityReference<
-            AssignedPageDirectory<U0, VSpaceRole>,
-        >, // vspace_root,
-        ipc_buffer: LocalCap<MappedPage<VSpaceRole, memory_kind::General>>,
-    ) -> Result<(), SeL4Error> {
-        // Set up the cspace's guard to take the part of the cptr that's not
-        // used by the radix.
-        let cspace_root_data = unsafe {
-            seL4_CNode_CapData_new(
-                0,                                                          // guard
-                (seL4_WordBits - cspace_root.cap_data.radix as usize) as _, // guard size in bits
-            )
-        }
-        .words[0] as usize;
-
-        let tcb_err = unsafe {
-            seL4_TCB_Configure(
-                self.cptr,
-                fault_source.map_or(seL4_CapNull as usize, |source| source.endpoint.cptr), // fault_ep.cptr,
-                cspace_root.cptr,
-                cspace_root_data,
-                vspace_cptr.get_capability_pointer(), //vspace_root.cptr,
-                seL4_NilData as usize, // vspace_root_data, always 0, reserved by kernel?
-                ipc_buffer.cap_data.vaddr, // buffer address
-                ipc_buffer.cptr,       // bufferFrame capability
-            )
-        };
-
-        if tcb_err != 0 {
-            Err(SeL4Error::TCBConfigure(tcb_err))
-        } else {
-            Ok(())
-        }
-    }
-}
 
 // TODO - consider renaming for clarity
 pub trait RetypeForSetup: Sized + Send + Sync {
@@ -61,104 +11,6 @@ pub trait RetypeForSetup: Sized + Send + Sync {
 }
 
 pub type SetupVer<X> = <X as RetypeForSetup>::Output;
-
-#[derive(Debug)]
-pub enum IRQError {
-    UnavailableIRQ,
-    SeL4Error(SeL4Error),
-}
-impl From<SeL4Error> for IRQError {
-    fn from(e: SeL4Error) -> Self {
-        IRQError::SeL4Error(e)
-    }
-}
-
-impl LocalCap<IRQControl> {
-    pub fn create_handler<IRQ: Unsigned, DestRole: CNodeRole>(
-        &mut self,
-        dest_slot: CNodeSlot<DestRole>,
-    ) -> Result<Cap<IRQHandler<IRQ, irq_state::Unset>, DestRole>, IRQError>
-    where
-        IRQ: IsLess<U256, Output = True>,
-    {
-        let (dest_cptr, dest_offset, _) = dest_slot.elim();
-
-        if self.cap_data.known_handled[IRQ::USIZE] {
-            return Err(IRQError::UnavailableIRQ);
-        }
-        let err = unsafe {
-            seL4_IRQControl_Get(
-                self.cptr,           // service/authority
-                IRQ::I32,            // irq
-                dest_cptr,           // root
-                dest_offset,         // index
-                seL4_WordBits as u8, // depth
-            )
-        };
-        if err != 0 {
-            return Err(IRQError::SeL4Error(SeL4Error::IRQControlGet(err)));
-        }
-
-        self.cap_data.known_handled[IRQ::USIZE] = true;
-
-        Ok(Cap {
-            cptr: dest_offset,
-            cap_data: IRQHandler {
-                _irq: PhantomData,
-                _set_state: PhantomData,
-            },
-            _role: PhantomData,
-        })
-    }
-}
-
-impl<IRQ: Unsigned> LocalCap<IRQHandler<IRQ, irq_state::Unset>>
-where
-    IRQ: IsLess<U256, Output = True>,
-{
-    pub(crate) fn set_notification(
-        self,
-        notification: &LocalCap<Notification>,
-    ) -> Result<(LocalCap<IRQHandler<IRQ, irq_state::Set>>), SeL4Error> {
-        let err = unsafe { seL4_IRQHandler_SetNotification(self.cptr, notification.cptr) };
-        if err != 0 {
-            return Err(SeL4Error::IRQHandlerSetNotification(err));
-        }
-        Ok(Cap {
-            cptr: self.cptr,
-            _role: self._role,
-            cap_data: IRQHandler {
-                _irq: self.cap_data._irq,
-                _set_state: PhantomData,
-            },
-        })
-    }
-}
-
-impl<IRQ: Unsigned> LocalCap<IRQHandler<IRQ, irq_state::Set>>
-where
-    IRQ: IsLess<U256, Output = True>,
-{
-    pub fn ack(&self) -> Result<(), SeL4Error> {
-        let err = unsafe { seL4_IRQHandler_Ack(self.cptr) };
-        if err != 0 {
-            return Err(SeL4Error::IRQHandlerAck(err));
-        }
-        Ok(())
-    }
-}
-
-impl LocalCap<Notification> {
-    /// Blocking wait on a notification
-    #[allow(dead_code)]
-    pub(crate) fn wait(&self) -> Badge {
-        let mut sender_badge: usize = 0;
-        unsafe {
-            seL4_Wait(self.cptr, &mut sender_badge as *mut usize);
-        };
-        Badge::from(sender_badge)
-    }
-}
 
 /// Set up the target registers and stack to pass the parameter. See
 /// http://infocenter.arm.com/help/topic/com.arm.doc.ihi0042f/IHI0042F_aapcs.pdf

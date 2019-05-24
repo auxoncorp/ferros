@@ -1,10 +1,13 @@
-use crate::userland::cap::DirectRetype;
-use crate::userland::{
-    role, CNodeRole, Cap, CapRights, ChildCNodeSlot, Endpoint, LocalCNode, LocalCNodeSlot,
-    LocalCap, SeL4Error, Untyped,
-};
 use core::marker::PhantomData;
+
 use selfe_sys::*;
+
+use crate::cap::{
+    role, CNodeRole, Cap, ChildCNodeSlot, DirectRetype, Endpoint, LocalCNode, LocalCNodeSlot,
+    LocalCap, Untyped,
+};
+use crate::error::SeL4Error;
+use crate::userland::CapRights;
 
 #[derive(Debug)]
 pub enum IPCError {
