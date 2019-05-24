@@ -230,31 +230,27 @@ fn gen_id<G: IdGenerator>(g: &mut G, name_hint: &'static str) -> Ident {
 fn run_test_decl() -> FnDecl {
     let mut run_test_inputs = syn::punctuated::Punctuated::new();
     run_test_inputs.push(parse_quote!(
-        slots: ferros::userland::LocalCNodeSlots<ferros::test_support::MaxTestCNodeSlots>
+        slots: ferros::cap::LocalCNodeSlots<ferros::test_support::MaxTestCNodeSlots>
     ));
     run_test_inputs.push(parse_quote!(
         untyped:
-            ferros::userland::LocalCap<
-                ferros::userland::Untyped<ferros::test_support::MaxTestUntypedSize>,
-            >
+            ferros::cap::LocalCap<ferros::cap::Untyped<ferros::test_support::MaxTestUntypedSize>>
     ));
     run_test_inputs.push(parse_quote!(
         asid_pool:
-            ferros::userland::LocalCap<
-                ferros::userland::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>,
-            >
+            ferros::cap::LocalCap<ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>>
     ));
     run_test_inputs.push(parse_quote!(
-        scratch: &mut ferros::userland::VSpaceScratchSlice<ferros::userland::role::Local>
+        scratch: &mut ferros::vspace::VSpaceScratchSlice<ferros::cap::role::Local>
     ));
     run_test_inputs.push(parse_quote!(
-        local_cnode: &ferros::userland::LocalCap<ferros::userland::LocalCNode>
+        local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>
     ));
     run_test_inputs.push(parse_quote!(
-        thread_authority: &ferros::userland::LocalCap<ferros::userland::ThreadPriorityAuthority>
+        thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>
     ));
     run_test_inputs.push(parse_quote!(
-        user_image: &ferros::userland::UserImage<ferros::userland::role::Local>
+        user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>
     ));
     FnDecl {
         fn_token: syn::token::Fn::default(),
@@ -311,17 +307,17 @@ mod tests {
 
         let expected: ItemFn = parse_quote! {
             fn original_target(
-                slots: ferros::userland::LocalCNodeSlots<ferros::test_support::MaxTestCNodeSlots>,
-                untyped: ferros::userland::LocalCap<
-                    ferros::userland::Untyped<ferros::test_support::MaxTestUntypedSize>,
+                slots: ferros::cap::LocalCNodeSlots<ferros::test_support::MaxTestCNodeSlots>,
+                untyped: ferros::cap::LocalCap<
+                    ferros::cap::Untyped<ferros::test_support::MaxTestUntypedSize>,
                 >,
-                asid_pool: ferros::userland::LocalCap<
-                    ferros::userland::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>,
+                asid_pool: ferros::cap::LocalCap<
+                    ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>,
                 >,
-                scratch: &mut ferros::userland::VSpaceScratchSlice<ferros::userland::role::Local>,
-                local_cnode: &ferros::userland::LocalCap<ferros::userland::LocalCNode>,
-                thread_authority: &ferros::userland::LocalCap<ferros::userland::ThreadPriorityAuthority>,
-                user_image: &ferros::userland::UserImage<ferros::userland::role::Local>
+                scratch: &mut ferros::vspace::VSpaceScratchSlice<ferros::cap::role::Local>,
+                local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
+                thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
+                user_image: &ferros::cap::UserImage<ferros::cap::role::Local>
             ) -> (&'static str, ferros::test_support::TestOutcome) {
                 fn under_test() {
                     assert!(true);
@@ -371,17 +367,17 @@ mod tests {
 
         let expected: ItemFn = parse_quote! {
             fn original_target(
-                slots: ferros::userland::LocalCNodeSlots<ferros::test_support::MaxTestCNodeSlots>,
-                untyped: ferros::userland::LocalCap<
-                    ferros::userland::Untyped<ferros::test_support::MaxTestUntypedSize>,
+                slots: ferros::cap::LocalCNodeSlots<ferros::test_support::MaxTestCNodeSlots>,
+                untyped: ferros::cap::LocalCap<
+                    ferros::cap::Untyped<ferros::test_support::MaxTestUntypedSize>,
                 >,
-                asid_pool: ferros::userland::LocalCap<
-                    ferros::userland::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>,
+                asid_pool: ferros::cap::LocalCap<
+                    ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>,
                 >,
-                scratch: &mut ferros::userland::VSpaceScratchSlice<ferros::userland::role::Local>,
-                local_cnode: &ferros::userland::LocalCap<ferros::userland::LocalCNode>,
-                thread_authority: &ferros::userland::LocalCap<ferros::userland::ThreadPriorityAuthority>,
-                user_image: &ferros::userland::UserImage<ferros::userland::role::Local>
+                scratch: &mut ferros::vspace::VSpaceScratchSlice<ferros::cap::role::Local>,
+                local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
+                thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
+                user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>
             ) -> (&'static str, ferros::test_support::TestOutcome) {
                 fn under_test(ut: LocalCap<Untyped<U5>>, sl: LocalCNodeSlots<U4>) -> Result<(), SeL4Error> {
                     let r = ut.split(sl);

@@ -4,11 +4,21 @@ version = "0.1.0"
 authors = ["Zachary Pierce <zack@auxon.io>"]
 edition = "2018"
 
-[lib]
-proc-macro = true
+[features]
+default = ["sel4_start_main"]
+sel4_start_main = ["sel4-start", "ferros", "selfe-sys"]
 
 [dependencies]
-proc-macro2 = "0.4.27"
-quote = "0.6.11"
-syn = { version = "0.15.34", features = ["full", "fold", "extra-traits"] }
-uuid = { version = "0.7", features = ["v4"] }
+test-macro-impl = { path = "./test-macro-impl" }
+
+[dependencies.selfe-sys]
+git = "ssh://git@github.com/auxoncorp/selfe-sys.git"
+optional = true
+
+[dependencies.sel4-start]
+git = "ssh://git@github.com/auxoncorp/selfe-sys.git"
+optional = true
+
+[dependencies.ferros]
+path = ".."
+optional = true
