@@ -1,4 +1,4 @@
-#![cfg(target_arch = "arm")]
+#![cfg(target_arch = "aarch64")]
 
 use typenum::*;
 
@@ -7,29 +7,39 @@ pub mod cap;
 pub type WordSize = U32;
 pub type MinUntypedSize = U4;
 // MaxUntypedSize is half the address space and/or word size.
-pub type MaxUntypedSize = U29;
+pub type MaxUntypedSize = U47;
 
 /// The ASID address space is a total of 16 bits. It is bifurcated
 /// into high bits and low bits where the high bits determine the
 /// number of pools while the low bits identify the ASID /in/ its
 /// pool.
-pub type ASIDHighBits = U6;
-pub type ASIDLowBits = U10;
+pub type ASIDHighBits = U7;
+pub type ASIDLowBits = U9;
 /// The total number of available pools is 2 ^ ASIDHighBits, however,
 /// there is an initial pool given to the root thread.
-pub type ASIDPoolCount = op!((U1 << ASIDHighBits) - U1);
+pub type ASIDPoolCount = op!(U1 << ASIDHighBits);
 pub type ASIDPoolSize = op!(U1 << ASIDLowBits);
 
 pub type PageDirectoryBits = U12;
-pub type PageTableBits = U8;
+pub type PageTableBits = U12;
 pub type PageBits = U12;
 pub type PageBytes = op!(U1 << U12);
+pub type LargePageBits = U21;
+pub type HugePageBits = U30;
+pub type PGDBits = U12;
+pub type PGDEntryBits = U3;
+pub type PGDIndexBits = U9;
+pub type PUDBits = U12;
+pub type PUDEntryBits = U3;
+pub type PUDIndexBits = U9;
+
+pub type ARMVCPUBits = U12;
 
 pub type BasePageDirFreeSlots = op!((U1 << PageDirectoryBits) - (U1 << U9));
 pub type BasePageTableFreeSlots = op!(U1 << PageTableBits);
 
 // TODO remove these when elf stuff lands.
-// this is a magic number we got from inspecting the binary.
+// this is a magic numbers we got from inspecting the binary.
 /// 0x00010000
 pub type ProgramStart = op!(U1 << U16);
 pub type CodePageTableBits = U6;
@@ -49,7 +59,19 @@ include!(concat!(
 pub type RootTaskReservedPageDirSlots = op!(CodePageTableCount + RootTaskStackPageTableCount);
 pub type RootTaskPageDirFreeSlots = op!(BasePageDirFreeSlots - RootTaskReservedPageDirSlots);
 
-/// 0xe0000000
-pub type KernelReservedStart = op!((U1 << U31) + (U1 << U30) + (U1 << U29));
+/* EL2 has 48 addressable bits in the vaddr space, the kernel reserves
+ * the top 8 of those bits.
+ * 0x0000ff8000000000
+ * 111111111000000000000000000000000000000000000000*/
+// Cf. https://github.com/seL4/seL4/blob/c2fd4b810b18111156c8f3273d24f2ab84a06284/include/arch/arm/arch/64/mode/hardware.h#L40
+pub type KernelReservedStart = op!((U1 << U40)
+    | (U1 << U41)
+    | (U1 << U42)
+    | (U1 << U43)
+    | (U1 << U44)
+    | (U1 << U45)
+    | (U1 << U46)
+    | (U1 << U47)
+    | (U1 << U48));
 
 pub const WORDS_PER_PAGE: usize = PageBytes::USIZE / core::mem::size_of::<usize>();
