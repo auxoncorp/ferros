@@ -20,18 +20,24 @@ pub type ASIDLowBits = U9;
 pub type ASIDPoolCount = op!(U1 << ASIDHighBits);
 pub type ASIDPoolSize = op!(U1 << ASIDLowBits);
 
+// The paging structures are layed out as follows:
+// L0: PageGlobalDirectory
+// L1: |_PageUpperDirectory *L2 | HugePage
+// L2:   |_PageDirectory    *L3 | LargePage
+// L3:    |_PageTable
+//          |_Page
 pub type PageDirectoryBits = U12;
+pub type PageDirIndexBits = U9;
 pub type PageTableBits = U12;
+pub type PageTableIndexBits = U9;
 pub type PageBits = U12;
 pub type PageBytes = op!(U1 << U12);
 pub type LargePageBits = U21;
 pub type HugePageBits = U30;
-pub type PGDBits = U12;
-pub type PGDEntryBits = U3;
-pub type PGDIndexBits = U9;
-pub type PUDBits = U12;
-pub type PUDEntryBits = U3;
-pub type PUDIndexBits = U9;
+pub type PageGlobalDirBits = U12;
+pub type PageGlobalDirIndexBits = U9;
+pub type PageUpperDirBits = U12;
+pub type PageUpperDirIndexBits = U9;
 
 pub type ARMVCPUBits = U12;
 
@@ -64,6 +70,7 @@ pub type RootTaskPageDirFreeSlots = op!(BasePageDirFreeSlots - RootTaskReservedP
  * 0x0000ff8000000000
  * 111111111000000000000000000000000000000000000000*/
 // Cf. https://github.com/seL4/seL4/blob/c2fd4b810b18111156c8f3273d24f2ab84a06284/include/arch/arm/arch/64/mode/hardware.h#L40
+#[cfg(KernelArmHypervisorSupport)]
 pub type KernelReservedStart = op!((U1 << U40)
     | (U1 << U41)
     | (U1 << U42)

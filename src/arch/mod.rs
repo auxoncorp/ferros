@@ -1,6 +1,6 @@
-#[cfg(target_arch = "arm")]
+#[cfg(any(target_arch = "arm", target_arch = "aarch32"))]
 mod arm;
-#[cfg(target_arch = "arm")]
+#[cfg(any(target_arch = "arm", target_arch = "aarch32"))]
 pub use arm::*;
 
 #[cfg(target_arch = "aarch64")]
