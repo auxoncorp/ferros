@@ -1,5 +1,3 @@
-#![cfg(target_arch = "arm")]
-
 mod asid;
 mod asid_control;
 mod large_page;

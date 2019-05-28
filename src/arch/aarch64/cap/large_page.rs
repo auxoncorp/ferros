@@ -4,6 +4,8 @@ use selfe_sys::*;
 
 use typenum::*;
 
+use crate::arch::LargePageBits;
+
 use crate::cap::{
     memory_kind, role, CNodeRole, Cap, CapType, CopyAliasable, DirectRetype, MemoryKind, PhantomCap,
 };
@@ -24,7 +26,7 @@ impl<Kind: MemoryKind> PhantomCap for UnmappedLargePage<Kind> {
 }
 
 impl DirectRetype for UnmappedLargePage<memory_kind::General> {
-    type SizeBits = U16;
+    type SizeBits = LargePageBits;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_LargePageObject as usize
     }

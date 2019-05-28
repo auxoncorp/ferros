@@ -1,5 +1,3 @@
-#![cfg(target_arch = "arm")]
-
 use typenum::*;
 
 pub mod cap;
