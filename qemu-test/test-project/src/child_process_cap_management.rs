@@ -1,63 +1,69 @@
 use super::TopLevelError;
-use selfe_sys::seL4_BootInfo;
 
-use ferros::alloc::{self, micro_alloc, smart_alloc};
 use typenum::*;
 
-use ferros::bootstrap::{root_cnode, BootInfo};
-use ferros::cap::{
-    retype, retype_cnode, role, CNode, CNodeRole, CNodeSlotsData, Cap, Endpoint, LocalCap, Untyped,
-};
-use ferros::userland::RetypeForSetup;
+use ferros::alloc::{smart_alloc, ut_buddy};
+use ferros::bootstrap::UserImage;
+use ferros::cap::*;
+use ferros::userland::{fault_or_message_channel, FaultOrMessage, RetypeForSetup, Sender};
 use ferros::vspace::{VSpace, VSpaceScratchSlice};
 
-pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
-    let BootInfo {
-        root_page_directory,
-        asid_control,
-        user_image,
-        root_tcb,
-        ..
-    } = BootInfo::wrap(&raw_boot_info);
-    let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
-    let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
-    let uts = alloc::ut_buddy(
-        allocator
-            .get_untyped::<U27>()
-            .expect("initial alloc failure"),
-    );
+use ferros_test::ferros_test;
+
+type U42768 = Sum<U32768, U1000>;
+
+#[ferros_test]
+pub fn test(
+    local_slots: LocalCNodeSlots<U42768>,
+    local_ut: LocalCap<Untyped<U20>>,
+    asid_pool: LocalCap<ASIDPool<U1>>,
+    local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+    root_cnode: &LocalCap<LocalCNode>,
+    user_image: &UserImage<role::Local>,
+    tpa: &LocalCap<ThreadPriorityAuthority>,
+) -> Result<(), TopLevelError> {
+    let uts = ut_buddy(local_ut);
 
     smart_alloc!(|slots: local_slots, ut: uts| {
-        let (mut local_vspace_scratch, _root_page_directory) =
-            VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
-
-        let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (child_asid, _asid_pool) = asid_pool.alloc();
         let (child_cnode, child_slots) = retype_cnode::<U12>(ut, slots)?;
 
         let ut5: LocalCap<Untyped<U5>> = ut;
 
-        smart_alloc!(|slots_c: child_slots| {
+        smart_alloc! {|slots_c: child_slots| {
             let (cnode_for_child, slots_for_child) =
                 child_cnode.generate_self_reference(&root_cnode, slots_c)?;
             let child_ut5 = ut5.move_to_slot(&root_cnode, slots_c)?;
-        });
+            let (fault_source, outcome_sender, handler) = fault_or_message_channel(
+                &root_cnode,
+                ut,
+                slots,
+                slots_c,
+                slots,
+            )?;
+        }}
 
         let params = CapManagementParams {
             my_cnode: cnode_for_child,
             my_cnode_slots: slots_for_child,
             my_ut: child_ut5,
+            outcome_sender,
         };
 
         let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &root_cnode)?;
 
         let (child_process, _) =
-            child_vspace.prepare_thread(proc_main, params, ut, slots, &mut local_vspace_scratch)?;
+            child_vspace.prepare_thread(proc_main, params, ut, slots, local_vspace_scratch)?;
     });
 
-    child_process.start(child_cnode, None, root_tcb.as_ref(), 255)?;
+    child_process.start(child_cnode, Some(fault_source), tpa, 255)?;
 
-    Ok(())
+    match handler.await_message()? {
+        FaultOrMessage::Message(true) => Ok(()),
+        _ => Err(TopLevelError::TestAssertionFailure(
+            "Child process should have reported success",
+        )),
+    }
 }
 
 #[derive(Debug)]
@@ -65,6 +71,7 @@ pub struct CapManagementParams<Role: CNodeRole> {
     pub my_cnode: Cap<CNode<Role>, Role>,
     pub my_cnode_slots: Cap<CNodeSlotsData<U42, Role>, Role>,
     pub my_ut: Cap<Untyped<U5>, Role>,
+    pub outcome_sender: Sender<bool, Role>,
 }
 
 impl RetypeForSetup for CapManagementParams<role::Local> {
@@ -73,31 +80,22 @@ impl RetypeForSetup for CapManagementParams<role::Local> {
 
 // 'extern' to force C calling conventions
 pub extern "C" fn proc_main(params: CapManagementParams<role::Local>) {
-    debug_println!("");
-    debug_println!("--- Hello from the cap_management_run ferros process!");
-    debug_println!("{:#?}", params);
-
     let CapManagementParams {
         my_cnode,
         my_cnode_slots,
         my_ut,
+        outcome_sender,
     } = params;
 
     smart_alloc!(|slots: my_cnode_slots| {
-        debug_println!("Let's split an untyped inside child process");
         let (ut_kid_a, ut_kid_b) = my_ut.split(slots).expect("child process split untyped");
-        debug_println!("We got past the split in a child process\n");
-
-        debug_println!("Let's make an Endpoint");
         let _endpoint: LocalCap<Endpoint> =
             retype(ut_kid_a, slots).expect("Retype local in a child process failure");
-        debug_println!("Successfully built an Endpoint\n");
-
-        debug_println!("And now for a delete in a child process");
         ut_kid_b
             .delete(&my_cnode)
             .expect("child process delete a cap");
-        debug_println!("Hey, we deleted a cap in a child process");
-        debug_println!("Split, retyped, and deleted caps in a child process");
     });
+    outcome_sender
+        .blocking_send(&true)
+        .expect("Failed to report cap management success")
 }

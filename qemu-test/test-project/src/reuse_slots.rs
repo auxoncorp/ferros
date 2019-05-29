@@ -1,18 +1,16 @@
-use selfe_sys::seL4_BootInfo;
-
 use typenum::*;
 
-use ferros::alloc::micro_alloc::Allocator;
-use ferros::bootstrap::{root_cnode, BootInfo};
-use ferros::cap::LocalCNodeSlots;
+use ferros::cap::{LocalCNodeSlots, LocalCap, Untyped};
 use ferros::error::SeL4Error;
+use ferros_test::ferros_test;
 
 use super::TopLevelError;
 
-pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
-    let mut allocator = Allocator::bootstrap(&raw_boot_info)?;
-    let (_root_cnode, local_slots) = root_cnode(&raw_boot_info);
-    let ut_20 = allocator.get_untyped::<U20>().expect("alloc failure a");
+#[ferros_test]
+pub fn test(
+    local_slots: LocalCNodeSlots<U100>,
+    ut_20: LocalCap<Untyped<U20>>,
+) -> Result<(), TopLevelError> {
     let (slots, local_slots) = local_slots.alloc();
     let (ut_a, ut_b, ut_c, ut_18) = ut_20.quarter(slots)?;
     let (slots, mut local_slots) = local_slots.alloc();

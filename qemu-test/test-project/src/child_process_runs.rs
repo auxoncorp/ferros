@@ -1,58 +1,68 @@
 use super::TopLevelError;
-use selfe_sys::seL4_BootInfo;
 
-use ferros::alloc::{self, micro_alloc, smart_alloc};
+use ferros::alloc::{smart_alloc, ut_buddy};
 use typenum::*;
 
-use ferros::bootstrap::{root_cnode, BootInfo};
-use ferros::cap::retype_cnode;
-use ferros::userland::RetypeForSetup;
+use ferros::bootstrap::UserImage;
+use ferros::cap::*;
+use ferros::userland::{fault_or_message_channel, FaultOrMessage, RetypeForSetup, Sender};
 use ferros::vspace::{VSpace, VSpaceScratchSlice};
 
-pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
-    let BootInfo {
-        root_page_directory,
-        asid_control,
-        user_image,
-        root_tcb,
-        ..
-    } = BootInfo::wrap(&raw_boot_info);
-    let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
-    let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
-    let uts = alloc::ut_buddy(
-        allocator
-            .get_untyped::<U27>()
-            .expect("initial alloc failure"),
-    );
+use ferros_test::ferros_test;
+
+type U42768 = Sum<U32768, U1000>;
+
+#[ferros_test]
+pub fn test(
+    local_slots: LocalCNodeSlots<U42768>,
+    local_ut: LocalCap<Untyped<U20>>,
+    asid_pool: LocalCap<ASIDPool<U1>>,
+    local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+    root_cnode: &LocalCap<LocalCNode>,
+    user_image: &UserImage<role::Local>,
+    tpa: &LocalCap<ThreadPriorityAuthority>,
+) -> Result<(), TopLevelError> {
+    let uts = ut_buddy(local_ut);
 
     smart_alloc!(|slots: local_slots, ut: uts| {
-        let (mut local_vspace_scratch, _root_page_directory) =
-            VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
+        let (child_cnode, child_slots) = retype_cnode::<U12>(ut, slots)?;
+        let (child_fault_source_slot, _child_slots) = child_slots.alloc();
+        let (fault_source, outcome_sender, handler) =
+            fault_or_message_channel(&root_cnode, ut, slots, child_fault_source_slot, slots)?;
+        let params = ProcParams {
+            value: 42,
+            outcome_sender,
+        };
 
-        let (child_cnode, _child_slots) = retype_cnode::<U12>(ut, slots)?;
-        let params = ProcParams { value: 42 };
-
-        let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (child_asid, _asid_pool) = asid_pool.alloc();
         let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &root_cnode)?;
 
         let (child_process, _) =
-            child_vspace.prepare_thread(proc_main, params, ut, slots, &mut local_vspace_scratch)?;
+            child_vspace.prepare_thread(proc_main, params, ut, slots, local_vspace_scratch)?;
     });
 
-    child_process.start(child_cnode, None, root_tcb.as_ref(), 255)?;
+    child_process.start(child_cnode, Some(fault_source), tpa, 255)?;
 
-    Ok(())
+    match handler.await_message()? {
+        FaultOrMessage::Message(true) => Ok(()),
+        _ => Err(TopLevelError::TestAssertionFailure(
+            "Child process should have reported success",
+        )),
+    }
 }
 
-pub struct ProcParams {
+pub struct ProcParams<Role: CNodeRole> {
     pub value: usize,
+    pub outcome_sender: Sender<bool, Role>,
 }
 
-impl RetypeForSetup for ProcParams {
-    type Output = ProcParams;
+impl RetypeForSetup for ProcParams<role::Local> {
+    type Output = ProcParams<role::Child>;
 }
 
-pub extern "C" fn proc_main(params: ProcParams) {
-    debug_println!("\nThe value inside the process is {}\n", params.value);
+pub extern "C" fn proc_main(params: ProcParams<role::Local>) {
+    params
+        .outcome_sender
+        .blocking_send(&(params.value == 42))
+        .expect("Found value does not match expectations")
 }

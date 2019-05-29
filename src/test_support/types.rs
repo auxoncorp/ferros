@@ -15,7 +15,7 @@ pub enum TestOutcome {
 }
 
 pub type MaxTestUntypedSize = U27;
-pub type MaxTestCNodeSlots = Pow<U15>;
+pub type MaxTestCNodeSlots = Pow<U16>;
 pub type MaxTestASIDPoolSize = crate::arch::ASIDPoolSize;
 pub type RunTest = Fn(
     LocalCNodeSlots<MaxTestCNodeSlots>,
