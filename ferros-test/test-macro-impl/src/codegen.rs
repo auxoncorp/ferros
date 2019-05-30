@@ -324,7 +324,7 @@ mod tests {
                     under_test();
                     ferros::test_support::TestOutcome::Success
                 };
-                ("original_target", outcome)
+                (concat!(module_path!(), "::", "original_target"), outcome)
             }
         };
 
@@ -390,7 +390,7 @@ mod tests {
                         Err(_) => ferros::test_support::TestOutcome::Failure,
                     }
                 };
-                ("original_target", outcome)
+                (concat!(module_path!(), "::", "original_target"), outcome)
             }
         };
 
