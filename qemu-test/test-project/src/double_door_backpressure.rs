@@ -1,37 +1,34 @@
 use super::TopLevelError;
 
-use selfe_sys::{seL4_BootInfo, seL4_Yield};
+use selfe_sys::seL4_Yield;
 
 use typenum::*;
 
-use ferros::alloc::{self, micro_alloc, smart_alloc};
-use ferros::bootstrap::{root_cnode, BootInfo};
-use ferros::cap::{retype_cnode, role, CNodeRole};
-use ferros::userland::{Consumer1, Consumer2, Producer, QueueFullError, RetypeForSetup, Waker};
+use ferros::alloc::{smart_alloc, ut_buddy};
+use ferros::bootstrap::UserImage;
+use ferros::cap::*;
+use ferros::userland::{
+    fault_or_message_channel, Consumer1, Consumer2, FaultOrMessage, Producer, QueueFullError,
+    RetypeForSetup, Sender, Waker,
+};
 use ferros::vspace::{VSpace, VSpaceScratchSlice};
+use ferros_test::ferros_test;
 
-pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
-    let BootInfo {
-        root_page_directory,
-        asid_control,
-        user_image,
-        root_tcb,
-        ..
-    } = BootInfo::wrap(&raw_boot_info);
-    let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
-    let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
-    let uts = alloc::ut_buddy(
-        allocator
-            .get_untyped::<U21>()
-            .expect("initial alloc failure"),
-    );
+type U66536 = Sum<U65536, U1000>;
+
+#[ferros_test]
+pub fn double_door_backpressure(
+    local_slots: LocalCNodeSlots<U66536>,
+    local_ut: LocalCap<Untyped<U27>>,
+    asid_pool: LocalCap<ASIDPool<U4>>,
+    local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+    root_cnode: &LocalCap<LocalCNode>,
+    user_image: &UserImage<role::Local>,
+    tpa: &LocalCap<ThreadPriorityAuthority>,
+) -> Result<(), TopLevelError> {
+    let uts = ut_buddy(local_ut);
 
     smart_alloc!(|slots: local_slots, ut: uts| {
-        let (mut local_vspace_scratch, _root_page_directory) =
-            VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
-
-        let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
-
         let (consumer_asid, asid_pool) = asid_pool.alloc();
         let (producer_a_asid, asid_pool) = asid_pool.alloc();
         let (producer_b_asid, asid_pool) = asid_pool.alloc();
@@ -48,13 +45,13 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let producer_b_vspace = VSpace::new(ut, slots, producer_b_asid, &user_image, &root_cnode)?;
         let waker_vspace = VSpace::new(ut, slots, waker_asid, &user_image, &root_cnode)?;
 
-        let (slots_c, _consumer_slots) = consumer_slots.alloc();
+        let (slots_c, consumer_slots) = consumer_slots.alloc();
         let (consumer, consumer_token, producer_setup_a, waker_setup, consumer_vspace) =
             Consumer1::new(
                 ut,
                 ut,
                 consumer_vspace,
-                &mut local_vspace_scratch,
+                local_vspace_scratch,
                 &root_cnode,
                 slots,
                 slots_c,
@@ -64,12 +61,18 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             &consumer_token,
             ut,
             consumer_vspace,
-            &mut local_vspace_scratch,
+            local_vspace_scratch,
             &root_cnode,
             slots,
         )?;
+        let (outcome_sender_slots, _consumer_slots) = consumer_slots.alloc();
+        let (fault_source, outcome_sender, handler) =
+            fault_or_message_channel(&root_cnode, ut, slots, outcome_sender_slots, slots)?;
 
-        let consumer_params = ConsumerParams::<role::Child> { consumer };
+        let consumer_params = ConsumerParams::<role::Child> {
+            consumer,
+            outcome_sender,
+        };
 
         let (slots_a, _producer_a_slots) = producer_a_slots.alloc();
         let (producer_a, producer_a_vspace) = Producer::new(
@@ -106,7 +109,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             consumer_params,
             ut,
             slots,
-            &mut local_vspace_scratch,
+            local_vspace_scratch,
         )?;
 
         let (producer_a_thread, _) = producer_a_vspace.prepare_thread(
@@ -114,7 +117,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             producer_a_params,
             ut,
             slots,
-            &mut local_vspace_scratch,
+            local_vspace_scratch,
         )?;
 
         let (producer_b_thread, _) = producer_b_vspace.prepare_thread(
@@ -122,7 +125,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             producer_b_params,
             ut,
             slots,
-            &mut local_vspace_scratch,
+            local_vspace_scratch,
         )?;
 
         let (waker_thread, _) = waker_vspace.prepare_thread(
@@ -130,15 +133,21 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             waker_params,
             ut,
             slots,
-            &mut local_vspace_scratch,
+            local_vspace_scratch,
         )?;
 
-        consumer_thread.start(consumer_cnode, None, root_tcb.as_ref(), 255)?;
-        producer_a_thread.start(producer_a_cnode, None, root_tcb.as_ref(), 255)?;
-        producer_b_thread.start(producer_b_cnode, None, root_tcb.as_ref(), 255)?;
-        waker_thread.start(waker_cnode, None, root_tcb.as_ref(), 255)?;
+        consumer_thread.start(consumer_cnode, Some(fault_source), tpa, 255)?;
+        producer_a_thread.start(producer_a_cnode, None, tpa, 255)?;
+        producer_b_thread.start(producer_b_cnode, None, tpa, 255)?;
+        waker_thread.start(waker_cnode, None, tpa, 255)?;
     });
-    Ok(())
+
+    match handler.await_message()? {
+        FaultOrMessage::Message(true) => Ok(()),
+        _ => Err(TopLevelError::TestAssertionFailure(
+            "Child process should have reported success",
+        )),
+    }
 }
 
 #[derive(Debug)]
@@ -153,6 +162,7 @@ pub struct Yttrium {
 
 pub struct ConsumerParams<Role: CNodeRole> {
     pub consumer: Consumer2<Role, Xenon, U10, Yttrium, U2>,
+    pub outcome_sender: Sender<bool, Role>,
 }
 
 impl RetypeForSetup for ConsumerParams<role::Local> {
@@ -194,17 +204,16 @@ pub extern "C" fn consumer_process(p: ConsumerParams<role::Local>) {
     }
 
     impl State {
-        fn debug_if_finished(&self) {
-            if self.interrupt_count == 1
+        fn is_finished(&self) -> bool {
+            self.interrupt_count == 1
                 && self.queue_e_element_count == 20
                 && self.queue_f_element_count == 20
-            {
-                debug_println!("Final state: {:?}", self);
-            }
         }
     }
-
-    debug_println!("Inside consumer");
+    let ConsumerParams {
+        consumer,
+        outcome_sender,
+    } = p;
     let initial_state = State {
         interrupt_count: 0,
         queue_e_element_count: 0,
@@ -212,38 +221,45 @@ pub extern "C" fn consumer_process(p: ConsumerParams<role::Local>) {
         queue_f_element_count: 0,
         queue_f_sum: 0,
     };
-    p.consumer.consume(
+    consumer.consume(
         initial_state,
         |mut state| {
-            debug_println!("Interrupt wakeup happened!");
             state.interrupt_count = state.interrupt_count.saturating_add(1);
-            state.debug_if_finished();
+            if state.is_finished() {
+                outcome_sender
+                    .blocking_send(&true)
+                    .expect("Could not send final test result")
+            }
             state
         },
         |x, mut state| {
-            debug_println!("Pulling from Queue E, Xenon: {:?}", x);
             state.queue_e_element_count = state.queue_e_element_count.saturating_add(1);
             state.queue_e_sum = state.queue_e_sum.saturating_add(x.a);
-            state.debug_if_finished();
+            if state.is_finished() {
+                outcome_sender
+                    .blocking_send(&true)
+                    .expect("Could not send final test result")
+            }
             state
         },
         |y, mut state| {
-            debug_println!("Pulling from Queue F, Yttrium: {:?}", y);
             state.queue_f_element_count = state.queue_f_element_count.saturating_add(1);
             state.queue_f_sum = state.queue_f_sum.saturating_add(y.b);
-            state.debug_if_finished();
+            if state.is_finished() {
+                outcome_sender
+                    .blocking_send(&true)
+                    .expect("Could not send final test result")
+            }
             state
         },
     )
 }
 
 pub extern "C" fn waker_process(p: WakerParams<role::Local>) {
-    debug_println!("Inside waker");
     p.waker.send_wakeup_signal();
 }
 
 pub extern "C" fn producer_x_process(p: ProducerXParams<role::Local>) {
-    debug_println!("Inside producer");
     let mut rejection_count = 0;
     for i in 0..20 {
         let mut x = Xenon { a: i };
@@ -262,11 +278,9 @@ pub extern "C" fn producer_x_process(p: ProducerXParams<role::Local>) {
             }
         }
     }
-    debug_println!("\n\nProducer rejection count: {}\n\n", rejection_count);
 }
 
 pub extern "C" fn producer_y_process(p: ProducerYParams<role::Local>) {
-    debug_println!("Inside producer");
     let mut rejection_count = 0;
     for i in 0..20 {
         let mut y = Yttrium { b: i };
@@ -285,5 +299,4 @@ pub extern "C" fn producer_y_process(p: ProducerYParams<role::Local>) {
             }
         }
     }
-    debug_println!("\n\nProducer rejection count: {}\n\n", rejection_count);
 }

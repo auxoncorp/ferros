@@ -10,11 +10,11 @@ use ferros::vspace::{VSpace, VSpaceScratchSlice};
 
 use ferros_test::ferros_test;
 
-type U42768 = Sum<U32768, U1000>;
+type U33768 = Sum<U32768, U1000>;
 
 #[ferros_test]
-pub fn test(
-    local_slots: LocalCNodeSlots<U42768>,
+pub fn child_process_cap_management(
+    local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U1>>,
     local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,

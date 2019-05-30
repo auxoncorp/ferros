@@ -11,11 +11,11 @@ use ferros_test::ferros_test;
 use typenum::Sum;
 use typenum::*;
 
-type U42768 = Sum<U32768, U1000>;
+type U33768 = Sum<U32768, U1000>;
 
 #[ferros_test]
-pub fn test(
-    local_slots: LocalCNodeSlots<U42768>,
+pub fn call_and_response_loop(
+    local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U2>>,
     local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,

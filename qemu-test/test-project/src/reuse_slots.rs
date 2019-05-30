@@ -7,7 +7,7 @@ use ferros_test::ferros_test;
 use super::TopLevelError;
 
 #[ferros_test]
-pub fn test(
+pub fn reuse_slots(
     local_slots: LocalCNodeSlots<U100>,
     ut_20: LocalCap<Untyped<U20>>,
 ) -> Result<(), TopLevelError> {
@@ -19,8 +19,6 @@ pub fn test(
     let track = core::cell::Cell::new(0);
     let track_ref = &track;
 
-    debug_println!("about to start temporary use tests");
-
     // TODO - check correct reuse following inner error
     local_slots.with_temporary(move |inner_slots| -> Result<(), SeL4Error> {
         let (slots, _inner_slots) = inner_slots.alloc();
@@ -28,7 +26,6 @@ pub fn test(
         track_ref.set(track_ref.get() + 1);
         Ok(())
     })??;
-    debug_println!("finished first temporary use");
 
     local_slots.with_temporary(move |inner_slots| -> Result<(), SeL4Error> {
         let (slots, _inner_slots) = inner_slots.alloc();
@@ -36,7 +33,6 @@ pub fn test(
         track_ref.set(track_ref.get() + 1);
         Ok(())
     })??;
-    debug_println!("finished second temporary use");
 
     local_slots.with_temporary(move |inner_slots| -> Result<(), SeL4Error> {
         let (mut slots_a, mut slots_b): (LocalCNodeSlots<U4>, _) = inner_slots.alloc();
@@ -47,7 +43,6 @@ pub fn test(
             track_ref.set(track_ref.get() + 1);
             Ok(())
         })??;
-        debug_println!("finished nested use left");
 
         // Nested reuse (left)
         slots_a.with_temporary(move |inner_slots_a| -> Result<(), SeL4Error> {
@@ -56,7 +51,6 @@ pub fn test(
             track_ref.set(track_ref.get() + 1);
             Ok(())
         })??;
-        debug_println!("finished nested reuse left");
 
         // Nested use (right)
         slots_b.with_temporary(move |inner_slots_b| -> Result<(), SeL4Error> {
@@ -65,7 +59,6 @@ pub fn test(
             track_ref.set(track_ref.get() + 1);
             Ok(())
         })??;
-        debug_println!("finished nested use right");
 
         // Nested reuse (right)
         slots_b.with_temporary(move |inner_slots_b| -> Result<(), SeL4Error> {
@@ -74,15 +67,12 @@ pub fn test(
             track_ref.set(track_ref.get() + 1);
             Ok(())
         })??;
-        debug_println!("finished nested reuse right");
 
         track_ref.set(track_ref.get() + 1);
         Ok(())
     })??;
 
-    debug_println!("finished reuse with inner reuse");
     assert_eq!(7, track.get());
-    debug_println!("\nSuccessfully reused slots multiple times\n");
 
     Ok(())
 }

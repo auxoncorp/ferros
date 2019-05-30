@@ -140,104 +140,7 @@ mod tests {
         fn unified_tests() {
             run_qemu_test::<fn()>(
                 "unified_tests",
-                Regex::new(".*test result: ok\\. 6 passed;.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                None,
-                None,
-            );
-        }
-    }
-
-    sequential_test! {
-        fn memory_read_protection() {
-            run_qemu_test::<fn()>(
-                "memory_read_protection",
-                Regex::new(".*vm fault on data.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                None,
-                None,
-            );
-        }
-    }
-
-    sequential_test! {
-        fn memory_write_protection() {
-            run_qemu_test::<fn()>(
-                "memory_write_protection",
-                Regex::new(".*vm fault on data.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                None,
-                None,
-            );
-        }
-    }
-
-    sequential_test! {
-        fn over_register_size_params() {
-            run_qemu_test::<fn()>(
-                "over_register_size_params",
-
-                Regex::new(".*The child process saw a first value of bbbbbbbb, a mid value of aaaaaaaa, and a last value of cccccccc.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                None,
-                None,
-            );
-        }
-    }
-
-    sequential_test! {
-        fn shared_page_queue() {
-            run_qemu_test::<fn()>(
-                "shared_page_queue",
-                Regex::new(".*done producing!.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                None,
-                None,
-            );
-        }
-    }
-
-    sequential_test! {
-        fn fault_or_message_handler() {
-            run_qemu_test::<fn()>(
-                "fault_or_message_handler",
-                Regex::new(".*Successfully received messages and faults.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                None,
-                None,
-            );
-        }
-    }
-
-    sequential_test! {
-        fn fault_pair() {
-            run_qemu_test::<fn()>(
-                "fault_pair",
-                Regex::new(".*Caught a fault: CapFault\\(CapFault \\{ sender: Badge \\{ inner: 0 \\}, in_receive_phase: false, cap_address: 314159 \\}\\).*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                None,
-                None,
-            );
-        }
-    }
-
-    sequential_test! {
-        fn grandkid_process_runs() {
-            run_qemu_test::<fn()>(
-                "grandkid_process_runs",
-                Regex::new(".*Grandkid process successfully ran.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                None,
-                None,
-            );
-        }
-    }
-
-    sequential_test! {
-        fn double_door_backpressure() {
-            run_qemu_test::<fn()>(
-                "double_door_backpressure",
-                Regex::new(".*Final state: State \\{ interrupt_count: 1, queue_e_element_count: 20, queue_e_sum: 190, queue_f_element_count: 20, queue_f_sum: 190 \\}.*").unwrap(),
+                Regex::new(".*test result: ok\\. 15 passed;.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
                 None,
                 None,
@@ -260,18 +163,6 @@ mod tests {
                     stream.write(&[1]).expect("write stream");
                 })),
                 Some("-serial tcp:localhost:8888,server,nowait,nodelay -serial mon:stdio"),
-            );
-        }
-    }
-
-    sequential_test! {
-        fn dont_tread_on_me() {
-            run_qemu_test::<fn()>(
-                "dont_tread_on_me",
-                Regex::new(".*not changed at all.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                None,
-                None,
             );
         }
     }

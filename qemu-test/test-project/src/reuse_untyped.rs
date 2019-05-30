@@ -7,7 +7,7 @@ use ferros_test::ferros_test;
 use super::TopLevelError;
 
 #[ferros_test]
-pub fn test(
+pub fn reuse_untyped(
     mut prime_ut: LocalCap<Untyped<U27>>,
     root_cnode: &LocalCap<LocalCNode>,
     slot_a: LocalCNodeSlots<U2>,
@@ -68,7 +68,5 @@ pub fn test(
         Ok(())
     })??;
     assert_eq!(7, track.get());
-    debug_println!("\nSuccessfully reused untyped multiple times\n");
-
     Ok(())
 }
