@@ -6,14 +6,15 @@ use selfe_sys::*;
 use typenum::*;
 
 use ferros::alloc::{smart_alloc, ut_buddy};
+use ferros::arch::fault::Fault;
 use ferros::bootstrap::UserImage;
 use ferros::cap::{
     retype_cnode, role, ASIDPool, CNodeRole, LocalCNode, LocalCNodeSlots, LocalCap,
     ThreadPriorityAuthority, Untyped,
 };
 use ferros::userland::{
-    fault_or_message_channel, setup_fault_endpoint_pair, Fault, FaultOrMessage, FaultSink,
-    RetypeForSetup, Sender,
+    fault_or_message_channel, setup_fault_endpoint_pair, FaultOrMessage, FaultSink, RetypeForSetup,
+    Sender,
 };
 use ferros::vspace::{VSpace, VSpaceScratchSlice};
 

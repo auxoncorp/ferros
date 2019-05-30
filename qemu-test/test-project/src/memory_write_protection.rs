@@ -1,9 +1,10 @@
 use ferros::alloc::{smart_alloc, ut_buddy};
 use typenum::*;
 
+use ferros::arch::fault::Fault;
 use ferros::bootstrap::UserImage;
 use ferros::cap::*;
-use ferros::userland::{Fault, FaultSinkSetup, RetypeForSetup};
+use ferros::userland::{FaultSinkSetup, RetypeForSetup};
 use ferros::vspace::{VSpace, VSpaceScratchSlice};
 
 use super::TopLevelError;
