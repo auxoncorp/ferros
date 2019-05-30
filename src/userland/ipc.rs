@@ -3,8 +3,8 @@ use core::marker::PhantomData;
 use selfe_sys::*;
 
 use crate::cap::{
-    role, CNodeRole, Cap, ChildCNodeSlot, DirectRetype, Endpoint, LocalCNode, LocalCNodeSlot,
-    LocalCap, Untyped,
+    role, CNodeRole, CNodeSlot, Cap, ChildCNodeSlot, DirectRetype, Endpoint, LocalCNode,
+    LocalCNodeSlot, LocalCap, Untyped,
 };
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
@@ -336,5 +336,16 @@ impl<Msg: Sized> Sender<Msg, role::Local> {
             seL4_Send(self.endpoint.cptr, type_length_message_info::<Msg>());
         }
         Ok(())
+    }
+
+    pub fn copy<DestRole: CNodeRole>(
+        &self,
+        cnode: &LocalCap<LocalCNode>,
+        dest_slot: CNodeSlot<DestRole>,
+    ) -> Result<Sender<Msg, DestRole>, SeL4Error> {
+        Ok(Sender {
+            endpoint: self.endpoint.copy(cnode, dest_slot, CapRights::RWG)?,
+            _msg: PhantomData,
+        })
     }
 }

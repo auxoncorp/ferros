@@ -1,62 +1,62 @@
-use selfe_sys::seL4_BootInfo;
-
-use ferros::alloc::{self, micro_alloc, smart_alloc};
+use ferros::alloc::{smart_alloc, ut_buddy};
 use typenum::*;
 
-use ferros::bootstrap::{root_cnode, BootInfo};
-use ferros::cap::retype_cnode;
-use ferros::userland::RetypeForSetup;
+use ferros::arch::fault::Fault;
+use ferros::bootstrap::UserImage;
+use ferros::cap::*;
+use ferros::userland::{FaultSinkSetup, RetypeForSetup};
 use ferros::vspace::{VSpace, VSpaceScratchSlice};
 
 use super::TopLevelError;
 
-pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
-    let BootInfo {
-        root_page_directory,
-        asid_control,
-        user_image,
-        root_tcb,
-        ..
-    } = BootInfo::wrap(&raw_boot_info);
-    let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
-    let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
-    let uts = alloc::ut_buddy(
-        allocator
-            .get_untyped::<U20>()
-            .expect("initial alloc failure"),
-    );
+type U33768 = Sum<U32768, U1000>;
+
+#[ferros_test::ferros_test]
+pub fn memory_write_protection(
+    local_slots: LocalCNodeSlots<U33768>,
+    local_ut: LocalCap<Untyped<U20>>,
+    asid_pool: LocalCap<ASIDPool<U1>>,
+    local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+    root_cnode: &LocalCap<LocalCNode>,
+    user_image: &UserImage<role::Local>,
+    tpa: &LocalCap<ThreadPriorityAuthority>,
+) -> Result<(), TopLevelError> {
+    let uts = ut_buddy(local_ut);
 
     smart_alloc!(|slots: local_slots, ut: uts| {
-        let (mut local_vspace_scratch, _root_page_directory) =
-            VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
-
-        let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (child_asid, _asid_pool) = asid_pool.alloc();
         let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &root_cnode)?;
 
-        let (child_cnode, _child_slots) = retype_cnode::<U12>(ut, slots)?;
-        let params = ProcParams { value: 42 };
+        let (child_cnode, child_slots) = retype_cnode::<U12>(ut, slots)?;
+        let params = ProcParams {};
 
         let (child_process, _) =
-            child_vspace.prepare_thread(proc_main, params, ut, slots, &mut local_vspace_scratch)?;
+            child_vspace.prepare_thread(proc_main, params, ut, slots, local_vspace_scratch)?;
+
+        let setup = FaultSinkSetup::new(&root_cnode, ut, slots, slots)?;
+        let (child_slot_for_fault_source, _child_slots) = child_slots.alloc();
+        let fault_source =
+            setup.add_fault_source(&root_cnode, child_slot_for_fault_source, Badge::from(0))?;
+        let sink = setup.sink();
     });
 
-    child_process.start(child_cnode, None, root_tcb.as_ref(), 255)?;
+    child_process.start(child_cnode, Some(fault_source), tpa, 255)?;
 
-    Ok(())
+    match sink.wait_for_fault() {
+        Fault::VMFault(_) => Ok(()),
+        _ => Err(TopLevelError::TestAssertionFailure(
+            "unexpected fault in memory_read_protection",
+        )),
+    }
 }
 
-pub struct ProcParams {
-    pub value: usize,
-}
+pub struct ProcParams {}
 
 impl RetypeForSetup for ProcParams {
     type Output = ProcParams;
 }
 
 pub extern "C" fn proc_main(_params: ProcParams) {
-    debug_println!("\nAttempting to write to the code segment...\n");
-
     unsafe {
         let x: *mut usize = proc_main as _;
         *x = 42;

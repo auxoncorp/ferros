@@ -8,13 +8,9 @@ use ferros::cap::*;
 use ferros::userland::{fault_or_message_channel, FaultOrMessage, RetypeForSetup, Sender};
 use ferros::vspace::{VSpace, VSpaceScratchSlice};
 
-use ferros_test::ferros_test;
-
-type U42768 = Sum<U32768, U1000>;
-
-#[ferros_test]
-pub fn test(
-    local_slots: LocalCNodeSlots<U42768>,
+#[ferros_test::ferros_test]
+pub fn child_process_cap_management(
+    local_slots: LocalCNodeSlots<U32768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U1>>,
     local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,

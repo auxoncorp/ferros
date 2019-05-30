@@ -1,6 +1,6 @@
-use selfe_sys::{seL4_BootInfo, seL4_MessageInfo_new, seL4_Send};
+use selfe_sys::{seL4_MessageInfo_new, seL4_Send};
 
-use ferros::alloc::{micro_alloc, smart_alloc, ut_buddy};
+use ferros::alloc::{smart_alloc, ut_buddy};
 use ferros::bootstrap::*;
 use ferros::cap::*;
 use ferros::test_support::*;
@@ -11,34 +11,16 @@ use typenum::*;
 
 use super::TopLevelError;
 
-pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
-    let BootInfo {
-        root_page_directory,
-        asid_control,
-        user_image,
-        root_tcb,
-        ..
-    } = BootInfo::wrap(&raw_boot_info);
-    let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
-    let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
-    let mut shared_uts = ut_buddy(
-        allocator
-            .get_untyped::<U18>()
-            .expect("initial alloc failure"),
-    );
-    let mut ut27 = allocator
-        .get_untyped::<U27>()
-        .expect("second alloc failure");
-
-    smart_alloc!(|slots: local_slots, ut: shared_uts| {
-        let (mut local_vspace_scratch, _root_page_directory) =
-            VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
-        let (mut asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
-    });
-
-    let mut outer_slots = local_slots;
-    let mut outer_ut = ut27;
-
+#[ferros_test::ferros_test]
+pub fn fault_or_message_handler(
+    mut outer_slots: LocalCNodeSlots<U32768>,
+    mut outer_ut: LocalCap<Untyped<U21>>,
+    mut asid_pool: LocalCap<ASIDPool<U1024>>,
+    local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+    root_cnode: &LocalCap<LocalCNode>,
+    user_image: &UserImage<role::Local>,
+    tpa: &LocalCap<ThreadPriorityAuthority>,
+) -> Result<(), TopLevelError> {
     for c in [
         Command::ReportTrue,
         Command::ReportFalse,
@@ -81,28 +63,36 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
                         params,
                         ut,
                         slots,
-                        &mut local_vspace_scratch,
+                        local_vspace_scratch,
                     )?;
                 });
-                child_process.start(child_cnode, Some(source), root_tcb.as_ref(), 255)?;
+                child_process.start(child_cnode, Some(source), tpa, 255)?;
 
                 match handler.await_message()? {
                     FaultOrMessage::Fault(_) => {
                         if c != &Command::ThrowFault {
                             panic!("Child process threw a fault when it should not have")
-                        } else {
-                            debug_println!("Successfully threw and caught a fault");
                         }
                     }
                     FaultOrMessage::Message(m) => match c {
                         Command::ThrowFault => {
-                            panic!("Command expected a fault to be thrown, not a message sent")
+                            return Err(TopLevelError::TestAssertionFailure(
+                                "Command expected a fault to be thrown, not a message sent",
+                            ))
                         }
                         Command::ReportTrue => {
-                            assert_eq!(true, m, "Command expected success true to be reported")
+                            if m != true {
+                                return Err(TopLevelError::TestAssertionFailure(
+                                    "Command expected success true to be reported",
+                                ));
+                            }
                         }
                         Command::ReportFalse => {
-                            assert_eq!(false, m, "Command expected success false to be reported")
+                            if m != false {
+                                return Err(TopLevelError::TestAssertionFailure(
+                                    "Command expected success false to be reported",
+                                ));
+                            }
                         }
                     },
                 }
@@ -110,7 +100,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             },
         )??;
     }
-    debug_println!("Successfully received messages and faults");
     Ok(())
 }
 
@@ -132,7 +121,6 @@ impl RetypeForSetup for ProcParams<role::Local> {
 }
 
 pub extern "C" fn proc_main(params: ProcParams<role::Local>) {
-    debug_println!("\nThe command inside the process is {:?}\n", params.command);
     let ProcParams { command, sender } = params;
     match command {
         Command::ReportTrue => sender.blocking_send(&true).expect("Could not send true"),

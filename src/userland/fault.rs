@@ -176,6 +176,7 @@ pub struct FaultOrMessageHandler<Msg: Sized, Role: CNodeRole> {
     _msg: PhantomData<Msg>,
 }
 
+#[derive(Debug)]
 pub enum FaultOrMessage<Msg: Sized> {
     Fault(Fault),
     Message(Msg),
