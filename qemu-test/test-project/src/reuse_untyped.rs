@@ -5,7 +5,7 @@ use ferros::error::SeL4Error;
 
 use super::TopLevelError;
 
-#[ferros_test::test]
+#[ferros_test::ferros_test]
 pub fn reuse_untyped(
     mut prime_ut: LocalCap<Untyped<U27>>,
     root_cnode: &LocalCap<LocalCNode>,
