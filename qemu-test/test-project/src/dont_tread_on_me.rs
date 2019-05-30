@@ -16,11 +16,9 @@ use typenum::*;
 
 use super::TopLevelError;
 
-use ferros_test::ferros_test;
-
 type U42768 = Sum<U32768, U10000>;
 
-#[ferros_test]
+#[ferros_test::ferros_test]
 pub fn dont_tread_on_me(
     local_slots: LocalCNodeSlots<U42768>,
     local_ut: LocalCap<Untyped<U27>>,

@@ -1,5 +1,3 @@
-use selfe_sys::*;
-
 use typenum::*;
 
 use ferros::alloc::{smart_alloc, ut_buddy};
@@ -10,13 +8,12 @@ use ferros::userland::{
     Sender,
 };
 use ferros::vspace::{VSpace, VSpaceScratchSlice};
-use ferros_test::ferros_test;
 
 use super::TopLevelError;
 
 type U33768 = Sum<U32768, U1000>;
 
-#[ferros_test]
+#[ferros_test::ferros_test]
 pub fn shared_page_queue(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U20>>,
@@ -49,7 +46,7 @@ pub fn shared_page_queue(
                 slots,
                 slots_c,
             )?;
-        let (consumer_sender_slot, consumer_slots) = consumer_slots.alloc();
+        let (consumer_sender_slot, _consumer_slots) = consumer_slots.alloc();
         let (consumer_fault_source, outcome_sender, handler) =
             fault_or_message_channel(&root_cnode, ut, slots, consumer_sender_slot, slots)?;
 
@@ -118,23 +115,15 @@ pub extern "C" fn child_proc_a(p: ConsumerParams<role::Local>) {
         consumer,
         outcome_sender,
     } = p;
-    debug_println!("Inside consumer");
     let initial_state = 0;
     consumer.consume(
         initial_state,
         |state| {
             let fresh_state = state + 1;
-            debug_println!("Creating fresh state {} in the waker callback", fresh_state);
             fresh_state
         },
         |x, state| {
             let fresh_state = x.a + state;
-            debug_println!(
-                "Creating fresh state {} from {:?} and {} in the queue callback",
-                fresh_state,
-                x,
-                state
-            );
             if fresh_state > 10_000 {
                 outcome_sender
                     .blocking_send(&true)
@@ -148,13 +137,12 @@ pub extern "C" fn child_proc_a(p: ConsumerParams<role::Local>) {
 pub extern "C" fn child_proc_b(p: ProducerParams<role::Local>) {
     for i in 0..256 {
         match p.producer.send(Xenon { a: i }) {
-            Ok(_) => {
-                debug_println!("The producer *thinks* it successfully sent {}", i);
-            }
-            Err(QueueFullError(x)) => {
-                debug_println!("Rejected sending {:?}", x);
+            Ok(_) => (),
+            Err(QueueFullError(_x)) => {
+                // Rejected sending this value, let's yield and let the consumer catch up
+                // Note that we do not attempt to resend the rejected value
                 unsafe {
-                    seL4_Yield();
+                    selfe_sys::seL4_Yield();
                 }
             }
         }

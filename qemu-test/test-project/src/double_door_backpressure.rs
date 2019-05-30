@@ -12,11 +12,10 @@ use ferros::userland::{
     RetypeForSetup, Sender, Waker,
 };
 use ferros::vspace::{VSpace, VSpaceScratchSlice};
-use ferros_test::ferros_test;
 
 type U66536 = Sum<U65536, U1000>;
 
-#[ferros_test]
+#[ferros_test::ferros_test]
 pub fn double_door_backpressure(
     local_slots: LocalCNodeSlots<U66536>,
     local_ut: LocalCap<Untyped<U27>>,
@@ -260,7 +259,6 @@ pub extern "C" fn waker_process(p: WakerParams<role::Local>) {
 }
 
 pub extern "C" fn producer_x_process(p: ProducerXParams<role::Local>) {
-    let mut rejection_count = 0;
     for i in 0..20 {
         let mut x = Xenon { a: i };
         loop {
@@ -270,7 +268,6 @@ pub extern "C" fn producer_x_process(p: ProducerXParams<role::Local>) {
                 }
                 Err(QueueFullError(rejected_x)) => {
                     x = rejected_x;
-                    rejection_count += 1;
                     unsafe {
                         seL4_Yield();
                     }

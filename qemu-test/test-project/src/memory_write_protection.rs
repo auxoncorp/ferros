@@ -8,11 +8,9 @@ use ferros::vspace::{VSpace, VSpaceScratchSlice};
 
 use super::TopLevelError;
 
-use ferros_test::ferros_test;
-
 type U33768 = Sum<U32768, U1000>;
 
-#[ferros_test]
+#[ferros_test::ferros_test]
 pub fn memory_write_protection(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U20>>,

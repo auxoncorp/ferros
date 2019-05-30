@@ -8,15 +8,11 @@ use ferros::vspace::{VSpace, VSpaceScratchSlice};
 
 use super::TopLevelError;
 
-use ferros_test::ferros_test;
-
-type U33768 = Sum<U32768, U1000>;
-
-/// Test that we can pass process paramaters with content larger than that will
+/// Test that we can pass process parameters with content larger than that will
 /// fit in the TCB registers
-#[ferros_test]
+#[ferros_test::ferros_test]
 pub fn over_register_size_params(
-    local_slots: LocalCNodeSlots<U33768>,
+    local_slots: LocalCNodeSlots<U32768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U1>>,
     local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
@@ -53,12 +49,9 @@ pub fn over_register_size_params(
 
     match handler.await_message()? {
         FaultOrMessage::Message(true) => Ok(()),
-        fom => {
-            debug_println!("FOM in ORSP {:?}", fom);
-            Err(TopLevelError::TestAssertionFailure(
-                "Child process should have reported success",
-            ))
-        }
+        _ => Err(TopLevelError::TestAssertionFailure(
+            "Child process should have reported success",
+        )),
     }
 }
 

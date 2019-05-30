@@ -16,13 +16,12 @@ use ferros::userland::{
     RetypeForSetup, Sender,
 };
 use ferros::vspace::{VSpace, VSpaceScratchSlice};
-use ferros_test::ferros_test;
 
 use super::TopLevelError;
 
 type U33768 = Sum<U32768, U1000>;
 
-#[ferros_test]
+#[ferros_test::ferros_test]
 pub fn fault_pair(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U20>>,

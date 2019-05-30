@@ -2,11 +2,10 @@ use typenum::*;
 
 use ferros::cap::{LocalCNode, LocalCNodeSlots, LocalCap, Untyped};
 use ferros::error::SeL4Error;
-use ferros_test::ferros_test;
 
 use super::TopLevelError;
 
-#[ferros_test]
+#[ferros_test::test]
 pub fn reuse_untyped(
     mut prime_ut: LocalCap<Untyped<U27>>,
     root_cnode: &LocalCap<LocalCNode>,
@@ -67,6 +66,11 @@ pub fn reuse_untyped(
 
         Ok(())
     })??;
-    assert_eq!(7, track.get());
-    Ok(())
+    if 7 == track.get() {
+        Ok(())
+    } else {
+        Err(TopLevelError::TestAssertionFailure(
+            "Unexpected number of tracked reuses",
+        ))
+    }
 }

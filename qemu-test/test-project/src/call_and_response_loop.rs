@@ -7,13 +7,11 @@ use ferros::cap::{
 };
 use ferros::userland::*;
 use ferros::vspace::{VSpace, VSpaceScratchSlice};
-use ferros_test::ferros_test;
-use typenum::Sum;
 use typenum::*;
 
 type U33768 = Sum<U32768, U1000>;
 
-#[ferros_test]
+#[ferros_test::ferros_test]
 pub fn call_and_response_loop(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U20>>,
@@ -118,7 +116,7 @@ pub extern "C" fn child_proc_a(p: CallerParams<role::Local>) {
             Ok(rsp) => {
                 current_sum = rsp.sum;
             }
-            Err(e) => panic!("Addition requester panic'd"),
+            Err(_) => panic!("Addition requester panic'd"),
         }
     }
     p.outcome_sender

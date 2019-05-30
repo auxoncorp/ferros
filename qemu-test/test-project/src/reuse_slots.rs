@@ -2,11 +2,10 @@ use typenum::*;
 
 use ferros::cap::{LocalCNodeSlots, LocalCap, Untyped};
 use ferros::error::SeL4Error;
-use ferros_test::ferros_test;
 
 use super::TopLevelError;
 
-#[ferros_test]
+#[ferros_test::ferros_test]
 pub fn reuse_slots(
     local_slots: LocalCNodeSlots<U100>,
     ut_20: LocalCap<Untyped<U20>>,
@@ -71,8 +70,11 @@ pub fn reuse_slots(
         track_ref.set(track_ref.get() + 1);
         Ok(())
     })??;
-
-    assert_eq!(7, track.get());
-
-    Ok(())
+    if 7 == track.get() {
+        Ok(())
+    } else {
+        Err(TopLevelError::TestAssertionFailure(
+            "Unexpected number of tracked reuses",
+        ))
+    }
 }

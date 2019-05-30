@@ -11,13 +11,9 @@ use typenum::*;
 
 use super::TopLevelError;
 
-use ferros_test::ferros_test;
-
-type U33768 = Sum<U32768, U1000>;
-
-#[ferros_test]
+#[ferros_test::ferros_test]
 pub fn fault_or_message_handler(
-    mut outer_slots: LocalCNodeSlots<U33768>,
+    mut outer_slots: LocalCNodeSlots<U32768>,
     mut outer_ut: LocalCap<Untyped<U21>>,
     mut asid_pool: LocalCap<ASIDPool<U1024>>,
     local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
@@ -80,13 +76,23 @@ pub fn fault_or_message_handler(
                     }
                     FaultOrMessage::Message(m) => match c {
                         Command::ThrowFault => {
-                            panic!("Command expected a fault to be thrown, not a message sent")
+                            return Err(TopLevelError::TestAssertionFailure(
+                                "Command expected a fault to be thrown, not a message sent",
+                            ))
                         }
                         Command::ReportTrue => {
-                            assert_eq!(true, m, "Command expected success true to be reported")
+                            if m != true {
+                                return Err(TopLevelError::TestAssertionFailure(
+                                    "Command expected success true to be reported",
+                                ));
+                            }
                         }
                         Command::ReportFalse => {
-                            assert_eq!(false, m, "Command expected success false to be reported")
+                            if m != false {
+                                return Err(TopLevelError::TestAssertionFailure(
+                                    "Command expected success false to be reported",
+                                ));
+                            }
                         }
                     },
                 }
