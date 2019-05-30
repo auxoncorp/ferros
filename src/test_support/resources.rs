@@ -47,9 +47,19 @@ impl Resources {
         let (scratch, _root_page_directory) =
             VSpaceScratchSlice::from_parts(scratch_slots, ut_for_scratch, root_page_directory)?;
         let (asid_pool_slots, local_slots) = local_slots.alloc();
-        let ut_for_asid_pool = allocator
-            .get_untyped::<U12>()
-            .ok_or_else(|| super::TestSetupError::InitialUntypedNotFound { bit_size: 12 })?;
+        let (extra_pool_slots, local_slots) = local_slots.alloc();
+        let ut_for_asid_pool = {
+            match allocator.get_untyped::<U12>() {
+                Some(v) => v,
+                None => {
+                    let ut13 = allocator.get_untyped::<U13>().ok_or_else(|| {
+                        super::TestSetupError::InitialUntypedNotFound { bit_size: 13 }
+                    })?;
+                    let (ut12, _) = ut13.split(extra_pool_slots)?;
+                    ut12
+                }
+            }
+        };
         let (asid_pool, _asid_control) =
             asid_control.allocate_asid_pool(ut_for_asid_pool, asid_pool_slots)?;
         let (slots, _local_slots) = local_slots.alloc();

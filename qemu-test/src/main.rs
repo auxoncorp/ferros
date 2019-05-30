@@ -137,22 +137,10 @@ mod tests {
     use super::*;
 
     sequential_test! {
-        fn root_task_runs() {
+        fn unified_tests() {
             run_qemu_test::<fn()>(
-                "root_task_runs",
-                Regex::new(".*hello from the root task.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                None,
-                None,
-            );
-        }
-    }
-
-    sequential_test! {
-        fn child_process_runs() {
-            run_qemu_test::<fn()>(
-                "child_process_runs",
-                Regex::new(".*The value inside the process is 42.*").unwrap(),
+                "unified_tests",
+                Regex::new(".*test result: ok\\. 6 passed;.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
                 None,
                 None,
@@ -185,36 +173,11 @@ mod tests {
     }
 
     sequential_test! {
-        fn child_process_cap_management() {
-            run_qemu_test::<fn()>(
-                "child_process_cap_management",
-                Regex::new(".*Split, retyped, and deleted caps in a child process.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                None,
-                None,
-            );
-        }
-    }
-
-    sequential_test! {
         fn over_register_size_params() {
             run_qemu_test::<fn()>(
                 "over_register_size_params",
 
                 Regex::new(".*The child process saw a first value of bbbbbbbb, a mid value of aaaaaaaa, and a last value of cccccccc.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                None,
-                None,
-            );
-        }
-    }
-
-    sequential_test! {
-        fn call_and_response_loop() {
-            run_qemu_test::<fn()>(
-                "call_and_response_loop",
-
-                Regex::new(".*Call and response addition finished.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
                 None,
                 None,
@@ -306,30 +269,6 @@ mod tests {
             run_qemu_test::<fn()>(
                 "dont_tread_on_me",
                 Regex::new(".*not changed at all.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                None,
-                None,
-            );
-        }
-    }
-
-    sequential_test! {
-        fn reuse_untyped() {
-            run_qemu_test::<fn()>(
-                "reuse_untyped",
-                Regex::new(".*Successfully reused untyped multiple times.*").unwrap(),
-                Regex::new(".*Root task should never return from main.*").unwrap(),
-                None,
-                None,
-            );
-        }
-    }
-
-    sequential_test! {
-        fn reuse_slots() {
-            run_qemu_test::<fn()>(
-                "reuse_slots",
-                Regex::new(".*Successfully reused slots multiple times.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
                 None,
                 None,
