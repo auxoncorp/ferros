@@ -12,7 +12,3 @@ use crate::userland::CapRights;
 
 // | (| guard | radix |) |
 // We're always using U12, so we have 2^12 slots
-
-pub struct CNode {
-    offset: usize,
-}

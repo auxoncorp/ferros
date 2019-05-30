@@ -29,6 +29,12 @@ pub struct CNodeSlotsData<Size: Unsigned, Role: CNodeRole> {
     pub(crate) _role: PhantomData<Role>,
 }
 
+pub struct WCNodeSlotsData<Role> {
+    pub(crate) offset: usize,
+    pub(crate) size: usize,
+    _role: PhantomData<Role>,
+}
+
 impl<Role: CNodeRole> CapType for CNode<Role> {}
 
 impl<Size: Unsigned, Role: CNodeRole> CapType for CNodeSlotsData<Size, Role> {}
@@ -40,6 +46,9 @@ pub type ChildCNodeSlots<Size> = CNodeSlots<Size, role::Child>;
 pub type CNodeSlot<Role> = CNodeSlots<U1, Role>;
 pub type LocalCNodeSlot = CNodeSlot<role::Local>;
 pub type ChildCNodeSlot = CNodeSlot<role::Child>;
+
+impl<Role: CNodeRole> CapType for WCNodeSlotsData<Role> {}
+pub type WCNodeSlots<Role> = LocalCap<WCNodeSlotsData<Role>>;
 
 impl<Size: Unsigned, CapRole: CNodeRole, Role: CNodeRole> Cap<CNodeSlotsData<Size, Role>, CapRole> {
     /// A private constructor
@@ -91,6 +100,13 @@ impl<Size: Unsigned, Role: CNodeRole> CNodeSlots<Size, Role> {
                 _role: PhantomData,
             },
         })
+    }
+
+    pub fn weaken(self) -> WCNodeSlots<Role> {
+        WCNodeSlots {
+            offset: self.offset,
+            size: Size::USIZE,
+        }
     }
 }
 
@@ -174,5 +190,25 @@ impl LocalCap<ChildCNode> {
                 Cap::internal_new(dest_offset, dest_offset + 1),
             ))
         }
+    }
+}
+
+impl<Role: CNodeRole> WCNodeSlots<Role> {
+    pub fn alloc(&mut self) -> usize {
+        let offset = self.cap_data.offset;
+        self.cap_data.offset + 1;
+        offset
+    }
+
+    pub fn iter(self) -> impl Iterator<Item = WCNodeSlots<Role>> {
+        (0..self.cap_data.size).map(move |n| Cap {
+            cptr: self.cptr,
+            _role: PhantomData,
+            cap_data: WCNodeSlotsData {
+                offset: self.cap_data.offset + n,
+                size: 1,
+                _role: PhantomData,
+            },
+        })
     }
 }

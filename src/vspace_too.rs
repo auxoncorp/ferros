@@ -4,9 +4,8 @@ use selfe_sys::*;
 
 use typenum::*;
 
-use crate::arch::cap::{MappedPage, UnmappedPage};
 use crate::arch::PageBits;
-use crate::cap::{CNodeRole, CapType, MemoryKind};
+use crate::cap::{CNodeRole, Cap};
 use crate::userland::CapRights;
 
 // So, for aarch32, we have 3 levels: PageDirectory -> PageTables ->
@@ -46,6 +45,64 @@ struct PageDirectory;
 type Arm32Paging = PagingRec<Page, PageTable, PagingTop<PageTable, PageDirectory>>;
 type Depth = U3;
 /* ==========================================================================*/
+
+struct CNode {
+    slot_count: usize,
+    offset: usize,
+}
+
+impl<Role: CNodeRole> Cap<CNode, Role> {
+    fn new(
+        ut: Cap<Untyped, Local>,
+        guard: usize,
+        radix: usize,
+        callers_cnode: Cap<CNode, Local>,
+    ) -> Self {
+        unsafe {
+            // Retype to fill the scratch slot with a fresh CNode
+            let err = seL4_Untyped_Retype(
+                ut.cptr(),                               // _service
+                api_object_seL4_CapTableObject as usize, // type
+                hildRadix::to_usize(),                   // size_bits
+                callers_cnode.cptr(),                    // root
+                0,                                       // index
+                0,                                       // depth
+                callers_cnode.offset,                    // offset
+                1,                                       // num_objects
+            );
+
+            if err != 0 {
+                return Err(SeL4Error::CNodeMutate(err));
+            }
+
+            // In order to set the guard (for the sake of our C-pointer simplification scheme),
+            // mutate the CNode in the scratch slot, which copies the CNode into a second slot
+            let guard_data = seL4_CNode_CapData_new(
+                0,                                                      // guard
+                (seL4_WordBits - ChildRadix::to_usize() as usize) as _, // guard size in bits
+            )
+            .words[0];
+
+            let err = seL4_CNode_Mutate(
+                dest_cptr,           // _service: seL4_CNode,
+                dest_offset,         // dest_index: seL4_Word,
+                seL4_WordBits as u8, // dest_depth: seL4_Uint8,
+                scratch_cptr,        // src_root: seL4_CNode,
+                scratch_offset,      // src_index: seL4_Word,
+                seL4_WordBits as u8, // src_depth: seL4_Uint8,
+                guard_data as usize, // badge or guard: seL4_Word,
+            );
+
+            // TODO - If we wanted to make more efficient use of our available slots at the cost
+            // of complexity, we could swap the two created CNodes, then delete the one with
+            // the incorrect guard (the one originally occupying the scratch slot).
+
+            if err != 0 {
+                return Err(SeL4Error::UntypedRetype(err));
+            }
+        }
+    }
+}
 
 trait Arch {
     type Root: CapType;
