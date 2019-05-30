@@ -14,7 +14,7 @@ impl TestModel {
         let transformed_block = Box::new(parse_quote! { {
             #fn_under_test
             let outcome = #invocation_as_outcome;
-            (#original_fn_name_literal , outcome)
+            (concat!(module_path!(), "::", #original_fn_name_literal) , outcome)
         } });
         let transformed_fn = ItemFn {
             attrs: fn_under_test.attrs.clone(),
