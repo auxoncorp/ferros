@@ -2,6 +2,7 @@ use core::marker::PhantomData;
 
 use selfe_sys::*;
 
+use crate::arch::fault::Fault;
 use crate::cap::{
     role, Badge, CNodeRole, CNodeSlot, Cap, ChildCNodeSlot, DirectRetype, Endpoint, LocalCNode,
     LocalCNodeSlot, LocalCap, Untyped,
@@ -114,96 +115,6 @@ impl FaultSink<role::Local> {
         let mut sender: usize = 0;
         let info = unsafe { seL4_Recv(self.endpoint.cptr, &mut sender as *mut usize) }.into();
         (info, Badge::from(sender)).into()
-    }
-}
-/// TODO - consider dragging more information
-/// out of the fault message in the IPC Buffer
-/// and populating some inner fields
-#[derive(Debug)]
-pub enum Fault {
-    VMFault(fault::VMFault),
-    UnknownSyscall(fault::UnknownSyscall),
-    UserException(fault::UserException),
-    NullFault(fault::NullFault),
-    CapFault(fault::CapFault),
-    UnidentifiedFault(fault::UnidentifiedFault),
-}
-
-impl Fault {
-    pub fn sender(&self) -> Badge {
-        match self {
-            Fault::VMFault(f) => f.sender,
-            Fault::UnknownSyscall(f) => f.sender,
-            Fault::UserException(f) => f.sender,
-            Fault::NullFault(f) => f.sender,
-            Fault::CapFault(f) => f.sender,
-            Fault::UnidentifiedFault(f) => f.sender,
-        }
-    }
-}
-
-pub mod fault {
-    use super::Badge;
-    #[derive(Debug)]
-    pub struct VMFault {
-        pub sender: Badge,
-        pub program_counter: usize,
-        pub address: usize,
-        pub is_instruction_fault: bool,
-        pub fault_status_register: usize,
-    }
-    #[derive(Debug)]
-    pub struct UnknownSyscall {
-        pub sender: Badge,
-    }
-    #[derive(Debug)]
-    pub struct UserException {
-        pub sender: Badge,
-    }
-    #[derive(Debug)]
-    pub struct NullFault {
-        pub sender: Badge,
-    }
-    #[derive(Debug)]
-    pub struct CapFault {
-        pub sender: Badge,
-        pub in_receive_phase: bool,
-        pub cap_address: usize,
-    }
-    /// Grab bag for faults that don't fit the regular classification
-    #[derive(Debug)]
-    pub struct UnidentifiedFault {
-        pub sender: Badge,
-    }
-}
-
-impl From<(MessageInfo, Badge)> for Fault {
-    fn from(info_and_sender: (MessageInfo, Badge)) -> Self {
-        let (info, sender) = info_and_sender;
-        let buffer: &mut seL4_IPCBuffer = unsafe { &mut *seL4_GetIPCBuffer() };
-        const VM_FAULT: usize = seL4_Fault_tag_seL4_Fault_VMFault as usize;
-        const UNKNOWN_SYSCALL: usize = seL4_Fault_tag_seL4_Fault_UnknownSyscall as usize;
-        const USER_EXCEPTION: usize = seL4_Fault_tag_seL4_Fault_UserException as usize;
-        const NULL_FAULT: usize = seL4_Fault_tag_seL4_Fault_NullFault as usize;
-        const CAP_FAULT: usize = seL4_Fault_tag_seL4_Fault_CapFault as usize;
-        match info.label() {
-            NULL_FAULT => Fault::NullFault(fault::NullFault { sender }),
-            VM_FAULT => Fault::VMFault(fault::VMFault {
-                sender,
-                program_counter: buffer.msg[seL4_VMFault_IP as usize],
-                address: buffer.msg[seL4_VMFault_Addr as usize],
-                is_instruction_fault: 1 == buffer.msg[seL4_VMFault_PrefetchFault as usize],
-                fault_status_register: buffer.msg[seL4_VMFault_FSR as usize],
-            }),
-            UNKNOWN_SYSCALL => Fault::UnknownSyscall(fault::UnknownSyscall { sender }),
-            USER_EXCEPTION => Fault::UserException(fault::UserException { sender }),
-            CAP_FAULT => Fault::CapFault(fault::CapFault {
-                sender,
-                cap_address: buffer.msg[seL4_CapFault_Addr as usize],
-                in_receive_phase: 1 == buffer.msg[seL4_CapFault_InRecvPhase as usize],
-            }),
-            _ => Fault::UnidentifiedFault(fault::UnidentifiedFault { sender }),
-        }
     }
 }
 
