@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 
 use selfe_sys::*;
 
-use crate::arch::fault;
+use crate::arch::fault::Fault;
 use crate::cap::{
     role, Badge, CNodeRole, CNodeSlot, Cap, ChildCNodeSlot, DirectRetype, Endpoint, LocalCNode,
     LocalCNodeSlot, LocalCap, Untyped,
@@ -115,37 +115,6 @@ impl FaultSink<role::Local> {
         let mut sender: usize = 0;
         let info = unsafe { seL4_Recv(self.endpoint.cptr, &mut sender as *mut usize) }.into();
         (info, Badge::from(sender)).into()
-    }
-}
-
-#[derive(Debug)]
-pub enum Fault {
-    VMFault(fault::VMFault),
-    UnknownSyscall(fault::UnknownSyscall),
-    UserException(fault::UserException),
-    NullFault(fault::NullFault),
-    CapFault(fault::CapFault),
-    UnidentifiedFault(fault::UnidentifiedFault),
-    #[cfg(KernelArmHypervisorSupport)]
-    VGICMaintenanceFault(fault::VGICMaintenanceFault),
-    #[cfg(KernelArmHypervisorSupport)]
-    VCPUFault(fault::VCPUFault),
-}
-
-impl Fault {
-    pub fn sender(&self) -> Badge {
-        match self {
-            Fault::VMFault(f) => f.sender,
-            Fault::UnknownSyscall(f) => f.sender,
-            Fault::UserException(f) => f.sender,
-            Fault::NullFault(f) => f.sender,
-            Fault::CapFault(f) => f.sender,
-            Fault::UnidentifiedFault(f) => f.sender,
-            #[cfg(KernelArmHypervisorSupport)]
-            Fault::VGICMaintenanceFault(f) => f.sender,
-            #[cfg(KernelArmHypervisorSupport)]
-            Fault::VCPUFault(f) => f.sender,
-        }
     }
 }
 

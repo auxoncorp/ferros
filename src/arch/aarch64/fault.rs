@@ -67,6 +67,37 @@ pub struct VCPUFault {
     pub hyp_syndrome_register: usize,
 }
 
+#[derive(Debug)]
+pub enum Fault {
+    VMFault(VMFault),
+    UnknownSyscall(UnknownSyscall),
+    UserException(UserException),
+    NullFault(NullFault),
+    CapFault(CapFault),
+    UnidentifiedFault(UnidentifiedFault),
+    #[cfg(KernelArmHypervisorSupport)]
+    VGICMaintenanceFault(VGICMaintenanceFault),
+    #[cfg(KernelArmHypervisorSupport)]
+    VCPUFault(VCPUFault),
+}
+
+impl Fault {
+    pub fn sender(&self) -> Badge {
+        match self {
+            Fault::VMFault(f) => f.sender,
+            Fault::UnknownSyscall(f) => f.sender,
+            Fault::UserException(f) => f.sender,
+            Fault::NullFault(f) => f.sender,
+            Fault::CapFault(f) => f.sender,
+            Fault::UnidentifiedFault(f) => f.sender,
+            #[cfg(KernelArmHypervisorSupport)]
+            Fault::VGICMaintenanceFault(f) => f.sender,
+            #[cfg(KernelArmHypervisorSupport)]
+            Fault::VCPUFault(f) => f.sender,
+        }
+    }
+}
+
 impl From<(MessageInfo, Badge)> for Fault {
     fn from(info_and_sender: (MessageInfo, Badge)) -> Self {
         let (info, sender) = info_and_sender;
