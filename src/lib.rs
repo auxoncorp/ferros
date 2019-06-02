@@ -24,3 +24,4 @@ pub mod pow;
 pub mod test_support;
 pub mod userland;
 pub mod vspace;
+pub mod vspace_too;

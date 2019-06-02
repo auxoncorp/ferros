@@ -12,7 +12,7 @@ use crate::arch::PageBits;
 use crate::cap::{
     role, CNode, CNodeRole, CNodeSlot, CNodeSlots, Cap, CapRange, CapType, ChildCNode,
     ChildCNodeSlots, Delible, DirectRetype, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap,
-    Movable, PhantomCap,
+    Movable, PhantomCap, WCNodeSlots,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
@@ -25,11 +25,26 @@ include!(concat!(env!("OUT_DIR"), "/KERNEL_RETYPE_FAN_OUT_LIMIT"));
 
 #[derive(Debug)]
 pub struct Untyped<BitSize: Unsigned, Kind: MemoryKind = memory_kind::General> {
-    pub(crate) _bit_size: PhantomData<BitSize>,
-    pub(crate) _kind: PhantomData<Kind>,
+    _bit_size: PhantomData<BitSize>,
+    _kind: PhantomData<Kind>,
+}
+
+pub struct WUntyped {
+    pub(crate) size: usize,
 }
 
 impl<BitSize: Unsigned, Kind: MemoryKind> CapType for Untyped<BitSize, Kind> {}
+
+impl CapType for WUntyped {}
+
+impl WUntyped {
+    pub(crate) fn retype<D: DirectRetype>(
+        &mut self,
+        slots: &mut WCNodeSlots,
+    ) -> Result<D, SeL4Error> {
+        unimplemented!()
+    }
+}
 
 impl<BitSize: Unsigned, Kind: MemoryKind> PhantomCap for Untyped<BitSize, Kind> {
     fn phantom_instance() -> Self {
@@ -212,6 +227,13 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
             Err(SeL4Error::CNodeRevoke(err))
         } else {
             Ok(r)
+        }
+    }
+
+    /// weaken erases the type-level state-tracking (size).
+    pub fn weaken(self) -> WUntyped {
+        WUntyped {
+            size: BitSize::USIZE,
         }
     }
 }

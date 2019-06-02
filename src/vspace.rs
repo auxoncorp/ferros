@@ -602,7 +602,7 @@ impl<PageDirFreeSlots: Unsigned, PageTableFreeSlots: Unsigned, Role: CNodeRole>
 impl<PageDirFreeSlots: Unsigned, Role: CNodeRole> VSpace<PageDirFreeSlots, U0, Role> {
     pub fn next_section_vaddr(&self) -> usize {
         self.page_dir.cap_data.next_free_slot
-            << (arch::PageBits::USIZE + arch::PageTableBits::USIZE)
+            << (arch::PageBits::USIZE + arch::PageTableIndexBits::USIZE)
     }
 
     pub fn map_section<Kind: MemoryKind>(
@@ -945,7 +945,7 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<AssignedPageDirectory<FreeSl
         page_table: LocalCap<UnmappedPageTable>,
     ) -> Result<
         (
-            LocalCap<MappedPageTable<Pow<arch::PageTableBits>, Role>>,
+            LocalCap<MappedPageTable<Pow<arch::PageTableIndexBits>, Role>>,
             LocalCap<AssignedPageDirectory<Sub1<FreeSlots>, Role>>,
         ),
         SeL4Error,
@@ -954,8 +954,8 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<AssignedPageDirectory<FreeSl
         FreeSlots: Sub<B1>,
         Sub1<FreeSlots>: Unsigned,
     {
-        let page_table_vaddr =
-            self.cap_data.next_free_slot << (arch::PageBits::USIZE + arch::PageTableBits::USIZE);
+        let page_table_vaddr = self.cap_data.next_free_slot
+            << (arch::PageBits::USIZE + arch::PageTableIndexBits::USIZE);
 
         // map the page table
         let err = unsafe {
@@ -1011,8 +1011,8 @@ impl<FreeSlots: Unsigned, Role: CNodeRole> LocalCap<AssignedPageDirectory<FreeSl
         FreeSlots: Sub<U1>,
         Diff<FreeSlots, U1>: Unsigned,
     {
-        let section_vaddr =
-            self.cap_data.next_free_slot << (arch::PageBits::USIZE + arch::PageTableBits::USIZE);
+        let section_vaddr = self.cap_data.next_free_slot
+            << (arch::PageBits::USIZE + arch::PageTableIndexBits::USIZE);
 
         let err = unsafe {
             seL4_ARM_Page_Map(
@@ -1422,7 +1422,7 @@ pub fn yield_forever() -> ! {
     }
 }
 
-type ScratchPageTableSlots = Pow<arch::PageTableBits>;
+type ScratchPageTableSlots = Pow<arch::PageTableIndexBits>;
 #[derive(Debug)]
 pub struct VSpaceScratchSlice<Role: CNodeRole> {
     page_dir: Cap<AssignedPageDirectory<U0, Role>, Role>,

@@ -1,5 +1,6 @@
 use selfe_sys::{seL4_CapRights_new, seL4_CapRights_t};
 
+#[derive(Clone, Copy)]
 pub enum CapRights {
     R,
     W,

@@ -18,13 +18,39 @@ pub type ASIDLowBits = U10;
 pub type ASIDPoolCount = op!((U1 << ASIDHighBits) - U1);
 pub type ASIDPoolSize = op!(U1 << ASIDLowBits);
 
-pub type PageDirectoryBits = U12;
-pub type PageTableBits = U8;
-pub type PageBits = U12;
-pub type PageBytes = op!(U1 << U12);
+#[cfg(KernelHypervisorSupport)]
+mod hyp_or_not {
+    use typenum::*;
+    pub type PGDBits = U5;
+    pub type PGDIndexBits = U2;
+    pub type PageTableBits = U12;
+    pub type PageTableIndexBits = U9;
+    pub type PageDirIndexBits = U11;
+    pub type VCPUBits = U12;
+    pub type SectionBits = U21;
+    pub type SuperSectionBits = U25;
+}
 
-pub type BasePageDirFreeSlots = op!((U1 << PageDirectoryBits) - (U1 << U9));
-pub type BasePageTableFreeSlots = op!(U1 << PageTableBits);
+#[cfg(not(KernelHypervisorSupport))]
+mod hyp_or_not {
+    use typenum::*;
+    pub type PageTableBits = U10;
+    pub type PageTableIndexBits = U8;
+    pub type PageDirIndexBits = U12;
+    pub type SectionBits = U20;
+    pub type SuperSectionBits = U24;
+}
+
+pub use hyp_or_not::*;
+
+pub type PageDirectoryBits = U14;
+pub type PageBits = U12;
+pub type PageIndexBits = U12;
+pub type PageBytes = op!(U1 << U12);
+pub type LargePageBits = U16;
+
+pub type BasePageDirFreeSlots = op!((U1 << PageDirIndexBits) - (U1 << U9));
+pub type BasePageTableFreeSlots = op!(U1 << PageTableIndexBits);
 
 // TODO remove these when elf stuff lands.
 // this is a magic number we got from inspecting the binary.
