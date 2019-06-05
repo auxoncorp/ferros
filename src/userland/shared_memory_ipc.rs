@@ -5,11 +5,11 @@ use selfe_sys::{seL4_Signal, seL4_Wait};
 use typenum::operator_aliases::Sub1;
 use typenum::{Unsigned, B1, U2, U5};
 
-use crate::arch::cap::UnmappedPage;
-use crate::arch::PageBytes;
+use crate::arch::cap::Page;
+use crate::arch::{PageBits, PageBytes};
 use crate::cap::{
-    memory_kind, role, Badge, CNodeRole, Cap, ChildCNodeSlots, DirectRetype, LocalCNode,
-    LocalCNodeSlots, LocalCap, Notification, Untyped,
+    role, Badge, CNodeRole, Cap, ChildCNodeSlots, DirectRetype, LocalCNode, LocalCNodeSlots,
+    LocalCap, Notification, Untyped,
 };
 use crate::userland::{CapRights, IPCError};
 use crate::vspace::VSpace;
@@ -27,25 +27,17 @@ pub mod sync {
     >(
         local_cnode: &LocalCap<LocalCNode>,
         local_slots: LocalCNodeSlots<U5>,
-        shared_page_ut: LocalCap<
-            Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
-        >,
+        shared_page_ut: LocalCap<Untyped<PageBits>>,
         call_notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
         response_notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
-        caller_vspace: VSpace<CallerPageDirFreeSlots, CallerPageTableFreeSlots, role::Child>,
-        responder_vspace: VSpace<
-            ResponderPageDirFreeSlots,
-            ResponderPageTableFreeSlots,
-            role::Child,
-        >,
+        caller_vspace: VSpace,
+        responder_vspace: VSpace,
         caller_slots: ChildCNodeSlots<U2>,
         responder_slots: ChildCNodeSlots<U2>,
     ) -> Result<
         (
             ExtendedCaller<Req, Rsp, role::Child>,
             ExtendedResponder<Req, Rsp, role::Child>,
-            VSpace<CallerPageDirFreeSlots, Sub1<CallerPageTableFreeSlots>, role::Child>,
-            VSpace<ResponderPageDirFreeSlots, Sub1<ResponderPageTableFreeSlots>, role::Child>,
         ),
         IPCError,
     >
@@ -67,8 +59,7 @@ pub mod sync {
         }
 
         let (slot, local_slots) = local_slots.alloc();
-        let shared_page: LocalCap<UnmappedPage<memory_kind::General>> =
-            shared_page_ut.retype(slot)?;
+        let shared_page: LocalCap<Page> = shared_page_ut.retype(slot)?;
 
         let (slot, local_slots) = local_slots.alloc();
         let caller_shared_page = shared_page.copy(&local_cnode, slot, CapRights::RW)?;

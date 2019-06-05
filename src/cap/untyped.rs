@@ -7,7 +7,7 @@ use typenum::operator_aliases::{Diff, Prod, Sum};
 
 use typenum::*;
 
-use crate::arch::cap::UnmappedPage;
+use crate::arch::cap::Page;
 use crate::arch::PageBits;
 use crate::cap::{
     role, CNode, CNodeRole, CNodeSlot, CNodeSlots, Cap, CapRange, CapType, ChildCNode,
@@ -38,10 +38,10 @@ impl<BitSize: Unsigned, Kind: MemoryKind> CapType for Untyped<BitSize, Kind> {}
 impl CapType for WUntyped {}
 
 impl WUntyped {
-    pub(crate) fn retype<D: DirectRetype>(
+    pub(crate) fn retype<D: DirectRetype + CapType>(
         &mut self,
         slots: &mut WCNodeSlots,
-    ) -> Result<D, SeL4Error> {
+    ) -> Result<LocalCap<D>, SeL4Error> {
         unimplemented!()
     }
 }
@@ -454,7 +454,7 @@ impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
     pub fn retype_device_page(
         self,
         dest_slot: LocalCNodeSlot,
-    ) -> Result<LocalCap<UnmappedPage<memory_kind::Device>>, SeL4Error> {
+    ) -> Result<LocalCap<Page>, SeL4Error> {
         // Note that we special case introduce a device page creation function
         // because the most likely alternative would be complicating the DirectRetype
         // trait to allow some sort of associated-type matching between the allowable
@@ -464,14 +464,14 @@ impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
 
         let err = unsafe {
             seL4_Untyped_Retype(
-                self.cptr,                    // _service
-                UnmappedPage::sel4_type_id(), // type
-                0,                            // size_bits
-                dest_cptr,                    // root
-                0,                            // index
-                0,                            // depth
-                dest_offset,                  // offset
-                1,                            // num_objects
+                self.cptr,            // _service
+                Page::sel4_type_id(), // type
+                0,                    // size_bits
+                dest_cptr,            // root
+                0,                    // index
+                0,                    // depth
+                dest_offset,          // offset
+                1,                    // num_objects
             )
         };
 

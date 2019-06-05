@@ -33,16 +33,16 @@ use selfe_sys::{seL4_Signal, seL4_Wait};
 
 use typenum::*;
 
-use crate::arch::cap::{AssignedPageDirectory, MappedPage, UnmappedPage};
-use crate::arch::PageBytes;
+use crate::arch::cap::Page;
+use crate::arch::{PageBits, PageBytes};
 use crate::cap::{
-    irq_state, memory_kind, role, Badge, CNodeRole, Cap, ChildCNodeSlot, ChildCNodeSlots,
-    DirectRetype, IRQControl, IRQError, IRQHandler, ImmobileIndelibleInertCapabilityReference,
-    LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, Notification, PhantomCap, Untyped,
+    irq_state, role, Badge, CNodeRole, Cap, ChildCNodeSlot, ChildCNodeSlots, DirectRetype,
+    IRQControl, IRQError, IRQHandler, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap,
+    Notification, PhantomCap, Untyped,
 };
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
-use crate::vspace::{VSpace, VSpaceScratchSlice};
+use crate::vspace::VSpace;
 
 /// A multi-consumer that consumes interrupt-style notifications
 ///
@@ -174,10 +174,7 @@ impl From<SeL4Error> for MultiConsumerError {
 /// to add a new producer to a given queue
 /// ingested by a multi-consumer (e.g. `Consumer1`)
 pub struct ProducerSetup<T, QLen: Unsigned> {
-    // Used to verify that the related components agree on the identity of the consumer process
-    consumer_vspace_pagedir:
-        ImmobileIndelibleInertCapabilityReference<AssignedPageDirectory<U0, role::Child>>,
-    shared_page: LocalCap<UnmappedPage<memory_kind::General>>,
+    shared_page: LocalCap<Page>,
     queue_badge: Badge,
     // User-concealed alias'ing happening here.
     // Don't mutate this Cap. Copying/minting is okay.
@@ -204,11 +201,6 @@ pub struct ConsumerToken {
     // User-concealed alias'ing happening here.
     // Don't mutate/delete this Cap. Copying/minting is okay.
     notification: Cap<Notification, role::Local>,
-
-    // Will be populated if the related consumer has had a shared memory queue associated with it,
-    // and thus validating correct VSpace usage will be relevant
-    consumer_vspace_pagedir:
-        Option<ImmobileIndelibleInertCapabilityReference<AssignedPageDirectory<U0, role::Child>>>,
 }
 
 impl<IRQ: Unsigned> InterruptConsumer<IRQ, role::Child>
@@ -264,21 +256,11 @@ where
     >(
         self,
         consumer_token: &mut ConsumerToken,
-        shared_page_ut: LocalCap<
-            Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
-        >,
-        consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
-        vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+        shared_page_ut: LocalCap<Untyped<PageBits>>,
+        consumer_vspace: VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
-    ) -> Result<
-        (
-            Consumer1<role::Child, E, ELen, IRQ>,
-            ProducerSetup<E, ELen>,
-            VSpace<ConsumerPageDirFreeSlots, Sub1<ConsumerPageTableFreeSlots>, role::Child>,
-        ),
-        MultiConsumerError,
-    >
+    ) -> Result<(Consumer1<role::Child, E, ELen, IRQ>, ProducerSetup<E, ELen>), MultiConsumerError>
     where
         ELen: ArrayLength<Slot<E>>,
         ELen: IsGreater<U0, Output = True>,
@@ -295,7 +277,6 @@ where
             create_page_filled_with_array_queue::<E, ELen, _, _>(
                 shared_page_ut,
                 consumer_vspace,
-                vspace_scratch,
                 &local_cnode,
                 dest_slots,
             )?;
@@ -345,11 +326,8 @@ where
 {
     pub fn new<ConsumerPageDirFreeSlots: Unsigned, ConsumerPageTableFreeSlots: Unsigned>(
         notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
-        shared_page_ut: LocalCap<
-            Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
-        >,
-        consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
-        vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+        shared_page_ut: LocalCap<Untyped<PageBits>>,
+        consumer_vspace: VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         local_slots: LocalCNodeSlots<U3>,
         consumer_slot: ChildCNodeSlots<U1>,
@@ -359,7 +337,6 @@ where
             ConsumerToken,
             ProducerSetup<E, ELen>,
             WakerSetup,
-            VSpace<ConsumerPageDirFreeSlots, Sub1<ConsumerPageTableFreeSlots>, role::Child>,
         ),
         MultiConsumerError,
     >
@@ -379,7 +356,6 @@ where
             create_page_filled_with_array_queue::<E, ELen, _, _>(
                 shared_page_ut,
                 consumer_vspace,
-                vspace_scratch,
                 &local_cnode,
                 slots,
             )?;
@@ -452,18 +428,14 @@ where
     >(
         self,
         consumer_token: &ConsumerToken,
-        shared_page_ut: LocalCap<
-            Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
-        >,
-        consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
-        vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+        shared_page_ut: LocalCap<Untyped<PageBits>>,
+        consumer_vspace: VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
     ) -> Result<
         (
             Consumer2<role::Child, E, ELen, F, FLen, IRQ>,
             ProducerSetup<F, FLen>,
-            VSpace<ConsumerPageDirFreeSlots, Sub1<ConsumerPageTableFreeSlots>, role::Child>,
         ),
         MultiConsumerError,
     >
@@ -488,7 +460,6 @@ where
             create_page_filled_with_array_queue::<F, FLen, _, _>(
                 shared_page_ut,
                 consumer_vspace,
-                vspace_scratch,
                 &local_cnode,
                 dest_slots,
             )?;
@@ -555,18 +526,14 @@ where
     >(
         self,
         consumer_token: &ConsumerToken,
-        shared_page_ut: LocalCap<
-            Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
-        >,
-        consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
-        vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+        shared_page_ut: LocalCap<Untyped<PageBits>>,
+        consumer_vspace: VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
     ) -> Result<
         (
             Consumer3<role::Child, E, ELen, F, FLen, G, GLen, IRQ>,
             ProducerSetup<F, FLen>,
-            VSpace<ConsumerPageDirFreeSlots, Sub1<ConsumerPageTableFreeSlots>, role::Child>,
         ),
         MultiConsumerError,
     >
@@ -593,7 +560,6 @@ where
             create_page_filled_with_array_queue::<F, FLen, _, _>(
                 shared_page_ut,
                 consumer_vspace,
-                vspace_scratch,
                 &local_cnode,
                 dest_slots,
             )?;
@@ -644,21 +610,11 @@ fn create_page_filled_with_array_queue<
     ConsumerPageDirFreeSlots: Unsigned,
     ConsumerPageTableFreeSlots: Unsigned,
 >(
-    shared_page_ut: LocalCap<
-        Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
-    >,
-    consumer_vspace: VSpace<ConsumerPageDirFreeSlots, ConsumerPageTableFreeSlots, role::Child>,
-    vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+    shared_page_ut: LocalCap<Untyped<PageBits>>,
+    consumer_vspace: VSpace,
     local_cnode: &LocalCap<LocalCNode>,
     dest_slots: LocalCNodeSlots<U2>,
-) -> Result<
-    (
-        LocalCap<UnmappedPage<memory_kind::General>>,
-        LocalCap<MappedPage<role::Child, memory_kind::General>>,
-        VSpace<ConsumerPageDirFreeSlots, Sub1<ConsumerPageTableFreeSlots>, role::Child>,
-    ),
-    MultiConsumerError,
->
+) -> Result<LocalCap<Page>, MultiConsumerError>
 where
     QLen: ArrayLength<Slot<T>>,
     QLen: IsGreater<U0, Output = True>,
@@ -672,19 +628,17 @@ where
     }
 
     let (slot, dest_slots) = dest_slots.alloc();
-    let shared_page: LocalCap<UnmappedPage<memory_kind::General>> = shared_page_ut.retype(slot)?;
+    let shared_page: LocalCap<Page> = shared_page_ut.retype(slot)?;
     // Put some data in there. Specifically, an `ArrayQueue`.
-    let (_, shared_page) = vspace_scratch.temporarily_map_page(shared_page, |mapped_page| {
-        unsafe {
-            let aq_ptr =
-                core::mem::transmute::<usize, *mut ArrayQueue<T, QLen>>(mapped_page.cap_data.vaddr);
-            // Operate directly on a pointer to an uninitialized/zeroed pointer
-            // in order to reduces odds of the full ArrayQueue instance
-            // materializing all at once on the local stack (potentially blowing it)
-            ArrayQueue::<T, QLen>::new_at_ptr(aq_ptr);
-            core::mem::forget(aq_ptr);
-        }
-    })?;
+    unsafe {
+        let aq_ptr =
+            core::mem::transmute::<usize, *mut ArrayQueue<T, QLen>>(shared_page.cap_data.vaddr);
+        // Operate directly on a pointer to an uninitialized/zeroed pointer
+        // in order to reduces odds of the full ArrayQueue instance
+        // materializing all at once on the local stack (potentially blowing it)
+        ArrayQueue::<T, QLen>::new_at_ptr(aq_ptr);
+        core::mem::forget(aq_ptr);
+    }
 
     let (slot, _) = dest_slots.alloc();
     let consumer_shared_page = shared_page.copy(&local_cnode, slot, CapRights::RW)?;
@@ -1025,16 +979,10 @@ where
     pub fn new<ChildPageDirSlots: Unsigned, ChildPageTableSlots: Unsigned>(
         setup: &ProducerSetup<T, QLen>,
         dest_slot: ChildCNodeSlot,
-        child_vspace: VSpace<ChildPageDirSlots, ChildPageTableSlots, role::Child>,
+        child_vspace: VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         local_slot: LocalCNodeSlot,
-    ) -> Result<
-        (
-            Self,
-            VSpace<ChildPageDirSlots, Sub1<ChildPageTableSlots>, role::Child>,
-        ),
-        MultiConsumerError,
-    >
+    ) -> Result<Self, MultiConsumerError>
     where
         ChildPageTableSlots: Sub<B1>,
         Sub1<ChildPageTableSlots>: Unsigned,
@@ -1054,18 +1002,15 @@ where
             setup
                 .notification
                 .mint(&local_cnode, dest_slot, CapRights::RWG, setup.queue_badge)?;
-        Ok((
-            Producer {
-                notification,
-                queue: QueueHandle {
-                    shared_queue: producer_shared_page.cap_data.vaddr,
-                    _role: PhantomData,
-                    _t: PhantomData,
-                    _queue_len: PhantomData,
-                },
+        Ok(Producer {
+            notification,
+            queue: QueueHandle {
+                shared_queue: producer_shared_page.cap_data.vaddr,
+                _role: PhantomData,
+                _t: PhantomData,
+                _queue_len: PhantomData,
             },
-            child_vspace,
-        ))
+        })
     }
 }
 

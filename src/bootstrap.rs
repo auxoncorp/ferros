@@ -8,13 +8,14 @@ use typenum::*;
 use crate::arch::cap::*;
 use crate::arch::*;
 use crate::cap::{
-    memory_kind, role, CNode, CNodeRole, CNodeSlots, Cap, IRQControl, LocalCNode, LocalCNodeSlots,
-    LocalCap, ThreadControlBlock,
+    role, CNode, CNodeRole, CNodeSlots, Cap, IRQControl, LocalCNode, LocalCNodeSlots, LocalCap,
+    ThreadControlBlock,
 };
 use crate::error::SeL4Error;
 use crate::pow::Pow;
 use crate::userland::process::NeitherSendNorSync;
 use crate::userland::CapRights;
+use crate::vspace::VSpace;
 
 // The root CNode radix is 19. Conservatively set aside 2^12 (the default root
 // cnode size) for system use. TODO: verify at build time that this is enough /
@@ -62,8 +63,8 @@ pub struct UserImage<Role: CNodeRole> {
 
 /// A BootInfo cannot be handed to child processes and thus its related
 /// structures always operate in a "Local" role.
-pub struct BootInfo<ASIDControlFreePools: Unsigned, PageDirFreeSlots: Unsigned> {
-    pub root_page_directory: LocalCap<AssignedPageDirectory<PageDirFreeSlots, role::Local>>,
+pub struct BootInfo<ASIDControlFreePools: Unsigned> {
+    pub root_vspace: VSpace,
     pub root_tcb: LocalCap<ThreadControlBlock>,
 
     pub asid_control: LocalCap<ASIDControl<ASIDControlFreePools>>,
@@ -74,20 +75,12 @@ pub struct BootInfo<ASIDControlFreePools: Unsigned, PageDirFreeSlots: Unsigned> 
     neither_send_nor_sync: NeitherSendNorSync,
 }
 
-impl BootInfo<ASIDPoolCount, RootTaskPageDirFreeSlots> {
+impl BootInfo<ASIDPoolCount> {
     pub fn wrap(bootinfo: &'static seL4_BootInfo) -> Self {
         let asid_control = Cap::wrap_cptr(seL4_CapASIDControl as usize);
 
         BootInfo {
-            root_page_directory: Cap {
-                cptr: seL4_CapInitThreadVSpace as usize,
-                _role: PhantomData,
-                cap_data: AssignedPageDirectory {
-                    next_free_slot: RootTaskReservedPageDirSlots::USIZE,
-                    _free_slots: PhantomData,
-                    _role: PhantomData,
-                },
-            },
+            root_vspace: VSpace::from_cptr(seL4_CapInitThreadVSpace as usize),
             root_tcb: Cap::wrap_cptr(seL4_CapInitThreadTCB as usize),
             asid_control,
             irq_control: Cap {
@@ -117,9 +110,7 @@ impl UserImage<role::Local> {
     // TODO this doesn't enforce the aliasing constraints we want at the type
     // level. This can be modeled as an array (or other sized thing) once we
     // know how big the user image is.
-    pub fn pages_iter(
-        &self,
-    ) -> impl Iterator<Item = LocalCap<MappedPage<role::Local, memory_kind::General>>> {
+    pub fn pages_iter(&self) -> impl Iterator<Item = LocalCap<Page>> {
         // Iterate over the entire address space's page addresses, starting at
         // ProgramStart. This is truncated to the number of actual pages in the
         // user image by zipping it with the range of frame cptrs below.
@@ -129,11 +120,7 @@ impl UserImage<role::Local> {
             .zip(vaddr_iter)
             .map(|(cptr, vaddr)| Cap {
                 cptr,
-                cap_data: MappedPage {
-                    vaddr,
-                    _role: PhantomData,
-                    _kind: PhantomData,
-                },
+                cap_data: Page { vaddr },
                 _role: PhantomData,
             })
     }

@@ -2,8 +2,6 @@ use core::marker::PhantomData;
 
 use selfe_sys::*;
 
-use typenum::*;
-
 use crate::arch::HugePageBits;
 
 use crate::cap::{
@@ -28,7 +26,7 @@ impl<Kind: MemoryKind> PhantomCap for UnmappedHugePage<Kind> {
 impl DirectRetype for UnmappedHugePage<memory_kind::General> {
     type SizeBits = HugePageBits;
     fn sel4_type_id() -> usize {
-        _object_seL4_ARM_HugePageObject as usize
+        _mode_object_seL4_ARM_HugePageObject as usize
     }
 }
 

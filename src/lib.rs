@@ -1,5 +1,5 @@
 #![no_std]
-#![recursion_limit = "128"]
+#![recursion_limit = "256"]
 #![feature(proc_macro_hygiene)]
 
 extern crate arrayvec;
@@ -24,4 +24,3 @@ pub mod pow;
 pub mod test_support;
 pub mod userland;
 pub mod vspace;
-pub mod vspace_too;

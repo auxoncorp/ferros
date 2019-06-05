@@ -2,13 +2,13 @@ use typenum::*;
 
 use selfe_sys::*;
 
-use crate::arch::cap::{AssignedPageDirectory, MappedPage};
+use crate::arch::cap::Page;
 use crate::cap::{
-    memory_kind, role, CNodeRole, CapType, ChildCNode, CopyAliasable, DirectRetype,
-    ImmobileIndelibleInertCapabilityReference, LocalCap, PhantomCap,
+    role, CNodeRole, CapType, ChildCNode, CopyAliasable, DirectRetype, LocalCap, PhantomCap,
 };
 use crate::error::SeL4Error;
 use crate::userland::FaultSource;
+use crate::vspace::VSpace;
 
 #[derive(Debug)]
 pub struct ThreadControlBlock {}
@@ -65,10 +65,8 @@ impl LocalCap<ThreadControlBlock> {
         &mut self,
         cspace_root: LocalCap<ChildCNode>,
         fault_source: Option<FaultSource<role::Child>>,
-        vspace_cptr: ImmobileIndelibleInertCapabilityReference<
-            AssignedPageDirectory<U0, VSpaceRole>,
-        >, // vspace_root,
-        ipc_buffer: LocalCap<MappedPage<VSpaceRole, memory_kind::General>>,
+        vspace_cptr: VSpace, // vspace_root,
+        ipc_buffer: LocalCap<Page>,
     ) -> Result<(), SeL4Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
         // used by the radix.

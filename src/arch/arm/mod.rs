@@ -33,12 +33,21 @@ mod hyp_or_not {
 
 #[cfg(not(KernelHypervisorSupport))]
 mod hyp_or_not {
+    use super::cap;
+    use crate::vspace_too::{PagingRec, PagingTop};
     use typenum::*;
+
     pub type PageTableBits = U10;
     pub type PageTableIndexBits = U8;
     pub type PageDirIndexBits = U12;
     pub type SectionBits = U20;
     pub type SuperSectionBits = U24;
+
+    pub type AddressSpace = PagingRec<
+        cap::page_too::Page,
+        cap::page_table_too::PageTable,
+        PagingTop<cap::page_table_too::PageTable, cap::page_directory_too::PageDirectory>,
+    >;
 }
 
 pub use hyp_or_not::*;
@@ -74,6 +83,6 @@ pub type RootTaskReservedPageDirSlots = op!(CodePageTableCount + RootTaskStackPa
 pub type RootTaskPageDirFreeSlots = op!(BasePageDirFreeSlots - RootTaskReservedPageDirSlots);
 
 /// 0xe0000000
-pub type KernelReservedStart = op!((U1 << U31) + (U1 << U30) + (U1 << U29));
+pub type KernelReservedStart = op!((U1 << U32) - U1);
 
 pub const WORDS_PER_PAGE: usize = PageBytes::USIZE / core::mem::size_of::<usize>();

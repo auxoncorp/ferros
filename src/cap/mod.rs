@@ -446,18 +446,9 @@ mod private {
     mod arch {
         use super::super::*;
         use crate::arch::cap::*;
-        impl<FreeSlots: Unsigned, Role: CNodeRole> super::SealedCapType
-            for AssignedPageDirectory<FreeSlots, Role>
-        {
-        }
-        impl super::SealedCapType for UnassignedPageDirectory {}
-        impl super::SealedCapType for UnmappedPageTable {}
-        impl<FreeSlots: Unsigned, Role: CNodeRole> super::SealedCapType
-            for MappedPageTable<FreeSlots, Role>
-        {
-        }
-        impl<Kind: MemoryKind> super::SealedCapType for UnmappedPage<Kind> {}
-        impl<Role: CNodeRole, Kind: MemoryKind> super::SealedCapType for MappedPage<Role, Kind> {}
+        impl super::SealedCapType for PageDirectory {}
+        impl super::SealedCapType for PageTable {}
+        impl super::SealedCapType for Page {}
 
         impl<Kind: MemoryKind> super::SealedCapType for UnmappedLargePage<Kind> {}
         impl<Role: CNodeRole, Kind: MemoryKind> super::SealedCapType for MappedLargePage<Role, Kind> {}
