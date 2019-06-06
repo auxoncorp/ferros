@@ -11,7 +11,7 @@ test_support = []
 [dependencies]
 # NOTE: We use a git dependency directly since the git submodules
 # don't currently work when pulled down from crates.io
-selfe-sys = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
+selfe-sys = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git", branch = "add-aarch64-sel4-start-support"  }
 typenum = { git = "ssh://github.com/auxoncorp/typenum" }
 registers = { git = "ssh://github.com/auxoncorp/registers" }
 generic-array = { git = "ssh://github.com/auxoncorp/generic-array", branch = "auxon-typenum" }

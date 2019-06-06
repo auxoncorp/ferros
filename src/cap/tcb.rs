@@ -86,7 +86,7 @@ impl LocalCap<ThreadControlBlock> {
                 cspace_root_data,
                 vspace.root_cptr(),
                 seL4_NilData as usize, // vspace_root_data, always 0, reserved by kernel?
-                ipc_buffer.cap_data.vaddr(), // buffer address
+                ipc_buffer.vaddr(),    // buffer address
                 ipc_buffer.cptr,       // bufferFrame capability
             )
         };

@@ -147,16 +147,9 @@ impl<CT: CapType> ImmobileIndelibleInertCapabilityReference<CT> {
 
 pub struct CapRange<CT: CapType + PhantomCap, Role: CNodeRole, Slots: Unsigned> {
     pub(crate) start_cptr: usize,
-    pub(crate) _cap_type: PhantomData<CT>,
-    _role: PhantomData<Role>,
-    _slots: PhantomData<Slots>,
-}
-
-pub struct WCapRange<CT: CapType, Role: CNodeRole> {
-    pub(crate) start_cptr: usize,
-    pub(crate) slots: usize,
     _cap_type: PhantomData<CT>,
     _role: PhantomData<Role>,
+    _slots: PhantomData<Slots>,
 }
 
 impl<CT: CapType + PhantomCap, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Role, Slots> {
@@ -166,15 +159,6 @@ impl<CT: CapType + PhantomCap, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Ro
             _role: PhantomData,
             cap_data: PhantomCap::phantom_instance(),
         })
-    }
-
-    pub fn weaken(self) -> WCapRange<CT, Role> {
-        WCapRange {
-            start_cptr: self.start_cptr,
-            slots: Slots::USIZE,
-            _cap_type: PhantomData,
-            _role: PhantomData,
-        }
     }
 }
 

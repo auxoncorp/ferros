@@ -127,7 +127,7 @@ impl UserImage<role::Local> {
             .map(|(cptr, vaddr)| Cap {
                 cptr,
                 cap_data: Page {
-                    state: page_state::Mapped { vaddr },
+                    state: page_state::Mapped { vaddr, asid: 0 },
                 },
                 _role: PhantomData,
             })

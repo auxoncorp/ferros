@@ -1,12 +1,13 @@
 use selfe_sys::*;
 
-use crate::cap::{CapType, CopyAliasable, DirectRetype, PhantomCap};
+use crate::cap::{CapType, CopyAliasable, DirectRetype, LocalCap, PhantomCap};
 
 pub trait PageState: private::SealedPageState {}
 
 pub mod page_state {
     pub struct Mapped {
         pub(super) vaddr: usize,
+        pub(super) asid: usize,
     }
     impl super::PageState for Mapped {}
 
@@ -18,9 +19,12 @@ pub struct Page<State: PageState> {
     state: State,
 }
 
-impl Page<page_state::Mapped> {
+impl LocalCap<Page<page_state::Mapped>> {
     pub fn vaddr(&self) -> usize {
-        self.state.vaddr
+        self.cap_data.state.vaddr
+    }
+    pub fn asid(&self) -> usize {
+        self.cap_data.state.asid
     }
 }
 
