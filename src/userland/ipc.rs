@@ -2,6 +2,7 @@ use core::marker::PhantomData;
 
 use selfe_sys::*;
 
+use crate::arch;
 use crate::cap::{
     role, CNodeRole, Cap, ChildCNodeSlot, DirectRetype, Endpoint, LocalCNode, LocalCNodeSlot,
     LocalCap, Untyped,
@@ -193,10 +194,10 @@ pub(crate) fn type_length_in_words<T>() -> usize {
 fn type_length_message_info<T>() -> seL4_MessageInfo_t {
     unsafe {
         seL4_MessageInfo_new(
-            0,                                  // label,
-            0,                                  // capsUnwrapped,
-            0,                                  // extraCaps,
-            type_length_in_words::<T>() as u32, // length in words!
+            0,                                               // label,
+            0,                                               // capsUnwrapped,
+            0,                                               // extraCaps,
+            arch::to_sel4_word(type_length_in_words::<T>()), // length in words!
         )
     }
 }

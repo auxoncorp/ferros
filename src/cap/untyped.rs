@@ -7,7 +7,7 @@ use typenum::operator_aliases::{Diff, Prod, Sum};
 
 use typenum::*;
 
-use crate::arch::cap::Page;
+use crate::arch::cap::{page_state, Page};
 use crate::arch::PageBits;
 use crate::cap::{
     role, CNode, CNodeRole, CNodeSlot, CNodeSlots, Cap, CapRange, CapType, ChildCNode,
@@ -454,7 +454,7 @@ impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
     pub fn retype_device_page(
         self,
         dest_slot: LocalCNodeSlot,
-    ) -> Result<LocalCap<Page>, SeL4Error> {
+    ) -> Result<LocalCap<Page<page_state::Unmapped>>, SeL4Error> {
         // Note that we special case introduce a device page creation function
         // because the most likely alternative would be complicating the DirectRetype
         // trait to allow some sort of associated-type matching between the allowable

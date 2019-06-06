@@ -79,8 +79,20 @@ impl BootInfo<ASIDPoolCount> {
     pub fn wrap(bootinfo: &'static seL4_BootInfo) -> Self {
         let asid_control = Cap::wrap_cptr(seL4_CapASIDControl as usize);
 
+        let user_image = UserImage {
+            frames_start_cptr: bootinfo.userImageFrames.start,
+            frames_count: bootinfo.userImageFrames.end - bootinfo.userImageFrames.start,
+            page_table_count: bootinfo.userImagePaging.end - bootinfo.userImagePaging.start,
+            _role: PhantomData,
+        };
+
+        let init_vaddr = 2 * (user_image.frames_count * PageBytes::USIZE);
         BootInfo {
-            root_vspace: VSpace::from_cptr(seL4_CapInitThreadVSpace as usize),
+            root_vspace: VSpace::bootstrap(
+                seL4_CapInitThreadVSpace as usize,
+                init_vaddr,
+                seL4_CapInitThreadCNode as usize,
+            ),
             root_tcb: Cap::wrap_cptr(seL4_CapInitThreadTCB as usize),
             asid_control,
             irq_control: Cap {
@@ -90,13 +102,7 @@ impl BootInfo<ASIDPoolCount> {
                 },
                 _role: PhantomData,
             },
-            user_image: UserImage {
-                frames_start_cptr: bootinfo.userImageFrames.start,
-                frames_count: bootinfo.userImageFrames.end - bootinfo.userImageFrames.start,
-                page_table_count: bootinfo.userImagePaging.end - bootinfo.userImagePaging.start,
-                _role: PhantomData,
-            },
-
+            user_image,
             neither_send_nor_sync: Default::default(),
         }
     }
@@ -110,7 +116,7 @@ impl UserImage<role::Local> {
     // TODO this doesn't enforce the aliasing constraints we want at the type
     // level. This can be modeled as an array (or other sized thing) once we
     // know how big the user image is.
-    pub fn pages_iter(&self) -> impl Iterator<Item = LocalCap<Page>> {
+    pub fn pages_iter(&self) -> impl Iterator<Item = LocalCap<Page<page_state::Mapped>>> {
         // Iterate over the entire address space's page addresses, starting at
         // ProgramStart. This is truncated to the number of actual pages in the
         // user image by zipping it with the range of frame cptrs below.
@@ -120,7 +126,9 @@ impl UserImage<role::Local> {
             .zip(vaddr_iter)
             .map(|(cptr, vaddr)| Cap {
                 cptr,
-                cap_data: Page { vaddr },
+                cap_data: Page {
+                    state: page_state::Mapped { vaddr },
+                },
                 _role: PhantomData,
             })
     }

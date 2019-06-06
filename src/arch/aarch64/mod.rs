@@ -45,7 +45,7 @@ pub type LargePageBits = U21;
 pub type HugePageBits = U30;
 
 pub type AddressSpace = PagingRec<
-    cap::Page,
+    cap::Page<cap::page_state::Unmapped>,
     cap::PageTable,
     PagingRec<
         cap::PageTable,

@@ -5,7 +5,7 @@ pub mod cap;
 pub type WordSize = U32;
 pub type MinUntypedSize = U4;
 // MaxUntypedSize is half the address space and/or word size.
-pub type MaxUntypedSize = U29;
+pub type MaraxUntypedSize = U29;
 
 /// The ASID address space is a total of 16 bits. It is bifurcated
 /// into high bits and low bits where the high bits determine the

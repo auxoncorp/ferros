@@ -116,15 +116,6 @@ pub struct UTBuddy<PoolSizes: UList> {
     pool: [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE],
 }
 
-#[allow(dead_code)]
-fn print_pool(pool: &[ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE]) {
-    debug_print!("Pool[ ");
-    for av in pool {
-        debug_print!("{} ", av.len());
-    }
-    debug_println!("]");
-}
-
 /// Make a new UTBuddy by wrapping an untyped.
 pub fn ut_buddy<BitSize: Unsigned>(
     ut: LocalCap<Untyped<BitSize>>,
@@ -134,8 +125,14 @@ where
     Diff<BitSize, U4>: _OneHotUList,
     OneHotUList<Diff<BitSize, U4>>: UList,
 {
-    let mut pool: [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE] =
-        Default::default();
+    let mut pool = unsafe {
+        let mut pool: [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE] =
+            core::mem::uninitialized();
+        for p in pool.iter_mut() {
+            core::ptr::write(p, ArrayVec::default());
+        }
+        pool
+    };
 
     pool[BitSize::USIZE - MinUntypedSize::USIZE].push(ut.cptr);
 

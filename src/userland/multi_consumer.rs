@@ -33,7 +33,7 @@ use selfe_sys::{seL4_Signal, seL4_Wait};
 
 use typenum::*;
 
-use crate::arch::cap::Page;
+use crate::arch::cap::{page_state, Page};
 use crate::arch::{PageBits, PageBytes};
 use crate::cap::{
     irq_state, role, Badge, CNodeRole, Cap, ChildCNodeSlot, ChildCNodeSlots, DirectRetype,
@@ -174,7 +174,7 @@ impl From<SeL4Error> for MultiConsumerError {
 /// to add a new producer to a given queue
 /// ingested by a multi-consumer (e.g. `Consumer1`)
 pub struct ProducerSetup<T, QLen: Unsigned> {
-    shared_page: LocalCap<Page>,
+    shared_page: LocalCap<Page<page_state::Unmapped>>,
     queue_badge: Badge,
     // User-concealed alias'ing happening here.
     // Don't mutate this Cap. Copying/minting is okay.
@@ -614,7 +614,7 @@ fn create_page_filled_with_array_queue<
     consumer_vspace: VSpace,
     local_cnode: &LocalCap<LocalCNode>,
     dest_slots: LocalCNodeSlots<U2>,
-) -> Result<LocalCap<Page>, MultiConsumerError>
+) -> Result<LocalCap<Page<page_state::Mapped>>, MultiConsumerError>
 where
     QLen: ArrayLength<Slot<T>>,
     QLen: IsGreater<U0, Output = True>,
@@ -628,7 +628,7 @@ where
     }
 
     let (slot, dest_slots) = dest_slots.alloc();
-    let shared_page: LocalCap<Page> = shared_page_ut.retype(slot)?;
+    let shared_page: LocalCap<Page<page_state::Unmapped>> = shared_page_ut.retype(slot)?;
     // Put some data in there. Specifically, an `ArrayQueue`.
     unsafe {
         let aq_ptr =

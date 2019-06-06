@@ -1,18 +1,19 @@
 use selfe_sys::*;
 
 use crate::cap::{CapType, DirectRetype, LocalCap, PhantomCap, WCNodeSlots, WUntyped};
+use crate::error::SeL4Error;
 use crate::userland::CapRights;
 use crate::vspace::{MappingError, Maps};
 
-use super::Page;
+use super::{page_state, Page};
 
 #[derive(Debug)]
 pub struct PageTable {}
 
-impl Maps<Page> for PageTable {
+impl Maps<Page<page_state::Unmapped>> for PageTable {
     fn map_item<RootG, Root>(
         &mut self,
-        page: &LocalCap<Page>,
+        page: &LocalCap<Page<page_state::Unmapped>>,
         addr: usize,
         root: &mut LocalCap<Root>,
         rights: CapRights,
@@ -42,7 +43,7 @@ impl Maps<Page> for PageTable {
                 // errors and a Rust error enum.
                 6 => Err(MappingError::Overflow),
                 0 => Ok(()),
-                e => Err(MappingError::PageMapFailure(e)),
+                e => Err(MappingError::PageMapFailure(SeL4Error::PageMap(e))),
             }
         } else {
             Err(MappingError::AddrNotPageAligned)

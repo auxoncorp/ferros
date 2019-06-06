@@ -2,7 +2,7 @@ use typenum::*;
 
 use selfe_sys::*;
 
-use crate::arch::cap::Page;
+use crate::arch::cap::{page_state, Page};
 use crate::cap::{
     role, CNodeRole, CapType, ChildCNode, CopyAliasable, DirectRetype, LocalCap, PhantomCap,
 };
@@ -65,8 +65,8 @@ impl LocalCap<ThreadControlBlock> {
         &mut self,
         cspace_root: LocalCap<ChildCNode>,
         fault_source: Option<FaultSource<role::Child>>,
-        vspace_cptr: VSpace, // vspace_root,
-        ipc_buffer: LocalCap<Page>,
+        vspace: VSpace, // vspace_root,
+        ipc_buffer: LocalCap<Page<page_state::Mapped>>,
     ) -> Result<(), SeL4Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
         // used by the radix.
@@ -84,9 +84,9 @@ impl LocalCap<ThreadControlBlock> {
                 fault_source.map_or(seL4_CapNull as usize, |source| source.endpoint.cptr), // fault_ep.cptr,
                 cspace_root.cptr,
                 cspace_root_data,
-                vspace_cptr.get_capability_pointer(), //vspace_root.cptr,
+                vspace.root_cptr(),
                 seL4_NilData as usize, // vspace_root_data, always 0, reserved by kernel?
-                ipc_buffer.cap_data.vaddr, // buffer address
+                ipc_buffer.cap_data.vaddr(), // buffer address
                 ipc_buffer.cptr,       // bufferFrame capability
             )
         };

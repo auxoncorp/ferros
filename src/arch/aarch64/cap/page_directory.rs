@@ -3,6 +3,7 @@ use selfe_sys::*;
 use typenum::Unsigned;
 
 use crate::cap::{CapType, DirectRetype, LocalCap, PhantomCap, WCNodeSlots, WUntyped};
+use crate::error::SeL4Error;
 use crate::userland::CapRights;
 use crate::vspace::{MappingError, Maps};
 
@@ -41,7 +42,9 @@ impl Maps<PageTable> for PageDirectory {
         } {
             0 => Ok(()),
             6 => Err(MappingError::Overflow),
-            e => Err(MappingError::IntermediateLayerFailure(e)),
+            e => Err(MappingError::IntermediateLayerFailure(
+                SeL4Error::PageTableMap(e),
+            )),
         }
     }
 }
