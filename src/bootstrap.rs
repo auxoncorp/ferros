@@ -75,7 +75,7 @@ pub struct BootInfo<ASIDControlFreePools: Unsigned> {
     neither_send_nor_sync: NeitherSendNorSync,
 }
 
-impl BootInfo<ASIDPoolCount> {
+impl BootInfo<op!(ASIDPoolCount - U1)> {
     pub fn wrap(bootinfo: &'static seL4_BootInfo) -> Self {
         let asid_control = Cap::wrap_cptr(seL4_CapASIDControl as usize);
 
@@ -92,6 +92,11 @@ impl BootInfo<ASIDPoolCount> {
                 seL4_CapInitThreadVSpace as usize,
                 init_vaddr,
                 seL4_CapInitThreadCNode as usize,
+                Cap {
+                    cptr: seL4_CapInitThreadASIDPool as usize,
+                    cap_data: AssignedASID { asid: 0 },
+                    _role: PhantomData,
+                },
             ),
             root_tcb: Cap::wrap_cptr(seL4_CapInitThreadTCB as usize),
             asid_control,

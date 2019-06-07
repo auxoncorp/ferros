@@ -454,7 +454,7 @@ mod private {
         impl<Role: CNodeRole, Kind: MemoryKind> super::SealedCapType for MappedLargePage<Role, Kind> {}
         impl<FreePools: Unsigned> super::SealedCapType for ASIDControl<FreePools> {}
         impl super::SealedCapType for UnassignedASID {}
-        impl<ThreadCount: Unsigned> super::SealedCapType for AssignedASID<ThreadCount> {}
+        impl super::SealedCapType for AssignedASID {}
 
     }
 

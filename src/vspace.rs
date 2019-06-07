@@ -1,18 +1,17 @@
 use core::marker::PhantomData;
-use core::ops::{Add, Div, Mul};
+use core::ops::Shr;
 
 use typenum::*;
 
 use selfe_sys::*;
 
-use crate::arch::cap::{page_state, Page};
+use crate::arch::cap::{page_state, AssignedASID, Page, UnassignedASID};
 use crate::arch::{AddressSpace, PageBits, PageBytes, PagingRoot};
 use crate::cap::{
-    CNodeRole, Cap, CapRange, CapType, DirectRetype, KernelRetypeFanOutLimit, LocalCNodeSlots,
-    LocalCap, PhantomCap, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
+    role, CNodeRole, Cap, CapRange, CapType, DirectRetype, LocalCNodeSlots, LocalCap, PhantomCap,
+    RetypeError, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
 };
 use crate::error::SeL4Error;
-use crate::pow::{Pow, _Pow};
 use crate::userland::CapRights;
 
 /// A `Maps` implementor is a paging layer that maps granules of type
@@ -45,6 +44,20 @@ pub enum MappingError {
 
 pub enum VSpaceError {
     TooBig,
+    RetypeRegion(RetypeError),
+    SeL4Error(SeL4Error),
+}
+
+impl From<RetypeError> for VSpaceError {
+    fn from(e: RetypeError) -> VSpaceError {
+        VSpaceError::RetypeRegion(e)
+    }
+}
+
+impl From<SeL4Error> for VSpaceError {
+    fn from(e: SeL4Error) -> VSpaceError {
+        VSpaceError::SeL4Error(e)
+    }
 }
 
 pub trait PagingLayer {
@@ -137,25 +150,14 @@ where
     }
 }
 
-pub struct VSpace {
-    layers: AddressSpace,
-    root: LocalCap<PagingRoot>,
-    next_addr: usize,
-    untyped: WUntyped,
-    slots: WCNodeSlots,
-}
-
-// numPages x = ((2 ^ x) / pageBytes) + 1
-type NumPages<Size> = Sum<Quot<Pow<Size>, U4096>, U1>;
+type NumPages<Size> = op!(Size >> PageBits);
 
 struct UnmappedMemoryRegion<Role: CNodeRole, SizeBits: Unsigned>
 where
     // Forces regions to be page-aligned.
     SizeBits: IsGreaterOrEqual<PageBits>,
-    SizeBits: _Pow,
-    <SizeBits as _Pow>::Output: Div<U4096>,
-    <<SizeBits as _Pow>::Output as Div<U4096>>::Output: Add<U1>,
-    <<<SizeBits as _Pow>::Output as Div<U4096>>::Output as Add<U1>>::Output: Unsigned,
+    SizeBits: Shr<PageBits>,
+    <SizeBits as Shr<PageBits>>::Output: Unsigned,
 {
     caps: CapRange<Page<page_state::Unmapped>, Role, NumPages<SizeBits>>,
     _size_bits: PhantomData<SizeBits>,
@@ -165,18 +167,15 @@ impl<Role: CNodeRole, SizeBits: Unsigned> UnmappedMemoryRegion<Role, SizeBits>
 where
     // Forces regions to be page-aligned.
     SizeBits: IsGreaterOrEqual<PageBits>,
-    SizeBits: _Pow,
-    <SizeBits as _Pow>::Output: Div<U4096>,
-    <<SizeBits as _Pow>::Output as Div<U4096>>::Output: Add<U1>,
-    <<<SizeBits as _Pow>::Output as Div<U4096>>::Output as Add<U1>>::Output: Unsigned,
-    NumPages<SizeBits>: Unsigned,
-    NumPages<SizeBits>: Mul<<Page<page_state::Unmapped> as DirectRetype>::SizeBits>,
+    SizeBits: Shr<PageBits>,
+    <SizeBits as Shr<PageBits>>::Output: Unsigned,
 {
     pub(crate) fn new(
         ut: LocalCap<Untyped<SizeBits>>,
         slots: LocalCNodeSlots<NumPages<SizeBits>>,
     ) -> Result<Self, VSpaceError> {
-        let page_caps = ut.retype_multi::<Page<page_state::Unmapped>, NumPages<SizeBits>>(slots)?;
+        let page_caps =
+            ut.retype_multi_runtime::<Page<page_state::Unmapped>, NumPages<SizeBits>>(slots)?;
         Ok(UnmappedMemoryRegion {
             caps: CapRange {
                 start_cptr: page_caps.start_cptr,
@@ -192,13 +191,13 @@ where
 struct PageRange<Role: CNodeRole, Count: Unsigned> {
     initial_cptr: usize,
     initial_vaddr: usize,
-    asid: usize,
+    asid: u32,
     _count: PhantomData<Count>,
     _role: PhantomData<Role>,
 }
 
 impl<Role: CNodeRole, Count: Unsigned> PageRange<Role, Count> {
-    fn new(initial_cptr: usize, initial_vaddr: usize, asid: usize) -> Self {
+    fn new(initial_cptr: usize, initial_vaddr: usize, asid: u32) -> Self {
         PageRange {
             initial_cptr,
             initial_vaddr,
@@ -226,13 +225,11 @@ struct MappedMemoryRegion<Role: CNodeRole, SizeBits: Unsigned>
 where
     // Forces regions to be page-aligned.
     SizeBits: IsGreaterOrEqual<PageBits>,
-    SizeBits: _Pow,
-    <SizeBits as _Pow>::Output: Div<U4096>,
-    <<SizeBits as _Pow>::Output as Div<U4096>>::Output: Add<U1>,
-    <<<SizeBits as _Pow>::Output as Div<U4096>>::Output as Add<U1>>::Output: Unsigned,
+    SizeBits: Shr<PageBits>,
+    <SizeBits as Shr<PageBits>>::Output: Unsigned,
 {
     caps: PageRange<Role, NumPages<SizeBits>>,
-    asid: usize,
+    asid: u32,
     vaddr: usize,
     _size_bits: PhantomData<SizeBits>,
 }
@@ -241,29 +238,55 @@ impl<Role: CNodeRole, SizeBits: Unsigned> MappedMemoryRegion<Role, SizeBits>
 where
     // Forces regions to be page-aligned.
     SizeBits: IsGreaterOrEqual<PageBits>,
-    SizeBits: _Pow,
-    <SizeBits as _Pow>::Output: Div<U4096>,
-    <<SizeBits as _Pow>::Output as Div<U4096>>::Output: Add<U1>,
-    <<<SizeBits as _Pow>::Output as Div<U4096>>::Output as Add<U1>>::Output: Unsigned,
+    SizeBits: Shr<PageBits>,
+    <SizeBits as Shr<PageBits>>::Output: Unsigned,
 {
     pub(crate) fn new(
         region: UnmappedMemoryRegion<Role, SizeBits>,
         vaddr: usize,
-        asid: usize,
+        asid: u32,
     ) -> Self {
         MappedMemoryRegion {
             caps: PageRange::new(region.caps.start_cptr, vaddr, asid),
+            _size_bits: PhantomData,
             vaddr,
             asid,
         }
     }
 }
 
+pub struct VSpace {
+    root: LocalCap<PagingRoot>,
+    asid: LocalCap<AssignedASID>,
+    layers: AddressSpace,
+    next_addr: usize,
+    untyped: WUntyped,
+    slots: WCNodeSlots,
+}
+
 impl VSpace {
+    pub fn new(
+        root_cap: LocalCap<PagingRoot>,
+        asid: LocalCap<UnassignedASID>,
+        slots: WCNodeSlots,
+        untyped: WUntyped,
+    ) -> Result<Self, VSpaceError> {
+        let assigned_asid = asid.assign(&mut root_cap)?;
+        Ok(VSpace {
+            root: root_cap,
+            asid: assigned_asid,
+            layers: AddressSpace::new(),
+            next_addr: 0,
+            untyped,
+            slots,
+        })
+    }
+
     pub(crate) fn bootstrap(
         root_vspace_cptr: usize,
         next_addr: usize,
         root_cnode_cptr: usize,
+        asid: LocalCap<AssignedASID>,
     ) -> Self {
         VSpace {
             layers: AddressSpace::new(),
@@ -272,25 +295,36 @@ impl VSpace {
                 cap_data: PagingRoot::phantom_instance(),
                 _role: PhantomData,
             },
-            next_addr,
             untyped: WUntyped { size: 0 },
             slots: Cap {
                 cptr: root_cnode_cptr,
                 cap_data: WCNodeSlotsData { offset: 0, size: 0 },
                 _role: PhantomData,
             },
+            next_addr,
+            asid,
         }
     }
 
-    pub fn new(untyped: WUntyped, mut slots: WCNodeSlots) -> Result<Self, SeL4Error> {
-        let root = untyped.retype::<PagingRoot>(&mut slots)?;
-        Ok(VSpace {
-            layers: AddressSpace::new(),
-            next_addr: 0,
-            untyped,
-            slots,
-            root,
-        })
+    pub fn asid(&self) -> u32 {
+        self.asid.cap_data.asid
+    }
+
+    pub fn map_region<SizeBits: Unsigned>(
+        &mut self,
+        region: UnmappedMemoryRegion<role::Local, SizeBits>,
+        rights: CapRights,
+    ) -> Result<MappedMemoryRegion<role::Local, SizeBits>, VSpaceError>
+    where
+        SizeBits: IsGreaterOrEqual<PageBits>,
+        SizeBits: Shr<PageBits>,
+        <SizeBits as Shr<PageBits>>::Output: Unsigned,
+    {
+        let vaddr = self.next_addr;
+        for page_cap in region.caps.iter() {
+            self.map_given_page(page_cap, rights)?;
+        }
+        Ok(MappedMemoryRegion::new(region, vaddr, self.asid()))
     }
 
     pub fn map_given_page(
@@ -317,7 +351,10 @@ impl VSpace {
         Ok(Cap {
             cptr: page.cptr,
             cap_data: Page {
-                state: page_state::Mapped { vaddr },
+                state: page_state::Mapped {
+                    asid: self.asid(),
+                    vaddr,
+                },
             },
             _role: PhantomData,
         })

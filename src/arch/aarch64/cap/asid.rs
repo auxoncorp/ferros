@@ -3,8 +3,6 @@ use core::mem;
 
 use selfe_sys::*;
 
-use typenum::*;
-
 use crate::arch::cap::*;
 use crate::cap::{CapType, LocalCap};
 use crate::error::SeL4Error;
@@ -17,12 +15,11 @@ pub struct UnassignedASID {
 impl CapType for UnassignedASID {}
 
 #[derive(Debug)]
-pub struct AssignedASID<ThreadCount: Unsigned> {
-    asid: u32,
-    _thread_count: PhantomData<ThreadCount>,
+pub struct AssignedASID {
+    pub(crate) asid: u32,
 }
 
-impl<ThreadCount: Unsigned> CapType for AssignedASID<ThreadCount> {}
+impl CapType for AssignedASID {}
 
 #[derive(Debug)]
 pub struct ThreadID {
@@ -32,8 +29,8 @@ pub struct ThreadID {
 impl LocalCap<UnassignedASID> {
     pub fn assign(
         self,
-        global_dir: LocalCap<PageGlobalDirectory>,
-    ) -> Result<LocalCap<AssignedASID<U0>>, SeL4Error> {
+        global_dir: &mut LocalCap<PageGlobalDirectory>,
+    ) -> Result<LocalCap<AssignedASID>, SeL4Error> {
         let err = unsafe { seL4_ARM_ASIDPool_Assign(self.cptr, global_dir.cptr) };
 
         if err != 0 {

@@ -88,6 +88,19 @@ pub(crate) fn wrap_untyped<BitSize: Unsigned, Kind: MemoryKind>(
     }
 }
 
+pub enum RetypeError {
+    CapSizeOverflow,
+    BitSizeOverflow,
+    NotBigEnough,
+    SeL4RetypeError(SeL4Error),
+}
+
+impl From<SeL4Error> for RetypeError {
+    fn from(e: SeL4Error) -> RetypeError {
+        RetypeError::SeL4RetypeError(e)
+    }
+}
+
 impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
     pub fn split(
         self,
@@ -337,22 +350,57 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         >,
     {
         let (dest_cptr, dest_offset, _) = dest_slots.elim();
-        let err = unsafe {
-            seL4_Untyped_Retype(
-                self.cptr,                     // _service
-                TargetCapType::sel4_type_id(), // type
-                0,                             // size_bits
-                dest_cptr,                     // root
-                0,                             // index
-                0,                             // depth
-                dest_offset,                   // offset
-                Count::USIZE,                  // num_objects
-            )
+        unsafe {
+            Self::retype_multi_internal(
+                self.cptr,
+                Count::USIZE,
+                TargetCapType::sel4_type_id(),
+                dest_cptr,
+                dest_offset,
+            )?;
+        }
+        Ok(CapRange {
+            start_cptr: dest_offset,
+            _cap_type: PhantomData,
+            _role: PhantomData,
+            _slots: PhantomData,
+        })
+    }
+
+    pub(crate) fn retype_multi_runtime<TargetCapType: CapType, Count: Unsigned>(
+        self,
+        dest_slots: LocalCNodeSlots<Count>,
+    ) -> Result<CapRange<TargetCapType, role::Local, Count>, RetypeError>
+    where
+        TargetCapType: PhantomCap,
+        TargetCapType: DirectRetype,
+    {
+        let (dest_cptr, dest_offset, _) = dest_slots.elim();
+
+        let cap_size_bytes = match 2usize
+            .checked_pow(<TargetCapType as DirectRetype>::SizeBits::U32)
+            .and_then(|p| p.checked_mul(Count::USIZE))
+        {
+            Some(c) => c,
+            None => return Err(RetypeError::CapSizeOverflow),
         };
 
-        if err != 0 {
-            return Err(SeL4Error::UntypedRetype(err));
+        let ut_size_bytes = match 2usize.checked_pow(BitSize::U32) {
+            Some(u) => u,
+            None => return Err(RetypeError::BitSizeOverflow),
+        };
+
+        if cap_size_bytes > ut_size_bytes {
+            return Err(RetypeError::NotBigEnough);
         }
+
+        Self::retype_multi_internal(
+            self.cptr,
+            Count::USIZE,
+            TargetCapType::sel4_type_id(),
+            dest_cptr,
+            dest_offset,
+        )?;
 
         Ok(CapRange {
             start_cptr: dest_offset,
@@ -360,6 +408,32 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
             _role: PhantomData,
             _slots: PhantomData,
         })
+    }
+
+    unsafe fn retype_multi_internal(
+        self_cptr: usize,
+        count: usize,
+        type_id: usize,
+        dest_cptr: usize,
+        dest_offset: usize,
+    ) -> Result<(), SeL4Error> {
+        let err = unsafe {
+            seL4_Untyped_Retype(
+                self_cptr,   // _service
+                type_id,     // type
+                0,           // size_bits
+                dest_cptr,   // root
+                0,           // index
+                0,           // depth
+                dest_offset, // offset
+                count,       // num_objects
+            )
+        };
+
+        if err != 0 {
+            return Err(SeL4Error::UntypedRetype(err));
+        }
+        Ok(())
     }
 
     pub fn retype_cnode<ChildRadix: Unsigned>(
