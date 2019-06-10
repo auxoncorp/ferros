@@ -12,7 +12,7 @@ use crate::cap::{
     LocalCap, Notification, Untyped,
 };
 use crate::userland::{CapRights, IPCError};
-use crate::vspace::VSpace;
+use crate::vspace::{VSpace, VSpaceError};
 
 pub mod sync {
     use super::*;

@@ -88,6 +88,7 @@ pub(crate) fn wrap_untyped<BitSize: Unsigned, Kind: MemoryKind>(
     }
 }
 
+#[derive(Debug)]
 pub enum RetypeError {
     CapSizeOverflow,
     BitSizeOverflow,

@@ -162,6 +162,36 @@ impl<CT: CapType + PhantomCap, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Ro
     }
 }
 
+impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole, Slots: Unsigned>
+    CapRange<CT, Role, Slots>
+{
+    pub fn copy(
+        &self,
+        cnode: LocalCap<LocalCNode>,
+        slots: LocalCNodeSlots<Slots>,
+        rights: CapRights,
+    ) -> Result<CapRange<CT, Role, Slots>, SeL4Error>
+    where
+        <CT as CopyAliasable>::CopyOutput: PhantomCap,
+    {
+        let copied_to_start_cptr = slots.cap_data.offset;
+        for (offset, slot) in (0..Slots::USIZE).zip(slots.iter()) {
+            let cap: Cap<CT, _> = Cap {
+                cptr: self.start_cptr + offset,
+                _role: PhantomData,
+                cap_data: PhantomCap::phantom_instance(),
+            };
+            cap.copy(&cnode, slot, rights)?;
+        }
+        Ok(CapRange {
+            start_cptr: copied_to_start_cptr,
+            _cap_type: PhantomData,
+            _role: PhantomData,
+            _slots: PhantomData,
+        })
+    }
+}
+
 impl<CT: CapType> LocalCap<CT> {
     /// Copy a capability from one CNode to another CNode
     pub fn copy<DestRole: CNodeRole>(

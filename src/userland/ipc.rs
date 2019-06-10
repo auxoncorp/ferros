@@ -9,6 +9,7 @@ use crate::cap::{
 };
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
+use crate::vspace::VSpaceError;
 
 #[derive(Debug)]
 pub enum IPCError {
@@ -17,11 +18,18 @@ pub enum IPCError {
     ResponseSizeMismatch,
     RequestSizeMismatch,
     SeL4Error(SeL4Error),
+    VSpaceError(VSpaceError),
 }
 
 impl From<SeL4Error> for IPCError {
     fn from(s: SeL4Error) -> Self {
         IPCError::SeL4Error(s)
+    }
+}
+
+impl From<VSpaceError> for IPCError {
+    fn from(v: VSpaceError) -> Self {
+        IPCError::VSpaceError(v)
     }
 }
 

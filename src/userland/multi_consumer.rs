@@ -41,7 +41,7 @@ use crate::cap::{
 };
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
-use crate::vspace::VSpace;
+use crate::vspace::{VSpace, VSpaceError};
 
 /// A multi-consumer that consumes interrupt-style notifications
 ///
@@ -161,11 +161,18 @@ pub enum MultiConsumerError {
     ConsumerIdentityMismatch,
     ProduceToOwnQueueForbidden,
     SeL4Error(SeL4Error),
+    VSpaceError(VSpaceError),
 }
 
 impl From<SeL4Error> for MultiConsumerError {
     fn from(s: SeL4Error) -> Self {
         MultiConsumerError::SeL4Error(s)
+    }
+}
+
+impl From<VSpaceError> for MultiConsumerError {
+    fn from(e: VSpaceError) -> Self {
+        MultiConsumerError::VSpaceError(e)
     }
 }
 
