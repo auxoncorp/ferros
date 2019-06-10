@@ -1,6 +1,7 @@
 use typenum::*;
 
 pub mod cap;
+pub mod userland;
 
 pub type WordSize = U32;
 pub type MinUntypedSize = U4;

@@ -6,6 +6,7 @@ use crate::cap::PhantomCap;
 use crate::vspace::{PagingRec, PagingTop};
 
 pub mod cap;
+pub mod userland;
 
 pub type WordSize = U32;
 pub type MinUntypedSize = U4;

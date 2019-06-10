@@ -1,4 +1,3 @@
-use core::marker::PhantomData;
 use core::mem;
 
 use selfe_sys::*;
