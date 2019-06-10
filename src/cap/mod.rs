@@ -153,6 +153,14 @@ pub struct CapRange<CT: CapType + PhantomCap, Role: CNodeRole, Slots: Unsigned> 
 }
 
 impl<CT: CapType + PhantomCap, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Role, Slots> {
+    pub(crate) fn new(start_cptr: usize) -> Self {
+        CapRange {
+            start_cptr,
+            _cap_type: PhantomData,
+            _role: PhantomData,
+            _slots: PhantomData,
+        }
+    }
     pub fn iter(self) -> impl Iterator<Item = Cap<CT, Role>> {
         (0..Slots::USIZE).map(move |offset| Cap {
             cptr: self.start_cptr + offset,

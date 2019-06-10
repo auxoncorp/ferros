@@ -609,7 +609,7 @@ where
     let (slot, dest_slots) = dest_slots.alloc();
     let shared_page: LocalCap<Page<page_state::Unmapped>> = shared_page_ut.retype(slot)?;
     // Put some data in there. Specifically, an `ArrayQueue`.
-    local_vspace.temporarily_map_page(shared_page, |mapped_page| unsafe {
+    let shared_page = local_vspace.temporarily_map_page(shared_page, |mapped_page| unsafe {
         let aq_ptr = core::mem::transmute::<usize, *mut ArrayQueue<T, QLen>>(mapped_page.vaddr());
         // Operate directly on a pointer to an uninitialized/zeroed pointer
         // in order to reduces odds of the full ArrayQueue instance

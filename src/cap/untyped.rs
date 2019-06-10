@@ -395,13 +395,15 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
             return Err(RetypeError::NotBigEnough);
         }
 
-        Self::retype_multi_internal(
-            self.cptr,
-            Count::USIZE,
-            TargetCapType::sel4_type_id(),
-            dest_cptr,
-            dest_offset,
-        )?;
+        unsafe {
+            Self::retype_multi_internal(
+                self.cptr,
+                Count::USIZE,
+                TargetCapType::sel4_type_id(),
+                dest_cptr,
+                dest_offset,
+            )?;
+        }
 
         Ok(CapRange {
             start_cptr: dest_offset,
@@ -418,18 +420,16 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         dest_cptr: usize,
         dest_offset: usize,
     ) -> Result<(), SeL4Error> {
-        let err = unsafe {
-            seL4_Untyped_Retype(
-                self_cptr,   // _service
-                type_id,     // type
-                0,           // size_bits
-                dest_cptr,   // root
-                0,           // index
-                0,           // depth
-                dest_offset, // offset
-                count,       // num_objects
-            )
-        };
+        let err = seL4_Untyped_Retype(
+            self_cptr,   // _service
+            type_id,     // type
+            0,           // size_bits
+            dest_cptr,   // root
+            0,           // index
+            0,           // depth
+            dest_offset, // offset
+            count,       // num_objects
+        );
 
         if err != 0 {
             return Err(SeL4Error::UntypedRetype(err));

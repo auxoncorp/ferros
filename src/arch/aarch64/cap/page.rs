@@ -6,8 +6,8 @@ pub trait PageState: private::SealedPageState {}
 
 pub mod page_state {
     pub struct Mapped {
-        pub(super) vaddr: usize,
-        pub(super) asid: u32,
+        pub(crate) vaddr: usize,
+        pub(crate) asid: u32,
     }
     impl super::PageState for Mapped {}
 
@@ -16,7 +16,7 @@ pub mod page_state {
 }
 
 pub struct Page<State: PageState> {
-    state: State,
+    pub(crate) state: State,
 }
 
 impl LocalCap<Page<page_state::Mapped>> {

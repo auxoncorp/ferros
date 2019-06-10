@@ -97,7 +97,7 @@ where
     G: CapType,
 {
     pub layer: L,
-    _item: PhantomData<G>,
+    pub(super) _item: PhantomData<G>,
 }
 
 impl<G, L: Maps<G>> PagingLayer for PagingTop<G, L>
@@ -125,9 +125,9 @@ where
 }
 
 pub struct PagingRec<G: CapType, L: Maps<G>, P: PagingLayer> {
-    layer: L,
-    next: P,
-    _item: PhantomData<G>,
+    pub(crate) layer: L,
+    pub(crate) next: P,
+    pub(crate) _item: PhantomData<G>,
 }
 
 impl<G, L: Maps<G>, P: PagingLayer> PagingLayer for PagingRec<G, L, P>
@@ -167,7 +167,7 @@ where
 
 type NumPages<Size> = op!(Size >> PageBits);
 
-struct UnmappedMemoryRegion<SizeBits: Unsigned, SS: SharedStatus>
+pub struct UnmappedMemoryRegion<SizeBits: Unsigned, SS: SharedStatus>
 where
     // Forces regions to be page-aligned.
     SizeBits: IsGreaterOrEqual<PageBits>,
@@ -193,12 +193,7 @@ where
         let page_caps =
             ut.retype_multi_runtime::<Page<page_state::Unmapped>, NumPages<SizeBits>>(slots)?;
         Ok(UnmappedMemoryRegion {
-            caps: CapRange {
-                start_cptr: page_caps.start_cptr,
-                _cap_type: PhantomData,
-                _role: PhantomData,
-                _slots: PhantomData,
-            },
+            caps: CapRange::new(page_caps.start_cptr),
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         })
@@ -214,12 +209,7 @@ where
             let _ = page.copy(&cnode, slot, CapRights::RWG)?;
         }
         Ok(UnmappedMemoryRegion {
-            caps: CapRange {
-                start_cptr,
-                _cap_type: PhantomData,
-                _role: PhantomData,
-                _slots: PhantomData,
-            },
+            caps: CapRange::new(start_cptr),
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         })
@@ -257,7 +247,7 @@ impl<Count: Unsigned> MappedPageRange<Count> {
     }
 }
 
-struct MappedMemoryRegion<SizeBits: Unsigned, SS: SharedStatus>
+pub struct MappedMemoryRegion<SizeBits: Unsigned, SS: SharedStatus>
 where
     // Forces regions to be page-aligned.
     SizeBits: IsGreaterOrEqual<PageBits>,
@@ -358,7 +348,7 @@ impl VSpace {
         SizeBits: Shr<PageBits>,
         <SizeBits as Shr<PageBits>>::Output: Unsigned,
     {
-        self.map_region_internal(&region, rights)
+        self.map_region_internal(region, rights)
     }
 
     pub fn map_shared_region<SizeBits: Unsigned>(
@@ -378,7 +368,7 @@ impl VSpace {
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         };
-        self.map_region_internal(&unmapped_sr, rights)
+        self.map_region_internal(unmapped_sr, rights)
     }
 
     pub fn map_given_page(
@@ -462,7 +452,7 @@ impl VSpace {
 
     fn map_region_internal<SizeBits: Unsigned, SSIn: SharedStatus, SSOut: SharedStatus>(
         &mut self,
-        region: &UnmappedMemoryRegion<SizeBits, SSIn>,
+        region: UnmappedMemoryRegion<SizeBits, SSIn>,
         rights: CapRights,
     ) -> Result<MappedMemoryRegion<SizeBits, SSOut>, VSpaceError>
     where
@@ -490,7 +480,7 @@ impl VSpace {
 
 mod private {
     use super::shared_status::{Exclusive, Shared};
-    pub(super) trait SealedSharedStatus {}
+    pub trait SealedSharedStatus {}
     impl SealedSharedStatus for Shared {}
     impl SealedSharedStatus for Exclusive {}
 }
