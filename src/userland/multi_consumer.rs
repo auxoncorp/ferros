@@ -23,7 +23,6 @@
 //! let (waker_params_member, ...leftovers) = Waker::new(waker_setup,waker_thread_cnode)
 //! let (producer_params_member, ...leftovers) = Producer::new(queue_producer_setup, producer_thread_cnode, producer_thread_vspace)
 use core::marker::PhantomData;
-use core::ops::Sub;
 
 use cross_queue::{ArrayQueue, PushError, Slot};
 
@@ -179,6 +178,7 @@ pub struct ProducerSetup<T, QLen: Unsigned> {
     // User-concealed alias'ing happening here.
     // Don't mutate this Cap. Copying/minting is okay.
     notification: LocalCap<Notification>,
+    consumer_vspace_asid: u32,
     _queue_element_type: PhantomData<T>,
     _queue_lenth: PhantomData<QLen>,
 }
@@ -201,6 +201,7 @@ pub struct ConsumerToken {
     // User-concealed alias'ing happening here.
     // Don't mutate/delete this Cap. Copying/minting is okay.
     notification: Cap<Notification, role::Local>,
+    consumer_vspace_asid: Option<u32>,
 }
 
 impl<IRQ: Unsigned> InterruptConsumer<IRQ, role::Child>
@@ -243,49 +244,42 @@ where
             },
             ConsumerToken {
                 notification,
-                consumer_vspace_pagedir: None,
+                consumer_vspace_asid: None,
             },
         ))
     }
 
-    pub fn add_queue<
-        E: Sized + Send + Sync,
-        ELen: Unsigned,
-        ConsumerPageDirFreeSlots: Unsigned,
-        ConsumerPageTableFreeSlots: Unsigned,
-    >(
+    pub fn add_queue<E: Sized + Send + Sync, ELen: Unsigned>(
         self,
         consumer_token: &mut ConsumerToken,
         shared_page_ut: LocalCap<Untyped<PageBits>>,
-        consumer_vspace: VSpace,
+        local_vspace: &mut VSpace,
+        consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
     ) -> Result<(Consumer1<role::Child, E, ELen, IRQ>, ProducerSetup<E, ELen>), MultiConsumerError>
     where
         ELen: ArrayLength<Slot<E>>,
         ELen: IsGreater<U0, Output = True>,
-
-        ConsumerPageTableFreeSlots: Sub<B1>,
-        Sub1<ConsumerPageTableFreeSlots>: Unsigned,
     {
         // The consumer token should not have a vspace associated with it at all yet, since
         // we have yet to require mapping any memory to it.
-        if let Some(_) = consumer_token.consumer_vspace_pagedir {
+        if let Some(_) = consumer_token.consumer_vspace_asid {
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
-        let (shared_page, consumer_shared_page, consumer_vspace) =
-            create_page_filled_with_array_queue::<E, ELen, _, _>(
-                shared_page_ut,
-                consumer_vspace,
-                &local_cnode,
-                dest_slots,
-            )?;
-        consumer_token.consumer_vspace_pagedir = Some(consumer_vspace.identity_ref());
+        let (shared_page, consumer_shared_page) = create_page_filled_with_array_queue::<E, ELen>(
+            shared_page_ut,
+            local_vspace,
+            consumer_vspace,
+            &local_cnode,
+            dest_slots,
+        )?;
+        consumer_token.consumer_vspace_asid = Some(consumer_vspace.asid());
 
         // Assumes we are using the one-hot style for identifying the interrupt badge index
         let fresh_queue_badge = Badge::from(self.interrupt_badge.inner << 1);
         let producer_setup: ProducerSetup<E, ELen> = ProducerSetup {
-            consumer_vspace_pagedir: consumer_vspace.identity_ref(),
+            consumer_vspace_asid: consumer_vspace.asid(),
             shared_page,
             queue_badge: fresh_queue_badge,
             // Construct a user-inaccessible copy of the local notification
@@ -306,14 +300,13 @@ where
                 notification: self.notification,
                 queue_badge: fresh_queue_badge,
                 queue: QueueHandle {
-                    shared_queue: consumer_shared_page.cap_data.vaddr,
+                    shared_queue: consumer_shared_page.vaddr(),
                     _role: PhantomData,
                     _t: PhantomData,
                     _queue_len: PhantomData,
                 },
             },
             producer_setup,
-            consumer_vspace,
         ))
     }
 }
@@ -324,10 +317,11 @@ where
     ELen: IsGreater<U0, Output = True>,
     ELen: ArrayLength<Slot<E>>,
 {
-    pub fn new<ConsumerPageDirFreeSlots: Unsigned, ConsumerPageTableFreeSlots: Unsigned>(
+    pub fn new(
         notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
         shared_page_ut: LocalCap<Untyped<PageBits>>,
-        consumer_vspace: VSpace,
+        local_vspace: &mut VSpace,
+        consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         local_slots: LocalCNodeSlots<U3>,
         consumer_slot: ChildCNodeSlots<U1>,
@@ -343,22 +337,19 @@ where
     where
         ELen: ArrayLength<Slot<E>>,
         ELen: IsGreater<U0, Output = True>,
-
-        ConsumerPageTableFreeSlots: Sub<B1>,
-        Sub1<ConsumerPageTableFreeSlots>: Unsigned,
     {
         let queue_size = core::mem::size_of::<ArrayQueue<E, ELen>>();
         if queue_size > PageBytes::USIZE {
             return Err(MultiConsumerError::QueueTooBig);
         }
         let (slots, local_slots) = local_slots.alloc();
-        let (shared_page, consumer_shared_page, consumer_vspace) =
-            create_page_filled_with_array_queue::<E, ELen, _, _>(
-                shared_page_ut,
-                consumer_vspace,
-                &local_cnode,
-                slots,
-            )?;
+        let (shared_page, consumer_shared_page) = create_page_filled_with_array_queue::<E, ELen>(
+            shared_page_ut,
+            local_vspace,
+            consumer_vspace,
+            &local_cnode,
+            slots,
+        )?;
 
         let (slot, _local_slots) = local_slots.alloc();
         let local_notification: LocalCap<Notification> = notification_ut.retype(slot)?;
@@ -373,7 +364,7 @@ where
         let queue_badge = Badge::from(1 << 1);
 
         let producer_setup: ProducerSetup<E, ELen> = ProducerSetup {
-            consumer_vspace_pagedir: consumer_vspace.identity_ref(),
+            consumer_vspace_asid: consumer_vspace.asid(),
             shared_page,
             queue_badge: queue_badge,
             // Construct a user-inaccessible copy of the local notification
@@ -394,7 +385,7 @@ where
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
             },
-            consumer_vspace_pagedir: Some(consumer_vspace.identity_ref()),
+            consumer_vspace_asid: Some(consumer_vspace.asid()),
         };
         let waker_setup = WakerSetup {
             interrupt_badge,
@@ -407,7 +398,7 @@ where
                 queue_badge,
                 notification: consumer_notification,
                 queue: QueueHandle {
-                    shared_queue: consumer_shared_page.cap_data.vaddr,
+                    shared_queue: consumer_shared_page.vaddr(),
                     _role: PhantomData,
                     _t: PhantomData,
                     _queue_len: PhantomData,
@@ -416,20 +407,15 @@ where
             consumer_token,
             producer_setup,
             waker_setup,
-            consumer_vspace,
         ))
     }
 
-    pub fn add_queue<
-        F: Sized + Send + Sync,
-        FLen: Unsigned,
-        ConsumerPageDirFreeSlots: Unsigned,
-        ConsumerPageTableFreeSlots: Unsigned,
-    >(
+    pub fn add_queue<F: Sized + Send + Sync, FLen: Unsigned>(
         self,
         consumer_token: &ConsumerToken,
         shared_page_ut: LocalCap<Untyped<PageBits>>,
-        consumer_vspace: VSpace,
+        local_vspace: &mut VSpace,
+        consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
     ) -> Result<
@@ -442,31 +428,28 @@ where
     where
         FLen: ArrayLength<Slot<F>>,
         FLen: IsGreater<U0, Output = True>,
-
-        ConsumerPageTableFreeSlots: Sub<B1>,
-        Sub1<ConsumerPageTableFreeSlots>: Unsigned,
     {
         // Ensure that the consumer process that the `waker_setup` is wrapping
         // a notification to is the same process as the one referred to by
         // the `consumer_vspace` parameter.
-        if let Some(ref consumer_token_vspace_pagedir) = consumer_token.consumer_vspace_pagedir {
-            if consumer_token_vspace_pagedir != &consumer_vspace.identity_ref() {
+        if let Some(ref consumer_token_vspace_asid) = consumer_token.consumer_vspace_asid {
+            if consumer_token_vspace_asid != &consumer_vspace.asid() {
                 return Err(MultiConsumerError::ConsumerIdentityMismatch);
             }
         } else {
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
-        let (shared_page, consumer_shared_page, consumer_vspace) =
-            create_page_filled_with_array_queue::<F, FLen, _, _>(
-                shared_page_ut,
-                consumer_vspace,
-                &local_cnode,
-                dest_slots,
-            )?;
+        let (shared_page, consumer_shared_page) = create_page_filled_with_array_queue::<F, FLen>(
+            shared_page_ut,
+            local_vspace,
+            consumer_vspace,
+            &local_cnode,
+            dest_slots,
+        )?;
 
         let fresh_queue_badge = Badge::from(self.queue_badge.inner << 1);
         let producer_setup: ProducerSetup<F, FLen> = ProducerSetup {
-            consumer_vspace_pagedir: consumer_vspace.identity_ref(),
+            consumer_vspace_asid: consumer_vspace.asid(),
             shared_page,
             queue_badge: fresh_queue_badge,
             // Construct a user-inaccessible copy of the local notification
@@ -489,7 +472,7 @@ where
                     (
                         fresh_queue_badge,
                         QueueHandle {
-                            shared_queue: consumer_shared_page.cap_data.vaddr,
+                            shared_queue: consumer_shared_page.vaddr(),
                             _role: PhantomData,
                             _t: PhantomData,
                             _queue_len: PhantomData,
@@ -498,7 +481,6 @@ where
                 ),
             },
             producer_setup,
-            consumer_vspace,
         ))
     }
 }
@@ -517,17 +499,12 @@ where
     FLen: IsGreater<U0, Output = True>,
     FLen: ArrayLength<Slot<F>>,
 {
-    pub fn add_queue<
-        G: Sized + Send + Sync,
-        GLen: Unsigned,
-        LocalCNodeFreeSlots: Unsigned,
-        ConsumerPageDirFreeSlots: Unsigned,
-        ConsumerPageTableFreeSlots: Unsigned,
-    >(
+    pub fn add_queue<G: Sized + Send + Sync, GLen: Unsigned, LocalCNodeFreeSlots: Unsigned>(
         self,
         consumer_token: &ConsumerToken,
         shared_page_ut: LocalCap<Untyped<PageBits>>,
-        consumer_vspace: VSpace,
+        local_vspace: &mut VSpace,
+        consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
     ) -> Result<
@@ -542,31 +519,28 @@ where
         FLen: IsGreater<U0, Output = True>,
         GLen: ArrayLength<Slot<G>>,
         GLen: IsGreater<U0, Output = True>,
-
-        ConsumerPageTableFreeSlots: Sub<B1>,
-        Sub1<ConsumerPageTableFreeSlots>: Unsigned,
     {
         // Ensure that the consumer process that the `waker_setup` is wrapping
         // a notification to is the same process as the one referred to by
         // the `consumer_vspace` parameter.
-        if let Some(ref consumer_token_vspace_pagedir) = consumer_token.consumer_vspace_pagedir {
-            if consumer_token_vspace_pagedir != &consumer_vspace.identity_ref() {
+        if let Some(ref consumer_token_vspace_asid) = consumer_token.consumer_vspace_asid {
+            if consumer_token_vspace_asid != &consumer_vspace.asid() {
                 return Err(MultiConsumerError::ConsumerIdentityMismatch);
             }
         } else {
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
-        let (shared_page, consumer_shared_page, consumer_vspace) =
-            create_page_filled_with_array_queue::<F, FLen, _, _>(
-                shared_page_ut,
-                consumer_vspace,
-                &local_cnode,
-                dest_slots,
-            )?;
+        let (shared_page, consumer_shared_page) = create_page_filled_with_array_queue::<F, FLen>(
+            shared_page_ut,
+            local_vspace,
+            consumer_vspace,
+            &local_cnode,
+            dest_slots,
+        )?;
 
         let fresh_queue_badge = Badge::from((self.queues.1).0.inner << 1);
         let producer_setup: ProducerSetup<F, FLen> = ProducerSetup {
-            consumer_vspace_pagedir: consumer_vspace.identity_ref(),
+            consumer_vspace_asid: consumer_vspace.asid(),
             shared_page,
             queue_badge: fresh_queue_badge,
             // Construct a user-inaccessible copy of the local notification
@@ -590,7 +564,7 @@ where
                     (
                         fresh_queue_badge,
                         QueueHandle {
-                            shared_queue: consumer_shared_page.cap_data.vaddr,
+                            shared_queue: consumer_shared_page.vaddr(),
                             _role: PhantomData,
                             _t: PhantomData,
                             _queue_len: PhantomData,
@@ -599,28 +573,26 @@ where
                 ),
             },
             producer_setup,
-            consumer_vspace,
         ))
     }
 }
 
-fn create_page_filled_with_array_queue<
-    T: Sized + Send + Sync,
-    QLen: Unsigned,
-    ConsumerPageDirFreeSlots: Unsigned,
-    ConsumerPageTableFreeSlots: Unsigned,
->(
+fn create_page_filled_with_array_queue<T: Sized + Send + Sync, QLen: Unsigned>(
     shared_page_ut: LocalCap<Untyped<PageBits>>,
-    consumer_vspace: VSpace,
+    local_vspace: &mut VSpace,
+    consumer_vspace: &mut VSpace,
     local_cnode: &LocalCap<LocalCNode>,
     dest_slots: LocalCNodeSlots<U2>,
-) -> Result<LocalCap<Page<page_state::Mapped>>, MultiConsumerError>
+) -> Result<
+    (
+        LocalCap<Page<page_state::Unmapped>>,
+        LocalCap<Page<page_state::Mapped>>,
+    ),
+    MultiConsumerError,
+>
 where
     QLen: ArrayLength<Slot<T>>,
     QLen: IsGreater<U0, Output = True>,
-
-    ConsumerPageTableFreeSlots: Sub<B1>,
-    Sub1<ConsumerPageTableFreeSlots>: Unsigned,
 {
     let queue_size = core::mem::size_of::<ArrayQueue<T, QLen>>();
     if queue_size > PageBytes::USIZE {
@@ -630,20 +602,21 @@ where
     let (slot, dest_slots) = dest_slots.alloc();
     let shared_page: LocalCap<Page<page_state::Unmapped>> = shared_page_ut.retype(slot)?;
     // Put some data in there. Specifically, an `ArrayQueue`.
-    unsafe {
-        let aq_ptr =
-            core::mem::transmute::<usize, *mut ArrayQueue<T, QLen>>(shared_page.cap_data.vaddr);
+    local_vspace.temporarily_map_page(shared_page, |mapped_page| unsafe {
+        let aq_ptr = core::mem::transmute::<usize, *mut ArrayQueue<T, QLen>>(mapped_page.vaddr());
         // Operate directly on a pointer to an uninitialized/zeroed pointer
         // in order to reduces odds of the full ArrayQueue instance
         // materializing all at once on the local stack (potentially blowing it)
         ArrayQueue::<T, QLen>::new_at_ptr(aq_ptr);
         core::mem::forget(aq_ptr);
-    }
+        Ok(())
+    })?;
 
     let (slot, _) = dest_slots.alloc();
     let consumer_shared_page = shared_page.copy(&local_cnode, slot, CapRights::RW)?;
-    let (consumer_shared_page, consumer_vspace) = consumer_vspace.map_page(consumer_shared_page)?;
-    Ok((shared_page, consumer_shared_page, consumer_vspace))
+    let consumer_shared_page =
+        consumer_vspace.map_given_page(consumer_shared_page, CapRights::RW)?;
+    Ok((shared_page, consumer_shared_page))
 }
 
 /// Wrapper around the necessary capabilities for a given
@@ -976,18 +949,14 @@ where
     QLen: IsGreater<U0, Output = True>,
     QLen: ArrayLength<Slot<T>>,
 {
-    pub fn new<ChildPageDirSlots: Unsigned, ChildPageTableSlots: Unsigned>(
+    pub fn new(
         setup: &ProducerSetup<T, QLen>,
         dest_slot: ChildCNodeSlot,
-        child_vspace: VSpace,
+        child_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         local_slot: LocalCNodeSlot,
-    ) -> Result<Self, MultiConsumerError>
-    where
-        ChildPageTableSlots: Sub<B1>,
-        Sub1<ChildPageTableSlots>: Unsigned,
-    {
-        if setup.consumer_vspace_pagedir == child_vspace.identity_ref() {
+    ) -> Result<Self, MultiConsumerError> {
+        if setup.consumer_vspace_asid == child_vspace.asid() {
             // To simplify reasoning about likely control flow patterns,
             // we presently disallow a consumer thread from producing to one
             // of its own ingest queues.
@@ -997,7 +966,8 @@ where
             setup
                 .shared_page
                 .copy(&local_cnode, local_slot, CapRights::RW)?;
-        let (producer_shared_page, child_vspace) = child_vspace.map_page(producer_shared_page)?;
+        let producer_shared_page =
+            child_vspace.map_given_page(producer_shared_page, CapRights::RW)?;
         let notification =
             setup
                 .notification
@@ -1005,7 +975,7 @@ where
         Ok(Producer {
             notification,
             queue: QueueHandle {
-                shared_queue: producer_shared_page.cap_data.vaddr,
+                shared_queue: producer_shared_page.vaddr(),
                 _role: PhantomData,
                 _t: PhantomData,
                 _queue_len: PhantomData,

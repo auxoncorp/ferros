@@ -5,7 +5,7 @@ use selfe_sys::{seL4_Signal, seL4_Wait};
 use typenum::operator_aliases::Sub1;
 use typenum::{Unsigned, B1, U2, U5};
 
-use crate::arch::cap::Page;
+use crate::arch::cap::{page_state, Page};
 use crate::arch::{PageBits, PageBytes};
 use crate::cap::{
     role, Badge, CNodeRole, Cap, ChildCNodeSlots, DirectRetype, LocalCNode, LocalCNodeSlots,
@@ -30,8 +30,8 @@ pub mod sync {
         shared_page_ut: LocalCap<Untyped<PageBits>>,
         call_notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
         response_notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
-        caller_vspace: VSpace,
-        responder_vspace: VSpace,
+        caller_vspace: &mut VSpace,
+        responder_vspace: &mut VSpace,
         caller_slots: ChildCNodeSlots<U2>,
         responder_slots: ChildCNodeSlots<U2>,
     ) -> Result<
@@ -59,16 +59,16 @@ pub mod sync {
         }
 
         let (slot, local_slots) = local_slots.alloc();
-        let shared_page: LocalCap<Page> = shared_page_ut.retype(slot)?;
+        let shared_page: LocalCap<Page<page_state::Unmapped>> = shared_page_ut.retype(slot)?;
 
         let (slot, local_slots) = local_slots.alloc();
         let caller_shared_page = shared_page.copy(&local_cnode, slot, CapRights::RW)?;
-        let (caller_shared_page, caller_vspace) = caller_vspace.map_page(caller_shared_page)?;
+        let caller_shared_page = caller_vspace.map_given_page(caller_shared_page, CapRights::RW)?;
 
         let (slot, local_slots) = local_slots.alloc();
         let responder_shared_page = shared_page.copy(&local_cnode, slot, CapRights::RW)?;
-        let (responder_shared_page, responder_vspace) =
-            responder_vspace.map_page(responder_shared_page)?;
+        let responder_shared_page =
+            responder_vspace.map_given_page(responder_shared_page, CapRights::RW)?;
 
         let (slot, local_slots) = local_slots.alloc();
         let local_request_ready: LocalCap<Notification> = call_notification_ut.retype(slot)?;
@@ -96,7 +96,7 @@ pub mod sync {
             inner: SyncExtendedIpcPair {
                 request_ready: caller_request_ready,
                 response_ready: caller_response_ready,
-                shared_page_address: caller_shared_page.cap_data.vaddr,
+                shared_page_address: caller_shared_page.vaddr(),
                 _req: PhantomData,
                 _rsp: PhantomData,
                 _role: PhantomData,
@@ -123,13 +123,13 @@ pub mod sync {
             inner: SyncExtendedIpcPair {
                 request_ready: responder_request_ready,
                 response_ready: responder_response_ready,
-                shared_page_address: responder_shared_page.cap_data.vaddr,
+                shared_page_address: responder_shared_page.vaddr(),
                 _req: PhantomData,
                 _rsp: PhantomData,
                 _role: PhantomData,
             },
         };
-        Ok((caller, responder, caller_vspace, responder_vspace))
+        Ok((caller, responder))
     }
 
     #[derive(Debug)]
