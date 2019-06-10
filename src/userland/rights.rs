@@ -7,16 +7,29 @@ pub enum CapRights {
     RW,
     RWG,
     WG,
+    /// Can Grant ReplY
+    #[cfg(feature = "four_param_rights")]
+    Y,
 }
 
 impl From<CapRights> for seL4_CapRights_t {
     fn from(cr: CapRights) -> Self {
+        #[cfg(not(feature = "four_param_rights"))]
         match cr {
             CapRights::R => unsafe { seL4_CapRights_new(0, 1, 0) },
             CapRights::W => unsafe { seL4_CapRights_new(0, 0, 1) },
             CapRights::RW => unsafe { seL4_CapRights_new(0, 1, 1) },
             CapRights::RWG => unsafe { seL4_CapRights_new(1, 1, 1) },
             CapRights::WG => unsafe { seL4_CapRights_new(1, 0, 1) },
+        }
+        #[cfg(feature = "four_param_rights")]
+        match cr {
+            CapRights::R => unsafe { seL4_CapRights_new(0, 0, 1, 0) },
+            CapRights::W => unsafe { seL4_CapRights_new(0, 0, 0, 1) },
+            CapRights::RW => unsafe { seL4_CapRights_new(0, 0, 1, 1) },
+            CapRights::RWG => unsafe { seL4_CapRights_new(0, 1, 1, 1) },
+            CapRights::WG => unsafe { seL4_CapRights_new(0, 1, 0, 1) },
+            CapRights::Y => unsafe { seL4_CapRights_new(1, 0, 0, 0) },
         }
     }
 }
