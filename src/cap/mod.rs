@@ -175,7 +175,7 @@ impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole, Slots: Unsigned>
 {
     pub fn copy(
         &self,
-        cnode: LocalCap<LocalCNode>,
+        cnode: &LocalCap<LocalCNode>,
         slots: LocalCNodeSlots<Slots>,
         rights: CapRights,
     ) -> Result<CapRange<CT, Role, Slots>, SeL4Error>
@@ -189,7 +189,7 @@ impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole, Slots: Unsigned>
                 _role: PhantomData,
                 cap_data: PhantomCap::phantom_instance(),
             };
-            cap.copy(&cnode, slot, rights)?;
+            cap.copy(cnode, slot, rights)?;
         }
         Ok(CapRange {
             start_cptr: copied_to_start_cptr,
