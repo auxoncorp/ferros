@@ -104,7 +104,7 @@ pub(crate) unsafe fn setup_initial_stack_and_regs(
     (regs, param_size_on_stack)
 }
 
-pub fn set_thread_link_register(
+pub(crate) fn set_thread_link_register(
     registers: &mut selfe_sys::seL4_UserContext,
     post_return_fn: fn() -> !,
 ) {

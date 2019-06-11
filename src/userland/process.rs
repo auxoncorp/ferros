@@ -121,9 +121,7 @@ impl ReadyProcess {
                 setup_initial_stack_and_regs(
                     &process_parameter as *const SetupVer<T> as *const usize,
                     core::mem::size_of::<SetupVer<T>>(),
-                    (mapped_region.vaddr + mapped_region.size()) as *mut usize
-                    //(mapped_pages[StackPageCount::USIZE - 1].cap_data.vaddr
-                    //    + (1 << arch::PageBits::USIZE)) as *mut usize,
+                    (mapped_region.vaddr + mapped_region.size()) as *mut usize,
                 )
             })?;
 
@@ -166,6 +164,7 @@ impl ReadyProcess {
                 )));
             }
 
+            // TODO - priority management could be exposed once we plan on actually using it
             let err = seL4_TCB_SetPriority(tcb.cptr, priority_authority.cptr, 255);
             if err != 0 {
                 return Err(ProcessSetupError::SeL4Error(SeL4Error::TCBSetPriority(err)));

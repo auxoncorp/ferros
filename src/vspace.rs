@@ -519,6 +519,8 @@ impl VSpace<vspace_state::Imaged> {
         self.map_given_page(page, rights)
     }
 
+    // TODO - add more safety rails to prevent returning something from the
+    // inner function that becomes invalid when the page is unmapped locally
     pub(crate) fn temporarily_map_region<SizeBits: Unsigned, F, Out>(
         &mut self,
         region: &mut UnmappedMemoryRegion<SizeBits, shared_status::Exclusive>,
