@@ -168,6 +168,10 @@ impl<CT: CapType + PhantomCap, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Ro
             cap_data: PhantomCap::phantom_instance(),
         })
     }
+
+    pub(crate) fn len(&self) -> usize {
+        Slots::USIZE
+    }
 }
 
 impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole, Slots: Unsigned>

@@ -61,11 +61,11 @@ impl LocalCap<ThreadControlBlock> {
         unsafe { core::mem::transmute(self) }
     }
 
-    pub(crate) fn configure<VSpaceRole: CNodeRole>(
+    pub(crate) fn configure(
         &mut self,
         cspace_root: LocalCap<ChildCNode>,
         fault_source: Option<FaultSource<role::Child>>,
-        vspace: VSpace, // vspace_root,
+        vspace: &VSpace, // vspace_root,
         ipc_buffer: LocalCap<Page<page_state::Mapped>>,
     ) -> Result<(), SeL4Error> {
         // Set up the cspace's guard to take the part of the cptr that's not

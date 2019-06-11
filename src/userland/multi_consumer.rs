@@ -619,7 +619,6 @@ where
         // materializing all at once on the local stack (potentially blowing it)
         ArrayQueue::<T, QLen>::new_at_ptr(aq_ptr);
         core::mem::forget(aq_ptr);
-        Ok(())
     })?;
 
     let (shared_slot, _) = dest_slots.alloc();

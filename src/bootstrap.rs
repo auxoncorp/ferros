@@ -138,6 +138,11 @@ impl UserImage<role::Local> {
             })
     }
 
+    pub fn pages_count(&self) -> usize {
+        let vaddr_count = (core::usize::MAX - ProgramStart::USIZE) / (1 << PageBits::USIZE);
+        core::cmp::min(self.frames_count, vaddr_count)
+    }
+
     pub fn copy<TargetRole: CNodeRole>(
         &self,
         src_cnode: &LocalCap<LocalCNode>,

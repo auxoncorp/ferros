@@ -7,13 +7,14 @@ use selfe_sys::*;
 
 use crate::arch::cap::{page_state, AssignedASID, Page, UnassignedASID};
 use crate::arch::{AddressSpace, PageBits, PageBytes, PagingRoot};
+use crate::bootstrap::UserImage;
 use crate::cap::{
     role, Cap, CapRange, CapType, DirectRetype, LocalCNode, LocalCNodeSlots, LocalCap, PhantomCap,
     RetypeError, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
-use crate::userland::CapRights;
+use crate::userland::{CapRights, RetypeForSetup, SetupVer};
 
 pub trait SharedStatus: private::SealedSharedStatus {}
 
@@ -25,6 +26,18 @@ pub mod shared_status {
 
     pub struct Exclusive;
     impl SharedStatus for Exclusive {}
+}
+
+pub trait VSpaceState: private::SealedVSpaceState {}
+
+pub mod vspace_state {
+    use super::VSpaceState;
+
+    pub struct Empty;
+    impl VSpaceState for Empty {}
+
+    pub struct Imaged;
+    impl VSpaceState for Imaged {}
 }
 
 /// A `Maps` implementor is a paging layer that maps granules of type
@@ -58,10 +71,13 @@ pub enum MappingError {
 
 #[derive(Debug)]
 pub enum VSpaceError {
+    // TODO - what is too big?
     TooBig,
     MappingError(MappingError),
     RetypeRegion(RetypeError),
     SeL4Error(SeL4Error),
+    InsufficientCNodeSlots,
+    ExceededAvailableAddressSpace,
 }
 
 impl From<RetypeError> for VSpaceError {
@@ -203,6 +219,10 @@ where
         })
     }
 
+    pub(crate) fn size(&self) -> usize {
+        self.caps.len() * PageBytes::USIZE
+    }
+
     pub fn to_shared(self) -> UnmappedMemoryRegion<SizeBits, shared_status::Shared> {
         UnmappedMemoryRegion {
             caps: CapRange::new(self.caps.start_cptr),
@@ -227,6 +247,10 @@ impl<Count: Unsigned> MappedPageRange<Count> {
             asid,
             _count: PhantomData,
         }
+    }
+
+    pub(crate) fn size(&self) -> usize {
+        Count::USIZE * PageBytes::USIZE
     }
 
     pub fn iter(self) -> impl Iterator<Item = Cap<Page<page_state::Mapped>, role::Local>> {
@@ -279,19 +303,34 @@ where
             asid,
         }
     }
+
+    pub(crate) fn size(&self) -> usize {
+        self.caps.size()
+    }
 }
 
-pub struct VSpace {
+pub enum ProcessCodeImageConfig {
+    ReadOnly,
+    /// Use when you need to be able to write to statics in the child process
+    ReadWritable {
+        /// Used to back the creation of code page capability copies
+        /// in order to avoid allowing aliased writes to the source code image
+        untyped: LocalCap<WUntyped>,
+    },
+}
+
+pub struct VSpace<State: VSpaceState = vspace_state::Imaged> {
     root: LocalCap<PagingRoot>,
     asid: LocalCap<AssignedASID>,
     layers: AddressSpace,
     next_addr: usize,
     untyped: WUntyped,
     slots: WCNodeSlots,
+    _state: PhantomData<State>,
 }
 
-impl VSpace {
-    pub fn new(
+impl VSpace<vspace_state::Empty> {
+    pub(crate) fn new(
         mut root_cap: LocalCap<PagingRoot>,
         asid: LocalCap<UnassignedASID>,
         slots: WCNodeSlots,
@@ -305,6 +344,91 @@ impl VSpace {
             next_addr: 0,
             untyped,
             slots,
+            _state: PhantomData,
+        })
+    }
+}
+impl<S: VSpaceState> VSpace<S> {
+    pub(crate) fn asid(&self) -> u32 {
+        self.asid.cap_data.asid
+    }
+
+    pub fn map_given_page(
+        &mut self,
+        page: LocalCap<Page<page_state::Unmapped>>,
+        rights: CapRights,
+    ) -> Result<LocalCap<Page<page_state::Mapped>>, VSpaceError> {
+        match self.layers.map_item(
+            &page,
+            self.next_addr,
+            &mut self.root,
+            rights,
+            &mut self.untyped,
+            &mut self.slots,
+        ) {
+            Err(MappingError::PageMapFailure(e)) => return Err(VSpaceError::SeL4Error(e)),
+            Err(MappingError::IntermediateLayerFailure(e)) => {
+                return Err(VSpaceError::SeL4Error(e));
+            }
+            Err(e) => return Err(VSpaceError::MappingError(e)),
+            Ok(_) => (),
+        };
+        let vaddr = self.next_addr;
+        self.next_addr += PageBits::USIZE;
+        Ok(Cap {
+            cptr: page.cptr,
+            cap_data: Page {
+                state: page_state::Mapped {
+                    asid: self.asid(),
+                    vaddr,
+                },
+            },
+            _role: PhantomData,
+        })
+    }
+}
+
+impl VSpace<vspace_state::Imaged> {
+    pub fn new(
+        mut paging_root: LocalCap<PagingRoot>,
+        asid: LocalCap<UnassignedASID>,
+        slots: WCNodeSlots,
+        paging_untyped: WUntyped,
+        // Things relating to user image code
+        code_image_config: ProcessCodeImageConfig,
+        user_image: &UserImage<role::Local>,
+        parent_vspace: &mut VSpace, // for temporary mapping for copying
+        parent_cnode: &LocalCap<LocalCNode>,
+    ) -> Result<Self, VSpaceError> {
+        let (code_slots, mut slots) = match slots.split(user_image.pages_count()) {
+            Ok(t) => t,
+            Err(_) => return Err(VSpaceError::InsufficientCNodeSlots),
+        };
+        let mut vspace =
+            VSpace::<vspace_state::Empty>::new(paging_root, asid, slots, paging_untyped)?;
+
+        // Map the code image into the process VSpace
+        match code_image_config {
+            ProcessCodeImageConfig::ReadOnly => {
+                for (page_cap, slot) in user_image.pages_iter().zip(code_slots.into_strong_iter()) {
+                    let copied_page_cap = page_cap.copy(&parent_cnode, slot, CapRights::R)?;
+                    // Use map_page_direct instead of a VSpace so we don't have to keep
+                    // track of bulk allocations which cross page table boundaries at
+                    // the type level.
+                    let _ = vspace.map_given_page(copied_page_cap, CapRights::R)?;
+                }
+            }
+            ProcessCodeImageConfig::ReadWritable { .. } => unimplemented!(),
+        }
+
+        Ok(VSpace {
+            root: vspace.root,
+            asid: vspace.asid,
+            layers: vspace.layers,
+            next_addr: vspace.next_addr,
+            untyped: vspace.untyped,
+            slots: vspace.slots,
+            _state: PhantomData,
         })
     }
 
@@ -329,11 +453,8 @@ impl VSpace {
             },
             next_addr,
             asid,
+            _state: PhantomData,
         }
-    }
-
-    pub fn asid(&self) -> u32 {
-        self.asid.cap_data.asid
     }
 
     pub fn map_region<SizeBits: Unsigned>(
@@ -388,40 +509,6 @@ impl VSpace {
         self.map_region_internal(region, rights)
     }
 
-    pub fn map_given_page(
-        &mut self,
-        page: LocalCap<Page<page_state::Unmapped>>,
-        rights: CapRights,
-    ) -> Result<LocalCap<Page<page_state::Mapped>>, VSpaceError> {
-        match self.layers.map_item(
-            &page,
-            self.next_addr,
-            &mut self.root,
-            rights,
-            &mut self.untyped,
-            &mut self.slots,
-        ) {
-            Err(MappingError::PageMapFailure(e)) => return Err(VSpaceError::SeL4Error(e)),
-            Err(MappingError::IntermediateLayerFailure(e)) => {
-                return Err(VSpaceError::SeL4Error(e));
-            }
-            Err(e) => return Err(VSpaceError::MappingError(e)),
-            Ok(_) => (),
-        };
-        let vaddr = self.next_addr;
-        self.next_addr += PageBits::USIZE;
-        Ok(Cap {
-            cptr: page.cptr,
-            cap_data: Page {
-                state: page_state::Mapped {
-                    asid: self.asid(),
-                    vaddr,
-                },
-            },
-            _role: PhantomData,
-        })
-    }
-
     pub fn map_page(
         &mut self,
         rights: CapRights,
@@ -432,18 +519,18 @@ impl VSpace {
         self.map_given_page(page, rights)
     }
 
-    pub fn temporarily_map_region<SizeBits: Unsigned, F>(
+    pub(crate) fn temporarily_map_region<SizeBits: Unsigned, F, Out>(
         &mut self,
         region: &mut UnmappedMemoryRegion<SizeBits, shared_status::Exclusive>,
         f: F,
-    ) -> Result<(), VSpaceError>
+    ) -> Result<Out, VSpaceError>
     where
         SizeBits: IsGreaterOrEqual<PageBits>,
         SizeBits: Sub<PageBits>,
         <SizeBits as Sub<PageBits>>::Output: Unsigned,
         <SizeBits as Sub<PageBits>>::Output: _Pow,
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
-        F: Fn(&mut MappedMemoryRegion<SizeBits, shared_status::Exclusive>) -> Result<(), SeL4Error>,
+        F: Fn(&mut MappedMemoryRegion<SizeBits, shared_status::Exclusive>) -> Out,
     {
         let mut mapped_region = self.map_region(
             UnmappedMemoryRegion {
@@ -455,8 +542,7 @@ impl VSpace {
         )?;
         let res = f(&mut mapped_region);
         let _ = self.unmap_region(mapped_region)?;
-        let _ = res?;
-        Ok(())
+        Ok(res)
     }
 
     pub fn unmap_region<SizeBits: Unsigned>(
@@ -529,6 +615,15 @@ impl VSpace {
         }
         Ok(mapped_region)
     }
+
+    pub(crate) fn skip_pages(&mut self, count: usize) -> Result<(), VSpaceError> {
+        if let Some(next) = self.next_addr.checked_add(PageBytes::USIZE) {
+            self.next_addr = next;
+            Ok(())
+        } else {
+            Err(VSpaceError::ExceededAvailableAddressSpace)
+        }
+    }
 }
 
 mod private {
@@ -536,4 +631,9 @@ mod private {
     pub trait SealedSharedStatus {}
     impl SealedSharedStatus for Shared {}
     impl SealedSharedStatus for Exclusive {}
+
+    use super::vspace_state::{Empty, Imaged};
+    pub trait SealedVSpaceState {}
+    impl SealedVSpaceState for Empty {}
+    impl SealedVSpaceState for Imaged {}
 }
