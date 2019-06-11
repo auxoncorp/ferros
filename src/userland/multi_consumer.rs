@@ -1,27 +1,40 @@
-//! A pattern for async IPC with driver processes/threads
-//! where there is a single (driver) consumer thread that is waiting
-//! on a single notification.
-//! There are two possible badge values for the notification, and
-//! based on the badge, the consumer will do one of the following:
+//! A pattern for async IPC with driver processes/threads where there
+//! is a single (driver) consumer thread that is waiting on a single
+//! notification.  There are two possible badge values for the
+//! notification, and based on the badge, the consumer will do one of
+//! the following:
 //!
 //! A) Execute a custom, interrupt-handling-specialized path.
-//! B) Attempt to read from a shared memory queue. If an element is found, process it.
+//! B) Attempt to read from a shared memory queue. If an element is
+//! found, process it.
 //!
-//! The alpha-path is intended to be bound to an interrupt notification,
-//! but technically will work out of the box with any regular notification-sender
-//! badged to match the A) path.
+//! The alpha-path is intended to be bound to an interrupt
+//! notification, but technically will work out of the box with any
+//! regular notification-sender badged to match the A) path.
 //!
-//! There may be many other threads producing to the shared memory queue.
-//! A queue-producer thread requires:
-//! * A capability to the notification, badged to correspond to the queue-path.
-//! * The page(s) where the queue lives mapped into its VSpace
+//! There may be many other threads producing to the shared memory
+//! queue. A queue-producer thread requires:
+//! * A capability to the notification, badged to correspond to the
+//! queue-path.
+//! * The memory region where the queue lives mapped into its VSpace.
 //! * A pointer to the shared memory queue valid in its VSpace.
 //!
-//! There are two doors into the consumer thread. Do you pick door A or B?
+//! There are two doors into the consumer thread. Do you pick door A
+//! or B?
 //!
-//! let (consumer_params_member, queue_producer_setup, waker_setup,  ...leftovers) = double_door(...)
-//! let (waker_params_member, ...leftovers) = Waker::new(waker_setup,waker_thread_cnode)
-//! let (producer_params_member, ...leftovers) = Producer::new(queue_producer_setup, producer_thread_cnode, producer_thread_vspace)
+//! let (irq_consumer, consumer_token) = InterruptConsumer::new(
+//!     notification_ut,
+//!     irq_control,
+//!     local_cnode,
+//!     local_slots,
+//!     consumer_slots)?;
+//! let (consumer1, producer_setup) = irq_consumer.add_queue(
+//!     consumer_token,
+//!     shared_region_ut,
+//!     local_vspace,
+//!     consumer_vspace,
+//!     local_cnode,
+//!     dest_slots)?;
 use core::marker::PhantomData;
 
 use cross_queue::{ArrayQueue, PushError, Slot};
@@ -975,13 +988,12 @@ where
             // of its own ingest queues.
             return Err(MultiConsumerError::ProduceToOwnQueueForbidden);
         }
-        let producer_shared_region: MappedMemoryRegion<PageBits, shared_status::Shared> =
-            child_vspace.map_shared_region(
-                &setup.shared_region,
-                CapRights::RW,
-                local_slot,
-                &local_cnode,
-            )?;
+        let producer_shared_region = child_vspace.map_shared_region(
+            &setup.shared_region,
+            CapRights::RW,
+            local_slot,
+            &local_cnode,
+        )?;
         let notification =
             setup
                 .notification
