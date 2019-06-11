@@ -1,37 +1,63 @@
-use core::marker::PhantomData;
-
-use typenum::*;
-
 use selfe_sys::*;
 
-use crate::cap::{CNodeRole, CapType, DirectRetype, PhantomCap};
+use typenum::Unsigned;
 
-// TODO: It's important that AssignedPageDirectory can never be moved or deleted
-// (or copied, likely), as that leads to ugly cptr aliasing issues that we're
-// not able to detect at compile time. Write compile-tests to ensure that it
-// doesn't implement those marker traits.
-#[derive(Debug, PartialEq)]
-pub struct AssignedPageDirectory<FreeSlots: Unsigned, Role: CNodeRole> {
-    pub(crate) next_free_slot: usize,
-    pub(crate) _free_slots: PhantomData<FreeSlots>,
-    pub(crate) _role: PhantomData<Role>,
-}
+use crate::cap::{CapType, DirectRetype, LocalCap, PhantomCap, WCNodeSlots, WUntyped};
+use crate::error::SeL4Error;
+use crate::userland::CapRights;
+use crate::vspace::{MappingError, Maps};
 
-impl<FreeSlots: Unsigned, Role: CNodeRole> CapType for AssignedPageDirectory<FreeSlots, Role> {}
+use super::super::{PageDirIndexBits, PageIndexBits, PageTableIndexBits};
+use super::PageTable;
+
+const PD_MASK: usize =
+    (((1 << PageDirIndexBits::USIZE) - 1) << PageIndexBits::USIZE + PageTableIndexBits::USIZE);
 
 #[derive(Debug)]
-pub struct UnassignedPageDirectory {}
+pub struct PageDirectory {}
 
-impl CapType for UnassignedPageDirectory {}
-
-impl PhantomCap for UnassignedPageDirectory {
-    fn phantom_instance() -> Self {
-        Self {}
+impl Maps<PageTable> for PageDirectory {
+    fn map_item<RootG, Root>(
+        &mut self,
+        table: &LocalCap<PageTable>,
+        addr: usize,
+        root: &mut LocalCap<Root>,
+        _rights: CapRights,
+        _ut: &mut WUntyped,
+        _slots: &mut WCNodeSlots,
+    ) -> Result<(), MappingError>
+    where
+        Root: Maps<RootG>,
+        Root: CapType,
+        RootG: CapType,
+    {
+        match unsafe {
+            seL4_ARM_PageTable_Map(
+                table.cptr,
+                addr & PD_MASK,
+                root.cptr,
+                seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
+                    | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled,
+            )
+        } {
+            0 => Ok(()),
+            6 => Err(MappingError::Overflow),
+            e => Err(MappingError::IntermediateLayerFailure(
+                SeL4Error::PageTableMap(e),
+            )),
+        }
     }
 }
 
-impl DirectRetype for UnassignedPageDirectory {
-    type SizeBits = U14;
+impl CapType for PageDirectory {}
+impl PhantomCap for PageDirectory {
+    fn phantom_instance() -> Self {
+        PageDirectory {}
+    }
+}
+
+impl DirectRetype for PageDirectory {
+    type SizeBits = super::super::PageDirectoryBits;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_PageDirectoryObject as usize
     }

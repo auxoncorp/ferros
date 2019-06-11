@@ -6,7 +6,7 @@ pub mod userland;
 pub type WordSize = U32;
 pub type MinUntypedSize = U4;
 // MaxUntypedSize is half the address space and/or word size.
-pub type MaraxUntypedSize = U29;
+pub type MaxUntypedSize = U29;
 
 /// The ASID address space is a total of 16 bits. It is bifurcated
 /// into high bits and low bits where the high bits determine the
@@ -34,9 +34,13 @@ mod hyp_or_not {
 
 #[cfg(not(KernelHypervisorSupport))]
 mod hyp_or_not {
-    use super::cap;
-    use crate::vspace_too::{PagingRec, PagingTop};
+    use core::marker::PhantomData;
+
+    use crate::vspace::{PagingRec, PagingTop};
+
     use typenum::*;
+
+    use super::cap;
 
     pub type PageTableBits = U10;
     pub type PageTableIndexBits = U8;
@@ -45,10 +49,25 @@ mod hyp_or_not {
     pub type SuperSectionBits = U24;
 
     pub type AddressSpace = PagingRec<
-        cap::page_too::Page,
-        cap::page_table_too::PageTable,
-        PagingTop<cap::page_table_too::PageTable, cap::page_directory_too::PageDirectory>,
+        cap::Page<cap::page_state::Unmapped>,
+        cap::PageTable,
+        PagingTop<cap::PageTable, cap::PageDirectory>,
     >;
+
+    pub type PagingRoot = cap::PageDirectory;
+
+    impl AddressSpace {
+        pub fn new() -> Self {
+            PagingRec {
+                layer: cap::PageTable {},
+                next: PagingTop {
+                    layer: cap::PageDirectory {},
+                    _item: PhantomData,
+                },
+                _item: PhantomData,
+            }
+        }
+    }
 }
 
 pub use hyp_or_not::*;

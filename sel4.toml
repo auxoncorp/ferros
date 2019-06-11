@@ -1,3 +1,11 @@
+# Sabre (ARMv7)
+[sel4.config.sabre]
+KernelARMPlatform = 'imx6'
+KernelHaveFPU = true
+
+[build.sabre]
+cross_compiler_prefix = "arm-linux-gnueabihf-"
+
 ### TX1 (ARMv8)
 [build.tx1]
 cross_compiler_prefix = "aarch64-linux-gnu-"
@@ -21,6 +29,8 @@ util_libs  = { git = "https://github.com/seL4/util_libs" , rev = "98aaebe56c66d4
 
 [sel4.config.arm]
 KernelArch = 'arm'
+KernelArmSel4Arch = 'aarch32'
+KernelSel4Arch = 'aarch32'
 KernelIPCBufferLocation = 'threadID_register'
 
 ### sel4_arch

@@ -3,10 +3,7 @@ mod asid_control;
 mod large_page;
 mod page;
 mod page_directory;
-pub mod page_directory_too;
 mod page_table;
-pub mod page_table_too;
-pub mod page_too;
 mod section;
 mod super_section;
 
