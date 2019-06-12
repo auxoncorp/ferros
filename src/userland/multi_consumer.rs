@@ -53,7 +53,9 @@ use crate::cap::{
 };
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
-use crate::vspace::{shared_status, MappedMemoryRegion, UnmappedMemoryRegion, VSpace, VSpaceError};
+use crate::vspace::{
+    shared_status, MappedMemoryRegion, ScratchRegion, UnmappedMemoryRegion, VSpace, VSpaceError,
+};
 
 /// A multi-consumer that consumes interrupt-style notifications
 ///
@@ -268,11 +270,11 @@ where
         ))
     }
 
-    pub fn add_queue<E: Sized + Send + Sync, ELen: Unsigned>(
+    pub fn add_queue<'a, 'b, ScratchPages: Unsigned, E: Sized + Send + Sync, ELen: Unsigned>(
         self,
         consumer_token: &mut ConsumerToken,
         shared_region_ut: LocalCap<Untyped<PageBits>>,
-        local_vspace: &mut VSpace,
+        local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
         consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
@@ -280,6 +282,7 @@ where
     where
         ELen: ArrayLength<Slot<E>>,
         ELen: IsGreater<U0, Output = True>,
+        ScratchPages: IsGreaterOrEqual<U1, Output = True>,
     {
         // The consumer token should not have a vspace associated with it at all yet, since
         // we have yet to require mapping any memory to it.
@@ -287,9 +290,9 @@ where
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
         let (shared_region, consumer_shared_region) =
-            create_region_filled_with_array_queue::<E, ELen>(
+            create_region_filled_with_array_queue::<ScratchPages, E, ELen>(
                 shared_region_ut,
-                local_vspace,
+                local_vspace_scratch,
                 consumer_vspace,
                 &local_cnode,
                 dest_slots,
@@ -337,10 +340,10 @@ where
     ELen: IsGreater<U0, Output = True>,
     ELen: ArrayLength<Slot<E>>,
 {
-    pub fn new(
+    pub fn new<'a, 'b, ScratchPages: Unsigned>(
         notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
         shared_region_ut: LocalCap<Untyped<PageBits>>,
-        local_vspace: &mut VSpace,
+        local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
         consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         local_slots: LocalCNodeSlots<U3>,
@@ -357,6 +360,7 @@ where
     where
         ELen: ArrayLength<Slot<E>>,
         ELen: IsGreater<U0, Output = True>,
+        ScratchPages: IsGreaterOrEqual<U1, Output = True>,
     {
         let queue_size = core::mem::size_of::<ArrayQueue<E, ELen>>();
         if queue_size > PageBytes::USIZE {
@@ -364,9 +368,9 @@ where
         }
         let (slots, local_slots) = local_slots.alloc();
         let (shared_region, consumer_shared_region) =
-            create_region_filled_with_array_queue::<E, ELen>(
+            create_region_filled_with_array_queue::<ScratchPages, E, ELen>(
                 shared_region_ut,
-                local_vspace,
+                local_vspace_scratch,
                 consumer_vspace,
                 &local_cnode,
                 slots,
@@ -431,11 +435,11 @@ where
         ))
     }
 
-    pub fn add_queue<F: Sized + Send + Sync, FLen: Unsigned>(
+    pub fn add_queue<'a, 'b, ScratchPages: Unsigned, F: Sized + Send + Sync, FLen: Unsigned>(
         self,
         consumer_token: &ConsumerToken,
         shared_region_ut: LocalCap<Untyped<PageBits>>,
-        local_vspace: &mut VSpace,
+        local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
         consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
@@ -449,6 +453,7 @@ where
     where
         FLen: ArrayLength<Slot<F>>,
         FLen: IsGreater<U0, Output = True>,
+        ScratchPages: IsGreaterOrEqual<U1, Output = True>,
     {
         // Ensure that the consumer process that the `waker_setup` is wrapping
         // a notification to is the same process as the one referred to by
@@ -461,9 +466,9 @@ where
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
         let (shared_region, consumer_shared_region) =
-            create_region_filled_with_array_queue::<F, FLen>(
+            create_region_filled_with_array_queue::<ScratchPages, F, FLen>(
                 shared_region_ut,
-                local_vspace,
+                local_vspace_scratch,
                 consumer_vspace,
                 &local_cnode,
                 dest_slots,
@@ -521,11 +526,18 @@ where
     FLen: IsGreater<U0, Output = True>,
     FLen: ArrayLength<Slot<F>>,
 {
-    pub fn add_queue<G: Sized + Send + Sync, GLen: Unsigned, LocalCNodeFreeSlots: Unsigned>(
+    pub fn add_queue<
+        'a,
+        'b,
+        ScratchPages: Unsigned,
+        G: Sized + Send + Sync,
+        GLen: Unsigned,
+        LocalCNodeFreeSlots: Unsigned,
+    >(
         self,
         consumer_token: &ConsumerToken,
         shared_region_ut: LocalCap<Untyped<PageBits>>,
-        local_vspace: &mut VSpace,
+        local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
         consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
@@ -541,6 +553,7 @@ where
         FLen: IsGreater<U0, Output = True>,
         GLen: ArrayLength<Slot<G>>,
         GLen: IsGreater<U0, Output = True>,
+        ScratchPages: IsGreaterOrEqual<U1, Output = True>,
     {
         // Ensure that the consumer process that the `waker_setup` is wrapping
         // a notification to is the same process as the one referred to by
@@ -553,9 +566,9 @@ where
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
         let (shared_region, consumer_shared_region) =
-            create_region_filled_with_array_queue::<F, FLen>(
+            create_region_filled_with_array_queue::<ScratchPages, F, FLen>(
                 shared_region_ut,
-                local_vspace,
+                local_vspace_scratch,
                 consumer_vspace,
                 &local_cnode,
                 dest_slots,
@@ -600,9 +613,15 @@ where
     }
 }
 
-fn create_region_filled_with_array_queue<T: Sized + Send + Sync, QLen: Unsigned>(
+fn create_region_filled_with_array_queue<
+    'a,
+    'b,
+    ScratchPages: Unsigned,
+    T: Sized + Send + Sync,
+    QLen: Unsigned,
+>(
     shared_region_ut: LocalCap<Untyped<PageBits>>,
-    local_vspace: &mut VSpace,
+    local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
     consumer_vspace: &mut VSpace,
     local_cnode: &LocalCap<LocalCNode>,
     dest_slots: LocalCNodeSlots<U2>,
@@ -616,6 +635,7 @@ fn create_region_filled_with_array_queue<T: Sized + Send + Sync, QLen: Unsigned>
 where
     QLen: ArrayLength<Slot<T>>,
     QLen: IsGreater<U0, Output = True>,
+    ScratchPages: IsGreaterOrEqual<U1, Output = True>,
 {
     let queue_size = core::mem::size_of::<ArrayQueue<T, QLen>>();
     if queue_size > PageBytes::USIZE {
@@ -625,7 +645,7 @@ where
     let (slot, dest_slots) = dest_slots.alloc();
     let mut region = UnmappedMemoryRegion::new(shared_region_ut, slot)?;
     // Put some data in there. Specifically, an `ArrayQueue`.
-    local_vspace.temporarily_map_region(&mut region, |mapped_region| unsafe {
+    local_vspace_scratch.temporarily_map_region(&mut region, |mapped_region| unsafe {
         let aq_ptr = core::mem::transmute::<usize, *mut ArrayQueue<T, QLen>>(mapped_region.vaddr);
         // Operate directly on a pointer to an uninitialized/zeroed pointer
         // in order to reduces odds of the full ArrayQueue instance

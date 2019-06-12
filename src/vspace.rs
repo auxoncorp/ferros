@@ -103,6 +103,7 @@ pub enum VSpaceError {
     /// There are no more slots in which to place retyped layer caps.
     InsufficientCNodeSlots,
     ExceededAvailableAddressSpace,
+    ASIDMismatch,
 }
 
 impl From<RetypeError> for VSpaceError {
@@ -283,7 +284,7 @@ where
     /// remapping into other address spaces.
     pub fn to_shared(self) -> UnmappedMemoryRegion<SizeBits, shared_status::Shared> {
         UnmappedMemoryRegion {
-            caps: CapRange::new(self.caps.start_cptr),
+            caps: self.caps,
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         }
@@ -444,7 +445,7 @@ impl<S: VSpaceState> VSpace<S> {
             Ok(_) => (),
         };
         let vaddr = self.next_addr;
-        self.next_addr += PageBits::USIZE;
+        self.next_addr += PageBytes::USIZE;
         Ok(Cap {
             cptr: page.cptr,
             cap_data: Page {
@@ -592,42 +593,6 @@ impl VSpace<vspace_state::Imaged> {
         self.map_region_internal(region, rights)
     }
 
-    // TODO - add more safety rails to prevent returning something from the
-    // inner function that becomes invalid when the page is unmapped locally
-    /// Map a region temporarily and do with it as thou wilt with `f`.
-    ///
-    /// Note that this is defined on a region which has the shared
-    /// status of `Exclusive`. The idea here is to do the initial
-    /// region-filling work with `temporarily_map_region` _before_
-    /// sharing this page and mapping it into other address
-    /// spaces. This enforced order ought to prevent one from
-    /// forgetting to do the region-filling initialization.
-    pub(crate) fn temporarily_map_region<SizeBits: Unsigned, F, Out>(
-        &mut self,
-        region: &mut UnmappedMemoryRegion<SizeBits, shared_status::Exclusive>,
-        f: F,
-    ) -> Result<Out, VSpaceError>
-    where
-        SizeBits: IsGreaterOrEqual<PageBits>,
-        SizeBits: Sub<PageBits>,
-        <SizeBits as Sub<PageBits>>::Output: Unsigned,
-        <SizeBits as Sub<PageBits>>::Output: _Pow,
-        Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
-        F: Fn(&mut MappedMemoryRegion<SizeBits, shared_status::Exclusive>) -> Out,
-    {
-        let mut mapped_region = self.map_region(
-            UnmappedMemoryRegion {
-                caps: CapRange::new(region.caps.start_cptr),
-                _size_bits: PhantomData,
-                _shared_status: PhantomData,
-            },
-            CapRights::RW,
-        )?;
-        let res = f(&mut mapped_region);
-        let _ = self.unmap_region(mapped_region)?;
-        Ok(res)
-    }
-
     /// Unmap a region.
     pub fn unmap_region<SizeBits: Unsigned, SS: SharedStatus>(
         &mut self,
@@ -710,6 +675,170 @@ impl VSpace<vspace_state::Imaged> {
         } else {
             Err(VSpaceError::ExceededAvailableAddressSpace)
         }
+    }
+
+    pub fn reserve<PageCount: Unsigned>(
+        &mut self,
+        sacrificial_page: LocalCap<Page<page_state::Unmapped>>,
+    ) -> Result<ReservedRegion<PageCount>, VSpaceError>
+    where
+        PageCount: IsGreaterOrEqual<U1, Output = True>,
+    {
+        ReservedRegion::new(self, sacrificial_page)
+    }
+}
+
+/// A region of memory in a VSpace that has been reserved
+/// for future scratch-style/temporary usage.
+///
+/// Its backing paging structures have all been pre-created,
+/// so mapping individual pages to this region should require
+/// no overhead resources whatsoever.
+///
+/// Note that the type parameter regarding default size matches
+/// the currently defaulted number of pages allowed for a process
+/// stack.
+pub struct ReservedRegion<PageCount: Unsigned = crate::userland::process::StackPageCount> {
+    vaddr: usize,
+    asid: u32,
+    _page_count: PhantomData<PageCount>,
+}
+
+impl<PageCount: Unsigned> ReservedRegion<PageCount>
+where
+    PageCount: IsGreaterOrEqual<U1, Output = True>,
+{
+    pub fn size(&self) -> usize {
+        PageCount::USIZE * crate::arch::PageBytes::USIZE
+    }
+
+    pub fn new(
+        vspace: &mut VSpace,
+        sacrificial_page: LocalCap<Page<page_state::Unmapped>>,
+    ) -> Result<Self, VSpaceError> {
+        let mut unmapped_page = sacrificial_page;
+        let mut first_vaddr = None;
+        // Map (and then unmap) each page in the reserved range
+        // in order to trigger the instantiation of the backing paging
+        // structures.
+        for _ in 0..PageCount::USIZE {
+            let mapped_page = vspace.map_given_page(unmapped_page, CapRights::RW)?;
+            if let None = first_vaddr {
+                first_vaddr = Some(mapped_page.cap_data.state.vaddr);
+            }
+            unmapped_page = vspace.unmap_page(mapped_page)?;
+        }
+        Ok(ReservedRegion {
+            // Due to the type constraint that ensures PageCount > 0, this must be Some
+            vaddr: first_vaddr.unwrap(),
+            asid: vspace.asid(),
+            _page_count: PhantomData,
+        })
+    }
+
+    pub fn as_scratch<'a, 'b>(
+        &'a self,
+        vspace: &'b mut VSpace,
+    ) -> Result<ScratchRegion<'a, 'b, PageCount>, VSpaceError> {
+        ScratchRegion::new(self, vspace)
+    }
+}
+
+/// Borrow of a reserved region and its associated VSpace in order to support temporary mapping
+pub struct ScratchRegion<'a, 'b, PageCount: Unsigned = crate::userland::process::StackPageCount> {
+    reserved_region: &'a ReservedRegion<PageCount>,
+    vspace: &'b mut VSpace,
+}
+
+impl<'a, 'b, PageCount: Unsigned> ScratchRegion<'a, 'b, PageCount>
+where
+    PageCount: IsGreaterOrEqual<U1, Output = True>,
+{
+    pub fn new(
+        region: &'a ReservedRegion<PageCount>,
+        vspace: &'b mut VSpace,
+    ) -> Result<Self, VSpaceError> {
+        if region.asid == vspace.asid.cap_data.asid {
+            Ok(ScratchRegion {
+                reserved_region: region,
+                vspace,
+            })
+        } else {
+            Err(VSpaceError::ASIDMismatch)
+        }
+    }
+
+    // TODO - add more safety rails to prevent returning something from the
+    // inner function that becomes invalid when the page is unmapped locally
+    //
+    /// Map a region temporarily and do with it as thou wilt with `f`.
+    ///
+    /// Note that this is defined on a region which has the shared
+    /// status of `Exclusive`. The idea here is to do the initial
+    /// region-filling work with `temporarily_map_region` _before_
+    /// sharing this page and mapping it into other address
+    /// spaces. This enforced order ought to prevent one from
+    /// forgetting to do the region-filling initialization.
+    pub(crate) fn temporarily_map_region<SizeBits: Unsigned, F, Out>(
+        &mut self,
+        region: &mut UnmappedMemoryRegion<SizeBits, shared_status::Exclusive>,
+        f: F,
+    ) -> Result<Out, VSpaceError>
+    where
+        SizeBits: IsGreaterOrEqual<PageBits>,
+        SizeBits: Sub<PageBits>,
+        <SizeBits as Sub<PageBits>>::Output: Unsigned,
+        <SizeBits as Sub<PageBits>>::Output: _Pow,
+        Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
+        F: Fn(&mut MappedMemoryRegion<SizeBits, shared_status::Exclusive>) -> Out,
+        // TODO - SizeBits must fit into the available pages
+        PageCount: IsGreaterOrEqual<NumPages<SizeBits>, Output = True>,
+        PageCount: IsGreaterOrEqual<U1, Output = True>,
+    {
+        let start_vaddr = self.reserved_region.vaddr;
+
+        let mut unmapped_region_copy: UnmappedMemoryRegion<SizeBits, shared_status::Exclusive> =
+            UnmappedMemoryRegion {
+                caps: CapRange::new(region.caps.start_cptr),
+                _size_bits: PhantomData,
+                _shared_status: PhantomData,
+            };
+        // map the pages at our predetermined/pre-allocated vaddr range
+        let mut mapped_region = MappedMemoryRegion {
+            caps: MappedPageRange::new(
+                region.caps.start_cptr,
+                start_vaddr,
+                self.reserved_region.asid,
+            ),
+            asid: self.reserved_region.asid,
+            _size_bits: PhantomData,
+            _shared_status: PhantomData,
+            vaddr: start_vaddr,
+        };
+        let mut next_addr = start_vaddr;
+        for page in unmapped_region_copy.caps.iter() {
+            match self.vspace.layers.map_item(
+                &page,
+                next_addr,
+                &mut self.vspace.root,
+                CapRights::RW,
+                // TODO - pass in dummy instances here,
+                // because all intermediate objects should have been already created
+                &mut self.vspace.untyped,
+                &mut self.vspace.slots,
+            ) {
+                Err(MappingError::PageMapFailure(e)) => return Err(VSpaceError::SeL4Error(e)),
+                Err(MappingError::IntermediateLayerFailure(e)) => {
+                    return Err(VSpaceError::SeL4Error(e));
+                }
+                Err(e) => return Err(VSpaceError::MappingError(e)),
+                Ok(_) => (),
+            };
+            next_addr += PageBytes::USIZE;
+        }
+        let res = f(&mut mapped_region);
+        let _ = self.vspace.unmap_region(mapped_region)?;
+        Ok(res)
     }
 }
 

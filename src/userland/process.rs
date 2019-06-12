@@ -75,16 +75,16 @@ impl From<SeL4Error> for ProcessSetupError {
 }
 
 // TODO - Consider making this a parameter of ReadyProcess::new
-type StackPageCount = U16;
+pub type StackPageCount = U16;
 pub type PrepareThreadCNodeSlots = U32;
 
 impl ReadyProcess {
-    pub fn new<T: RetypeForSetup>(
+    pub fn new<'a, 'b, T: RetypeForSetup>(
         vspace: &mut VSpace,
         cspace: LocalCap<ChildCNode>,
         // TODO - provide a more limited view on the parent VSpace to avoid
         // accidental mutation and to reduce parameter confusion
-        parent_vspace: &mut VSpace,
+        parent_vspace_scratch: &mut ScratchRegion<'a, 'b, crate::userland::process::StackPageCount>,
         function_descriptor: extern "C" fn(T) -> (),
         process_parameter: SetupVer<T>,
         stack_pages_ut: LocalCap<Untyped<U16>>,
@@ -116,14 +116,16 @@ impl ReadyProcess {
 
         // map the child stack into local memory so we can copy the contents
         // of the process params into it
-        let (mut registers, param_size_on_stack) =
-            parent_vspace.temporarily_map_region(&mut stack_pages, |mapped_region| unsafe {
+        let (mut registers, param_size_on_stack) = parent_vspace_scratch.temporarily_map_region(
+            &mut stack_pages,
+            |mapped_region| unsafe {
                 setup_initial_stack_and_regs(
                     &process_parameter as *const SetupVer<T> as *const usize,
                     core::mem::size_of::<SetupVer<T>>(),
                     (mapped_region.vaddr + mapped_region.size()) as *mut usize,
                 )
-            })?;
+            },
+        )?;
 
         // Map the stack to the target address space
         let mapped_stack_pages = vspace.map_region(stack_pages, CapRights::R)?; // TODO - revisit - do we need RW?
