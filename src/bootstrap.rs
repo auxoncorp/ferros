@@ -76,6 +76,22 @@ pub struct BootInfo<ASIDControlFreePools: Unsigned> {
 }
 
 impl BootInfo<op!(ASIDPoolCount - U1)> {
+    /* TODO(dan@auxon.io): Just wanted to leave a quick note here: Now
+     * that the vspace needs some resources to do its job, we need the
+     * ability to give those resources to the root threads vspace
+     * which is initialized here in `wrap`. This results in the a
+     * change to our convention in a root thread, where before, we
+     * were calling wrap first, then setting up the micro_allocator
+     * for untypeds, and invoking `root_cnode` to set up some slots
+     * for the root thread to use. After this change, those two latter
+     * things will need to happen first, only then can we call `wrap`,
+     * yielding to it some of the resources from those prior
+     * constructions. This makes me think: Should there be further
+     * "wrapping"? Could `BootInfo` grow to also contain those two
+     * allocators? */
+
+    /// Bootstrap the bootinfo structure the root task gets from the
+    /// kernel.
     pub fn wrap<VSpaceUntypedSize: Unsigned, VSpaceSlotCount: Unsigned>(
         bootinfo: &'static seL4_BootInfo,
         root_vspace_ut: LocalCap<Untyped<VSpaceUntypedSize>>,
