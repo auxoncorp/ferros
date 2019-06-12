@@ -1,18 +1,15 @@
-use selfe_sys::seL4_BootInfo;
-
 use typenum::*;
 
-use ferros::alloc::micro_alloc::Allocator;
-use ferros::bootstrap::{root_cnode, BootInfo};
-use ferros::cap::LocalCNodeSlots;
+use ferros::cap::{LocalCNodeSlots, LocalCap, Untyped};
 use ferros::error::SeL4Error;
 
 use super::TopLevelError;
 
-pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
-    let mut allocator = Allocator::bootstrap(&raw_boot_info)?;
-    let (_root_cnode, local_slots) = root_cnode(&raw_boot_info);
-    let ut_20 = allocator.get_untyped::<U20>().expect("alloc failure a");
+#[ferros_test::ferros_test]
+pub fn reuse_slots(
+    local_slots: LocalCNodeSlots<U100>,
+    ut_20: LocalCap<Untyped<U20>>,
+) -> Result<(), TopLevelError> {
     let (slots, local_slots) = local_slots.alloc();
     let (ut_a, ut_b, ut_c, ut_18) = ut_20.quarter(slots)?;
     let (slots, mut local_slots) = local_slots.alloc();
@@ -21,8 +18,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     let track = core::cell::Cell::new(0);
     let track_ref = &track;
 
-    debug_println!("about to start temporary use tests");
-
     // TODO - check correct reuse following inner error
     local_slots.with_temporary(move |inner_slots| -> Result<(), SeL4Error> {
         let (slots, _inner_slots) = inner_slots.alloc();
@@ -30,7 +25,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         track_ref.set(track_ref.get() + 1);
         Ok(())
     })??;
-    debug_println!("finished first temporary use");
 
     local_slots.with_temporary(move |inner_slots| -> Result<(), SeL4Error> {
         let (slots, _inner_slots) = inner_slots.alloc();
@@ -38,7 +32,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         track_ref.set(track_ref.get() + 1);
         Ok(())
     })??;
-    debug_println!("finished second temporary use");
 
     local_slots.with_temporary(move |inner_slots| -> Result<(), SeL4Error> {
         let (mut slots_a, mut slots_b): (LocalCNodeSlots<U4>, _) = inner_slots.alloc();
@@ -49,7 +42,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             track_ref.set(track_ref.get() + 1);
             Ok(())
         })??;
-        debug_println!("finished nested use left");
 
         // Nested reuse (left)
         slots_a.with_temporary(move |inner_slots_a| -> Result<(), SeL4Error> {
@@ -58,7 +50,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             track_ref.set(track_ref.get() + 1);
             Ok(())
         })??;
-        debug_println!("finished nested reuse left");
 
         // Nested use (right)
         slots_b.with_temporary(move |inner_slots_b| -> Result<(), SeL4Error> {
@@ -67,7 +58,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             track_ref.set(track_ref.get() + 1);
             Ok(())
         })??;
-        debug_println!("finished nested use right");
 
         // Nested reuse (right)
         slots_b.with_temporary(move |inner_slots_b| -> Result<(), SeL4Error> {
@@ -76,15 +66,15 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             track_ref.set(track_ref.get() + 1);
             Ok(())
         })??;
-        debug_println!("finished nested reuse right");
 
         track_ref.set(track_ref.get() + 1);
         Ok(())
     })??;
-
-    debug_println!("finished reuse with inner reuse");
-    assert_eq!(7, track.get());
-    debug_println!("\nSuccessfully reused slots multiple times\n");
-
-    Ok(())
+    if 7 == track.get() {
+        Ok(())
+    } else {
+        Err(TopLevelError::TestAssertionFailure(
+            "Unexpected number of tracked reuses",
+        ))
+    }
 }

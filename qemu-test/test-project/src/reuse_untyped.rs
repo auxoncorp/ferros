@@ -1,28 +1,22 @@
-use selfe_sys::seL4_BootInfo;
-
 use typenum::*;
 
-use ferros::alloc::micro_alloc::Allocator;
-use ferros::bootstrap::{root_cnode, BootInfo};
-use ferros::cap::LocalCNodeSlots;
+use ferros::cap::{LocalCNode, LocalCNodeSlots, LocalCap, Untyped};
 use ferros::error::SeL4Error;
 
 use super::TopLevelError;
 
-pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
-    let mut allocator = Allocator::bootstrap(&raw_boot_info)?;
-    let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
-    let mut prime_ut = allocator
-        .get_untyped::<U27>()
-        .expect("initial alloc failure");
-    let (slot_a, local_slots): (LocalCNodeSlots<U2>, _) = local_slots.alloc();
-    let (slot_b, local_slots): (LocalCNodeSlots<U2>, _) = local_slots.alloc();
-    let (slot_c, local_slots): (LocalCNodeSlots<U2>, _) = local_slots.alloc();
-    let (slot_d, local_slots): (LocalCNodeSlots<U2>, _) = local_slots.alloc();
-    let (slot_e, local_slots): (LocalCNodeSlots<U2>, _) = local_slots.alloc();
-    let (slot_f, local_slots): (LocalCNodeSlots<U2>, _) = local_slots.alloc();
-    let (slot_g, local_slots): (LocalCNodeSlots<U2>, _) = local_slots.alloc();
-
+#[ferros_test::ferros_test]
+pub fn reuse_untyped(
+    mut prime_ut: LocalCap<Untyped<U27>>,
+    root_cnode: &LocalCap<LocalCNode>,
+    slot_a: LocalCNodeSlots<U2>,
+    slot_b: LocalCNodeSlots<U2>,
+    slot_c: LocalCNodeSlots<U2>,
+    slot_d: LocalCNodeSlots<U2>,
+    slot_e: LocalCNodeSlots<U2>,
+    slot_f: LocalCNodeSlots<U2>,
+    slot_g: LocalCNodeSlots<U2>,
+) -> Result<(), TopLevelError> {
     let track = core::cell::Cell::new(0);
     let track_ref = &track;
     // TODO - check correct reuse following inner error
@@ -72,8 +66,11 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
         Ok(())
     })??;
-    assert_eq!(7, track.get());
-    debug_println!("\nSuccessfully reused untyped multiple times\n");
-
-    Ok(())
+    if 7 == track.get() {
+        Ok(())
+    } else {
+        Err(TopLevelError::TestAssertionFailure(
+            "Unexpected number of tracked reuses",
+        ))
+    }
 }

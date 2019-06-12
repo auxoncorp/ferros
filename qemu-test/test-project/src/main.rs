@@ -1,6 +1,7 @@
 #![no_std]
 #![recursion_limit = "128"]
 #![feature(proc_macro_hygiene)]
+#![allow(unused_variables, dead_code)]
 
 extern crate cross_queue;
 #[macro_use]
@@ -30,67 +31,52 @@ mod root_task_runs;
 mod shared_page_queue;
 mod uart;
 
-use core::panic::PanicInfo;
 use ferros::alloc::micro_alloc::Error as AllocError;
 use ferros::cap::IRQError;
 use ferros::error::SeL4Error;
 use ferros::userland::{FaultManagementError, IPCError, MultiConsumerError};
 use ferros::vspace::VSpaceError;
+use ferros_test::ferros_test_main;
 
-fn yield_forever() {
-    unsafe {
-        loop {
-            seL4_Yield();
-        }
-    }
-}
+#[cfg(not(test_case = "uart"))]
+ferros_test_main!(&[
+    &call_and_response_loop::call_and_response_loop,
+    &child_process_cap_management::child_process_cap_management,
+    &child_process_runs::child_process_runs,
+    &dont_tread_on_me::dont_tread_on_me,
+    &double_door_backpressure::double_door_backpressure,
+    &fault_or_message_handler::fault_or_message_handler,
+    &fault_pair::fault_pair,
+    &grandkid_process_runs::grandkid_process_runs,
+    &memory_read_protection::memory_read_protection,
+    &memory_write_protection::memory_write_protection,
+    &over_register_size_params::over_register_size_params,
+    &reuse_slots::reuse_slots,
+    &reuse_untyped::reuse_untyped,
+    &root_task_runs::root_task_runs,
+    &shared_page_queue::shared_page_queue,
+]);
 
+#[cfg(test_case = "uart")]
 fn main() {
     debug_println!("Starting the test!");
     let bootinfo = unsafe { &*sel4_start::BOOTINFO };
     run(bootinfo);
 }
 
+#[cfg(test_case = "uart")]
 #[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
+fn panic(info: &core::panic::PanicInfo) -> ! {
     sel4_start::debug_panic_handler(&info)
 }
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) {
-    #[cfg(test_case = "call_and_response_loop")]
-    call_and_response_loop::run(raw_boot_info).expect("run");
-    #[cfg(test_case = "child_process_cap_management")]
-    child_process_cap_management::run(raw_boot_info).expect("run");
-    #[cfg(test_case = "child_process_runs")]
-    child_process_runs::run(raw_boot_info).expect("run");
-    #[cfg(test_case = "dont_tread_on_me")]
-    dont_tread_on_me::run(raw_boot_info).expect("run");
-    #[cfg(test_case = "double_door_backpressure")]
-    double_door_backpressure::run(raw_boot_info).expect("run");
-    #[cfg(test_case = "fault_or_message_handler")]
-    fault_or_message_handler::run(raw_boot_info).expect("run");
-    #[cfg(test_case = "fault_pair")]
-    fault_pair::run(raw_boot_info).expect("run");
-    #[cfg(test_case = "grandkid_process_runs")]
-    grandkid_process_runs::run(raw_boot_info).expect("run");
-    #[cfg(test_case = "memory_read_protection")]
-    memory_read_protection::run(raw_boot_info).expect("run");
-    #[cfg(test_case = "memory_write_protection")]
-    memory_write_protection::run(raw_boot_info).expect("run");
-    #[cfg(test_case = "over_register_size_params")]
-    over_register_size_params::run(raw_boot_info).expect("run");
-    #[cfg(test_case = "reuse_slots")]
-    reuse_slots::run(raw_boot_info).expect("run");
-    #[cfg(test_case = "reuse_untyped")]
-    reuse_untyped::run(raw_boot_info).expect("run");
-    #[cfg(test_case = "root_task_runs")]
-    root_task_runs::run(raw_boot_info).expect("run");
-    #[cfg(test_case = "shared_page_queue")]
-    shared_page_queue::run(raw_boot_info).expect("run");
-    #[cfg(test_case = "uart")]
     uart::run(raw_boot_info).expect("run");
-
-    yield_forever()
+    unsafe {
+        loop {
+            seL4_Yield();
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -102,6 +88,7 @@ pub enum TopLevelError {
     SeL4Error(SeL4Error),
     IRQError(IRQError),
     FaultManagementError(FaultManagementError),
+    TestAssertionFailure(&'static str),
 }
 
 impl From<AllocError> for TopLevelError {

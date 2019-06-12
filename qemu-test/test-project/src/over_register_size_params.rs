@@ -1,55 +1,58 @@
-use selfe_sys::*;
-
 use typenum::*;
 
-use ferros::alloc::{self, micro_alloc, smart_alloc};
-use ferros::bootstrap::{root_cnode, BootInfo};
-use ferros::cap::retype_cnode;
-use ferros::userland::RetypeForSetup;
+use ferros::alloc::{smart_alloc, ut_buddy};
+use ferros::bootstrap::UserImage;
+use ferros::cap::*;
+use ferros::userland::{fault_or_message_channel, FaultOrMessage, RetypeForSetup, Sender};
 use ferros::vspace::{VSpace, VSpaceScratchSlice};
 
 use super::TopLevelError;
 
-pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
-    let BootInfo {
-        root_page_directory,
-        asid_control,
-        user_image,
-        root_tcb,
-        ..
-    } = BootInfo::wrap(&raw_boot_info);
-    let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
-    let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
-    let uts = alloc::ut_buddy(
-        allocator
-            .get_untyped::<U20>()
-            .expect("initial alloc failure"),
-    );
+/// Test that we can pass process parameters with content larger than that will
+/// fit in the TCB registers
+#[ferros_test::ferros_test]
+pub fn over_register_size_params(
+    local_slots: LocalCNodeSlots<U32768>,
+    local_ut: LocalCap<Untyped<U20>>,
+    asid_pool: LocalCap<ASIDPool<U1>>,
+    local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+    root_cnode: &LocalCap<LocalCNode>,
+    user_image: &UserImage<role::Local>,
+    tpa: &LocalCap<ThreadPriorityAuthority>,
+) -> Result<(), TopLevelError> {
+    let uts = ut_buddy(local_ut);
 
     smart_alloc!(|slots: local_slots, ut: uts| {
-        let (mut local_vspace_scratch, _root_page_directory) =
-            VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
-
-        let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (child_asid, _asid_pool) = asid_pool.alloc();
         let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &root_cnode)?;
 
-        let (child_cnode, _child_slots) = retype_cnode::<U12>(ut, slots)?;
+        let (child_cnode, child_slots) = retype_cnode::<U12>(ut, slots)?;
+        let (child_fault_source_slot, _child_slots) = child_slots.alloc();
+        let (fault_source, outcome_sender, handler) =
+            fault_or_message_channel(&root_cnode, ut, slots, child_fault_source_slot, slots)?;
 
         let params = {
             let mut nums = [0xaaaaaaaa; 140];
             nums[0] = 0xbbbbbbbb;
             nums[139] = 0xcccccccc;
-            OverRegisterSizeParams { nums }
+            OverRegisterSizeParams {
+                nums,
+                outcome_sender,
+            }
         };
 
         let (child_process, _) =
-            child_vspace.prepare_thread(proc_main, params, ut, slots, &mut local_vspace_scratch)?;
+            child_vspace.prepare_thread(proc_main, params, ut, slots, local_vspace_scratch)?;
     });
 
-    child_process.start(child_cnode, None, root_tcb.as_ref(), 255)?;
+    child_process.start(child_cnode, Some(fault_source), tpa, 255)?;
 
-    Ok(())
+    match handler.await_message()? {
+        FaultOrMessage::Message(true) => Ok(()),
+        _ => Err(TopLevelError::TestAssertionFailure(
+            "Child process should have reported success",
+        )),
+    }
 }
 
 pub struct ProcParams {
@@ -60,19 +63,23 @@ impl RetypeForSetup for ProcParams {
     type Output = ProcParams;
 }
 
-pub struct OverRegisterSizeParams {
+pub struct OverRegisterSizeParams<Role: CNodeRole> {
     pub nums: [usize; 140],
+    pub outcome_sender: Sender<bool, Role>,
 }
 
-impl RetypeForSetup for OverRegisterSizeParams {
-    type Output = OverRegisterSizeParams;
+impl RetypeForSetup for OverRegisterSizeParams<role::Local> {
+    type Output = OverRegisterSizeParams<role::Child>;
 }
 
-pub extern "C" fn proc_main(params: OverRegisterSizeParams) {
-    debug_println!(
-        "The child process saw a first value of {:08x}, a mid value of {:08x}, and a last value of {:08x}",
-        params.nums[0],
-        params.nums[70],
-        params.nums[139]
-    );
+pub extern "C" fn proc_main(params: OverRegisterSizeParams<role::Local>) {
+    let OverRegisterSizeParams {
+        nums,
+        outcome_sender,
+    } = params;
+    outcome_sender
+        .blocking_send(
+            &(nums[0] == 0xbbbbbbbb && nums[70] == 0xaaaaaaaa && nums[139] == 0xcccccccc),
+        )
+        .expect("Failure sending test assertion outcome");
 }

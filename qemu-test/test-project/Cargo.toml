@@ -1,7 +1,7 @@
 [package]
 name = "test-project"
-version = "0.1.0"
-authors = ["Russell Mull <russell@auxon.io>"]
+version = "0.2.0"
+authors = ["Russell Mull <russell@auxon.io>", "Zack Pierce <zack@auxon.io>"]
 edition = "2018"
 
 [dependencies]
@@ -11,6 +11,7 @@ edition = "2018"
 selfe-sys = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
 sel4-start = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
 ferros = { path = "../.." , features = ["test_support"]}
+ferros-test = { path = "../../ferros-test"}
 cross_queue = { path = "../../cross_queue" }
 typenum = { git = "ssh://github.com/auxoncorp/typenum.git" }
 registers = { git = "ssh://github.com/auxoncorp/registers.git" }

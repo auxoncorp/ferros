@@ -21,3 +21,6 @@ cd ferros-test/examples/minimal && \
 
 echo "====================== ./ferros-test/examples/mock ==========================="
 cd ferros-test/examples/mock && cargo build && cd ../../../
+
+echo "====================== ./smart_alloc ==========================="
+cd smart_alloc  && cargo test && cd ../

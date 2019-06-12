@@ -7,6 +7,7 @@ use syn::export::TokenStream2;
 use syn::fold::Fold;
 use syn::parse_macro_input::parse as syn_parse;
 use syn::punctuated::Punctuated;
+use syn::spanned::Spanned;
 use syn::token::Comma;
 use syn::{
     parse_quote, ArgCaptured, Block, Error as SynError, Expr, ExprClosure, FnArg, GenericArgument,
@@ -34,7 +35,7 @@ where ResourceKind is one of CNodeSlots or UntypedBuddy.";
 #[proc_macro]
 pub fn smart_alloc(tokens: TokenStream) -> TokenStream {
     smart_alloc_impl(TokenStream2::from(tokens))
-        .unwrap_or_else(|e| panic!("{}", e))
+        .unwrap_or_else(|e| e.to_compile_error())
         .into()
 }
 
@@ -47,12 +48,18 @@ fn smart_alloc_impl(tokens: TokenStream2) -> Result<TokenStream2, Error> {
 fn smart_alloc_structured(tokens: TokenStream2) -> Result<Vec<Stmt>, Error> {
     let closure: ExprClosure = syn_parse(tokens.into())?;
     if closure.output != ReturnType::Default {
-        return Err(Error::NoReturnTypeAllowed);
+        return Err(Error::NoReturnTypeAllowed {
+            span: closure.output.span(),
+        });
     }
     let header = parse_closure_header(&closure.inputs)?;
     let mut block = match *closure.body {
         Expr::Block(expr_block) => expr_block.block,
-        _ => return Err(Error::ContentMustBeABlock),
+        _ => {
+            return Err(Error::ContentMustBeABlock {
+                span: closure.body.span(),
+            })
+        }
     };
 
     // Find all requests for allocations, replace the relevant target-ids with unique ids,
@@ -98,58 +105,82 @@ fn materialize_alloc_statements(
 
 #[derive(Debug)]
 enum Error {
-    NoReturnTypeAllowed,
-    ContentMustBeABlock,
-    InvalidResourceFormat { msg: String },
-    InvalidResourceKind { found: String },
-    MissingRequiredResourceKind { msg: String },
-    AmbiguousResourceId { id: String },
-    AmbiguousRequestId { id: String },
-    InvalidRequestId { id: String },
-    MissingResourceId { request_id: String },
-    TooManyResources,
+    NoReturnTypeAllowed { span: Span },
+    ContentMustBeABlock { span: Span },
+    InvalidResourceFormat { msg: String, span: Span },
+    InvalidResourceKind { found: String, span: Span },
+    MissingRequiredResourceKind { msg: String, span: Span },
+    AmbiguousResourceId { id: String, span: Span },
+    AmbiguousRequestId { id: String, span: Span },
+    InvalidRequestId { id: String, span: Span },
+    MissingResourceId { request_id: String, span: Span },
+    TooManyResources { span: Span },
     SynParse(SynError),
+}
+impl Error {
+    fn span(&self) -> Span {
+        match self {
+            Error::NoReturnTypeAllowed { span } => *span,
+            Error::ContentMustBeABlock { span } => *span,
+            Error::InvalidResourceFormat { msg: _, span } => *span,
+            Error::InvalidResourceKind { found: _, span } => *span,
+            Error::MissingRequiredResourceKind { msg: _, span } => *span,
+            Error::AmbiguousResourceId { id: _, span } => *span,
+            Error::AmbiguousRequestId { id: _, span } => *span,
+            Error::InvalidRequestId { id: _, span } => *span,
+            Error::MissingResourceId {
+                request_id: _,
+                span,
+            } => *span,
+            Error::TooManyResources { span } => *span,
+            Error::SynParse(e) => e.span(),
+        }
+    }
+
+    pub(crate) fn to_compile_error(&self) -> TokenStream2 {
+        SynError::new(self.span(), self).to_compile_error()
+    }
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter) -> Result<(), std::fmt::Error> {
         let s = match self {
-            Error::NoReturnTypeAllowed => format!(
+            Error::NoReturnTypeAllowed { .. } => format!(
                 "{}\nbut a spurious return type was supplied for the closure-like header",
                 EXPECTED_LAYOUT_MESSAGE
             ),
-            Error::ContentMustBeABlock => format!(
+            Error::ContentMustBeABlock { .. } => format!(
                 "{}\nbut the contents following the closure-like header were not a block",
                 EXPECTED_LAYOUT_MESSAGE
             ),
-            Error::InvalidResourceFormat { msg } => {
+            Error::InvalidResourceFormat { msg, .. } => {
                 format!("{}\nbut {}", EXPECTED_LAYOUT_MESSAGE, msg)
             }
-            Error::InvalidResourceKind { found } => format!(
+            Error::InvalidResourceKind { found, .. } => format!(
                 "{}\nbut an invalid resource kind {} was found",
                 EXPECTED_LAYOUT_MESSAGE, found
             ),
-            Error::MissingRequiredResourceKind { msg } => format!(
+            Error::MissingRequiredResourceKind { msg, .. } => format!(
                 "{}\nbut a required resource kind was missing: {}",
                 EXPECTED_LAYOUT_MESSAGE, msg
             ),
-            Error::AmbiguousResourceId { id } => format!(
+            Error::AmbiguousResourceId { id, .. } => format!(
                 "{}\nbut an ambiguous resource id was found: {}",
                 EXPECTED_LAYOUT_MESSAGE, id
             ),
-            Error::AmbiguousRequestId { id } => format!(
+            Error::AmbiguousRequestId { id, .. } => format!(
                 "{}\nbut an ambiguous alloc request id was found: {}",
                 EXPECTED_LAYOUT_MESSAGE, id
             ),
-            Error::InvalidRequestId { id } => format!(
+            Error::InvalidRequestId { id, .. } => format!(
                 "{}\nbut an invalid request id in the signature was found: {}",
                 EXPECTED_LAYOUT_MESSAGE, id
             ),
-            Error::MissingResourceId { request_id } => format!(
+            Error::MissingResourceId { request_id, .. } => format!(
                 "{}\nbut no resource was supplied for request id {}",
                 EXPECTED_LAYOUT_MESSAGE, request_id
             ),
-            Error::TooManyResources => format!(
+            Error::TooManyResources { .. } => format!(
                 "{}\nbut more than two resources without explicit resource kinds were requested",
                 EXPECTED_LAYOUT_MESSAGE
             ),
@@ -166,11 +197,12 @@ impl From<SynError> for Error {
 }
 
 fn parse_closure_header(inputs: &Punctuated<FnArg, Comma>) -> Result<Header, Error> {
+    let args_span = inputs.span();
     let mut intermediates = Vec::new();
     for arg in inputs.iter() {
         intermediates.push(parse_fnarg_to_intermediate(arg)?);
     }
-    header_from_intermediate_resources(&intermediates)
+    header_from_intermediate_resources(&intermediates, args_span)
 }
 
 fn parse_fnarg_to_intermediate(arg: &FnArg) -> Result<IntermediateResource, Error> {
@@ -179,16 +211,19 @@ fn parse_fnarg_to_intermediate(arg: &FnArg) -> Result<IntermediateResource, Erro
         FnArg::Inferred(inf) => {
             return Err(Error::MissingResourceId {
                 request_id: format!("{:?}", inf),
+                span: inf.span(),
             })
         }
         FnArg::SelfRef(_) | FnArg::SelfValue(_) => {
             return Err(Error::InvalidRequestId {
                 id: "self".to_string(),
+                span: arg.span(),
             })
         }
         FnArg::Ignored(_) => {
             return Err(Error::InvalidRequestId {
                 id: "_".to_string(),
+                span: arg.span(),
             })
         }
     };
@@ -199,6 +234,7 @@ fn parse_fnarg_to_intermediate(arg: &FnArg) -> Result<IntermediateResource, Erro
         } else {
             return Err(Error::InvalidRequestId {
                 id: format!("{:?}", request_pat),
+                span: request_pat.span(),
             });
         }
     };
@@ -214,6 +250,7 @@ fn parse_fnarg_to_intermediate(arg: &FnArg) -> Result<IntermediateResource, Erro
                         "{:?} was associated with an nonexistent resource name",
                         request_id
                     ),
+                    span: tp.span(),
                 })?
                 .into_value();
             if seg.arguments.is_empty() {
@@ -227,10 +264,14 @@ fn parse_fnarg_to_intermediate(arg: &FnArg) -> Result<IntermediateResource, Erro
                             "{:?} was associated with a resource with an empty resource kind",
                             request_id
                         ),
+                        span: abga.span(),
                     })?
                     .into_value();
                 if let GenericArgument::Type(Type::Path(res_kind_ty)) = gen_arg {
-                    let res_kind_seg = res_kind_ty.path.segments.last().ok_or_else(|| Error::InvalidResourceFormat {  msg: format!("{:?} was associated with a resource with a resource kind with a nonexistent name", request_id )})?.into_value();
+                    let res_kind_seg = res_kind_ty.path.segments.last().ok_or_else(|| Error::InvalidResourceFormat {
+                        msg: format!("{:?} was associated with a resource with a resource kind with a nonexistent name", request_id ),
+                        span: res_kind_ty.path.span(),
+                    })?.into_value();
                     (seg.ident.clone(), Some(res_kind_seg.ident.clone()))
                 } else {
                     return Err(Error::InvalidResourceFormat {
@@ -238,6 +279,7 @@ fn parse_fnarg_to_intermediate(arg: &FnArg) -> Result<IntermediateResource, Erro
                             "{:?} was associated with a complex invalid resource kind",
                             request_id
                         ),
+                        span: gen_arg.span(),
                     });
                 }
             } else {
@@ -246,6 +288,7 @@ fn parse_fnarg_to_intermediate(arg: &FnArg) -> Result<IntermediateResource, Erro
                         "{:?} was associated with a non-angle-bracketed resource kind",
                         request_id
                     ),
+                    span: seg.arguments.span(),
                 });
             }
         } else {
@@ -254,6 +297,7 @@ fn parse_fnarg_to_intermediate(arg: &FnArg) -> Result<IntermediateResource, Erro
                     "{:?} was not associated with a simple type-like resource id",
                     request_id
                 ),
+                span: resource_ty.span(),
             });
         }
     };
@@ -270,14 +314,20 @@ fn parse_fnarg_to_intermediate(arg: &FnArg) -> Result<IntermediateResource, Erro
     })
 }
 
-fn header_from_intermediate_resources(resources: &[IntermediateResource]) -> Result<Header, Error> {
+fn header_from_intermediate_resources(
+    resources: &[IntermediateResource],
+    all_resources_span: Span,
+) -> Result<Header, Error> {
     match resources.len() {
         0 => Err(Error::MissingRequiredResourceKind {
             msg: RESOURCE_TYPE_HINT_CSLOTS.to_string(),
+            span: all_resources_span,
         }),
         1 => Header::from_single_resource(&resources[0]),
         2 => Header::from_resource_pair(&resources[0], &resources[1]),
-        _ => Err(Error::TooManyResources),
+        _ => Err(Error::TooManyResources {
+            span: all_resources_span,
+        }),
     }
 }
 
@@ -302,7 +352,10 @@ fn parse_resource_kind(ident: Ident) -> Result<ResKind, Error> {
     match raw_kind.as_ref() {
         RESOURCE_TYPE_HINT_CSLOTS => Ok(ResKind::CNodeSlots),
         RESOURCE_TYPE_HINT_UNTYPED => Ok(ResKind::Untyped),
-        _ => Err(Error::InvalidResourceKind { found: raw_kind }),
+        _ => Err(Error::InvalidResourceKind {
+            found: raw_kind,
+            span: ident.span(),
+        }),
     }
 }
 
@@ -371,6 +424,7 @@ impl Header {
                         "The only resource declared was not the required kind, {}",
                         RESOURCE_TYPE_HINT_CSLOTS
                     ),
+                    span: first.request_id.span(),
                 })
             }
         };
@@ -412,11 +466,13 @@ impl Header {
         if cnode_slots.resource_id == untypeds.resource_id {
             return Err(Error::AmbiguousResourceId {
                 id: cnode_slots.resource_id.to_string(),
+                span: cnode_slots.resource_id.span(),
             });
         }
         if cnode_slots.request_id == untypeds.request_id {
             return Err(Error::AmbiguousRequestId {
                 id: cnode_slots.request_id.to_string(),
+                span: cnode_slots.request_id.span(),
             });
         }
 
@@ -424,11 +480,13 @@ impl Header {
         if !(cnode_slots.kind == None || cnode_slots.kind == Some(ResKind::CNodeSlots)) {
             return Err(Error::MissingRequiredResourceKind {
                 msg: RESOURCE_TYPE_HINT_CSLOTS.to_string(),
+                span: cnode_slots.request_id.span(),
             });
         };
         if !(untypeds.kind == None || untypeds.kind == Some(ResKind::Untyped)) {
             return Err(Error::MissingRequiredResourceKind {
                 msg: RESOURCE_TYPE_HINT_UNTYPED.to_string(),
+                span: untypeds.request_id.span(),
             });
         };
         Ok(Header {

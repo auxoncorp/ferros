@@ -1,154 +1,91 @@
-use selfe_sys::*;
-
 use typenum::*;
 
-use ferros::alloc::{self, micro_alloc, smart_alloc};
-use ferros::bootstrap::{root_cnode, BootInfo};
-use ferros::cap::{retype_cnode, role, CNodeRole};
-use ferros::userland::{Caller, Consumer1, Producer, QueueFullError, Responder, RetypeForSetup};
+use ferros::alloc::{smart_alloc, ut_buddy};
+use ferros::bootstrap::UserImage;
+use ferros::cap::*;
+use ferros::userland::{
+    fault_or_message_channel, Consumer1, FaultOrMessage, Producer, QueueFullError, RetypeForSetup,
+    Sender,
+};
 use ferros::vspace::{VSpace, VSpaceScratchSlice};
 
 use super::TopLevelError;
 
-pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
-    let BootInfo {
-        root_page_directory,
-        asid_control,
-        user_image,
-        root_tcb,
-        ..
-    } = BootInfo::wrap(&raw_boot_info);
-    let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
-    let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
-    let uts = alloc::ut_buddy(
-        allocator
-            .get_untyped::<U20>()
-            .expect("initial alloc failure"),
-    );
+type U33768 = Sum<U32768, U1000>;
+
+#[ferros_test::ferros_test]
+pub fn shared_page_queue(
+    local_slots: LocalCNodeSlots<U33768>,
+    local_ut: LocalCap<Untyped<U20>>,
+    asid_pool: LocalCap<ASIDPool<U2>>,
+    local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+    root_cnode: &LocalCap<LocalCNode>,
+    user_image: &UserImage<role::Local>,
+    tpa: &LocalCap<ThreadPriorityAuthority>,
+) -> Result<(), TopLevelError> {
+    let uts = ut_buddy(local_ut);
 
     smart_alloc!(|slots: local_slots, ut: uts| {
-        let (mut local_vspace_scratch, _root_page_directory) =
-            VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
-
-        let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (child_a_asid, asid_pool) = asid_pool.alloc();
         let (child_b_asid, _asid_pool) = asid_pool.alloc();
 
         let child_a_vspace = VSpace::new(ut, slots, child_a_asid, &user_image, &root_cnode)?;
         let child_b_vspace = VSpace::new(ut, slots, child_b_asid, &user_image, &root_cnode)?;
-    });
 
-    let (
-        child_params_a,
-        proc_cnode_local_a,
-        child_a_vspace,
-        child_fault_source_a,
-        child_params_b,
-        proc_cnode_local_b,
-        child_b_vspace,
-        child_fault_source_b,
-        local_slots,
-        uts,
-    ) = {
-        smart_alloc!(|slots: local_slots, ut: uts| {
-            let (producer_cnode, producer_slots) = retype_cnode::<U12>(ut, slots)?;
-            let (consumer_cnode, consumer_slots) = retype_cnode::<U12>(ut, slots)?;
+        let (consumer_cnode, consumer_slots) = retype_cnode::<U12>(ut, slots)?;
+        let (producer_cnode, producer_slots) = retype_cnode::<U12>(ut, slots)?;
 
-            let (slots_c, _consumer_slots) = consumer_slots.alloc();
-            let (consumer, _consumer_token, producer_setup, _waker_setup, consumer_vspace) =
-                Consumer1::new(
-                    ut,
-                    ut,
-                    child_a_vspace,
-                    &mut local_vspace_scratch,
-                    &root_cnode,
-                    slots,
-                    slots_c,
-                )?;
+        let (slots_c, consumer_slots) = consumer_slots.alloc();
+        let (consumer, _consumer_token, producer_setup, _waker_setup, consumer_vspace) =
+            Consumer1::new(
+                ut,
+                ut,
+                child_a_vspace,
+                local_vspace_scratch,
+                &root_cnode,
+                slots,
+                slots_c,
+            )?;
+        let (consumer_sender_slot, _consumer_slots) = consumer_slots.alloc();
+        let (consumer_fault_source, outcome_sender, handler) =
+            fault_or_message_channel(&root_cnode, ut, slots, consumer_sender_slot, slots)?;
 
-            let consumer_params = ConsumerParams::<role::Child> { consumer };
+        let consumer_params = ConsumerParams::<role::Child> {
+            consumer,
+            outcome_sender,
+        };
 
-            let (slots_p, _producer_slots) = producer_slots.alloc();
-            let (producer, producer_vspace) =
-                Producer::new(&producer_setup, slots_p, child_b_vspace, &root_cnode, slots)?;
+        let (slots_p, _producer_slots) = producer_slots.alloc();
+        let (producer, producer_vspace) =
+            Producer::new(&producer_setup, slots_p, child_b_vspace, &root_cnode, slots)?;
 
-            let producer_params = ProducerParams::<role::Child> { producer };
-        });
+        let producer_params = ProducerParams::<role::Child> { producer };
 
-        (
-            consumer_params,
-            consumer_cnode,
-            consumer_vspace,
-            None,
-            producer_params,
-            producer_cnode,
-            producer_vspace,
-            None,
-            local_slots,
-            uts,
-        )
-    };
-
-    smart_alloc!(|slots: local_slots, ut: uts| {
-        let (child_a_process, _) = child_a_vspace.prepare_thread(
+        let (child_a_process, _) = consumer_vspace.prepare_thread(
             child_proc_a,
-            child_params_a,
+            consumer_params,
             ut,
             slots,
-            &mut local_vspace_scratch,
+            local_vspace_scratch,
         )?;
-        child_a_process.start(
-            proc_cnode_local_a,
-            child_fault_source_a,
-            root_tcb.as_ref(),
-            255,
-        )?;
+        child_a_process.start(consumer_cnode, Some(consumer_fault_source), tpa, 255)?;
 
-        let (child_b_process, _) = child_b_vspace.prepare_thread(
+        let (child_b_process, _) = producer_vspace.prepare_thread(
             child_proc_b,
-            child_params_b,
+            producer_params,
             ut,
             slots,
-            &mut local_vspace_scratch,
+            local_vspace_scratch,
         )?;
-        child_b_process.start(
-            proc_cnode_local_b,
-            child_fault_source_b,
-            root_tcb.as_ref(),
-            255,
-        )?;
+        child_b_process.start(producer_cnode, None, tpa, 255)?;
     });
 
-    Ok(())
-}
-
-#[derive(Debug)]
-pub struct AdditionRequest {
-    a: u32,
-    b: u32,
-}
-
-#[derive(Debug)]
-pub struct AdditionResponse {
-    sum: u32,
-}
-
-#[derive(Debug)]
-pub struct CallerParams<Role: CNodeRole> {
-    pub caller: Caller<AdditionRequest, AdditionResponse, Role>,
-}
-
-impl RetypeForSetup for CallerParams<role::Local> {
-    type Output = CallerParams<role::Child>;
-}
-
-#[derive(Debug)]
-pub struct ResponderParams<Role: CNodeRole> {
-    pub responder: Responder<AdditionRequest, AdditionResponse, Role>,
-}
-
-impl RetypeForSetup for ResponderParams<role::Local> {
-    type Output = ResponderParams<role::Child>;
+    match handler.await_message()? {
+        FaultOrMessage::Message(true) => Ok(()),
+        _ => Err(TopLevelError::TestAssertionFailure(
+            "Child process should have reported success",
+        )),
+    }
 }
 
 #[derive(Debug)]
@@ -158,6 +95,7 @@ pub struct Xenon {
 
 pub struct ConsumerParams<Role: CNodeRole> {
     pub consumer: Consumer1<Role, Xenon, U100>,
+    pub outcome_sender: Sender<bool, Role>,
 }
 
 impl RetypeForSetup for ConsumerParams<role::Local> {
@@ -173,42 +111,40 @@ impl RetypeForSetup for ProducerParams<role::Local> {
 }
 
 pub extern "C" fn child_proc_a(p: ConsumerParams<role::Local>) {
-    debug_println!("Inside consumer");
+    let ConsumerParams {
+        consumer,
+        outcome_sender,
+    } = p;
     let initial_state = 0;
-    p.consumer.consume(
+    consumer.consume(
         initial_state,
         |state| {
             let fresh_state = state + 1;
-            debug_println!("Creating fresh state {} in the waker callback", fresh_state);
             fresh_state
         },
         |x, state| {
             let fresh_state = x.a + state;
-            debug_println!(
-                "Creating fresh state {} from {:?} and {} in the queue callback",
-                fresh_state,
-                x,
-                state
-            );
+            if fresh_state > 10_000 {
+                outcome_sender
+                    .blocking_send(&true)
+                    .expect("Failed to send test outcome");
+            }
             fresh_state
         },
     )
 }
 
 pub extern "C" fn child_proc_b(p: ProducerParams<role::Local>) {
-    debug_println!("Inside producer");
     for i in 0..256 {
         match p.producer.send(Xenon { a: i }) {
-            Ok(_) => {
-                debug_println!("The producer *thinks* it successfully sent {}", i);
-            }
-            Err(QueueFullError(x)) => {
-                debug_println!("Rejected sending {:?}", x);
+            Ok(_) => (),
+            Err(QueueFullError(_x)) => {
+                // Rejected sending this value, let's yield and let the consumer catch up
+                // Note that we do not attempt to resend the rejected value
                 unsafe {
-                    seL4_Yield();
+                    selfe_sys::seL4_Yield();
                 }
             }
         }
-        debug_println!("done producing!");
     }
 }
