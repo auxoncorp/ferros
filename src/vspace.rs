@@ -47,7 +47,7 @@ pub mod vspace_state {
 }
 
 /// A `Maps` implementor is a paging layer that maps granules of type
-/// `G`. The if this layer isn't present for the incoming address,
+/// `G`. If this layer isn't present for the incoming address,
 /// `MappingError::Overflow` should be returned, as this signals to
 /// the caller—the layer above—that it needs to create a new object at
 /// this layer and then attempt again to map the `item`.
