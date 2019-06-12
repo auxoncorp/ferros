@@ -10,9 +10,9 @@ use typenum::*;
 use crate::arch::cap::{page_state, Page};
 use crate::arch::PageBits;
 use crate::cap::{
-    role, CNode, CNodeRole, CNodeSlot, CNodeSlots, Cap, CapRange, CapType, ChildCNode,
-    ChildCNodeSlots, Delible, DirectRetype, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap,
-    Movable, PhantomCap, WCNodeSlots,
+    role, CNode, CNodeRole, CNodeSlot, CNodeSlots, CNodeSlotsError, Cap, CapRange, CapType,
+    ChildCNode, ChildCNodeSlots, Delible, DirectRetype, LocalCNode, LocalCNodeSlot,
+    LocalCNodeSlots, LocalCap, Movable, PhantomCap, WCNodeSlots,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
@@ -37,12 +37,30 @@ impl<BitSize: Unsigned, Kind: MemoryKind> CapType for Untyped<BitSize, Kind> {}
 
 impl CapType for WUntyped {}
 
-impl WUntyped {
-    pub(crate) fn retype<D: DirectRetype + CapType>(
+impl LocalCap<WUntyped> {
+    pub(crate) fn retype<D: CapType + PhantomCap + DirectRetype>(
         &mut self,
         slots: &mut WCNodeSlots,
-    ) -> Result<LocalCap<D>, SeL4Error> {
-        unimplemented!()
+    ) -> Result<LocalCap<D>, RetypeError> {
+        let slot_cptr = slots.alloc()?;
+        let err = unsafe {
+            seL4_Untyped_Retype(
+                self.cptr,         // _service
+                D::sel4_type_id(), // type
+                0,                 // size_bits
+                slots.cptr,        // root
+                0,                 // index
+                0,                 // depth
+                slot_cptr,         // offset
+                1,                 // num_objects
+            )
+        };
+
+        if err != 0 {
+            return Err(RetypeError::SeL4RetypeError(SeL4Error::UntypedRetype(err)));
+        }
+
+        Ok(Cap::wrap_cptr(slot_cptr))
     }
 }
 
@@ -94,11 +112,18 @@ pub enum RetypeError {
     BitSizeOverflow,
     NotBigEnough,
     SeL4RetypeError(SeL4Error),
+    CNodeSlotsError(CNodeSlotsError),
 }
 
 impl From<SeL4Error> for RetypeError {
     fn from(e: SeL4Error) -> RetypeError {
         RetypeError::SeL4RetypeError(e)
+    }
+}
+
+impl From<CNodeSlotsError> for RetypeError {
+    fn from(e: CNodeSlotsError) -> RetypeError {
+        RetypeError::CNodeSlotsError(e)
     }
 }
 
@@ -245,9 +270,13 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
     }
 
     /// weaken erases the type-level state-tracking (size).
-    pub fn weaken(self) -> WUntyped {
-        WUntyped {
-            size: BitSize::USIZE,
+    pub fn weaken(self) -> LocalCap<WUntyped> {
+        Cap {
+            cptr: self.cptr,
+            cap_data: WUntyped {
+                size: BitSize::USIZE,
+            },
+            _role: PhantomData,
         }
     }
 }

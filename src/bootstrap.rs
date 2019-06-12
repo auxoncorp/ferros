@@ -9,7 +9,7 @@ use crate::arch::cap::*;
 use crate::arch::*;
 use crate::cap::{
     role, CNode, CNodeRole, CNodeSlots, Cap, IRQControl, LocalCNode, LocalCNodeSlots, LocalCap,
-    ThreadControlBlock,
+    ThreadControlBlock, Untyped,
 };
 use crate::error::SeL4Error;
 use crate::pow::Pow;
@@ -76,7 +76,11 @@ pub struct BootInfo<ASIDControlFreePools: Unsigned> {
 }
 
 impl BootInfo<op!(ASIDPoolCount - U1)> {
-    pub fn wrap(bootinfo: &'static seL4_BootInfo) -> Self {
+    pub fn wrap<VSpaceUntypedSize: Unsigned, VSpaceSlotCount: Unsigned>(
+        bootinfo: &'static seL4_BootInfo,
+        root_vspace_ut: LocalCap<Untyped<VSpaceUntypedSize>>,
+        root_vspace_cslots: LocalCNodeSlots<VSpaceSlotCount>,
+    ) -> Self {
         let asid_control = Cap::wrap_cptr(seL4_CapASIDControl as usize);
 
         let user_image = UserImage {
@@ -91,12 +95,13 @@ impl BootInfo<op!(ASIDPoolCount - U1)> {
             root_vspace: VSpace::bootstrap(
                 seL4_CapInitThreadVSpace as usize,
                 init_vaddr,
-                seL4_CapInitThreadCNode as usize,
+                root_vspace_cslots.weaken(),
                 Cap {
                     cptr: seL4_CapInitThreadASIDPool as usize,
                     cap_data: AssignedASID { asid: 0 },
                     _role: PhantomData,
                 },
+                root_vspace_ut.weaken(),
             ),
             root_tcb: Cap::wrap_cptr(seL4_CapInitThreadTCB as usize),
             asid_control,

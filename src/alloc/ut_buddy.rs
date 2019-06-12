@@ -6,7 +6,9 @@ use selfe_sys::*;
 use typenum::*;
 
 use crate::arch::{MaxUntypedSize, MinUntypedSize};
-use crate::cap::{Cap, LocalCNodeSlot, LocalCNodeSlots, LocalCap, Untyped, WCNodeSlots, WUntyped};
+use crate::cap::{
+    Cap, LocalCNodeSlot, LocalCNodeSlots, LocalCap, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
+};
 use crate::error::SeL4Error;
 
 type UTPoolSlotsPerSize = U4;
@@ -177,6 +179,7 @@ pub fn weak_ut_buddy(ut: LocalCap<WUntyped>) -> WUTBuddy {
 
 /// The error returned when using the runtime-checked (weak)
 /// realization of a ut buddy.
+#[derive(Debug)]
 pub enum UTBuddyError {
     /// The requested size exceeds max untyped size for this
     /// architecture.
@@ -205,7 +208,7 @@ pub struct WUTBuddy {
 impl WUTBuddy {
     pub fn alloc(
         &mut self,
-        slots: WCNodeSlots,
+        slots: &mut WCNodeSlots,
         size: usize,
     ) -> Result<LocalCap<WUntyped>, UTBuddyError> {
         if size > MaxUntypedSize::USIZE {
@@ -214,8 +217,8 @@ impl WUTBuddy {
 
         let idx = size - MinUntypedSize::USIZE;
 
-        // In the strong case, `NumSplits` can be inferred, when
-        // invoking with runtime data, we must calculate this.
+        // In the strong case, `NumSplits` can be inferred, however
+        // with runtime data we must calculate this.
         let mut split_count = 0;
         let mut ut_big_enough = false;
         for i in idx + 1..MaxUntypedSize::USIZE {
@@ -234,11 +237,32 @@ impl WUTBuddy {
             return Err(UTBuddyError::CannotAllocateRequestedSize(size));
         }
 
+        let slot_count = split_count * 2;
         // We also need to confirm that we have enough slots.
-        if split_count * 2 > slots.cap_data.size {
+        if slot_count > slots.cap_data.size {
             return Err(UTBuddyError::NotEnoughSlots);
         }
-        let ut = alloc(&mut self.pool, slots.into_strong_iter(), size, split_count)?;
+
+        let slots_for_alloc_to_consume = Cap {
+            cptr: slots.cptr,
+            cap_data: WCNodeSlotsData {
+                offset: slots.cap_data.offset,
+                size: slot_count,
+            },
+            _role: PhantomData,
+        };
+
+        // account for the resources we've used on our borrowed set of
+        // slots.
+        slots.cap_data.offset = slots.cap_data.offset + slot_count;
+        slots.cap_data.size = slots.cap_data.size - slot_count;
+
+        let ut = alloc(
+            &mut self.pool,
+            slots_for_alloc_to_consume.into_strong_iter(),
+            size,
+            split_count,
+        )?;
         Ok(ut)
     }
 }
