@@ -89,7 +89,7 @@ impl ReadyProcess {
         tcb_ut: LocalCap<Untyped<<ThreadControlBlock as DirectRetype>::SizeBits>>,
         slots: LocalCNodeSlots<PrepareThreadCNodeSlots>,
         // TODO - CSpace and Fault Handler
-        priority_authority: &LocalCap<ThreadPriorityAuthority>,
+        priority_authority: Option<&LocalCap<ThreadPriorityAuthority>>,
         fault_source: Option<crate::userland::FaultSource<role::Child>>,
     ) -> Result<Self, ProcessSetupError> {
         // TODO - lift these checks to compile-time, as static assertions
@@ -164,9 +164,11 @@ impl ReadyProcess {
             }
 
             // TODO - priority management could be exposed once we plan on actually using it
-            let err = seL4_TCB_SetPriority(tcb.cptr, priority_authority.cptr, 255);
-            if err != 0 {
-                return Err(ProcessSetupError::SeL4Error(SeL4Error::TCBSetPriority(err)));
+            if let Some(prio_auth) = priority_authority {
+                let err = seL4_TCB_SetPriority(tcb.cptr, prio_auth.cptr, 255);
+                if err != 0 {
+                    return Err(ProcessSetupError::SeL4Error(SeL4Error::TCBSetPriority(err)));
+                }
             }
         }
         Ok(ReadyProcess { tcb })

@@ -485,7 +485,7 @@ impl VSpace<vspace_state::Imaged> {
         // Things relating to user image code
         code_image_config: ProcessCodeImageConfig,
         user_image: &UserImage<role::Local>,
-        _parent_vspace: &mut VSpace, // for temporary mapping for copying
+        // _parent_vspace: &mut VSpace, // for temporary mapping for copying
         parent_cnode: &LocalCap<LocalCNode>,
     ) -> Result<Self, VSpaceError> {
         let (code_slots, slots) = match slots.split(user_image.pages_count()) {

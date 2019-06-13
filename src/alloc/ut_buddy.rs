@@ -221,7 +221,7 @@ impl WUTBuddy {
         // with runtime data we must calculate this.
         let mut split_count = 0;
         let mut ut_big_enough = false;
-        for i in idx + 0..MaxUntypedSize::USIZE {
+        for i in idx..MaxUntypedSize::USIZE {
             if self.pool[i].len() == 0 {
                 split_count += 1;
             } else {

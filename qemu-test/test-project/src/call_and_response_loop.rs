@@ -2,11 +2,11 @@ use super::TopLevelError;
 use ferros::alloc::{smart_alloc, ut_buddy};
 use ferros::bootstrap::UserImage;
 use ferros::cap::{
-    retype_cnode, role, ASIDPool, CNodeRole, LocalCNode, LocalCNodeSlots, LocalCap,
+    retype, retype_cnode, role, ASIDPool, CNodeRole, LocalCNode, LocalCNodeSlots, LocalCap,
     ThreadPriorityAuthority, Untyped,
 };
 use ferros::userland::*;
-use ferros::vspace::{VSpace, VSpaceScratchSlice};
+use ferros::vspace::{ProcessCodeImageConfig, ScratchRegion, VSpace};
 use typenum::*;
 
 type U33768 = Sum<U32768, U1000>;
@@ -16,18 +16,46 @@ pub fn call_and_response_loop(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U2>>,
-    local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+    local_vspace_scratch: &mut ScratchRegion,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
 ) -> Result<(), TopLevelError> {
     let uts = ut_buddy(local_ut);
 
+    let (caller_ut_slot, local_slots) = local_slots.alloc();
+    let (caller_vspace_ut, uts) = uts.alloc(caller_ut_slot)?;
+
+    let (responder_ut_slot, local_slots) = local_slots.alloc();
+    let (responder_vspace_ut, uts) = uts.alloc(responder_ut_slot)?;
+
     smart_alloc!(|slots: local_slots, ut: uts| {
-        let (child_a_asid, asid_pool) = asid_pool.alloc();
-        let (child_b_asid, _asid_pool) = asid_pool.alloc();
-        let child_a_vspace = VSpace::new(ut, slots, child_a_asid, &user_image, &root_cnode)?;
-        let child_b_vspace = VSpace::new(ut, slots, child_b_asid, &user_image, &root_cnode)?;
+        let (caller_asid, asid_pool) = asid_pool.alloc();
+        let (responder_asid, _asid_pool) = asid_pool.alloc();
+        let caller_root = retype(ut, slots)?;
+        let caller_vspace_slots: LocalCNodeSlots<U256> = slots;
+        let caller_vspace = VSpace::new(
+            caller_root,
+            caller_asid,
+            caller_vspace_slots.weaken(),
+            caller_vspace_ut.weaken(),
+            ProcessCodeImageConfig::ReadOnly,
+            user_image,
+            root_cnode,
+        )?;
+
+        let responder_root = retype(ut, slots)?;
+        let responder_vspace_slots: LocalCNodeSlots<U256> = slots;
+        let responder_vspace = VSpace::new(
+            responder_root,
+            responder_asid,
+            responder_vspace_slots.weaken(),
+            responder_vspace_ut.weaken(),
+            ProcessCodeImageConfig::ReadOnly,
+            user_image,
+            root_cnode,
+        )?;
+
         let (caller_cnode, caller_slots) = retype_cnode::<U12>(ut, slots)?;
         let (responder_cnode, responder_slots) = retype_cnode::<U12>(ut, slots)?;
         let (slots_r, _responder_slots) = responder_slots.alloc();
@@ -45,23 +73,35 @@ pub fn call_and_response_loop(
 
         let responder_params = ResponderParams::<role::Child> { responder };
 
-        let (child_a_process, _) = child_a_vspace.prepare_thread(
-            child_proc_a,
+        let caller_process = ReadyProcess::new(
+            &mut caller_vspace,
+            caller_cnode,
+            local_vspace_scratch,
+            caller_proc,
             caller_params,
             ut,
-            slots,
-            local_vspace_scratch,
-        )?;
-        child_a_process.start(caller_cnode, Some(fault_source), tpa, 255)?;
-
-        let (child_b_process, _) = child_b_vspace.prepare_thread(
-            child_proc_b,
-            responder_params,
+            ut,
             ut,
             slots,
-            local_vspace_scratch,
+            None, // priority
+            None, // fault
         )?;
-        child_b_process.start(responder_cnode, None, tpa, 255)?;
+        caller_process.start()?;
+
+        let responder_process = ReadyProcess::new(
+            &mut responder_vspace,
+            responder_cnode,
+            local_vspace_scratch,
+            responder_proc,
+            responder_params,
+            ut,
+            ut,
+            ut,
+            slots,
+            None, // priority
+            None, // fault
+        )?;
+        responder_process.start()?;
     });
 
     match handler.await_message()? {
@@ -102,7 +142,7 @@ impl RetypeForSetup for ResponderParams<role::Local> {
     type Output = ResponderParams<role::Child>;
 }
 
-pub extern "C" fn child_proc_a(p: CallerParams<role::Local>) {
+pub extern "C" fn caller_proc(p: CallerParams<role::Local>) {
     let mut current_sum: u32 = 1;
     let caller = p.caller;
     let mut addition_request = AdditionRequest {
@@ -126,7 +166,7 @@ pub extern "C" fn child_proc_a(p: CallerParams<role::Local>) {
         .expect("could not send outcome");
 }
 
-pub extern "C" fn child_proc_b(p: ResponderParams<role::Local>) {
+pub extern "C" fn responder_proc(p: ResponderParams<role::Local>) {
     let initial_state: usize = 0;
     p.responder
         .reply_recv_with_state(initial_state, move |req, state| {
