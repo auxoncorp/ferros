@@ -116,35 +116,6 @@ where
     }
 }
 
-/// Never-to-be-exposed internal wrapper around a capability pointer (cptr)
-/// to a capability with the following characteristics:
-///   * It cannot be moved out of its slot, ever
-///   * The underlying capability kernel object cannot be deleted, ever
-///   * Its cptr can serve a purpose without access to any other runtime data about that particular capability
-///
-/// The point of this reference kind is to allow us to carefully pass around
-/// cptrs to kernel objects whose validity will not change even if their
-/// local Rust-representing instances are consumed, mutated, or dropped.
-///
-/// The absurdly long name is an intentional deterrent to the use of this type.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct ImmobileIndelibleInertCapabilityReference<CT: CapType> {
-    pub(crate) cptr: usize,
-    pub(crate) _cap_type: PhantomData<CT>,
-}
-
-impl<CT: CapType> ImmobileIndelibleInertCapabilityReference<CT> {
-    pub(crate) unsafe fn get_capability_pointer(&self) -> usize {
-        self.cptr
-    }
-    pub(crate) unsafe fn new(cptr: usize) -> Self {
-        ImmobileIndelibleInertCapabilityReference {
-            cptr: cptr,
-            _cap_type: PhantomData,
-        }
-    }
-}
-
 pub struct CapRange<CT: CapType + PhantomCap, Role: CNodeRole, Slots: Unsigned> {
     pub(crate) start_cptr: usize,
     _cap_type: PhantomData<CT>,

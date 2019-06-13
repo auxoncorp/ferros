@@ -1,9 +1,6 @@
 use core::marker::PhantomData;
-use core::ptr;
 
-use crate::arch::cap::{page_state, AssignedASID, Page, UnassignedASID};
 use crate::arch::{self, *};
-use crate::bootstrap::UserImage;
 use crate::cap::*;
 use crate::userland::rights::CapRights;
 use crate::vspace::*;
@@ -147,7 +144,7 @@ impl ReadyProcess {
         let ipc_buffer = vspace.map_given_page(ipc_buffer, CapRights::RW)?; // TODO - revisit - do we need RW?
 
         //// allocate the thread control block
-        let (tcb_slots, slots) = slots.alloc();
+        let (tcb_slots, _slots) = slots.alloc();
         let mut tcb = tcb_ut.retype(tcb_slots)?;
 
         tcb.configure(cspace, fault_source, &vspace, ipc_buffer)?;

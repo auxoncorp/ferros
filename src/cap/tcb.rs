@@ -3,9 +3,7 @@ use typenum::*;
 use selfe_sys::*;
 
 use crate::arch::cap::{page_state, Page};
-use crate::cap::{
-    role, CNodeRole, CapType, ChildCNode, CopyAliasable, DirectRetype, LocalCap, PhantomCap,
-};
+use crate::cap::{role, CapType, ChildCNode, CopyAliasable, DirectRetype, LocalCap, PhantomCap};
 use crate::error::SeL4Error;
 use crate::userland::FaultSource;
 use crate::vspace::VSpace;

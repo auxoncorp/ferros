@@ -6,7 +6,7 @@ use ferros::cap::{
     ASIDPool, LocalCNode, LocalCNodeSlots, LocalCap, ThreadPriorityAuthority, Untyped,
 };
 use ferros::test_support::TestOutcome;
-use ferros::vspace::VSpaceScratchSlice;
+use ferros::vspace::ScratchRegion;
 
 use ferros_test::{ferros_test, ferros_test_main};
 use typenum::*;
@@ -59,12 +59,12 @@ fn localcap_threadpriorityauthority_parameter(tpa: &LocalCap<ThreadPriorityAutho
 fn userimage_parameter(image: &UserImage<ferros::cap::role::Local>) {}
 
 #[ferros_test]
-fn vspacescratch_parameter(scratch: &mut VSpaceScratchSlice<ferros::cap::role::Local>) {}
+fn vspacescratch_parameter(scratch: &mut ScratchRegion) {}
 
 #[ferros_test]
 fn multiple_mixed_parameters(
     untyped: LocalCap<Untyped<U5>>,
-    scratch: &mut VSpaceScratchSlice<ferros::cap::role::Local>,
+    scratch: &mut ScratchRegion,
     slots: LocalCNodeSlots<U5>,
     image: &UserImage<ferros::cap::role::Local>,
     pool: LocalCap<ASIDPool<U1024>>,

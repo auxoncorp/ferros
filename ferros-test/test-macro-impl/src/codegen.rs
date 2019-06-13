@@ -240,9 +240,7 @@ fn run_test_decl() -> FnDecl {
         asid_pool:
             ferros::cap::LocalCap<ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>>
     ));
-    run_test_inputs.push(parse_quote!(
-        scratch: &mut ferros::vspace::VSpaceScratchSlice<ferros::cap::role::Local>
-    ));
+    run_test_inputs.push(parse_quote!(scratch: &mut ferros::vspace::ScratchRegion));
     run_test_inputs.push(parse_quote!(
         local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>
     ));
@@ -312,7 +310,7 @@ mod tests {
                     ferros::cap::Untyped<ferros::test_support::MaxTestUntypedSize>>,
                 asid_pool: ferros::cap::LocalCap<
                     ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>>,
-                scratch: &mut ferros::vspace::VSpaceScratchSlice<ferros::cap::role::Local>,
+                scratch: &mut ferros::vspace::ScratchRegion<'_, '_, ferros::userland::StackPageCount>,
                 local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
                 thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
                 user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>
@@ -370,7 +368,7 @@ mod tests {
                     ferros::cap::Untyped<ferros::test_support::MaxTestUntypedSize>>,
                 asid_pool: ferros::cap::LocalCap<
                     ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>>,
-                scratch: &mut ferros::vspace::VSpaceScratchSlice<ferros::cap::role::Local>,
+                scratch: &mut ferros::vspace::ScratchRegion<'_, '_, ferros::userland::StackPageCount>,
                 local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
                 thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
                 user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>

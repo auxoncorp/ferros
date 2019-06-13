@@ -25,8 +25,8 @@ include!(concat!(env!("OUT_DIR"), "/KERNEL_RETYPE_FAN_OUT_LIMIT"));
 
 #[derive(Debug)]
 pub struct Untyped<BitSize: Unsigned, Kind: MemoryKind = memory_kind::General> {
-    _bit_size: PhantomData<BitSize>,
-    _kind: PhantomData<Kind>,
+    pub(crate) _bit_size: PhantomData<BitSize>,
+    pub(crate) _kind: PhantomData<Kind>,
 }
 
 pub struct WUntyped {

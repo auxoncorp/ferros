@@ -57,7 +57,7 @@ pub fn execute_tests<'t, R: types::TestReporter>(
         slots,
         untyped,
         asid_pool,
-        scratch,
+        mut scratch,
         cnode,
         thread_authority,
         user_image,
@@ -70,7 +70,7 @@ pub fn execute_tests<'t, R: types::TestReporter>(
             untyped,
             asid_pool,
             |s, u, a| -> Result<(), SeL4Error> {
-                let (name, outcome) = t(s, u, a, scratch, cnode, thread_authority, user_image);
+                let (name, outcome) = t(s, u, a, &mut scratch, cnode, thread_authority, user_image);
                 reporter.report(name, outcome);
                 if outcome == types::TestOutcome::Success {
                     successes += 1;

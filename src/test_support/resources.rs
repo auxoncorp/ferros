@@ -10,7 +10,8 @@ pub struct Resources {
     pub(super) slots: LocalCNodeSlots<super::types::MaxTestCNodeSlots>,
     pub(super) untyped: LocalCap<Untyped<super::types::MaxTestUntypedSize>>,
     pub(super) asid_pool: LocalCap<ASIDPool<super::types::MaxTestASIDPoolSize>>,
-    pub(super) scratch: VSpaceScratchSlice<role::Local>,
+    pub(super) vspace: VSpace<vspace_state::Imaged>,
+    pub(super) reserved_for_scratch: ReservedRegion<crate::userland::process::StackPageCount>,
     pub(super) cnode: LocalCap<LocalCNode>,
     pub(super) thread_authority: LocalCap<ThreadPriorityAuthority>,
     pub(super) user_image: UserImage<role::Local>,
@@ -20,17 +21,20 @@ pub struct TestResourceRefs<'t> {
     pub(super) slots: &'t mut LocalCNodeSlots<super::types::MaxTestCNodeSlots>,
     pub(super) untyped: &'t mut LocalCap<Untyped<super::types::MaxTestUntypedSize>>,
     pub(super) asid_pool: &'t mut LocalCap<ASIDPool<super::types::MaxTestASIDPoolSize>>,
-    pub(super) scratch: &'t mut VSpaceScratchSlice<role::Local>,
+    pub(super) scratch: ScratchRegion<'t, 't, crate::userland::process::StackPageCount>,
     pub(super) cnode: &'t LocalCap<LocalCNode>,
     pub(super) thread_authority: &'t LocalCap<ThreadPriorityAuthority>,
     pub(super) user_image: &'t UserImage<role::Local>,
 }
+
+type PageBitsPlusOne = Sum<U1, <Page<page_state::Unmapped> as DirectRetype>::SizeBits>;
+
 impl Resources {
     pub fn with_debug_reporting(
         raw_boot_info: &'static seL4_BootInfo,
     ) -> Result<(Self, impl super::TestReporter), super::TestSetupError> {
         let BootInfo {
-            root_page_directory,
+            mut root_vspace,
             asid_control,
             user_image,
             root_tcb,
@@ -38,14 +42,28 @@ impl Resources {
         } = BootInfo::wrap(&raw_boot_info);
         let mut allocator = crate::alloc::micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
         let (cnode, local_slots) = root_cnode(&raw_boot_info);
-        let ut_for_scratch = allocator
-            .get_untyped::<<UnmappedPageTable as DirectRetype>::SizeBits>()
-            .ok_or_else(|| super::TestSetupError::InitialUntypedNotFound {
-                bit_size: <UnmappedPageTable as DirectRetype>::SizeBits::USIZE,
-            })?;
+        debug_println!("Made it past boot_info and root_cnode");
+
+        let (extra_scratch_slots, local_slots) = local_slots.alloc();
+        let ut_for_scratch = {
+            match allocator.get_untyped::<<Page<page_state::Unmapped> as DirectRetype>::SizeBits>()
+            {
+                Some(v) => v,
+                None => {
+                    let ut_plus_one =
+                        allocator.get_untyped::<PageBitsPlusOne>().ok_or_else(|| {
+                            super::TestSetupError::InitialUntypedNotFound {
+                                bit_size: PageBitsPlusOne::USIZE,
+                            }
+                        })?;
+                    let (ut_page, _) = ut_plus_one.split(extra_scratch_slots)?;
+                    ut_page
+                }
+            }
+        };
         let (scratch_slots, local_slots) = local_slots.alloc();
-        let (scratch, _root_page_directory) =
-            VSpaceScratchSlice::from_parts(scratch_slots, ut_for_scratch, root_page_directory)?;
+        let sacrificial_page = ut_for_scratch.retype(scratch_slots)?;
+        let reserved_for_scratch = root_vspace.reserve(sacrificial_page)?;
         let (asid_pool_slots, local_slots) = local_slots.alloc();
         let (extra_pool_slots, local_slots) = local_slots.alloc();
         let ut_for_asid_pool = {
@@ -72,7 +90,8 @@ impl Resources {
                         bit_size: super::types::MaxTestUntypedSize::USIZE,
                     })?,
                 asid_pool,
-                scratch,
+                vspace: root_vspace,
+                reserved_for_scratch,
                 cnode,
                 thread_authority: root_tcb.downgrade_to_thread_priority_authority(),
                 user_image,
@@ -86,7 +105,10 @@ impl Resources {
             slots: &mut self.slots,
             untyped: &mut self.untyped,
             asid_pool: &mut self.asid_pool,
-            scratch: &mut self.scratch,
+            scratch: self
+                .reserved_for_scratch
+                .as_scratch(&mut self.vspace)
+                .expect("Failed to use root VSpace as the VSpace reserved for scratch space."),
             cnode: &self.cnode,
             thread_authority: &self.thread_authority,
             user_image: &self.user_image,

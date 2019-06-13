@@ -797,12 +797,38 @@ where
     {
         let start_vaddr = self.reserved_region.vaddr;
 
-        let mut unmapped_region_copy: UnmappedMemoryRegion<SizeBits, shared_status::Exclusive> =
+        fn dummy_empty_slots() -> WCNodeSlots {
+            Cap {
+                cptr: core::usize::MAX,
+                _role: PhantomData,
+                cap_data: WCNodeSlotsData { offset: 0, size: 0 },
+            }
+        }
+        let unmapped_region_copy: UnmappedMemoryRegion<SizeBits, shared_status::Exclusive> =
             UnmappedMemoryRegion {
                 caps: CapRange::new(region.caps.start_cptr),
                 _size_bits: PhantomData,
                 _shared_status: PhantomData,
             };
+        let mut next_addr = start_vaddr;
+        for page in unmapped_region_copy.caps.iter() {
+            match self.vspace.layers.map_item(
+                &page,
+                next_addr,
+                &mut self.vspace.root,
+                CapRights::RW,
+                &mut WUntyped { size: 0 },
+                &mut dummy_empty_slots(),
+            ) {
+                Err(MappingError::PageMapFailure(e)) => return Err(VSpaceError::SeL4Error(e)),
+                Err(MappingError::IntermediateLayerFailure(e)) => {
+                    return Err(VSpaceError::SeL4Error(e));
+                }
+                Err(e) => return Err(VSpaceError::MappingError(e)),
+                Ok(_) => (),
+            };
+            next_addr += PageBytes::USIZE;
+        }
         // map the pages at our predetermined/pre-allocated vaddr range
         let mut mapped_region = MappedMemoryRegion {
             caps: MappedPageRange::new(
@@ -815,27 +841,6 @@ where
             _shared_status: PhantomData,
             vaddr: start_vaddr,
         };
-        let mut next_addr = start_vaddr;
-        for page in unmapped_region_copy.caps.iter() {
-            match self.vspace.layers.map_item(
-                &page,
-                next_addr,
-                &mut self.vspace.root,
-                CapRights::RW,
-                // TODO - pass in dummy instances here,
-                // because all intermediate objects should have been already created
-                &mut self.vspace.untyped,
-                &mut self.vspace.slots,
-            ) {
-                Err(MappingError::PageMapFailure(e)) => return Err(VSpaceError::SeL4Error(e)),
-                Err(MappingError::IntermediateLayerFailure(e)) => {
-                    return Err(VSpaceError::SeL4Error(e));
-                }
-                Err(e) => return Err(VSpaceError::MappingError(e)),
-                Ok(_) => (),
-            };
-            next_addr += PageBytes::USIZE;
-        }
         let res = f(&mut mapped_region);
         let _ = self.vspace.unmap_region(mapped_region)?;
         Ok(res)

@@ -5,7 +5,6 @@ use crate::bootstrap::*;
 use crate::cap::*;
 use crate::error::SeL4Error;
 use crate::pow::Pow;
-use crate::userland::*;
 use crate::vspace::*;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -21,7 +20,7 @@ pub type RunTest = Fn(
     LocalCNodeSlots<MaxTestCNodeSlots>,
     LocalCap<Untyped<MaxTestUntypedSize>>,
     LocalCap<ASIDPool<MaxTestASIDPoolSize>>,
-    &mut VSpaceScratchSlice<role::Local>,
+    &mut ScratchRegion<crate::userland::process::StackPageCount>,
     &LocalCap<LocalCNode>,
     &LocalCap<ThreadPriorityAuthority>,
     &UserImage<role::Local>,
@@ -38,6 +37,7 @@ pub enum TestSetupError {
     InitialUntypedNotFound { bit_size: usize },
     AllocError(AllocError),
     SeL4Error(SeL4Error),
+    VSpaceError(VSpaceError),
 }
 
 impl From<AllocError> for TestSetupError {
@@ -52,17 +52,8 @@ impl From<SeL4Error> for TestSetupError {
     }
 }
 
-#[derive(Debug)]
-pub struct GenericTestParams<Role: CNodeRole> {
-    slots: Cap<CNodeSlotsData<MaxTestCNodeSlots, Role>, Role>,
-    untyped: Cap<Untyped<MaxTestUntypedSize>, Role>,
-    asid_pool: Cap<ASIDPool<MaxTestASIDPoolSize>, Role>,
-    scratch: VSpaceScratchSlice<Role>,
-    cnode: Cap<CNode<Role>, Role>,
-    thread_authority: Cap<ThreadPriorityAuthority, Role>,
-    maybe_user_image: Option<UserImage<Role>>,
-}
-
-impl RetypeForSetup for GenericTestParams<role::Local> {
-    type Output = GenericTestParams<role::Child>;
+impl From<VSpaceError> for TestSetupError {
+    fn from(e: VSpaceError) -> Self {
+        TestSetupError::VSpaceError(e)
+    }
 }
