@@ -310,7 +310,7 @@ mod tests {
                     ferros::cap::Untyped<ferros::test_support::MaxTestUntypedSize>>,
                 asid_pool: ferros::cap::LocalCap<
                     ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>>,
-                scratch: &mut ferros::vspace::ScratchRegion<'_, '_, ferros::userland::StackPageCount>,
+                scratch: &mut ferros::vspace::ScratchRegion,
                 local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
                 thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
                 user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>
@@ -368,7 +368,7 @@ mod tests {
                     ferros::cap::Untyped<ferros::test_support::MaxTestUntypedSize>>,
                 asid_pool: ferros::cap::LocalCap<
                     ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>>,
-                scratch: &mut ferros::vspace::ScratchRegion<'_, '_, ferros::userland::StackPageCount>,
+                scratch: &mut ferros::vspace::ScratchRegion,
                 local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
                 thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
                 user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>
