@@ -9,14 +9,14 @@ use ferros::alloc::{smart_alloc, ut_buddy};
 use ferros::arch::fault::Fault;
 use ferros::bootstrap::UserImage;
 use ferros::cap::{
-    retype_cnode, role, ASIDPool, CNodeRole, LocalCNode, LocalCNodeSlots, LocalCap,
+    retype, retype_cnode, role, ASIDPool, CNodeRole, LocalCNode, LocalCNodeSlots, LocalCap,
     ThreadPriorityAuthority, Untyped,
 };
 use ferros::userland::{
-    fault_or_message_channel, setup_fault_endpoint_pair, FaultOrMessage, FaultSink, RetypeForSetup,
-    Sender,
+    fault_or_message_channel, setup_fault_endpoint_pair, FaultOrMessage, FaultSink, ReadyProcess,
+    RetypeForSetup, Sender,
 };
-use ferros::vspace::{VSpace, VSpaceScratchSlice};
+use ferros::vspace::{ProcessCodeImageConfig, ScratchRegion, VSpace};
 
 use super::TopLevelError;
 
@@ -27,7 +27,7 @@ pub fn fault_pair(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U2>>,
-    local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+    local_vspace_scratch: &mut ScratchRegion,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -36,13 +36,33 @@ pub fn fault_pair(
 
     smart_alloc!(|slots: local_slots, ut: uts| {
         let (mischief_maker_asid, asid_pool) = asid_pool.alloc();
-        let mischief_maker_vspace =
-            VSpace::new(ut, slots, mischief_maker_asid, &user_image, &root_cnode)?;
+        let mischief_maker_root = retype(ut, slots)?;
+        let mischief_maker_vspace_slots: LocalCNodeSlots<U256> = slots;
+        let mischief_maker_vspace_ut: LocalCap<Untyped<U12>> = ut;
+        let mischief_maker_vspace = VSpace::new(
+            mischief_maker_root,
+            mischief_maker_asid,
+            mischief_maker_vspace_slots.weaken(),
+            mischief_maker_vspace_ut.weaken(),
+            ProcessCodeImageConfig::ReadOnly,
+            user_image,
+            root_cnode,
+        )?;
         let (mischief_maker_cnode, mischief_maker_slots) = retype_cnode::<U12>(ut, slots)?;
 
         let (fault_handler_asid, _asid_pool) = asid_pool.alloc();
-        let fault_handler_vspace =
-            VSpace::new(ut, slots, fault_handler_asid, &user_image, &root_cnode)?;
+        let fault_handler_root = retype(ut, slots)?;
+        let fault_handler_vspace_slots: LocalCNodeSlots<U256> = slots;
+        let fault_handler_vspace_ut: LocalCap<Untyped<U12>> = ut;
+        let fault_handler_vspace = VSpace::new(
+            fault_handler_root,
+            fault_handler_asid,
+            fault_handler_vspace_slots.weaken(),
+            fault_handler_vspace_ut.weaken(),
+            ProcessCodeImageConfig::ReadOnly,
+            user_image,
+            root_cnode,
+        )?;
         let (fault_handler_cnode, fault_handler_slots) = retype_cnode::<U12>(ut, slots)?;
 
         let (slots_source, _mischief_maker_slots) = mischief_maker_slots.alloc();
@@ -60,30 +80,35 @@ pub fn fault_pair(
             outcome_sender,
         };
 
-        let (mischief_maker_process, _) = mischief_maker_vspace.prepare_thread(
+        let mischief_maker_process = ReadyProcess::new(
+            &mut mischief_maker_vspace,
+            mischief_maker_cnode,
+            local_vspace_scratch,
             mischief_maker_proc,
             mischief_maker_params,
             ut,
+            ut,
+            ut,
             slots,
-            local_vspace_scratch,
+            tpa,
+            None, // fault
         )?;
+        mischief_maker_process.start()?;
 
-        mischief_maker_process.start(mischief_maker_cnode, Some(fault_source), tpa, 255)?;
-
-        let (fault_handler_process, _) = fault_handler_vspace.prepare_thread(
+        let fault_handler_process = ReadyProcess::new(
+            &mut fault_handler_vspace,
+            fault_handler_cnode,
+            local_vspace_scratch,
             fault_handler_proc,
             fault_handler_params,
             ut,
+            ut,
+            ut,
             slots,
-            local_vspace_scratch,
-        )?;
-
-        fault_handler_process.start(
-            fault_handler_cnode,
-            Some(fault_source_for_the_handler),
             tpa,
-            255,
+            None, // fault
         )?;
+        fault_handler_process.start()?;
     });
 
     match handler.await_message()? {

@@ -201,6 +201,7 @@ impl From<SeL4Error> for UTBuddyError {
     }
 }
 
+#[derive(Debug)]
 pub struct WUTBuddy {
     pool: [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE],
 }

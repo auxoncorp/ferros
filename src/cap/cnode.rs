@@ -30,6 +30,7 @@ pub struct CNodeSlotsData<Size: Unsigned, Role: CNodeRole> {
 }
 
 /// Can only represent local CNode slots with capacity tracked at runtime
+#[derive(Debug)]
 pub struct WCNodeSlotsData {
     pub(crate) offset: usize,
     pub(crate) size: usize,
