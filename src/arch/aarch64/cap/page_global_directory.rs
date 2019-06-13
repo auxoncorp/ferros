@@ -38,8 +38,8 @@ impl Maps<PageUpperDirectory> for PageGlobalDirectory {
         match unsafe {
             seL4_ARM_PageUpperDirectory_Map(
                 upper_dir.cptr,
-                addr & GD_MASK,
                 root.cptr,
+                addr & GD_MASK,
                 seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
                     | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled,
             )

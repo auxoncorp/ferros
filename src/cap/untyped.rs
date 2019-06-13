@@ -43,6 +43,7 @@ impl LocalCap<WUntyped> {
         slots: &mut WCNodeSlots,
     ) -> Result<LocalCap<D>, RetypeError> {
         let slot_cptr = slots.alloc()?;
+        debug_println!("WUntyped::retype post slot alloc");
         let err = unsafe {
             seL4_Untyped_Retype(
                 self.cptr,         // _service

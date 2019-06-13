@@ -29,11 +29,16 @@ impl Maps<PageTable> for PageDirectory {
         Root: CapType,
         RootG: CapType,
     {
+        debug_println!(
+            "PageDirectory::map_granule for dir {:?} mapping table: {:?}",
+            self,
+            table
+        );
         match unsafe {
             seL4_ARM_PageTable_Map(
                 table.cptr,
-                addr & PD_MASK,
                 root.cptr,
+                addr & PD_MASK,
                 seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
                     | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled,
             )

@@ -2,19 +2,23 @@ use selfe_sys::*;
 
 use crate::cap::{CapType, CopyAliasable, DirectRetype, LocalCap, PhantomCap};
 
-pub trait PageState: private::SealedPageState {}
+pub trait PageState: core::fmt::Debug + private::SealedPageState {}
 
 pub mod page_state {
+    #[derive(Debug)]
     pub struct Mapped {
         pub(crate) vaddr: usize,
         pub(crate) asid: u32,
     }
     impl super::PageState for Mapped {}
 
+    #[derive(Debug)]
     pub struct Unmapped;
     impl super::PageState for Unmapped {}
 }
 
+// TODO - remove debug for security?
+#[derive(Debug)]
 pub struct Page<State: PageState> {
     pub(crate) state: State,
 }

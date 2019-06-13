@@ -27,8 +27,8 @@ impl Maps<Page<page_state::Unmapped>> for PageTable {
             match unsafe {
                 seL4_ARM_Page_Map(
                     page.cptr,
-                    addr,
                     root.cptr,
+                    addr,
                     seL4_CapRights_t::from(rights),
                     seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
                         | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled,

@@ -72,7 +72,9 @@ impl Resources {
         };
         let (scratch_slots, local_slots) = local_slots.alloc();
         let sacrificial_page = ut_for_scratch.retype(scratch_slots)?;
+        debug_println!("Just before reserve");
         let reserved_for_scratch = root_vspace.reserve(sacrificial_page)?;
+        debug_println!("Just after reserve");
         let (asid_pool_slots, local_slots) = local_slots.alloc();
         let (extra_pool_slots, local_slots) = local_slots.alloc();
         let ut_for_asid_pool = {

@@ -22,13 +22,21 @@ impl Maps<Page<page_state::Unmapped>> for PageTable {
         Root: Maps<RootG>,
         Root: CapType,
         RootG: CapType,
+        // TODO - CLEANUP,
+        Root: core::fmt::Debug,
     {
+        debug_println!(
+            "PageTable::map_granule for table: {:?} mapping page: {:?} with root: {:?}",
+            self,
+            page,
+            root
+        );
         if is_aligned(addr) {
             match unsafe {
                 seL4_ARM_Page_Map(
                     page.cptr,
-                    addr,
                     root.cptr,
+                    addr,
                     seL4_CapRights_t::from(rights),
                     seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
                         | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled,
@@ -44,6 +52,7 @@ impl Maps<Page<page_state::Unmapped>> for PageTable {
                 e => Err(MappingError::PageMapFailure(SeL4Error::PageMap(e))),
             }
         } else {
+            debug_println!("Not aligned");
             Err(MappingError::AddrNotPageAligned)
         }
     }

@@ -32,8 +32,8 @@ impl Maps<PageTable> for PageDirectory {
         match unsafe {
             seL4_ARM_PageTable_Map(
                 table.cptr,
-                addr & PD_MASK,
                 root.cptr,
+                addr & PD_MASK,
                 seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
                     | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled,
             )
