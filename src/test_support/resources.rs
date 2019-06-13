@@ -32,16 +32,25 @@ type PageBitsPlusOne = Sum<U1, <Page<page_state::Unmapped> as DirectRetype>::Siz
 impl Resources {
     pub fn with_debug_reporting(
         raw_boot_info: &'static seL4_BootInfo,
+        mut allocator: crate::alloc::micro_alloc::Allocator,
     ) -> Result<(Self, impl super::TestReporter), super::TestSetupError> {
+        let (cnode, local_slots) = root_cnode(&raw_boot_info);
+        // TODO - Refine sizes of VSpace untyped and slots
+        let (vspace_slots, local_slots): (crate::cap::LocalCNodeSlots<U4096>, _) =
+            local_slots.alloc();
         let BootInfo {
             mut root_vspace,
             asid_control,
             user_image,
             root_tcb,
             ..
-        } = BootInfo::wrap(&raw_boot_info);
-        let mut allocator = crate::alloc::micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
-        let (cnode, local_slots) = root_cnode(&raw_boot_info);
+        } = BootInfo::wrap(
+            &raw_boot_info,
+            allocator
+                .get_untyped::<U14>()
+                .ok_or_else(|| super::TestSetupError::InitialUntypedNotFound { bit_size: 14 })?,
+            vspace_slots,
+        );
         debug_println!("Made it past boot_info and root_cnode");
 
         let (extra_scratch_slots, local_slots) = local_slots.alloc();

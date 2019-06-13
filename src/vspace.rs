@@ -17,7 +17,7 @@ use crate::arch::{AddressSpace, PageBits, PageBytes, PagingRoot};
 use crate::bootstrap::UserImage;
 use crate::cap::{
     role, Cap, CapRange, CapType, DirectRetype, LocalCNode, LocalCNodeSlots, LocalCap, PhantomCap,
-    RetypeError, Untyped, WCNodeSlots, WUntyped,
+    RetypeError, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
@@ -812,6 +812,8 @@ where
         let start_vaddr = self.reserved_region.vaddr;
 
         fn dummy_empty_slots() -> WCNodeSlots {
+            // NB: Not happy with this fake cptr,
+            // at least we can expect it to blow up loudly
             Cap {
                 cptr: core::usize::MAX,
                 _role: PhantomData,
@@ -826,12 +828,12 @@ where
             };
         let mut next_addr = start_vaddr;
         for page in unmapped_region_copy.caps.iter() {
-            match self.vspace.layers.map_item(
+            match self.vspace.layers.map_layer(
                 &page,
                 next_addr,
                 &mut self.vspace.root,
                 CapRights::RW,
-                &mut WUntyped { size: 0 },
+                &mut WUTBuddy::empty(),
                 &mut dummy_empty_slots(),
             ) {
                 Err(MappingError::PageMapFailure(e)) => return Err(VSpaceError::SeL4Error(e)),

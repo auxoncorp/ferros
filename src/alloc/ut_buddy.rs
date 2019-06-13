@@ -265,6 +265,11 @@ impl WUTBuddy {
         )?;
         Ok(ut)
     }
+
+    pub(crate) fn empty() -> Self {
+        let pool = unsafe { make_pool() };
+        WUTBuddy { pool }
+    }
 }
 
 fn alloc(
