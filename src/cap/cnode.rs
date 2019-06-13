@@ -199,6 +199,11 @@ impl LocalCap<ChildCNode> {
     }
 }
 
+#[derive(Debug)]
+pub enum CNodeSlotsError {
+    NotEnoughSlots,
+}
+
 impl WCNodeSlots {
     // TODO - Cleanup? Remove if unused?
     /// Split the WCNodeSlots(original_size) into (WCNodeSlots(count), WCNodeSlots(original_size - count))
@@ -226,25 +231,15 @@ impl WCNodeSlots {
             Err(self)
         }
     }
-    // TODO - Cleanup? Remove if unused?
-    pub(crate) fn alloc(&mut self) -> usize {
-        let offset = self.cap_data.offset;
-        self.cap_data.offset += 1;
-        offset
-    }
-
-    // TODO - Cleanup? Remove if unused?
-    pub(crate) fn alloc_strong_slot(&mut self) -> LocalCNodeSlot {
-        let offset = self.cap_data.offset;
-        self.cap_data.offset += 1;
-        LocalCap {
-            cptr: self.cptr,
-            _role: PhantomData,
-            cap_data: CNodeSlotsData {
-                offset,
-                _size: PhantomData,
-                _role: PhantomData,
-            },
+    /// Peel off a single cptr from these slots. Advance the state.
+    pub(crate) fn alloc(&mut self) -> Result<usize, CNodeSlotsError> {
+        if self.cap_data.size >= 1 {
+            let offset = self.cap_data.offset;
+            self.cap_data.offset += 1;
+            self.cap_data.size -= 1;
+            Ok(offset)
+        } else {
+            Err(CNodeSlotsError::NotEnoughSlots)
         }
     }
 

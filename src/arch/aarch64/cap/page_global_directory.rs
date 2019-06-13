@@ -2,7 +2,7 @@ use selfe_sys::*;
 
 use typenum::Unsigned;
 
-use crate::cap::{CapType, DirectRetype, LocalCap, PhantomCap, WCNodeSlots, WUntyped};
+use crate::cap::{CapType, DirectRetype, LocalCap, PhantomCap};
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
 use crate::vspace::{MappingError, Maps};
@@ -23,14 +23,12 @@ const GD_MASK: usize = (((1 << PageGlobalDirIndexBits::USIZE) - 1)
 pub struct PageGlobalDirectory {}
 
 impl Maps<PageUpperDirectory> for PageGlobalDirectory {
-    fn map_item<RootG, Root>(
+    fn map_granule<RootG, Root>(
         &mut self,
         upper_dir: &LocalCap<PageUpperDirectory>,
         addr: usize,
         root: &mut LocalCap<Root>,
         _rights: CapRights,
-        _ut: &mut WUntyped,
-        _slots: &mut WCNodeSlots,
     ) -> Result<(), MappingError>
     where
         Root: Maps<RootG>,

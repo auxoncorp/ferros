@@ -6,7 +6,9 @@ use selfe_sys::*;
 use typenum::*;
 
 use crate::arch::{MaxUntypedSize, MinUntypedSize};
-use crate::cap::{Cap, LocalCNodeSlots, LocalCap, Untyped};
+use crate::cap::{
+    Cap, LocalCNodeSlot, LocalCNodeSlots, LocalCap, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
+};
 use crate::error::SeL4Error;
 
 type UTPoolSlotsPerSize = U4;
@@ -125,15 +127,7 @@ where
     Diff<BitSize, U4>: _OneHotUList,
     OneHotUList<Diff<BitSize, U4>>: UList,
 {
-    let mut pool = unsafe {
-        let mut pool: [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE] =
-            core::mem::uninitialized();
-        for p in pool.iter_mut() {
-            core::ptr::write(p, ArrayVec::default());
-        }
-        pool
-    };
-
+    let mut pool = unsafe { make_pool() };
     pool[BitSize::USIZE - MinUntypedSize::USIZE].push(ut.cptr);
 
     UTBuddy {
@@ -144,7 +138,7 @@ where
 
 impl<PoolSizes: UList> UTBuddy<PoolSizes> {
     pub fn alloc<BitSize: Unsigned, NumSplits: Unsigned>(
-        self,
+        mut self,
         slots: LocalCNodeSlots<Prod<NumSplits, U2>>,
     ) -> Result<
         (
@@ -160,52 +154,174 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
         PoolSizes: _TakeUntyped<Diff<BitSize, MinUntypedSize>, NumSplits = NumSplits>,
         TakeUntyped_ResultPoolSizes<PoolSizes, Diff<BitSize, MinUntypedSize>>: UList,
     {
-        // The index in the pool array where Untypeds of the requested size are stored.
-        let index = BitSize::USIZE - MinUntypedSize::USIZE;
-
-        let mut pool = self.pool;
-
-        // If there's no cptr of the requested size, make one by splitting the larger ones.
-        if pool[index].len() == 0 {
-            let split_start_index = index + NumSplits::USIZE;
-            for (i, slot) in (index..=split_start_index)
-                .rev()
-                .zip(slots.iter().step_by(2))
-            {
-                let cptr = pool[i].pop().unwrap();
-                let cptr_bitsize = i + MinUntypedSize::USIZE;
-
-                let (slot_cptr, slot_offset, _) = slot.elim();
-
-                let err = unsafe {
-                    seL4_Untyped_Retype(
-                        cptr,                                   // _service
-                        api_object_seL4_UntypedObject as usize, // type
-                        cptr_bitsize - 1,                       // size_bits
-                        slot_cptr,                              // root
-                        0,                                      // index
-                        0,                                      // depth
-                        slot_offset,                            // offset
-                        2,                                      // num_objects
-                    )
-                };
-                if err != 0 {
-                    return Err(SeL4Error::UntypedRetype(err));
-                }
-
-                pool[i - 1].push(slot_offset);
-                pool[i - 1].push(slot_offset + 1);
-            }
-        }
-
-        let cptr = pool[index].pop().unwrap();
-
+        let weak_ut = alloc(
+            &mut self.pool,
+            slots.iter(),
+            BitSize::USIZE,
+            NumSplits::USIZE,
+        )?;
         Ok((
-            Cap::wrap_cptr(cptr),
+            Cap::wrap_cptr(weak_ut.cptr),
             UTBuddy {
+                pool: self.pool,
                 _pool_sizes: PhantomData,
-                pool,
             },
         ))
     }
+}
+
+/// Make a weak ut buddy around a weak untyped.
+pub fn weak_ut_buddy(ut: LocalCap<WUntyped>) -> WUTBuddy {
+    let mut pool = unsafe { make_pool() };
+    pool[ut.cap_data.size - MinUntypedSize::USIZE].push(ut.cptr);
+    WUTBuddy { pool }
+}
+
+/// The error returned when using the runtime-checked (weak)
+/// realization of a ut buddy.
+#[derive(Debug)]
+pub enum UTBuddyError {
+    /// The requested size exceeds max untyped size for this
+    /// architecture.
+    RequestedSizeExceedsMax(usize),
+    /// There are not enough CNode slots to do the requisite
+    /// splitting.
+    NotEnoughSlots,
+    /// The wrapped untyped lacks the sufficient size to do this
+    /// allocation request.
+    CannotAllocateRequestedSize(usize),
+    /// We got an error from an seL4 syscall, namely the
+    /// `seL4_Untyped_Retype` call.
+    SeL4Error(SeL4Error),
+}
+
+impl From<SeL4Error> for UTBuddyError {
+    fn from(e: SeL4Error) -> Self {
+        UTBuddyError::SeL4Error(e)
+    }
+}
+
+pub struct WUTBuddy {
+    pool: [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE],
+}
+
+impl WUTBuddy {
+    pub fn alloc(
+        &mut self,
+        slots: &mut WCNodeSlots,
+        size: usize,
+    ) -> Result<LocalCap<WUntyped>, UTBuddyError> {
+        if size > MaxUntypedSize::USIZE {
+            return Err(UTBuddyError::RequestedSizeExceedsMax(size));
+        }
+
+        let idx = size - MinUntypedSize::USIZE;
+
+        // In the strong case, `NumSplits` can be inferred, however
+        // with runtime data we must calculate this.
+        let mut split_count = 0;
+        let mut ut_big_enough = false;
+        for i in idx + 1..MaxUntypedSize::USIZE {
+            if self.pool[i].len() == 0 {
+                split_count += 1;
+            } else {
+                ut_big_enough = true;
+                break;
+            }
+        }
+
+        // If on our travels through the pool we never encountered a
+        // pool slot which is /not/ empty, we cannot allocate the
+        // requested size—our wrapped untyped is too small :(
+        if !ut_big_enough {
+            return Err(UTBuddyError::CannotAllocateRequestedSize(size));
+        }
+
+        let slot_count = split_count * 2;
+        // We also need to confirm that we have enough slots.
+        if slot_count > slots.cap_data.size {
+            return Err(UTBuddyError::NotEnoughSlots);
+        }
+
+        let slots_for_alloc_to_consume = Cap {
+            cptr: slots.cptr,
+            cap_data: WCNodeSlotsData {
+                offset: slots.cap_data.offset,
+                size: slot_count,
+            },
+            _role: PhantomData,
+        };
+
+        // account for the resources we've used on our borrowed set of
+        // slots.
+        slots.cap_data.offset = slots.cap_data.offset + slot_count;
+        slots.cap_data.size = slots.cap_data.size - slot_count;
+
+        let ut = alloc(
+            &mut self.pool,
+            slots_for_alloc_to_consume.into_strong_iter(),
+            size,
+            split_count,
+        )?;
+        Ok(ut)
+    }
+}
+
+fn alloc(
+    pool: &mut [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE],
+    slots_iter: impl Iterator<Item = LocalCNodeSlot>,
+    size: usize,
+    split_count: usize,
+) -> Result<LocalCap<WUntyped>, SeL4Error> {
+    // The index in the pool array where Untypeds of the requested
+    // size are stored.
+    let index = size - MinUntypedSize::USIZE;
+
+    // If there's no cptr of the requested size, make one by splitting
+    // the larger ones.
+    if pool[index].len() == 0 {
+        let split_start_index = index + split_count;
+        for (i, slot) in (index..=split_start_index).rev().zip(slots_iter.step_by(2)) {
+            let cptr = pool[i].pop().unwrap();
+            let cptr_bitsize = i + MinUntypedSize::USIZE;
+
+            let (slot_cptr, slot_offset, _) = slot.elim();
+
+            let err = unsafe {
+                seL4_Untyped_Retype(
+                    cptr,                                   // _service
+                    api_object_seL4_UntypedObject as usize, // type
+                    cptr_bitsize - 1,                       // size_bits
+                    slot_cptr,                              // root
+                    0,                                      // index
+                    0,                                      // depth
+                    slot_offset,                            // offset
+                    2,                                      // num_objects
+                )
+            };
+            if err != 0 {
+                return Err(SeL4Error::UntypedRetype(err));
+            }
+
+            pool[i - 1].push(slot_offset);
+            pool[i - 1].push(slot_offset + 1);
+        }
+    }
+
+    let cptr = pool[index].pop().unwrap();
+
+    Ok(Cap {
+        cptr,
+        cap_data: WUntyped { size },
+        _role: PhantomData,
+    })
+}
+
+unsafe fn make_pool() -> [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE] {
+    let mut pool: [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE] =
+        core::mem::uninitialized();
+    for p in pool.iter_mut() {
+        core::ptr::write(p, ArrayVec::default());
+    }
+    pool
 }

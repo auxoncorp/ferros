@@ -2,7 +2,7 @@ use selfe_sys::*;
 
 use typenum::Unsigned;
 
-use crate::cap::{CapType, DirectRetype, LocalCap, PhantomCap, WCNodeSlots, WUntyped};
+use crate::cap::{CapType, DirectRetype, LocalCap, PhantomCap};
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
 use crate::vspace::{MappingError, Maps};
@@ -17,14 +17,12 @@ const PD_MASK: usize =
 pub struct PageDirectory {}
 
 impl Maps<PageTable> for PageDirectory {
-    fn map_item<RootG, Root>(
+    fn map_granule<RootG, Root>(
         &mut self,
         table: &LocalCap<PageTable>,
         addr: usize,
         root: &mut LocalCap<Root>,
         _rights: CapRights,
-        _ut: &mut WUntyped,
-        _slots: &mut WCNodeSlots,
     ) -> Result<(), MappingError>
     where
         Root: Maps<RootG>,

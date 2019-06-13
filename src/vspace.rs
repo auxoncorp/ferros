@@ -11,12 +11,13 @@ use typenum::*;
 
 use selfe_sys::*;
 
+use crate::alloc::ut_buddy::{self, UTBuddyError, WUTBuddy};
 use crate::arch::cap::{page_state, AssignedASID, Page, UnassignedASID};
 use crate::arch::{AddressSpace, PageBits, PageBytes, PagingRoot};
 use crate::bootstrap::UserImage;
 use crate::cap::{
     role, Cap, CapRange, CapType, DirectRetype, LocalCNode, LocalCNodeSlots, LocalCap, PhantomCap,
-    RetypeError, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
+    RetypeError, Untyped, WCNodeSlots, WUntyped,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
@@ -47,19 +48,17 @@ pub mod vspace_state {
 }
 
 /// A `Maps` implementor is a paging layer that maps granules of type
-/// `G`. The if this layer isn't present for the incoming address,
+/// `G`. If this layer isn't present for the incoming address,
 /// `MappingError::Overflow` should be returned, as this signals to
 /// the caller—the layer above—that it needs to create a new object at
 /// this layer and then attempt again to map the `item`.
 pub trait Maps<G: CapType> {
-    fn map_item<RootG: CapType, Root>(
+    fn map_granule<RootG: CapType, Root>(
         &mut self,
         item: &LocalCap<G>,
         addr: usize,
         root: &mut LocalCap<Root>,
         rights: CapRights,
-        ut: &mut WUntyped,
-        slots: &mut WCNodeSlots,
     ) -> Result<(), MappingError>
     where
         Root: Maps<RootG>,
@@ -83,11 +82,27 @@ pub enum MappingError {
     PageMapFailure(SeL4Error),
     /// A failure to map one of the intermediate layers.
     IntermediateLayerFailure(SeL4Error),
+    /// The error was specific the allocation of an untyped preceeding
+    /// a `seL4_Untyped_Retype` call to create a capability for an
+    /// intermediate layer.
+    UTBuddyError(UTBuddyError),
     /// The error was specific to retyping the untyped memory the
     /// layers thread through during their mapping. This likely
     /// signals that this VSpace is out of resources with which to
     /// convert to intermediate structures.
-    RetypingError,
+    RetypeError(RetypeError),
+}
+
+impl From<UTBuddyError> for MappingError {
+    fn from(e: UTBuddyError) -> Self {
+        MappingError::UTBuddyError(e)
+    }
+}
+
+impl From<RetypeError> for MappingError {
+    fn from(e: RetypeError) -> Self {
+        MappingError::RetypeError(e)
+    }
 }
 
 #[derive(Debug)]
@@ -122,20 +137,20 @@ impl From<SeL4Error> for VSpaceError {
 /// space structure.
 pub trait PagingLayer {
     /// The `Item` is the granule which this layer maps.
-    type Item: DirectRetype + CapType;
+    type Item: CapType + DirectRetype + PhantomCap;
 
     /// A function which attempts to map this layer's granule at the
     /// given address. If the error is a seL4 lookup error, then the
     /// implementor ought to return `MappingError::Overflow` to signal
     /// that mapping is needed at the layer above, otherwise the error
     /// is just bubbled up to the caller.
-    fn map_item<RootG: CapType, Root>(
+    fn map_layer<RootG: CapType, Root>(
         &mut self,
         item: &LocalCap<Self::Item>,
         addr: usize,
         root: &mut LocalCap<Root>,
         rights: CapRights,
-        ut: &mut WUntyped,
+        utb: &mut WUTBuddy,
         slots: &mut WCNodeSlots,
     ) -> Result<(), MappingError>
     where
@@ -156,24 +171,23 @@ where
 impl<G, L: Maps<G>> PagingLayer for PagingTop<G, L>
 where
     L: CapType,
-    G: DirectRetype,
-    G: CapType,
+    G: CapType + DirectRetype + PhantomCap,
 {
     type Item = G;
-    fn map_item<RootG: CapType, Root>(
+    fn map_layer<RootG: CapType, Root>(
         &mut self,
         item: &LocalCap<G>,
         addr: usize,
         root: &mut LocalCap<Root>,
         rights: CapRights,
-        ut: &mut WUntyped,
-        slots: &mut WCNodeSlots,
+        _utb: &mut WUTBuddy,
+        _slots: &mut WCNodeSlots,
     ) -> Result<(), MappingError>
     where
         Root: Maps<RootG>,
         Root: CapType,
     {
-        self.layer.map_item(item, addr, root, rights, ut, slots)
+        self.layer.map_granule(item, addr, root, rights)
     }
 }
 
@@ -188,33 +202,36 @@ pub struct PagingRec<G: CapType, L: Maps<G>, P: PagingLayer> {
 impl<G, L: Maps<G>, P: PagingLayer> PagingLayer for PagingRec<G, L, P>
 where
     L: CapType,
-    G: DirectRetype,
-    G: CapType,
+    G: CapType + DirectRetype + PhantomCap,
 {
     type Item = G;
-    fn map_item<RootG: CapType, Root>(
+    fn map_layer<RootG: CapType, Root>(
         &mut self,
         item: &LocalCap<G>,
         addr: usize,
         root: &mut LocalCap<Root>,
         rights: CapRights,
-        ut: &mut WUntyped,
+        utb: &mut WUTBuddy,
         mut slots: &mut WCNodeSlots,
     ) -> Result<(), MappingError>
     where
         Root: Maps<RootG>,
         Root: CapType,
     {
-        match self.layer.map_item(item, addr, root, rights, ut, slots) {
+        // Attempt to map this layer's granule.
+        match self.layer.map_granule(item, addr, root, rights) {
+            // if it fails with a lookup error, ask the next layer up
+            // to map a new instance at this layer.
             Err(MappingError::Overflow) => {
-                let next_item = match ut.retype::<P::Item>(&mut slots) {
-                    Ok(i) => i,
-                    Err(_) => return Err(MappingError::RetypingError),
-                };
+                let mut ut = utb.alloc(slots, <P::Item as DirectRetype>::SizeBits::USIZE)?;
+                let next_item = ut.retype::<P::Item>(&mut slots)?;
                 self.next
-                    .map_item(&next_item, addr, root, rights, ut, slots)?;
-                self.layer.map_item(item, addr, root, rights, ut, slots)
+                    .map_layer(&next_item, addr, root, rights, utb, slots)?;
+                // Then try again to map this layer.
+                self.layer.map_granule(item, addr, root, rights)
             }
+            // Any other result (success \/ other failure cases) can
+            // be returned as is.
             res => res,
         }
     }
@@ -387,7 +404,7 @@ pub struct VSpace<State: VSpaceState = vspace_state::Imaged> {
     next_addr: usize,
     /// The following two members are the resources used by the VSpace
     /// when building out intermediate layers.
-    untyped: WUntyped,
+    untyped: WUTBuddy,
     slots: WCNodeSlots,
     _state: PhantomData<State>,
 }
@@ -397,7 +414,7 @@ impl VSpace<vspace_state::Empty> {
         mut root_cap: LocalCap<PagingRoot>,
         asid: LocalCap<UnassignedASID>,
         slots: WCNodeSlots,
-        untyped: WUntyped,
+        untyped: LocalCap<WUntyped>,
     ) -> Result<Self, VSpaceError> {
         let assigned_asid = asid.assign(&mut root_cap)?;
         Ok(VSpace {
@@ -405,7 +422,7 @@ impl VSpace<vspace_state::Empty> {
             asid: assigned_asid,
             layers: AddressSpace::new(),
             next_addr: 0,
-            untyped,
+            untyped: ut_buddy::weak_ut_buddy(untyped),
             slots,
             _state: PhantomData,
         })
@@ -429,7 +446,7 @@ impl<S: VSpaceState> VSpace<S> {
         page: LocalCap<Page<page_state::Unmapped>>,
         rights: CapRights,
     ) -> Result<LocalCap<Page<page_state::Mapped>>, VSpaceError> {
-        match self.layers.map_item(
+        match self.layers.map_layer(
             &page,
             self.next_addr,
             &mut self.root,
@@ -464,7 +481,7 @@ impl VSpace<vspace_state::Imaged> {
         paging_root: LocalCap<PagingRoot>,
         asid: LocalCap<UnassignedASID>,
         slots: WCNodeSlots,
-        paging_untyped: WUntyped,
+        paging_untyped: LocalCap<WUntyped>,
         // Things relating to user image code
         code_image_config: ProcessCodeImageConfig,
         user_image: &UserImage<role::Local>,
@@ -507,8 +524,9 @@ impl VSpace<vspace_state::Imaged> {
     pub(crate) fn bootstrap(
         root_vspace_cptr: usize,
         next_addr: usize,
-        root_cnode_cptr: usize,
+        cslots: WCNodeSlots,
         asid: LocalCap<AssignedASID>,
+        ut: LocalCap<WUntyped>,
     ) -> Self {
         VSpace {
             layers: AddressSpace::new(),
@@ -517,12 +535,8 @@ impl VSpace<vspace_state::Imaged> {
                 cap_data: PagingRoot::phantom_instance(),
                 _role: PhantomData,
             },
-            untyped: WUntyped { size: 0 },
-            slots: Cap {
-                cptr: root_cnode_cptr,
-                cap_data: WCNodeSlotsData { offset: 0, size: 0 },
-                _role: PhantomData,
-            },
+            untyped: ut_buddy::weak_ut_buddy(ut),
+            slots: cslots,
             next_addr,
             asid,
             _state: PhantomData,

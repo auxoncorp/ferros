@@ -1,6 +1,6 @@
 use selfe_sys::*;
 
-use crate::cap::{CapType, DirectRetype, LocalCap, PhantomCap, WCNodeSlots, WUntyped};
+use crate::cap::{CapType, DirectRetype, LocalCap, PhantomCap};
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
 use crate::vspace::{MappingError, Maps};
@@ -11,14 +11,12 @@ use super::{page_state, Page};
 pub struct PageTable {}
 
 impl Maps<Page<page_state::Unmapped>> for PageTable {
-    fn map_item<RootG, Root>(
+    fn map_granule<RootG, Root>(
         &mut self,
         page: &LocalCap<Page<page_state::Unmapped>>,
         addr: usize,
         root: &mut LocalCap<Root>,
         rights: CapRights,
-        _ut: &mut WUntyped,
-        _slots: &mut WCNodeSlots,
     ) -> Result<(), MappingError>
     where
         Root: Maps<RootG>,
