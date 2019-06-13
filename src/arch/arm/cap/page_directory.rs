@@ -29,11 +29,6 @@ impl Maps<PageTable> for PageDirectory {
         Root: CapType,
         RootG: CapType,
     {
-        debug_println!(
-            "PageDirectory::map_granule for dir {:?} mapping table: {:?}",
-            self,
-            table
-        );
         match unsafe {
             seL4_ARM_PageTable_Map(
                 table.cptr,

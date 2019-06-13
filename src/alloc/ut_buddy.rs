@@ -211,19 +211,17 @@ impl WUTBuddy {
         slots: &mut WCNodeSlots,
         size: usize,
     ) -> Result<LocalCap<WUntyped>, UTBuddyError> {
-        debug_println!("WUTBuddy::alloc");
         if size > MaxUntypedSize::USIZE {
             return Err(UTBuddyError::RequestedSizeExceedsMax(size));
         }
 
         let idx = size - MinUntypedSize::USIZE;
 
-        debug_println!("WUTBuddy::alloc pre-loop");
         // In the strong case, `NumSplits` can be inferred, however
         // with runtime data we must calculate this.
         let mut split_count = 0;
         let mut ut_big_enough = false;
-        for i in idx + 1..MaxUntypedSize::USIZE {
+        for i in idx + 0..MaxUntypedSize::USIZE {
             if self.pool[i].len() == 0 {
                 split_count += 1;
             } else {

@@ -61,8 +61,6 @@ pub trait Maps<G: CapType> {
         rights: CapRights,
     ) -> Result<(), MappingError>
     where
-        // TODO - cleanup Debug
-        Root: core::fmt::Debug,
         Root: Maps<RootG>,
         Root: CapType;
 }
@@ -156,8 +154,6 @@ pub trait PagingLayer {
         slots: &mut WCNodeSlots,
     ) -> Result<(), MappingError>
     where
-        // TODO - Cleanup Debug
-        Root: core::fmt::Debug,
         Root: Maps<RootG>,
         Root: CapType;
 }
@@ -190,8 +186,6 @@ where
     where
         Root: Maps<RootG>,
         Root: CapType,
-        // TODO - Cleanup Debug
-        Root: core::fmt::Debug,
     {
         self.layer.map_granule(item, addr, root, rights)
     }
@@ -221,34 +215,24 @@ where
         mut slots: &mut WCNodeSlots,
     ) -> Result<(), MappingError>
     where
-        // TODO - Cleanup Debug
-        Root: core::fmt::Debug,
         Root: Maps<RootG>,
         Root: CapType,
     {
-        debug_println!("in map_layer about to map_granule");
         // Attempt to map this layer's granule.
         match self.layer.map_granule(item, addr, root, rights) {
             // if it fails with a lookup error, ask the next layer up
             // to map a new instance at this layer.
             Err(MappingError::Overflow) => {
-                debug_println!("in map_layer's Overflow case");
                 let mut ut = utb.alloc(slots, <P::Item as DirectRetype>::SizeBits::USIZE)?;
-                debug_println!("in map_layer's Overflow case, about to retype");
                 let next_item = ut.retype::<P::Item>(&mut slots)?;
-                debug_println!("in map_layer's Overflow case, about to map_layer");
                 self.next
                     .map_layer(&next_item, addr, root, rights, utb, slots)?;
-                debug_println!("in map_layer's Overflow case, about to map_granule");
                 // Then try again to map this layer.
                 self.layer.map_granule(item, addr, root, rights)
             }
             // Any other result (success \/ other failure cases) can
             // be returned as is.
-            res => {
-                debug_println!("in map_layer's non-overflow case");
-                res
-            }
+            res => res,
         }
     }
 }
@@ -462,10 +446,6 @@ impl<S: VSpaceState> VSpace<S> {
         page: LocalCap<Page<page_state::Unmapped>>,
         rights: CapRights,
     ) -> Result<LocalCap<Page<page_state::Mapped>>, VSpaceError> {
-        debug_println!(
-            "in map_given_page, for page: {:?}, about to map layer",
-            page
-        );
         match self.layers.map_layer(
             &page,
             self.next_addr,
@@ -755,16 +735,13 @@ where
         // Map (and then unmap) each page in the reserved range
         // in order to trigger the instantiation of the backing paging
         // structures.
-        for i in 0..PageCount::USIZE {
-            debug_println!("About to map given page {}", i);
+        for _ in 0..PageCount::USIZE {
             let mapped_page = vspace.map_given_page(unmapped_page, CapRights::RW)?;
             if let None = first_vaddr {
                 first_vaddr = Some(mapped_page.cap_data.state.vaddr);
             }
-            debug_println!("About to unmap given page {}", i);
             unmapped_page = vspace.unmap_page(mapped_page)?;
         }
-        debug_println!("After reserve page mappings");
         Ok(ReservedRegion {
             // Due to the type constraint that ensures PageCount > 0, this must be Some
             vaddr: first_vaddr.unwrap(),
@@ -828,7 +805,6 @@ where
         <SizeBits as Sub<PageBits>>::Output: _Pow,
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
         F: Fn(&mut MappedMemoryRegion<SizeBits, shared_status::Exclusive>) -> Out,
-        // TODO - SizeBits must fit into the available pages
         PageCount: IsGreaterOrEqual<NumPages<SizeBits>, Output = True>,
         PageCount: IsGreaterOrEqual<U1, Output = True>,
     {

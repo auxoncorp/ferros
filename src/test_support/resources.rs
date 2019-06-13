@@ -51,8 +51,6 @@ impl Resources {
                 .ok_or_else(|| super::TestSetupError::InitialUntypedNotFound { bit_size: 14 })?,
             vspace_slots,
         );
-        debug_println!("Made it past boot_info and root_cnode");
-
         let (extra_scratch_slots, local_slots) = local_slots.alloc();
         let ut_for_scratch = {
             match allocator.get_untyped::<<Page<page_state::Unmapped> as DirectRetype>::SizeBits>()
@@ -72,9 +70,7 @@ impl Resources {
         };
         let (scratch_slots, local_slots) = local_slots.alloc();
         let sacrificial_page = ut_for_scratch.retype(scratch_slots)?;
-        debug_println!("Just before reserve");
         let reserved_for_scratch = root_vspace.reserve(sacrificial_page)?;
-        debug_println!("Just after reserve");
         let (asid_pool_slots, local_slots) = local_slots.alloc();
         let (extra_pool_slots, local_slots) = local_slots.alloc();
         let ut_for_asid_pool = {
