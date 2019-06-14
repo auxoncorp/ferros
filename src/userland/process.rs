@@ -80,8 +80,6 @@ impl ReadyProcess {
     pub fn new<'a, 'b, T: RetypeForSetup>(
         vspace: &mut VSpace,
         cspace: LocalCap<ChildCNode>,
-        // TODO - provide a more limited view on the parent VSpace to avoid
-        // accidental mutation and to reduce parameter confusion
         parent_vspace_scratch: &mut ScratchRegion<'a, 'b, crate::userland::process::StackPageCount>,
         function_descriptor: extern "C" fn(T) -> (),
         process_parameter: SetupVer<T>,
@@ -89,7 +87,6 @@ impl ReadyProcess {
         ipc_buffer_ut: LocalCap<Untyped<PageBits>>,
         tcb_ut: LocalCap<Untyped<<ThreadControlBlock as DirectRetype>::SizeBits>>,
         slots: LocalCNodeSlots<PrepareThreadCNodeSlots>,
-        // TODO - CSpace and Fault Handler
         priority_authority: &LocalCap<ThreadPriorityAuthority>,
         fault_source: Option<crate::userland::FaultSource<role::Child>>,
     ) -> Result<Self, ProcessSetupError> {
@@ -108,8 +105,6 @@ impl ReadyProcess {
 
         // Carve off the stack_pages
         let (stack_slots, slots): (LocalCNodeSlots<StackPageCount>, _) = slots.alloc();
-        //let stack_pages: CapRange<UnmappedPage<memory_kind::General>, role::Local, StackPageCount> =
-        //    stack_pages_ut.retype_multi(stack_slots)?;
         let mut stack_pages = UnmappedMemoryRegion::new(stack_pages_ut, stack_slots)?;
 
         // map the child stack into local memory so we can copy the contents
@@ -117,7 +112,7 @@ impl ReadyProcess {
         let (mut registers, param_size_on_stack) = parent_vspace_scratch.temporarily_map_region(
             &mut stack_pages,
             |mapped_region| unsafe {
-                let stack_top = mapped_region.vaddr + mapped_region.size();
+                let stack_top = mapped_region.vaddr() + mapped_region.size();
                 setup_initial_stack_and_regs(
                     &process_parameter as *const SetupVer<T> as *const usize,
                     core::mem::size_of::<SetupVer<T>>(),
@@ -129,7 +124,7 @@ impl ReadyProcess {
         // Map the stack to the target address space
         let mapped_stack_pages = vspace.map_region(stack_pages, CapRights::RW)?;
         let stack_pointer =
-            mapped_stack_pages.vaddr + mapped_stack_pages.size() - param_size_on_stack;
+            mapped_stack_pages.vaddr() + mapped_stack_pages.size() - param_size_on_stack;
 
         registers.sp = stack_pointer;
         registers.pc = function_descriptor as usize;
@@ -143,7 +138,7 @@ impl ReadyProcess {
         // Allocate and map the ipc buffer
         let (ipc_slots, slots) = slots.alloc();
         let ipc_buffer = ipc_buffer_ut.retype(ipc_slots)?;
-        let ipc_buffer = vspace.map_given_page(ipc_buffer, CapRights::RW)?; // TODO - revisit - do we need RW?
+        let ipc_buffer = vspace.map_given_page(ipc_buffer, CapRights::RW)?;
 
         //// allocate the thread control block
         let (tcb_slots, _slots) = slots.alloc();

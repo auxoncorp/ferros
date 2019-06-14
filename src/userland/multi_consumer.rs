@@ -323,7 +323,7 @@ where
                 notification: self.notification,
                 queue_badge: fresh_queue_badge,
                 queue: QueueHandle {
-                    shared_queue: consumer_shared_region.vaddr,
+                    shared_queue: consumer_shared_region.vaddr(),
                     _role: PhantomData,
                     _t: PhantomData,
                     _queue_len: PhantomData,
@@ -423,7 +423,7 @@ where
                 queue_badge,
                 notification: consumer_notification,
                 queue: QueueHandle {
-                    shared_queue: consumer_shared_region.vaddr,
+                    shared_queue: consumer_shared_region.vaddr(),
                     _role: PhantomData,
                     _t: PhantomData,
                     _queue_len: PhantomData,
@@ -499,7 +499,7 @@ where
                     (
                         fresh_queue_badge,
                         QueueHandle {
-                            shared_queue: consumer_shared_region.vaddr,
+                            shared_queue: consumer_shared_region.vaddr(),
                             _role: PhantomData,
                             _t: PhantomData,
                             _queue_len: PhantomData,
@@ -600,7 +600,7 @@ where
                     (
                         fresh_queue_badge,
                         QueueHandle {
-                            shared_queue: consumer_shared_region.vaddr,
+                            shared_queue: consumer_shared_region.vaddr(),
                             _role: PhantomData,
                             _t: PhantomData,
                             _queue_len: PhantomData,
@@ -646,7 +646,7 @@ where
     let mut region = UnmappedMemoryRegion::new(shared_region_ut, slot)?;
     // Put some data in there. Specifically, an `ArrayQueue`.
     local_vspace_scratch.temporarily_map_region(&mut region, |mapped_region| unsafe {
-        let aq_ptr = core::mem::transmute::<usize, *mut ArrayQueue<T, QLen>>(mapped_region.vaddr);
+        let aq_ptr = core::mem::transmute::<usize, *mut ArrayQueue<T, QLen>>(mapped_region.vaddr());
         // Operate directly on a pointer to an uninitialized/zeroed pointer
         // in order to reduces odds of the full ArrayQueue instance
         // materializing all at once on the local stack (potentially blowing it)
@@ -1021,7 +1021,7 @@ where
         Ok(Producer {
             notification,
             queue: QueueHandle {
-                shared_queue: producer_shared_region.vaddr,
+                shared_queue: producer_shared_region.vaddr(),
                 _role: PhantomData,
                 _t: PhantomData,
                 _queue_len: PhantomData,

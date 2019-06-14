@@ -4,17 +4,16 @@ use typenum::*;
 
 use ferros::alloc::{self, micro_alloc, smart_alloc};
 use ferros::bootstrap::{root_cnode, BootInfo};
-use ferros::arch::cap::Page;
 use ferros::cap::{retype, retype_cnode, role, CNodeRole, LocalCap, LocalCNodeSlots, Untyped};
 use ferros::userland::{InterruptConsumer, RetypeForSetup, CapRights, ReadyProcess};
-use ferros::vspace::{VSpace, ProcessCodeImageConfig, ReservedRegion, ScratchRegion};
+use ferros::vspace::{VSpace, ProcessCodeImageConfig};
 
 use super::TopLevelError;
 
 const UART1_PADDR: usize = 0x02020000; //33685504
 const LARGE_DEVICE_REGION_PADDR: usize = 0x02000000; //33554432
 // relative offset from LARGE_DEVICE_REGION_PADDR: 131072 ( == 2097152 / 16 )
-type LARGE_DEVICE_REGION_SIZE = U21; // 2097152 bytes
+type LargeDeviceRegionSize = U21; // 2097152 bytes
 type Uart1IrqLine = U58;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
@@ -43,7 +42,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     // As of the recent changes in memory region mapping,
     // that section is part of a 21-bit untyped region we'll need to manually whittle down
     let device_untyped = allocator
-        .get_device_untyped::<U21>(LARGE_DEVICE_REGION_PADDR)
+        .get_device_untyped::<LargeDeviceRegionSize>(LARGE_DEVICE_REGION_PADDR)
         .expect("find uart1 device memory");
 
 

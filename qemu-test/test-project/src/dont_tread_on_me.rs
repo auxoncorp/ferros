@@ -19,11 +19,11 @@ use super::TopLevelError;
 type U42768 = Sum<U32768, U10000>;
 
 #[ferros_test::ferros_test]
-pub fn dont_tread_on_me(
+pub fn dont_tread_on_me<'a, 'b, 'c>(
     local_slots: LocalCNodeSlots<U42768>,
     local_ut: LocalCap<Untyped<U27>>,
     asid_pool: LocalCap<ASIDPool<U2>>,
-    local_vspace_scratch: &mut ScratchRegion,
+    local_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -39,10 +39,10 @@ pub fn dont_tread_on_me(
         let (proc2_asid, _asid_pool) = asid_pool.alloc();
 
         let proc1_root = retype(ut, slots)?;
-        let proc1_vspace_slots: LocalCNodeSlots<U256> = slots;
+        let proc1_vspace_slots: LocalCNodeSlots<U4096> = slots;
         let proc1_vspace_ut: LocalCap<Untyped<U12>> = ut;
 
-        let proc1_vspace = VSpace::new(
+        let mut proc1_vspace = VSpace::new(
             proc1_root,
             proc1_asid,
             proc1_vspace_slots.weaken(),
@@ -52,18 +52,18 @@ pub fn dont_tread_on_me(
             root_cnode,
         )?;
 
-        let proc2_root = retype(ut, slots)?;
-        let proc2_vspace_slots: LocalCNodeSlots<U256> = slots;
+        let proc2_vspace_slots: LocalCNodeSlots<ferros::arch::CodePageCount> = slots;
         let proc2_vspace_ut: LocalCap<Untyped<U12>> = ut;
 
-        // this is not going to work until we can infer the type for ut.
-        let proc2_vspace = VSpace::new(
-            proc2_root,
+        let mut proc2_vspace = VSpace::new(
+            retype(ut, slots)?,
             proc2_asid,
             proc2_vspace_slots.weaken(),
             proc2_vspace_ut.weaken(),
             ProcessCodeImageConfig::ReadWritable {
-                untyped: ut.weaken(),
+                parent_vspace_scratch: local_vspace_scratch,
+                code_pages_ut: ut,
+                code_pages_slots: slots,
             },
             user_image,
             root_cnode,

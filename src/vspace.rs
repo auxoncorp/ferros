@@ -13,7 +13,7 @@ use selfe_sys::*;
 
 use crate::alloc::ut_buddy::{self, UTBuddyError, WUTBuddy};
 use crate::arch::cap::{page_state, AssignedASID, Page, UnassignedASID};
-use crate::arch::{AddressSpace, PageBits, PageBytes, PagingRoot};
+use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot};
 use crate::bootstrap::UserImage;
 use crate::cap::{
     role, Cap, CapRange, CapType, DirectRetype, LocalCNode, LocalCNodeSlots, LocalCap, PhantomCap,
@@ -257,6 +257,17 @@ where
     _shared_status: PhantomData<SS>,
 }
 
+impl LocalCap<Page<page_state::Unmapped>> {
+    pub(crate) fn to_region(self) -> UnmappedMemoryRegion<PageBits, shared_status::Exclusive> {
+        let caps: CapRange<Page<page_state::Unmapped>, role::Local, U1> = CapRange::new(self.cptr);
+        UnmappedMemoryRegion {
+            caps,
+            _size_bits: PhantomData,
+            _shared_status: PhantomData,
+        }
+    }
+}
+
 impl<SizeBits: Unsigned, SS: SharedStatus> UnmappedMemoryRegion<SizeBits, SS>
 where
     SizeBits: IsGreaterOrEqual<PageBits>,
@@ -292,8 +303,21 @@ where
         })
     }
 
+    pub(crate) fn to_page(self) -> LocalCap<Page<page_state::Unmapped>>
+    where
+        SizeBits: IsEqual<PageBits, Output = True>,
+    {
+        Cap {
+            cptr: self.caps.start_cptr,
+            cap_data: Page {
+                state: page_state::Unmapped {},
+            },
+            _role: PhantomData,
+        }
+    }
+
     pub(crate) fn size(&self) -> usize {
-        self.caps.len() * PageBytes::USIZE
+        Self::SIZE_BYTES
     }
 
     /// A shared region of memory can be duplicated. When it is
@@ -358,7 +382,7 @@ where
     <SizeBits as Sub<PageBits>>::Output: _Pow,
     Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
 {
-    pub vaddr: usize,
+    vaddr: usize,
     caps: MappedPageRange<NumPages<SizeBits>>,
     asid: u32,
     _size_bits: PhantomData<SizeBits>,
@@ -376,15 +400,18 @@ where
     pub(crate) fn size(&self) -> usize {
         self.caps.size()
     }
+    pub(crate) fn vaddr(&self) -> usize {
+        self.vaddr
+    }
 }
 
-pub enum ProcessCodeImageConfig {
+pub enum ProcessCodeImageConfig<'a, 'b, 'c> {
     ReadOnly,
     /// Use when you need to be able to write to statics in the child process
     ReadWritable {
-        /// Used to back the creation of code page capability copies
-        /// in order to avoid allowing aliased writes to the source code image
-        untyped: LocalCap<WUntyped>,
+        parent_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
+        code_pages_ut: LocalCap<Untyped<crate::arch::TotalCodeSizeBits>>,
+        code_pages_slots: LocalCNodeSlots<crate::arch::CodePageCount>,
     },
 }
 
@@ -503,13 +530,52 @@ impl VSpace<vspace_state::Imaged> {
             ProcessCodeImageConfig::ReadOnly => {
                 for (page_cap, slot) in user_image.pages_iter().zip(code_slots.into_strong_iter()) {
                     let copied_page_cap = page_cap.copy(&parent_cnode, slot, CapRights::R)?;
-                    // Use map_page_direct instead of a VSpace so we don't have to keep
-                    // track of bulk allocations which cross page table boundaries at
-                    // the type level.
                     let _ = vspace.map_given_page(copied_page_cap, CapRights::R)?;
                 }
             }
-            ProcessCodeImageConfig::ReadWritable { .. } => unimplemented!(),
+            ProcessCodeImageConfig::ReadWritable {
+                mut parent_vspace_scratch,
+                code_pages_ut,
+                code_pages_slots,
+            } => {
+                // First, retype the untyped into `CodePageCount`
+                // pages.
+                // TODO - consider whether we should slice the UT/Slots resources needed here
+                // off of the weak runtime resources made available to this VSpace
+                let fresh_pages: CapRange<
+                    Page<page_state::Unmapped>,
+                    role::Local,
+                    arch::CodePageCount,
+                > = code_pages_ut.retype_multi(code_pages_slots)?;
+                // Then, zip up the pages with the user image pages
+                for (ui_page, fresh_page) in user_image.pages_iter().zip(fresh_pages.iter()) {
+                    // Temporarily map the new page and copy the data
+                    // from `user_image` to the new page.
+                    let mut unmapped_region = fresh_page.to_region();
+                    let _ = parent_vspace_scratch.temporarily_map_region::<PageBits, _, _>(
+                        &mut unmapped_region,
+                        |temp_mapped_region| {
+                            unsafe {
+                                *(core::mem::transmute::<usize, *mut [usize; arch::WORDS_PER_PAGE]>(
+                                    temp_mapped_region.vaddr(),
+                                )) = *(core::mem::transmute::<
+                                    usize,
+                                    *const [usize; arch::WORDS_PER_PAGE],
+                                >(
+                                    ui_page.cap_data.state.vaddr
+                                ))
+                            };
+                        },
+                    )?;
+                    // Finally, map that page into the target vspace
+                    // TODO - do we need to manually pipe through a vaddr,
+                    // or can we trust that setting the starting next_addr above
+                    // combined with the user_image pages iterator will produce
+                    // the right ordering of values?
+                    let mapped_page =
+                        vspace.map_given_page(unmapped_region.to_page(), CapRights::RW)?;
+                }
+            }
         }
 
         Ok(VSpace {

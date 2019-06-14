@@ -94,7 +94,7 @@ pub mod sync {
             inner: SyncExtendedIpcPair {
                 request_ready: caller_request_ready,
                 response_ready: caller_response_ready,
-                shared_page_address: caller_shared_region.vaddr,
+                shared_page_address: caller_shared_region.vaddr(),
                 _req: PhantomData,
                 _rsp: PhantomData,
                 _role: PhantomData,
@@ -121,7 +121,7 @@ pub mod sync {
             inner: SyncExtendedIpcPair {
                 request_ready: responder_request_ready,
                 response_ready: responder_response_ready,
-                shared_page_address: responder_shared_region.vaddr,
+                shared_page_address: responder_shared_region.vaddr(),
                 _req: PhantomData,
                 _rsp: PhantomData,
                 _role: PhantomData,
