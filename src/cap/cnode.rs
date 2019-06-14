@@ -205,10 +205,10 @@ pub enum CNodeSlotsError {
 }
 
 impl WCNodeSlots {
-    // TODO - Cleanup? Remove if unused?
     /// Split the WCNodeSlots(original_size) into (WCNodeSlots(count), WCNodeSlots(original_size - count))
     pub(crate) fn split(self, count: usize) -> Result<(WCNodeSlots, WCNodeSlots), WCNodeSlots> {
-        if self.cap_data.size < count {
+        let original_size = self.cap_data.size;
+        if original_size >= count {
             Ok((
                 Cap {
                     cptr: self.cptr,
@@ -222,8 +222,12 @@ impl WCNodeSlots {
                     cptr: self.cptr,
                     _role: PhantomData,
                     cap_data: WCNodeSlotsData {
-                        offset: self.cap_data.offset + count,
-                        size: self.cap_data.size - count,
+                        offset: self
+                            .cap_data
+                            .offset
+                            .checked_add(count)
+                            .ok_or_else(|| self)?,
+                        size: original_size - count, // Can elide checking due to comparison above
                     },
                 },
             ))

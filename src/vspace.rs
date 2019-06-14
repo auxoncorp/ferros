@@ -439,9 +439,9 @@ impl<S: VSpaceState> VSpace<S> {
     /// Note: Generally, we should be operating on regions, but in the
     /// case of the system call for configuring a TCB, a mapped page's
     /// vaddr and its cap must be provided. To obfuscate these behind
-    /// a region seems unnecessary. Therefore we provide a crate-only
+    /// a region seems unnecessary. Therefore we provide a
     /// method to talk about mapping only a page.
-    pub(crate) fn map_given_page(
+    pub fn map_given_page(
         &mut self,
         page: LocalCap<Page<page_state::Unmapped>>,
         rights: CapRights,
@@ -485,7 +485,6 @@ impl VSpace<vspace_state::Imaged> {
         // Things relating to user image code
         code_image_config: ProcessCodeImageConfig,
         user_image: &UserImage<role::Local>,
-        // _parent_vspace: &mut VSpace, // for temporary mapping for copying
         parent_cnode: &LocalCap<LocalCNode>,
     ) -> Result<Self, VSpaceError> {
         let (code_slots, slots) = match slots.split(user_image.pages_count()) {
@@ -496,6 +495,10 @@ impl VSpace<vspace_state::Imaged> {
             VSpace::<vspace_state::Empty>::new(paging_root, asid, slots, paging_untyped)?;
 
         // Map the code image into the process VSpace
+        // NB: For now, we make use of a constant program start address, but we expect
+        // this to become dynamic as application framework based inspection
+        // and dynamic representation of the code images advances.
+        vspace.next_addr = crate::arch::ProgramStart::USIZE;
         match code_image_config {
             ProcessCodeImageConfig::ReadOnly => {
                 for (page_cap, slot) in user_image.pages_iter().zip(code_slots.into_strong_iter()) {

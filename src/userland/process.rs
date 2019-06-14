@@ -52,6 +52,7 @@ pub struct ReadyProcess {
     tcb: LocalCap<ThreadControlBlock>,
 }
 
+#[derive(Debug)]
 pub enum ProcessSetupError {
     ProcessParameterTooBigForStack,
     ProcessParameterHandoffSizeMismatch,
@@ -116,10 +117,11 @@ impl ReadyProcess {
         let (mut registers, param_size_on_stack) = parent_vspace_scratch.temporarily_map_region(
             &mut stack_pages,
             |mapped_region| unsafe {
+                let stack_top = mapped_region.vaddr + mapped_region.size();
                 setup_initial_stack_and_regs(
                     &process_parameter as *const SetupVer<T> as *const usize,
                     core::mem::size_of::<SetupVer<T>>(),
-                    (mapped_region.vaddr + mapped_region.size()) as *mut usize,
+                    stack_top as *mut usize,
                 )
             },
         )?;
