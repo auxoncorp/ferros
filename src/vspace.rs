@@ -534,7 +534,7 @@ impl VSpace<vspace_state::Imaged> {
                 }
             }
             ProcessCodeImageConfig::ReadWritable {
-                mut parent_vspace_scratch,
+                parent_vspace_scratch,
                 code_pages_ut,
                 code_pages_slots,
             } => {
@@ -572,7 +572,7 @@ impl VSpace<vspace_state::Imaged> {
                     // or can we trust that setting the starting next_addr above
                     // combined with the user_image pages iterator will produce
                     // the right ordering of values?
-                    let mapped_page =
+                    let _mapped_page =
                         vspace.map_given_page(unmapped_region.to_page(), CapRights::RW)?;
                 }
             }

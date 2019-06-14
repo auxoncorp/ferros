@@ -63,7 +63,7 @@ pub fn over_register_size_params<'a, 'b, 'c>(
             ut,
             slots,
             tpa,
-            None, // fault
+            Some(fault_source),
         )?;
     });
 
