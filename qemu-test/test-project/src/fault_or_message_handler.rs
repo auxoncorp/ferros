@@ -16,7 +16,7 @@ pub fn fault_or_message_handler(
     mut outer_slots: LocalCNodeSlots<U32768>,
     mut outer_ut: LocalCap<Untyped<U21>>,
     mut asid_pool: LocalCap<ASIDPool<U1024>>,
-    local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+    local_vspace_scratch: &mut ScratchRegion,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -55,18 +55,36 @@ pub fn fault_or_message_handler(
                     };
 
                     let (child_asid, _asid_pool) = inner_asid_pool.alloc();
-                    let child_vspace =
-                        VSpace::new(ut, slots, child_asid, &user_image, &root_cnode)?;
 
-                    let (child_process, _) = child_vspace.prepare_thread(
+                    let child_root = retype(ut, slots)?;
+                    let child_vspace_slots: LocalCNodeSlots<U256> = slots;
+                    let child_vspace_ut: LocalCap<Untyped<U12>> = ut;
+
+                    let child_vspace = VSpace::new(
+                        child_root,
+                        child_asid,
+                        child_vspace_slots.weaken(),
+                        child_vspace_ut.weaken(),
+                        ProcessCodeImageConfig::ReadOnly,
+                        user_image,
+                        root_cnode,
+                    )?;
+
+                    let child_process = ReadyProcess::new(
+                        &mut child_vspace,
+                        child_cnode,
+                        local_vspace_scratch,
                         proc_main,
                         params,
                         ut,
+                        ut,
+                        ut,
                         slots,
-                        local_vspace_scratch,
+                        tpa,
+                        None, // fault
                     )?;
                 });
-                child_process.start(child_cnode, Some(source), tpa, 255)?;
+                child_process.start()?;
 
                 match handler.await_message()? {
                     FaultOrMessage::Fault(_) => {

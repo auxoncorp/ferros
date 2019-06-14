@@ -4,9 +4,9 @@ use ferros::alloc::{smart_alloc, ut_buddy};
 use ferros::bootstrap::UserImage;
 use ferros::cap::*;
 use ferros::userland::{
-    fault_or_message_channel, CapRights, FaultOrMessage, RetypeForSetup, Sender,
+    fault_or_message_channel, CapRights, FaultOrMessage, ReadyProcess, RetypeForSetup, Sender,
 };
-use ferros::vspace::{NewVSpaceCNodeSlots, VSpace, VSpaceScratchSlice};
+use ferros::vspace::{ProcessCodeImageConfig, ScratchRegion, VSpace};
 
 use super::TopLevelError;
 
@@ -17,8 +17,8 @@ pub fn grandkid_process_runs(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U27>>,
     asid_pool: LocalCap<ASIDPool<U6>>,
-    local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
-    cnode: &LocalCap<LocalCNode>,
+    local_vspace_scratch: &mut ScratchRegion,
+    root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
 ) -> Result<(), TopLevelError> {
@@ -28,25 +28,33 @@ pub fn grandkid_process_runs(
         let (child_cnode, child_slots) = retype_cnode::<U20>(ut, slots)?;
 
         let (child_asid, asid_pool) = asid_pool.alloc();
-        let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &cnode)?;
+        let child_root = retype(ut, slots)?;
+        let child_vspace_slots: LocalCNodeSlots<U256> = slots;
+        let child_vspace_ut: LocalCap<Untyped<U12>> = ut;
+
+        let child_vspace = VSpace::new(
+            child_root,
+            child_asid,
+            child_vspace_slots.weaken(),
+            child_vspace_ut.weaken(),
+            ProcessCodeImageConfig::ReadOnly,
+            user_image,
+            root_cnode,
+        )?;
 
         smart_alloc! {|slots_c: child_slots| {
             let (cnode_for_child, slots_for_child) =
-                child_cnode.generate_self_reference(&cnode, slots_c)?;
-            let untyped_for_child = ut.move_to_slot(&cnode, slots_c)?;
-            let (asid_pool_for_child, _asid_pool): (_, LocalCap<ASIDPool<U0>>) = asid_pool.split(slots_c, slots, &cnode)?;
-            let user_image_for_child = user_image.copy(&cnode, slots_c)?;
-            let (vspace_scratch_for_child, child_vspace) = child_vspace.create_child_scratch(
-                ut,
-                slots,
-                slots_c,
-                &cnode,
-            )?;
+                child_cnode.generate_self_reference(&root_cnode, slots_c)?;
+            let untyped_for_child = ut.move_to_slot(&root_cnode, slots_c)?;
+            let (asid_pool_for_child, _asid_pool): (_, LocalCap<ASIDPool<U0>>) = asid_pool.split(slots_c, slots, &root_cnode)?;
+            let user_image_for_child = user_image.copy(&root_cnode, slots_c)?;
+            let sac_page = retype(ut, child_slots);
+            let child_resv_region = child_vspace.reserve_region(sac_page)?;
             let thread_priority_authority_for_child =
-                tpa.copy(&cnode, slots_c, CapRights::RWG)?;
+                tpa.copy(&root_cnode, slots_c, CapRights::RWG)?;
 
             let (fault_source, outcome_sender, handler) = fault_or_message_channel(
-                &cnode,
+                &root_cnode,
                 ut,
                 slots,
                 slots_c,
@@ -60,7 +68,7 @@ pub fn grandkid_process_runs(
             untyped: untyped_for_child,
             asid_pool: asid_pool_for_child,
             user_image: user_image_for_child,
-            vspace_scratch: vspace_scratch_for_child,
+            vspace_scratch: &mut child_resv_region.as_scratch(),
             thread_priority_authority: thread_priority_authority_for_child,
             outcome_sender,
         };
@@ -79,20 +87,19 @@ pub fn grandkid_process_runs(
     }
 }
 
-#[derive(Debug)]
-pub struct ChildParams<Role: CNodeRole> {
+pub struct ChildParams<'a, 'b, Role: CNodeRole> {
     cnode: Cap<CNode<Role>, Role>,
-    cnode_slots: Cap<CNodeSlotsData<Sum<NewVSpaceCNodeSlots, U70>, Role>, Role>,
+    cnode_slots: Cap<CNodeSlotsData<U100, Role>, Role>,
     untyped: Cap<Untyped<U25>, Role>,
     asid_pool: Cap<ASIDPool<U2>, Role>,
     user_image: UserImage<Role>,
-    vspace_scratch: VSpaceScratchSlice<Role>,
+    vspace_scratch: &'a mut ScratchRegion<'a, 'b>,
     thread_priority_authority: Cap<ThreadPriorityAuthority, Role>,
     outcome_sender: Sender<bool, Role>,
 }
 
-impl RetypeForSetup for ChildParams<role::Local> {
-    type Output = ChildParams<role::Child>;
+impl<'a, 'b> RetypeForSetup for ChildParams<'a, 'b, role::Local> {
+    type Output = ChildParams<'a, 'b, role::Child>;
 }
 
 pub extern "C" fn child_main(params: ChildParams<role::Local>) {

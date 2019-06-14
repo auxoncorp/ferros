@@ -23,17 +23,13 @@ pub fn call_and_response_loop(
 ) -> Result<(), TopLevelError> {
     let uts = ut_buddy(local_ut);
 
-    let (caller_ut_slot, local_slots) = local_slots.alloc();
-    let (caller_vspace_ut, uts) = uts.alloc(caller_ut_slot)?;
-
-    let (responder_ut_slot, local_slots) = local_slots.alloc();
-    let (responder_vspace_ut, uts) = uts.alloc(responder_ut_slot)?;
-
     smart_alloc!(|slots: local_slots, ut: uts| {
         let (caller_asid, asid_pool) = asid_pool.alloc();
         let (responder_asid, _asid_pool) = asid_pool.alloc();
         let caller_root = retype(ut, slots)?;
         let caller_vspace_slots: LocalCNodeSlots<U256> = slots;
+        let caller_vspace_ut: LocalCap<Untyped<U12>> = ut;
+
         let caller_vspace = VSpace::new(
             caller_root,
             caller_asid,
@@ -46,6 +42,8 @@ pub fn call_and_response_loop(
 
         let responder_root = retype(ut, slots)?;
         let responder_vspace_slots: LocalCNodeSlots<U256> = slots;
+        let responder_vspace_ut: LocalCap<Untyped<U12>> = ut;
+
         let responder_vspace = VSpace::new(
             responder_root,
             responder_asid,
@@ -83,7 +81,7 @@ pub fn call_and_response_loop(
             ut,
             ut,
             slots,
-            None, // priority
+            tpa,
             None, // fault
         )?;
         caller_process.start()?;
@@ -98,7 +96,7 @@ pub fn call_and_response_loop(
             ut,
             ut,
             slots,
-            None, // priority
+            tpa,
             None, // fault
         )?;
         responder_process.start()?;
