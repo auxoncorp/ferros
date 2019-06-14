@@ -127,7 +127,7 @@ impl ReadyProcess {
         )?;
 
         // Map the stack to the target address space
-        let mapped_stack_pages = vspace.map_region(stack_pages, CapRights::R)?; // TODO - revisit - do we need RW?
+        let mapped_stack_pages = vspace.map_region(stack_pages, CapRights::RW)?;
         let stack_pointer =
             mapped_stack_pages.vaddr + mapped_stack_pages.size() - param_size_on_stack;
 
