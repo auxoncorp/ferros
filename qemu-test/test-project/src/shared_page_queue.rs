@@ -4,21 +4,21 @@ use ferros::alloc::{smart_alloc, ut_buddy};
 use ferros::bootstrap::UserImage;
 use ferros::cap::*;
 use ferros::userland::{
-    fault_or_message_channel, Consumer1, FaultOrMessage, Producer, QueueFullError, RetypeForSetup,
-    Sender,
+    fault_or_message_channel, Consumer1, FaultOrMessage, Producer, QueueFullError, ReadyProcess,
+    RetypeForSetup, Sender,
 };
-use ferros::vspace::{VSpace, VSpaceScratchSlice};
+use ferros::vspace::{ProcessCodeImageConfig, ScratchRegion, VSpace};
 
 use super::TopLevelError;
 
 type U33768 = Sum<U32768, U1000>;
 
 #[ferros_test::ferros_test]
-pub fn shared_page_queue(
+pub fn shared_page_queue<'a, 'b, 'c>(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U2>>,
-    local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+    local_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -29,23 +29,42 @@ pub fn shared_page_queue(
         let (child_a_asid, asid_pool) = asid_pool.alloc();
         let (child_b_asid, _asid_pool) = asid_pool.alloc();
 
-        let child_a_vspace = VSpace::new(ut, slots, child_a_asid, &user_image, &root_cnode)?;
-        let child_b_vspace = VSpace::new(ut, slots, child_b_asid, &user_image, &root_cnode)?;
+        let consumer_vspace_slots: LocalCNodeSlots<U4096> = slots;
+        let consumer_vspace_ut: LocalCap<Untyped<U12>> = ut;
+        let mut consumer_vspace = VSpace::new(
+            retype(ut, slots)?,
+            child_a_asid,
+            consumer_vspace_slots.weaken(),
+            consumer_vspace_ut.weaken(),
+            ProcessCodeImageConfig::ReadOnly,
+            user_image,
+            root_cnode,
+        )?;
+        let producer_vspace_slots: LocalCNodeSlots<U4096> = slots;
+        let producer_vspace_ut: LocalCap<Untyped<U12>> = ut;
+        let mut producer_vspace = VSpace::new(
+            retype(ut, slots)?,
+            child_b_asid,
+            producer_vspace_slots.weaken(),
+            producer_vspace_ut.weaken(),
+            ProcessCodeImageConfig::ReadOnly,
+            user_image,
+            root_cnode,
+        )?;
 
         let (consumer_cnode, consumer_slots) = retype_cnode::<U12>(ut, slots)?;
         let (producer_cnode, producer_slots) = retype_cnode::<U12>(ut, slots)?;
 
         let (slots_c, consumer_slots) = consumer_slots.alloc();
-        let (consumer, _consumer_token, producer_setup, _waker_setup, consumer_vspace) =
-            Consumer1::new(
-                ut,
-                ut,
-                child_a_vspace,
-                local_vspace_scratch,
-                &root_cnode,
-                slots,
-                slots_c,
-            )?;
+        let (consumer, _consumer_token, producer_setup, _waker_setup) = Consumer1::new(
+            ut,
+            ut,
+            local_vspace_scratch,
+            &mut consumer_vspace,
+            &root_cnode,
+            slots,
+            slots_c,
+        )?;
         let (consumer_sender_slot, _consumer_slots) = consumer_slots.alloc();
         let (consumer_fault_source, outcome_sender, handler) =
             fault_or_message_channel(&root_cnode, ut, slots, consumer_sender_slot, slots)?;
@@ -56,28 +75,45 @@ pub fn shared_page_queue(
         };
 
         let (slots_p, _producer_slots) = producer_slots.alloc();
-        let (producer, producer_vspace) =
-            Producer::new(&producer_setup, slots_p, child_b_vspace, &root_cnode, slots)?;
+        let producer = Producer::new(
+            &producer_setup,
+            slots_p,
+            &mut producer_vspace,
+            &root_cnode,
+            slots,
+        )?;
 
         let producer_params = ProducerParams::<role::Child> { producer };
 
-        let (child_a_process, _) = consumer_vspace.prepare_thread(
-            child_proc_a,
+        let consumer_process = ReadyProcess::new(
+            &mut consumer_vspace,
+            consumer_cnode,
+            local_vspace_scratch,
+            consumer_run,
             consumer_params,
             ut,
-            slots,
-            local_vspace_scratch,
-        )?;
-        child_a_process.start(consumer_cnode, Some(consumer_fault_source), tpa, 255)?;
-
-        let (child_b_process, _) = producer_vspace.prepare_thread(
-            child_proc_b,
-            producer_params,
+            ut,
             ut,
             slots,
-            local_vspace_scratch,
+            tpa,
+            Some(consumer_fault_source),
         )?;
-        child_b_process.start(producer_cnode, None, tpa, 255)?;
+        consumer_process.start()?;
+
+        let producer_process = ReadyProcess::new(
+            &mut producer_vspace,
+            producer_cnode,
+            local_vspace_scratch,
+            producer_run,
+            producer_params,
+            ut,
+            ut,
+            ut,
+            slots,
+            tpa,
+            None, // fault handler
+        )?;
+        producer_process.start()?;
     });
 
     match handler.await_message()? {
@@ -110,7 +146,7 @@ impl RetypeForSetup for ProducerParams<role::Local> {
     type Output = ProducerParams<role::Child>;
 }
 
-pub extern "C" fn child_proc_a(p: ConsumerParams<role::Local>) {
+pub extern "C" fn consumer_run(p: ConsumerParams<role::Local>) {
     let ConsumerParams {
         consumer,
         outcome_sender,
@@ -134,7 +170,7 @@ pub extern "C" fn child_proc_a(p: ConsumerParams<role::Local>) {
     )
 }
 
-pub extern "C" fn child_proc_b(p: ProducerParams<role::Local>) {
+pub extern "C" fn producer_run(p: ProducerParams<role::Local>) {
     for i in 0..256 {
         match p.producer.send(Xenon { a: i }) {
             Ok(_) => (),

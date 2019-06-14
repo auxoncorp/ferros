@@ -4,15 +4,15 @@ use typenum::*;
 
 use ferros::alloc::{self, micro_alloc, smart_alloc};
 use ferros::bootstrap::{root_cnode, BootInfo};
-use ferros::cap::{retype, retype_cnode, role, CNodeRole, LocalCap, LocalCNodeSlots, Untyped};
-use ferros::userland::{InterruptConsumer, RetypeForSetup, CapRights, ReadyProcess};
-use ferros::vspace::{VSpace, ProcessCodeImageConfig};
+use ferros::cap::{retype, retype_cnode, role, CNodeRole, LocalCNodeSlots, LocalCap, Untyped};
+use ferros::userland::{CapRights, InterruptConsumer, ReadyProcess, RetypeForSetup};
+use ferros::vspace::{ProcessCodeImageConfig, VSpace};
 
 use super::TopLevelError;
 
 const UART1_PADDR: usize = 0x02020000; //33685504
 const LARGE_DEVICE_REGION_PADDR: usize = 0x02000000; //33554432
-// relative offset from LARGE_DEVICE_REGION_PADDR: 131072 ( == 2097152 / 16 )
+                                                     // relative offset from LARGE_DEVICE_REGION_PADDR: 131072 ( == 2097152 / 16 )
 type LargeDeviceRegionSize = U21; // 2097152 bytes
 type Uart1IrqLine = U58;
 
@@ -27,9 +27,12 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         root_tcb,
         mut irq_control,
         ..
-    } = BootInfo::wrap(&raw_boot_info,
-                       allocator.get_untyped::<U13>().expect("Initial untyped retrieval failure"),
-                       root_vspace_slots,
+    } = BootInfo::wrap(
+        &raw_boot_info,
+        allocator
+            .get_untyped::<U13>()
+            .expect("Initial untyped retrieval failure"),
+        root_vspace_slots,
     );
     let uts = alloc::ut_buddy(
         allocator
@@ -45,7 +48,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         .get_device_untyped::<LargeDeviceRegionSize>(LARGE_DEVICE_REGION_PADDR)
         .expect("find uart1 device memory");
 
-
     smart_alloc!(|slots: local_slots, ut: uts| {
         let reserved_region = root_vspace.reserve(retype(ut, slots)?)?;
         let mut local_vspace_scratch = reserved_region.as_scratch(&mut root_vspace)?;
@@ -53,7 +55,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (uart1_asid, _asid_pool) = asid_pool.alloc();
 
-        let vspace_slots:LocalCNodeSlots<ferros::arch::CodePageCount> = slots;
+        let vspace_slots: LocalCNodeSlots<ferros::arch::CodePageCount> = slots;
         let vspace_ut: LocalCap<Untyped<U13>> = ut;
         let mut uart1_vspace = VSpace::new(
             retype(ut, slots)?,
@@ -62,7 +64,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             vspace_ut.weaken(),
             ProcessCodeImageConfig::ReadOnly,
             &user_image,
-            &root_cnode)?;
+            &root_cnode,
+        )?;
 
         let (uart1_cnode, uart1_slots) = retype_cnode::<U12>(ut, slots)?;
 
