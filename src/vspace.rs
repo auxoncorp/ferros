@@ -454,6 +454,106 @@ where
     pub(crate) unsafe fn internal_alias(&mut self) -> Self {
         MappedMemoryRegion::unchecked_new(self.caps.initial_cptr, self.vaddr, self.asid)
     }
+
+    /// Halve a region into two regions.
+    pub fn split(
+        self,
+    ) -> Result<
+        (
+            MappedMemoryRegion<op!(SizeBits - U1), SS>,
+            MappedMemoryRegion<op!(SizeBits - U1), SS>,
+        ),
+        VSpaceError,
+    >
+    where
+        SizeBits: Sub<U1>,
+        <SizeBits as Sub<U1>>::Output: Unsigned,
+        <SizeBits as Sub<U1>>::Output: IsGreaterOrEqual<U12, Output = True>,
+        <SizeBits as Sub<U1>>::Output: Sub<PageBits>,
+        <<SizeBits as Sub<U1>>::Output as Sub<PageBits>>::Output: Unsigned,
+        <<SizeBits as Sub<U1>>::Output as Sub<PageBits>>::Output: _Pow,
+        Pow<<<SizeBits as Sub<U1>>::Output as Sub<PageBits>>::Output>: Unsigned,
+    {
+        let new_region_vaddr = if let Some(vaddr) = 2_usize
+            .checked_pow(SizeBits::U32 - 1)
+            .and_then(|v| v.checked_add(self.vaddr))
+        {
+            vaddr
+        } else {
+            return Err(VSpaceError::ExceededAvailableAddressSpace);
+        };
+
+        let new_offset = self.caps.initial_cptr + 2_usize.pow(SizeBits::U32 - (PageBits::U32 + 1));
+
+        Ok((
+            MappedMemoryRegion {
+                caps: MappedPageRange::new(self.vaddr, self.caps.initial_cptr, self.asid),
+                vaddr: self.vaddr,
+                asid: self.asid,
+                _size_bits: PhantomData,
+                _shared_status: PhantomData,
+            },
+            MappedMemoryRegion {
+                caps: MappedPageRange::new(new_region_vaddr, new_offset, self.asid),
+                vaddr: new_region_vaddr,
+                asid: self.asid,
+                _size_bits: PhantomData,
+                _shared_status: PhantomData,
+            },
+        ))
+    }
+
+    /// Splits a range into a specific size and a SizeBits-1 region.
+    ///
+    /// NB: This function drops on the floor the leftovers between
+    /// TargetSize and SizeBits-1 It's only meant to be used to set up
+    /// regions for supporting ferros-test.
+    ///
+    /// Something like:
+    /// ```not_rust
+    /// SizeBits = 20, TargetSize = 16
+    /// [                 20                   ]
+    /// [        19        |         19        ]
+    /// [        19        | 16 |   dropped    ]
+    /// ```
+    #[cfg(feature = "test_support")]
+    pub fn split_into<TargetSize: Unsigned>(
+        self,
+    ) -> Result<
+        (
+            MappedMemoryRegion<TargetSize, SS>,
+            MappedMemoryRegion<op!(SizeBits - U1), SS>,
+        ),
+        VSpaceError,
+    >
+    where
+        TargetSize: IsGreaterOrEqual<PageBits>,
+        TargetSize: Sub<PageBits>,
+        <TargetSize as Sub<PageBits>>::Output: Unsigned,
+        <TargetSize as Sub<PageBits>>::Output: _Pow,
+        Pow<<TargetSize as Sub<PageBits>>::Output>: Unsigned,
+
+        SizeBits: Sub<U1>,
+        <SizeBits as Sub<U1>>::Output: Unsigned,
+        <SizeBits as Sub<U1>>::Output: IsGreaterOrEqual<U12, Output = True>,
+        <SizeBits as Sub<U1>>::Output: Sub<PageBits>,
+        <<SizeBits as Sub<U1>>::Output as Sub<PageBits>>::Output: Unsigned,
+        <<SizeBits as Sub<U1>>::Output as Sub<PageBits>>::Output: _Pow,
+        Pow<<<SizeBits as Sub<U1>>::Output as Sub<PageBits>>::Output>: Unsigned,
+    {
+        let (a, b) = self.split()?;
+
+        Ok((
+            MappedMemoryRegion {
+                caps: a.caps,
+                vaddr: a.vaddr,
+                asid: a.asid,
+                _size_bits: PhantomData,
+                _share_status: PhantomData,
+            },
+            b,
+        ))
+    }
 }
 
 pub enum ProcessCodeImageConfig<'a, 'b, 'c> {
