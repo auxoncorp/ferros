@@ -35,10 +35,10 @@ pub fn child_process_runs(
         let (child_asid, _asid_pool) = asid_pool.alloc();
 
         let child_root = retype(ut, slots)?;
-        let child_vspace_slots: LocalCNodeSlots<U256> = slots;
-        let child_vspace_ut: LocalCap<Untyped<U12>> = ut;
+        let child_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let child_vspace_ut: LocalCap<Untyped<U14>> = ut;
 
-        let child_vspace = VSpace::new(
+        let mut child_vspace = VSpace::new(
             child_root,
             child_asid,
             child_vspace_slots.weaken(),

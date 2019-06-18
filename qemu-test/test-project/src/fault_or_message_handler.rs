@@ -57,10 +57,10 @@ pub fn fault_or_message_handler(
                     let (child_asid, _asid_pool) = inner_asid_pool.alloc();
 
                     let child_root = retype(ut, slots)?;
-                    let child_vspace_slots: LocalCNodeSlots<U256> = slots;
-                    let child_vspace_ut: LocalCap<Untyped<U12>> = ut;
+                    let child_vspace_slots: LocalCNodeSlots<U1024> = slots;
+                    let child_vspace_ut: LocalCap<Untyped<U14>> = ut;
 
-                    let child_vspace = VSpace::new(
+                    let mut child_vspace = VSpace::new(
                         child_root,
                         child_asid,
                         child_vspace_slots.weaken(),
@@ -70,6 +70,7 @@ pub fn fault_or_message_handler(
                         root_cnode,
                     )?;
 
+                    debug_println!("setting up child");
                     let child_process = ReadyProcess::new(
                         &mut child_vspace,
                         child_cnode,
@@ -81,10 +82,13 @@ pub fn fault_or_message_handler(
                         ut,
                         slots,
                         tpa,
-                        None, // fault
+                        Some(source),
                     )?;
                 });
+                debug_println!("starting child");
                 child_process.start()?;
+
+                debug_println!("awating a message");
 
                 match handler.await_message()? {
                     FaultOrMessage::Fault(_) => {
@@ -139,6 +143,7 @@ impl RetypeForSetup for ProcParams<role::Local> {
 }
 
 pub extern "C" fn proc_main(params: ProcParams<role::Local>) {
+    debug_println!("proc_main: enter");
     let ProcParams { command, sender } = params;
     match command {
         Command::ReportTrue => sender.blocking_send(&true).expect("Could not send true"),

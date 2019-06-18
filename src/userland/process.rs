@@ -77,13 +77,13 @@ pub type StackPageCount = U16;
 pub type PrepareThreadCNodeSlots = U32;
 
 impl ReadyProcess {
-    pub fn new<'a, 'b, T: RetypeForSetup>(
+    pub fn new<T: RetypeForSetup>(
         vspace: &mut VSpace,
         cspace: LocalCap<ChildCNode>,
-        parent_vspace_scratch: &mut ScratchRegion<'a, 'b, crate::userland::process::StackPageCount>,
+        parent_mapped_region: MappedMemoryRegion<StackPageCount, shared_status::Exclusive>,
+        parent_cnode: &LocalCap<LocalCNode>,
         function_descriptor: extern "C" fn(T) -> (),
         process_parameter: SetupVer<T>,
-        stack_pages_ut: LocalCap<Untyped<U16>>,
         ipc_buffer_ut: LocalCap<Untyped<PageBits>>,
         tcb_ut: LocalCap<Untyped<<ThreadControlBlock as DirectRetype>::SizeBits>>,
         slots: LocalCNodeSlots<PrepareThreadCNodeSlots>,
@@ -103,26 +103,23 @@ impl ReadyProcess {
         // Reserve a guard page before the stack
         vspace.skip_pages(1)?;
 
-        // Carve off the stack_pages
-        let (stack_slots, slots): (LocalCNodeSlots<StackPageCount>, _) = slots.alloc();
-        let mut stack_pages = UnmappedMemoryRegion::new(stack_pages_ut, stack_slots)?;
-
         // map the child stack into local memory so we can copy the contents
         // of the process params into it
-        let (mut registers, param_size_on_stack) = parent_vspace_scratch.temporarily_map_region(
-            &mut stack_pages,
-            |mapped_region| unsafe {
-                let stack_top = mapped_region.vaddr() + mapped_region.size();
-                setup_initial_stack_and_regs(
-                    &process_parameter as *const SetupVer<T> as *const usize,
-                    core::mem::size_of::<SetupVer<T>>(),
-                    stack_top as *mut usize,
-                )
-            },
-        )?;
+        let stack_top = parent_mapped_region.vaddr + parent_mapped_region.size();
+        let (mut registers, param_size_on_stack) = unsafe {
+            setup_initial_stack_and_regs(
+                &process_parameter as *const SetupVer<T> as *const usize,
+                core::mem::size_of::<SetupVer<T>>(),
+                stack_top as *mut usize,
+            )
+        };
 
         // Map the stack to the target address space
-        let mapped_stack_pages = vspace.map_region(stack_pages, CapRights::RW)?;
+        let (page_slots, slots) = slots.alloc();
+        let (unmapped_stack_pages, _) =
+            parent_mapped_region.share(page_slots, parent_cnode, CapRights::RW)?;
+        let mapped_stack_pages =
+            vspace.map_shared_region_and_consume(unmapped_stack_pages, CapRights::RW)?;
         let stack_pointer =
             mapped_stack_pages.vaddr() + mapped_stack_pages.size() - param_size_on_stack;
 

@@ -237,6 +237,7 @@ where
     }
 }
 
+// 2^12 * PageCount
 type NumPages<Size> = Pow<op!(Size - PageBits)>;
 
 /// A `1 << SizeBits` bytes region of unmapped memory. It can be
@@ -290,7 +291,7 @@ where
 {
     /// Retype the necessary number of granules into memory
     /// capabilities and return the unmapped region.
-    pub(crate) fn new(
+    pub fn new(
         ut: LocalCap<Untyped<SizeBits>>,
         slots: LocalCNodeSlots<NumPages<SizeBits>>,
     ) -> Result<Self, VSpaceError> {
@@ -349,10 +350,6 @@ impl<Count: Unsigned> MappedPageRange<Count> {
         }
     }
 
-    pub(crate) fn size(&self) -> usize {
-        Count::USIZE * PageBytes::USIZE
-    }
-
     pub fn iter(self) -> impl Iterator<Item = Cap<Page<page_state::Mapped>, role::Local>> {
         (0..Count::USIZE).map(move |idx| Cap {
             cptr: self.initial_cptr + idx,
@@ -397,8 +394,47 @@ where
     <SizeBits as Sub<PageBits>>::Output: _Pow,
     Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
 {
+    pub const SIZE_BYTES: usize = 1 << SizeBits::USIZE;
+
     pub(crate) fn size(&self) -> usize {
-        self.caps.size()
+        Self::SIZE_BYTES
+    }
+
+    pub fn share(
+        self,
+        slots: LocalCNodeSlots<NumPages<SizeBits>>,
+        cnode: &LocalCap<LocalCNode>,
+        rights: CapRights,
+    ) -> Result<
+        (
+            UnmappedMemoryRegion<SizeBits, shared_status::Shared>,
+            MappedMemoryRegion<SizeBits, shared_status::Shared>,
+        ),
+        VSpaceError,
+    > {
+        let pages_offset = self.caps.initial_cptr;
+        let vaddr = self.vaddr;
+        let asid = self.asid;
+        let slots_offset = slots.cap_data.offset;
+
+        for (slot, page) in slots.iter().zip(self.caps.iter()) {
+            page.copy(cnode, slot, rights)?;
+        }
+
+        Ok((
+            UnmappedMemoryRegion {
+                caps: CapRange::new(slots_offset),
+                _size_bits: PhantomData,
+                _shared_status: PhantomData,
+            },
+            MappedMemoryRegion {
+                caps: MappedPageRange::new(vaddr, pages_offset, asid),
+                vaddr: vaddr,
+                asid: asid,
+                _size_bits: PhantomData,
+                _shared_status: PhantomData,
+            },
+        ))
     }
     pub(crate) fn vaddr(&self) -> usize {
         self.vaddr
@@ -455,6 +491,7 @@ impl VSpace<vspace_state::Empty> {
         })
     }
 }
+
 impl<S: VSpaceState> VSpace<S> {
     /// This address space's id.
     pub(crate) fn asid(&self) -> u32 {
@@ -862,7 +899,7 @@ where
     /// sharing this page and mapping it into other address
     /// spaces. This enforced order ought to prevent one from
     /// forgetting to do the region-filling initialization.
-    pub(crate) fn temporarily_map_region<SizeBits: Unsigned, F, Out>(
+    pub fn temporarily_map_region<SizeBits: Unsigned, F, Out>(
         &mut self,
         region: &mut UnmappedMemoryRegion<SizeBits, shared_status::Exclusive>,
         f: F,

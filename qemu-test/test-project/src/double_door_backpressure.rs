@@ -40,9 +40,9 @@ pub fn double_door_backpressure(
 
         // vspace setup
         let consumer_root = retype(ut, slots)?;
-        let consumer_vspace_slots: LocalCNodeSlots<U256> = slots;
-        let consumer_vspace_ut: LocalCap<Untyped<U12>> = ut;
-        let consumer_vspace = VSpace::new(
+        let consumer_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let consumer_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let mut consumer_vspace = VSpace::new(
             consumer_root,
             consumer_asid,
             consumer_vspace_slots.weaken(),
@@ -53,9 +53,9 @@ pub fn double_door_backpressure(
         )?;
 
         let producer_a_root = retype(ut, slots)?;
-        let producer_a_vspace_slots: LocalCNodeSlots<U256> = slots;
-        let producer_a_vspace_ut: LocalCap<Untyped<U12>> = ut;
-        let producer_a_vspace = VSpace::new(
+        let producer_a_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let producer_a_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let mut producer_a_vspace = VSpace::new(
             producer_a_root,
             producer_a_asid,
             producer_a_vspace_slots.weaken(),
@@ -66,9 +66,9 @@ pub fn double_door_backpressure(
         )?;
 
         let producer_b_root = retype(ut, slots)?;
-        let producer_b_vspace_slots: LocalCNodeSlots<U256> = slots;
-        let producer_b_vspace_ut: LocalCap<Untyped<U12>> = ut;
-        let producer_b_vspace = VSpace::new(
+        let producer_b_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let producer_b_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let mut producer_b_vspace = VSpace::new(
             producer_b_root,
             producer_b_asid,
             producer_b_vspace_slots.weaken(),
@@ -79,9 +79,9 @@ pub fn double_door_backpressure(
         )?;
 
         let waker_root = retype(ut, slots)?;
-        let waker_vspace_slots: LocalCNodeSlots<U256> = slots;
-        let waker_vspace_ut: LocalCap<Untyped<U12>> = ut;
-        let waker_vspace = VSpace::new(
+        let waker_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let waker_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let mut waker_vspace = VSpace::new(
             waker_root,
             waker_asid,
             waker_vspace_slots.weaken(),

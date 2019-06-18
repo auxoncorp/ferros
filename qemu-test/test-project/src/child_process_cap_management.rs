@@ -29,8 +29,8 @@ pub fn child_process_cap_management(
         let ut5: LocalCap<Untyped<U5>> = ut;
 
         let child_root = retype(ut, slots)?;
-        let child_vspace_slots: LocalCNodeSlots<U256> = slots;
-        let child_vspace_ut: LocalCap<Untyped<U12>> = ut;
+        let child_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let child_vspace_ut: LocalCap<Untyped<U14>> = ut;
 
         smart_alloc! {|slots_c: child_slots| {
             let (cnode_for_child, slots_for_child) =
@@ -52,7 +52,7 @@ pub fn child_process_cap_management(
             outcome_sender,
         };
 
-        let child_vspace = VSpace::new(
+        let mut child_vspace = VSpace::new(
             child_root,
             child_asid,
             child_vspace_slots.weaken(),

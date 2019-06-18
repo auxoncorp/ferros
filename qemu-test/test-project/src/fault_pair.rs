@@ -37,9 +37,9 @@ pub fn fault_pair(
     smart_alloc!(|slots: local_slots, ut: uts| {
         let (mischief_maker_asid, asid_pool) = asid_pool.alloc();
         let mischief_maker_root = retype(ut, slots)?;
-        let mischief_maker_vspace_slots: LocalCNodeSlots<U256> = slots;
-        let mischief_maker_vspace_ut: LocalCap<Untyped<U12>> = ut;
-        let mischief_maker_vspace = VSpace::new(
+        let mischief_maker_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let mischief_maker_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let mut mischief_maker_vspace = VSpace::new(
             mischief_maker_root,
             mischief_maker_asid,
             mischief_maker_vspace_slots.weaken(),
@@ -52,9 +52,9 @@ pub fn fault_pair(
 
         let (fault_handler_asid, _asid_pool) = asid_pool.alloc();
         let fault_handler_root = retype(ut, slots)?;
-        let fault_handler_vspace_slots: LocalCNodeSlots<U256> = slots;
-        let fault_handler_vspace_ut: LocalCap<Untyped<U12>> = ut;
-        let fault_handler_vspace = VSpace::new(
+        let fault_handler_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let fault_handler_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let mut fault_handler_vspace = VSpace::new(
             fault_handler_root,
             fault_handler_asid,
             fault_handler_vspace_slots.weaken(),
@@ -91,7 +91,7 @@ pub fn fault_pair(
             ut,
             slots,
             tpa,
-            None, // fault
+            Some(fault_source),
         )?;
         mischief_maker_process.start()?;
 
@@ -106,7 +106,7 @@ pub fn fault_pair(
             ut,
             slots,
             tpa,
-            None, // fault
+            Some(fault_source_for_the_handler),
         )?;
         fault_handler_process.start()?;
     });
