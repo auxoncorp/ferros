@@ -397,9 +397,9 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         })
     }
 
-    pub(crate) fn retype_multi_runtime<TargetCapType: CapType, Count: Unsigned>(
+    pub(crate) fn retype_multi_runtime<TargetCapType: CapType, Count: Unsigned, CRole: CNodeRole>(
         self,
-        dest_slots: LocalCNodeSlots<Count>,
+        dest_slots: CNodeSlots<Count, CRole>,
     ) -> Result<CapRange<TargetCapType, role::Local, Count>, RetypeError>
     where
         TargetCapType: PhantomCap,

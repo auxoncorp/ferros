@@ -8,8 +8,7 @@ use ferros::userland::{
     fault_or_message_channel, CapRights, FaultOrMessage, ReadyProcess, RetypeForSetup, Sender,
 };
 use ferros::vspace::{
-    shared_status, MappedMemoryRegion, ProcessCodeImageConfig, ScratchRegion, UnmappedMemoryRegion,
-    VSpace,
+    shared_status, MappedMemoryRegion, ProcessCodeImageConfig, UnmappedMemoryRegion, VSpace,
 };
 
 use super::TopLevelError;
@@ -21,7 +20,7 @@ pub fn grandkid_process_runs(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U27>>,
     asid_pool: LocalCap<ASIDPool<U6>>,
-    local_mapped_region: MappedMemoryRegion<shared_status::Exclusive>,
+    local_mapped_region: MappedMemoryRegion<U16, shared_status::Exclusive>,
     cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -62,11 +61,11 @@ pub fn grandkid_process_runs(
                 slots_c,
                 slots,
             )?;
-        }}
 
-        let child_unmapped_region: UnmappedMemoryRegion<U16, shared_status::Exclusive> =
-            UnmappedMemoryRegion::new(ut, slots)?;
-        let child_mapped_region = child_vspace.map_region(child_unmapped_region, CapRights::RW)?;
+            let child_unmapped_region: UnmappedMemoryRegion<U16, shared_status::Exclusive> =
+                UnmappedMemoryRegion::new(ut, slots)?;
+            let child_mapped_region = child_vspace.map_region_and_move(child_unmapped_region, CapRights::RW, cnode, slots_c)?;
+        }}
 
         let params = ChildParams {
             cnode: cnode_for_child,
@@ -79,10 +78,10 @@ pub fn grandkid_process_runs(
             outcome_sender,
         };
 
-        ReadyProcess::new(
+        let child_process = ReadyProcess::new(
             &mut child_vspace,
             child_cnode,
-            mapped_region,
+            local_mapped_region,
             &cnode,
             child_main,
             params,
@@ -91,10 +90,8 @@ pub fn grandkid_process_runs(
             slots,
             tpa,
             Some(fault_source),
-        )
+        )?;
     });
-
-    let child_process = child_process_res?;
 
     child_process.start()?;
 

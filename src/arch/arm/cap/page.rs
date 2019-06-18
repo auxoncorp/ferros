@@ -1,6 +1,6 @@
 use selfe_sys::*;
 
-use crate::cap::{CapType, CopyAliasable, DirectRetype, LocalCap, PhantomCap};
+use crate::cap::{CapType, CopyAliasable, DirectRetype, LocalCap, Movable, PhantomCap};
 
 pub trait PageState: private::SealedPageState {}
 
@@ -29,6 +29,7 @@ impl LocalCap<Page<page_state::Mapped>> {
 }
 
 impl<State: PageState> CapType for Page<State> {}
+impl<State: PageState> Movable for Page<State> {}
 
 impl DirectRetype for Page<page_state::Unmapped> {
     type SizeBits = super::super::PageBits;

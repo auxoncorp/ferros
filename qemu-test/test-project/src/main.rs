@@ -70,14 +70,15 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     sel4_start::debug_panic_handler(&info)
 }
 
-// pub fn run(raw_boot_info: &'static seL4_BootInfo) {
-//     uart::run(raw_boot_info).expect("run");
-//     unsafe {
-//         loop {
-//             seL4_Yield();
-//         }
-//     }
-// }
+#[cfg(test_case = "uart")]
+pub fn run(raw_boot_info: &'static seL4_BootInfo) {
+    uart::run(raw_boot_info).expect("run");
+    unsafe {
+        loop {
+            seL4_Yield();
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum TopLevelError {

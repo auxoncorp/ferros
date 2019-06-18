@@ -193,7 +193,7 @@ fn local_allocations<G: IdGenerator>(
                 let region_id = gen_id(id_generator, "mappedmemoryregion");
                 (
                     parse_quote! {{
-                        let (#region_id, #mapped_memory_region) = #mapped_memory_region.alloc();
+                        let (#region_id, #mapped_memory_region) = #mapped_memory_region.split_into().unwrap();
                     }},
                     region_id,
                 )

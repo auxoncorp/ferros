@@ -16,8 +16,8 @@ use crate::arch::cap::{page_state, AssignedASID, Page, UnassignedASID};
 use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot};
 use crate::bootstrap::UserImage;
 use crate::cap::{
-    role, Cap, CapRange, CapType, DirectRetype, LocalCNode, LocalCNodeSlots, LocalCap, PhantomCap,
-    RetypeError, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
+    role, CNodeRole, CNodeSlots, Cap, CapRange, CapType, DirectRetype, LocalCNode, LocalCNodeSlots,
+    LocalCap, PhantomCap, RetypeError, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
@@ -291,12 +291,12 @@ where
 {
     /// Retype the necessary number of granules into memory
     /// capabilities and return the unmapped region.
-    pub fn new(
+    pub fn new<Role: CNodeRole>(
         ut: LocalCap<Untyped<SizeBits>>,
-        slots: LocalCNodeSlots<NumPages<SizeBits>>,
+        slots: CNodeSlots<NumPages<SizeBits>, Role>,
     ) -> Result<Self, VSpaceError> {
         let page_caps =
-            ut.retype_multi_runtime::<Page<page_state::Unmapped>, NumPages<SizeBits>>(slots)?;
+            ut.retype_multi_runtime::<Page<page_state::Unmapped>, NumPages<SizeBits>, _>(slots)?;
         Ok(UnmappedMemoryRegion {
             caps: CapRange::new(page_caps.start_cptr),
             _size_bits: PhantomData,
@@ -315,10 +315,6 @@ where
             },
             _role: PhantomData,
         }
-    }
-
-    pub(crate) fn size(&self) -> usize {
-        Self::SIZE_BYTES
     }
 
     /// A shared region of memory can be duplicated. When it is
@@ -361,6 +357,10 @@ impl<Count: Unsigned> MappedPageRange<Count> {
             },
             _role: PhantomData,
         })
+    }
+
+    pub fn count(&self) -> usize {
+        Count::USIZE
     }
 }
 
@@ -483,11 +483,11 @@ where
             return Err(VSpaceError::ExceededAvailableAddressSpace);
         };
 
-        let new_offset = self.caps.initial_cptr + 2_usize.pow(SizeBits::U32 - (PageBits::U32 + 1));
+        let new_offset = self.caps.initial_cptr + (self.caps.count() / 2);
 
         Ok((
             MappedMemoryRegion {
-                caps: MappedPageRange::new(self.vaddr, self.caps.initial_cptr, self.asid),
+                caps: MappedPageRange::new(self.caps.initial_cptr, self.vaddr, self.asid),
                 vaddr: self.vaddr,
                 asid: self.asid,
                 _size_bits: PhantomData,
@@ -545,11 +545,11 @@ where
 
         Ok((
             MappedMemoryRegion {
-                caps: a.caps,
+                caps: MappedPageRange::new(a.caps.initial_cptr, a.vaddr, a.asid),
                 vaddr: a.vaddr,
                 asid: a.asid,
                 _size_bits: PhantomData,
-                _share_status: PhantomData,
+                _shared_status: PhantomData,
             },
             b,
         ))
@@ -778,6 +778,40 @@ impl VSpace<vspace_state::Imaged> {
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
     {
         self.map_region_internal(region, rights)
+    }
+
+    /// Map a region of memory at some address, then move it to a
+    /// different cspace.
+    pub fn map_region_and_move<SizeBits: Unsigned, Role: CNodeRole>(
+        &mut self,
+        region: UnmappedMemoryRegion<SizeBits, shared_status::Exclusive>,
+        rights: CapRights,
+        src_cnode: &LocalCap<LocalCNode>,
+        dest_slots: CNodeSlots<NumPages<SizeBits>, Role>,
+    ) -> Result<MappedMemoryRegion<SizeBits, shared_status::Exclusive>, VSpaceError>
+    where
+        SizeBits: IsGreaterOrEqual<PageBits>,
+        SizeBits: Sub<PageBits>,
+        <SizeBits as Sub<PageBits>>::Output: Unsigned,
+        <SizeBits as Sub<PageBits>>::Output: _Pow,
+        Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
+    {
+        let mapped_region: MappedMemoryRegion<_, shared_status::Exclusive> =
+            self.map_region_internal(region, rights)?;
+        let vaddr = mapped_region.vaddr;
+        let dest_init_cptr = dest_slots.cap_data.offset;
+
+        for (page, slot) in mapped_region.caps.iter().zip(dest_slots.iter()) {
+            let _ = page.move_to_slot(src_cnode, slot)?;
+        }
+
+        Ok(MappedMemoryRegion {
+            caps: MappedPageRange::new(dest_init_cptr, vaddr, self.asid.cap_data.asid),
+            asid: self.asid.cap_data.asid,
+            _shared_status: PhantomData,
+            _size_bits: PhantomData,
+            vaddr,
+        })
     }
 
     /// Map a _shared_ region of memory at some address, I don't care
