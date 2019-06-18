@@ -4,6 +4,7 @@ use typenum::*;
 use crate::arch::cap::*;
 use crate::bootstrap::*;
 use crate::cap::*;
+use crate::test_support::MaxMappedMemoryRegionBitSize;
 use crate::vspace::*;
 
 pub struct Resources {
@@ -12,6 +13,10 @@ pub struct Resources {
     pub(super) asid_pool: LocalCap<ASIDPool<super::types::MaxTestASIDPoolSize>>,
     pub(super) vspace: VSpace<vspace_state::Imaged>,
     pub(super) reserved_for_scratch: ReservedRegion<crate::userland::process::StackPageCount>,
+    pub(super) mapped_memory_region: MappedMemoryRegion<
+        super::types::MaxMappedMemoryRegionBitSize,
+        crate::vspace::shared_status::Exclusive,
+    >,
     pub(super) cnode: LocalCap<LocalCNode>,
     pub(super) thread_authority: LocalCap<ThreadPriorityAuthority>,
     pub(super) user_image: UserImage<role::Local>,
@@ -22,6 +27,10 @@ pub struct TestResourceRefs<'t> {
     pub(super) untyped: &'t mut LocalCap<Untyped<super::types::MaxTestUntypedSize>>,
     pub(super) asid_pool: &'t mut LocalCap<ASIDPool<super::types::MaxTestASIDPoolSize>>,
     pub(super) scratch: ScratchRegion<'t, 't, crate::userland::process::StackPageCount>,
+    pub(super) mapped_memory_region: &'t mut MappedMemoryRegion<
+        super::types::MaxMappedMemoryRegionBitSize,
+        crate::vspace::shared_status::Exclusive,
+    >,
     pub(super) cnode: &'t LocalCap<LocalCNode>,
     pub(super) thread_authority: &'t LocalCap<ThreadPriorityAuthority>,
     pub(super) user_image: &'t UserImage<role::Local>,
@@ -87,6 +96,19 @@ impl Resources {
         };
         let (asid_pool, _asid_control) =
             asid_control.allocate_asid_pool(ut_for_asid_pool, asid_pool_slots)?;
+
+        let memory_region_ut = allocator
+            .get_untyped::<MaxMappedMemoryRegionBitSize>()
+            .ok_or_else(|| super::TestSetupError::InitialUntypedNotFound {
+                bit_size: MaxMappedMemoryRegionBitSize::USIZE,
+            })?;
+        let (memory_region_slots, local_slots) = local_slots.alloc();
+        let unmapped_region: UnmappedMemoryRegion<
+            MaxMappedMemoryRegionBitSize,
+            shared_status::Exclusive,
+        > = UnmappedMemoryRegion::new(memory_region_ut, memory_region_slots)?;
+        let mapped_memory_region =
+            root_vspace.map_region(unmapped_region, crate::userland::CapRights::RW)?;
         let (slots, _local_slots) = local_slots.alloc();
         Ok((
             Resources {
@@ -99,6 +121,7 @@ impl Resources {
                 asid_pool,
                 vspace: root_vspace,
                 reserved_for_scratch,
+                mapped_memory_region,
                 cnode,
                 thread_authority: root_tcb.downgrade_to_thread_priority_authority(),
                 user_image,
@@ -116,6 +139,7 @@ impl Resources {
                 .reserved_for_scratch
                 .as_scratch(&mut self.vspace)
                 .expect("Failed to use root VSpace as the VSpace reserved for scratch space."),
+            mapped_memory_region: &mut self.mapped_memory_region,
             cnode: &self.cnode,
             thread_authority: &self.thread_authority,
             user_image: &self.user_image,

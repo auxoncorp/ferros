@@ -137,6 +137,7 @@ fn local_allocations<G: IdGenerator>(
     let thread_authority = Ident::new("thread_authority", Span::call_site());
     let user_image = Ident::new("user_image", Span::call_site());
     let ut_buddy_instance = Ident::new("ut_buddy_instance", Span::call_site());
+    let mapped_memory_region = Ident::new("mapped_memory_region", Span::call_site());
     let is_untyped = |p: &Param| {
         if let ParamKind::Untyped { .. } = p.kind {
             true
@@ -186,6 +187,17 @@ fn local_allocations<G: IdGenerator>(
                 )
             }
             ParamKind::VSpaceScratch => (parse_quote!({}), scratch.clone()),
+            ParamKind::MappedMemoryRegion => {
+                // TODO - be sure that split/alloc prevents making too-small of regions
+                // such that page alignment would be violated
+                let region_id = gen_id(id_generator, "mappedmemoryregion");
+                (
+                    parse_quote! {{
+                        let (#region_id, #mapped_memory_region) = #mapped_memory_region.alloc();
+                    }},
+                    region_id,
+                )
+            }
             ParamKind::CNode => (parse_quote!({}), local_cnode.clone()),
             ParamKind::ThreadPriorityAuthority => (parse_quote!({}), thread_authority.clone()),
             ParamKind::UserImage => (parse_quote!({}), user_image.clone()),
@@ -241,6 +253,13 @@ fn run_test_decl() -> FnDecl {
             ferros::cap::LocalCap<ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>>
     ));
     run_test_inputs.push(parse_quote!(scratch: &mut ferros::vspace::ScratchRegion));
+    run_test_inputs.push(parse_quote!(
+        mapped_memory_region:
+            ferros::vspace::MappedMemoryRegion<
+                ferros::test_support::MaxMappedMemoryRegionBitSize,
+                ferros::vspace::shared_status::Exclusive,
+            >
+    ));
     run_test_inputs.push(parse_quote!(
         local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>
     ));
@@ -311,6 +330,8 @@ mod tests {
                 asid_pool: ferros::cap::LocalCap<
                     ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>>,
                 scratch: &mut ferros::vspace::ScratchRegion,
+                mapped_memory_region: ferros::vspace::MappedMemoryRegion<
+                    ferros::test_support::MaxMappedMemoryRegionBitSize, ferros::vspace::shared_status::Exclusive,>,
                 local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
                 thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
                 user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>
@@ -331,6 +352,7 @@ mod tests {
             test.into_token_stream().to_string()
         );
     }
+
     #[test]
     fn happy_path_generate_with_params() {
         let fn_under_test = parse_quote! {
@@ -369,6 +391,8 @@ mod tests {
                 asid_pool: ferros::cap::LocalCap<
                     ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>>,
                 scratch: &mut ferros::vspace::ScratchRegion,
+                mapped_memory_region: ferros::vspace::MappedMemoryRegion<
+                    ferros::test_support::MaxMappedMemoryRegionBitSize, ferros::vspace::shared_status::Exclusive,>,
                 local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
                 thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
                 user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>
@@ -384,6 +408,61 @@ mod tests {
                     let ( _a1 , untyped ) = ut_buddy_instance.alloc(_a0).unwrap ();
                     let ( _a2 , slots ) = slots.alloc();
                     match under_test(_a1, _a2) {
+                        Ok(_) => ferros::test_support::TestOutcome::Success,
+                        Err(_) => ferros::test_support::TestOutcome::Failure,
+                    }
+                };
+                (concat!(module_path!(), "::", "original_target"), outcome)
+            }
+        };
+
+        assert_eq!(
+            expected.into_token_stream().to_string(),
+            test.into_token_stream().to_string()
+        );
+    }
+    #[test]
+    fn happy_path_mapped_memory_region() {
+        let fn_under_test = parse_quote! {
+            fn original_target(mem: MappedMemoryRegion<U12, shared_status::Exclusive>) -> Result<(), SeL4Error> {
+                Ok(())
+            }
+        };
+        let model = TestModel {
+            execution_context: TestExecutionContext::Local,
+            fn_under_test,
+            fn_under_test_output: UserTestFnOutput::Result,
+            resources: vec![Param {
+                original_ident: Ident::new("mem", Span::call_site()),
+                kind: ParamKind::MappedMemoryRegion,
+            }],
+        };
+        let test = model.generate_runnable_test(DummyIdGenerator {
+            prefix: "_a",
+            count: 0,
+        });
+        assert_eq!("original_target", &test.ident.to_string());
+
+        let expected: ItemFn = parse_quote! {
+            fn original_target(
+                slots: ferros::cap::LocalCNodeSlots<ferros::test_support::MaxTestCNodeSlots>,
+                untyped: ferros::cap::LocalCap<
+                    ferros::cap::Untyped<ferros::test_support::MaxTestUntypedSize>>,
+                asid_pool: ferros::cap::LocalCap<
+                    ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>>,
+                scratch: &mut ferros::vspace::ScratchRegion,
+                mapped_memory_region: ferros::vspace::MappedMemoryRegion<
+                    ferros::test_support::MaxMappedMemoryRegionBitSize, ferros::vspace::shared_status::Exclusive,>,
+                local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
+                thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
+                user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>
+            ) -> (&'static str, ferros::test_support::TestOutcome) {
+                fn under_test(mem: MappedMemoryRegion<U12, shared_status::Exclusive>) -> Result<(), SeL4Error> {
+                    Ok(())
+                }
+                let outcome = {
+                    let ( _a0 , mapped_memory_region ) = mapped_memory_region.alloc();
+                    match under_test(_a0) {
                         Ok(_) => ferros::test_support::TestOutcome::Success,
                         Err(_) => ferros::test_support::TestOutcome::Failure,
                     }

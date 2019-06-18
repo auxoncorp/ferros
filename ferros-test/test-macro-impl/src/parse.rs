@@ -153,8 +153,21 @@ impl ParamKind {
                     });
                 }
             }
+            "MappedMemoryRegion" => {
+                // TODO - check whether the MappedMemoryRegion is Exclusive
+                // TODO - optionally provide useful error messages if the requested size type parameter
+                // is parseable without context and appears to be over the supported limit
+                if arg_kind == ArgKind::Owned {
+                    ParamKind::MappedMemoryRegion
+                } else {
+                    return Err(ParseError::InvalidArgumentType {
+                        msg: "MappedMemoryRegion must be specified as an owned instance parameter, not a reference.".to_string(),
+                        span: segment.span(),
+                    });
+                }
+            }
             "ScratchRegion" => {
-                // TODO - More detailed lifetime and ScratchRegion number of pages as type param matchign
+                // TODO - More detailed lifetime and ScratchRegion number of pages as type param matching
                 ParamKind::VSpaceScratch
             }
             "CNodeSlots" => ParamKind::CNodeSlots {

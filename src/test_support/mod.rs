@@ -1,15 +1,18 @@
 use core::marker::PhantomData;
+use core::ops::Sub;
 
 use selfe_sys::*;
 use typenum::*;
 
-use crate::arch;
+use crate::arch::{self, PageBits};
 use crate::cap::*;
 use crate::error::SeL4Error;
+use crate::pow::{Pow, _Pow};
 
 mod resources;
 mod types;
 
+use crate::vspace::MappedMemoryRegion;
 pub use resources::*;
 pub use types::*;
 
@@ -58,6 +61,7 @@ pub fn execute_tests<'t, R: types::TestReporter>(
         untyped,
         asid_pool,
         mut scratch,
+        mapped_memory_region,
         cnode,
         thread_authority,
         user_image,
@@ -69,8 +73,18 @@ pub fn execute_tests<'t, R: types::TestReporter>(
             slots,
             untyped,
             asid_pool,
-            |s, u, a| -> Result<(), SeL4Error> {
-                let (name, outcome) = t(s, u, a, &mut scratch, cnode, thread_authority, user_image);
+            mapped_memory_region,
+            |s, u, a, r| -> Result<(), SeL4Error> {
+                let (name, outcome) = t(
+                    s,
+                    u,
+                    a,
+                    &mut scratch,
+                    r,
+                    cnode,
+                    thread_authority,
+                    user_image,
+                );
                 reporter.report(name, outcome);
                 if outcome == types::TestOutcome::Success {
                     successes += 1;
@@ -92,20 +106,37 @@ pub fn execute_tests<'t, R: types::TestReporter>(
 /// Gain temporary access to some slots and memory for use in a function context.
 /// When the passed function call is complete, all capabilities
 /// in this range will be revoked and deleted and the memory reclaimed.
-pub fn with_temporary_resources<SlotCount: Unsigned, BitSize: Unsigned, E, F>(
+pub fn with_temporary_resources<
+    SlotCount: Unsigned,
+    UntypedBitSize: Unsigned,
+    MappedBitSize: Unsigned,
+    E,
+    F,
+>(
     slots: &mut LocalCNodeSlots<SlotCount>,
-    untyped: &mut LocalCap<Untyped<BitSize>>,
+    untyped: &mut LocalCap<Untyped<UntypedBitSize>>,
     asid_pool: &mut LocalCap<ASIDPool<arch::ASIDPoolSize>>,
+    mapped_memory_region: &mut MappedMemoryRegion<
+        MappedBitSize,
+        crate::vspace::shared_status::Exclusive,
+    >,
     f: F,
 ) -> Result<Result<(), E>, SeL4Error>
 where
     F: FnOnce(
         LocalCNodeSlots<SlotCount>,
-        LocalCap<Untyped<BitSize>>,
+        LocalCap<Untyped<UntypedBitSize>>,
         LocalCap<ASIDPool<arch::ASIDPoolSize>>,
+        MappedMemoryRegion<MappedBitSize, crate::vspace::shared_status::Exclusive>,
     ) -> Result<(), E>,
+
+    MappedBitSize: IsGreaterOrEqual<PageBits>,
+    MappedBitSize: Sub<PageBits>,
+    <MappedBitSize as Sub<PageBits>>::Output: Unsigned,
+    <MappedBitSize as Sub<PageBits>>::Output: _Pow,
+    Pow<<MappedBitSize as Sub<PageBits>>::Output>: Unsigned,
 {
-    // Call the function with an alias/copy of self
+    // Call the function with an alias/copy of the underlying resources
     let r = f(
         Cap::internal_new(slots.cptr, slots.cap_data.offset),
         Cap {
@@ -125,6 +156,7 @@ where
                 _free_slots: PhantomData,
             },
         },
+        unsafe { mapped_memory_region.internal_alias() },
     );
     unsafe { slots.revoke_in_reverse() }
 

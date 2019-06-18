@@ -105,7 +105,7 @@ impl ReadyProcess {
 
         // map the child stack into local memory so we can copy the contents
         // of the process params into it
-        let stack_top = parent_mapped_region.vaddr + parent_mapped_region.size();
+        let stack_top = parent_mapped_region.vaddr() + parent_mapped_region.size();
         let (mut registers, param_size_on_stack) = unsafe {
             setup_initial_stack_and_regs(
                 &process_parameter as *const SetupVer<T> as *const usize,

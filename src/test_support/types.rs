@@ -16,11 +16,16 @@ pub enum TestOutcome {
 pub type MaxTestUntypedSize = U27;
 pub type MaxTestCNodeSlots = Pow<U17>;
 pub type MaxTestASIDPoolSize = crate::arch::ASIDPoolSize;
+pub type MaxMappedMemoryRegionBitSize = U20;
 pub type RunTest = Fn(
     LocalCNodeSlots<MaxTestCNodeSlots>,
     LocalCap<Untyped<MaxTestUntypedSize>>,
     LocalCap<ASIDPool<MaxTestASIDPoolSize>>,
     &mut ScratchRegion<crate::userland::process::StackPageCount>,
+    crate::vspace::MappedMemoryRegion<
+        MaxMappedMemoryRegionBitSize,
+        crate::vspace::shared_status::Exclusive,
+    >,
     &LocalCap<LocalCNode>,
     &LocalCap<ThreadPriorityAuthority>,
     &UserImage<role::Local>,

@@ -400,6 +400,10 @@ where
         Self::SIZE_BYTES
     }
 
+    pub(crate) fn vaddr(&self) -> usize {
+        self.vaddr
+    }
+
     pub fn share(
         self,
         slots: LocalCNodeSlots<NumPages<SizeBits>>,
@@ -427,17 +431,28 @@ where
                 _size_bits: PhantomData,
                 _shared_status: PhantomData,
             },
-            MappedMemoryRegion {
-                caps: MappedPageRange::new(vaddr, pages_offset, asid),
-                vaddr: vaddr,
-                asid: asid,
-                _size_bits: PhantomData,
-                _shared_status: PhantomData,
-            },
+            MappedMemoryRegion::unchecked_new(pages_offset, vaddr, asid),
         ))
     }
-    pub(crate) fn vaddr(&self) -> usize {
-        self.vaddr
+
+    fn unchecked_new(
+        initial_cptr: usize,
+        initial_vaddr: usize,
+        asid: u32,
+    ) -> MappedMemoryRegion<SizeBits, SS> {
+        MappedMemoryRegion {
+            caps: MappedPageRange::new(initial_cptr, initial_vaddr, asid),
+            vaddr: initial_vaddr,
+            asid,
+            _size_bits: PhantomData,
+            _shared_status: PhantomData,
+        }
+    }
+
+    #[cfg(feature = "test_support")]
+    /// Super dangerous copy-aliasing
+    pub(crate) unsafe fn internal_alias(&mut self) -> Self {
+        MappedMemoryRegion::unchecked_new(self.caps.initial_cptr, self.vaddr, self.asid)
     }
 }
 
