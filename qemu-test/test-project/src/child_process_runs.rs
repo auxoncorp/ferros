@@ -8,14 +8,14 @@ use ferros::cap::*;
 use ferros::userland::{
     fault_or_message_channel, FaultOrMessage, ReadyProcess, RetypeForSetup, Sender,
 };
-use ferros::vspace::{ProcessCodeImageConfig, ScratchRegion, VSpace};
+use ferros::vspace::*;
 
 #[ferros_test::ferros_test]
 pub fn child_process_runs(
     local_slots: LocalCNodeSlots<U32768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U1>>,
-    local_vspace_scratch: &mut ScratchRegion,
+    local_mapped_region: MappedMemoryRegion<U16, shared_status::Exclusive>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -51,10 +51,10 @@ pub fn child_process_runs(
         let child_process = ReadyProcess::new(
             &mut child_vspace,
             child_cnode,
-            local_vspace_scratch,
+            local_mapped_region,
+            root_cnode,
             proc_main,
             params,
-            ut,
             ut,
             ut,
             slots,

@@ -64,7 +64,12 @@ pub fn grandkid_process_runs(
 
             let child_unmapped_region: UnmappedMemoryRegion<U16, shared_status::Exclusive> =
                 UnmappedMemoryRegion::new(ut, slots)?;
-            let child_mapped_region = child_vspace.map_region_and_move(child_unmapped_region, CapRights::RW, cnode, slots_c)?;
+            let child_mapped_region = child_vspace.map_region_and_move(
+                child_unmapped_region,
+                CapRights::RW,
+                cnode,
+                slots_c,
+            )?;
         }}
 
         let params = ChildParams {

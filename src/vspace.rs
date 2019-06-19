@@ -494,7 +494,7 @@ where
                 _shared_status: PhantomData,
             },
             MappedMemoryRegion {
-                caps: MappedPageRange::new(new_region_vaddr, new_offset, self.asid),
+                caps: MappedPageRange::new(new_offset, new_region_vaddr, self.asid),
                 vaddr: new_region_vaddr,
                 asid: self.asid,
                 _size_bits: PhantomData,

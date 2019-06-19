@@ -16,7 +16,7 @@ use ferros::userland::{
     fault_or_message_channel, setup_fault_endpoint_pair, FaultOrMessage, FaultSink, ReadyProcess,
     RetypeForSetup, Sender,
 };
-use ferros::vspace::{ProcessCodeImageConfig, ScratchRegion, VSpace};
+use ferros::vspace::*;
 
 use super::TopLevelError;
 
@@ -27,7 +27,7 @@ pub fn fault_pair(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U2>>,
-    local_vspace_scratch: &mut ScratchRegion,
+    local_mapped_region: MappedMemoryRegion<U17, shared_status::Exclusive>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -80,13 +80,15 @@ pub fn fault_pair(
             outcome_sender,
         };
 
+        let (mischief_region, fault_region) = local_mapped_region.split()?;
+
         let mischief_maker_process = ReadyProcess::new(
             &mut mischief_maker_vspace,
             mischief_maker_cnode,
-            local_vspace_scratch,
+            mischief_region,
+            root_cnode,
             mischief_maker_proc,
             mischief_maker_params,
-            ut,
             ut,
             ut,
             slots,
@@ -98,10 +100,10 @@ pub fn fault_pair(
         let fault_handler_process = ReadyProcess::new(
             &mut fault_handler_vspace,
             fault_handler_cnode,
-            local_vspace_scratch,
+            fault_region,
+            root_cnode,
             fault_handler_proc,
             fault_handler_params,
-            ut,
             ut,
             ut,
             slots,

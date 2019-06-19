@@ -6,7 +6,7 @@ use ferros::alloc::{self, micro_alloc, smart_alloc};
 use ferros::bootstrap::{root_cnode, BootInfo};
 use ferros::cap::{retype, retype_cnode, role, CNodeRole, LocalCNodeSlots, LocalCap, Untyped};
 use ferros::userland::{CapRights, InterruptConsumer, ReadyProcess, RetypeForSetup};
-use ferros::vspace::{ProcessCodeImageConfig, VSpace};
+use ferros::vspace::*;
 
 use super::TopLevelError;
 
@@ -49,8 +49,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         .expect("find uart1 device memory");
 
     smart_alloc!(|slots: local_slots, ut: uts| {
-        let reserved_region = root_vspace.reserve(retype(ut, slots)?)?;
-        let mut local_vspace_scratch = reserved_region.as_scratch(&mut root_vspace)?;
+        let unmapped_region = UnmappedMemoryRegion::new(ut, slots)?;
+        let mapped_region = root_vspace.map_region(unmapped_region, CapRights::RW)?;
 
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (uart1_asid, _asid_pool) = asid_pool.alloc();
@@ -95,10 +95,10 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let uart1_process = ReadyProcess::new(
             &mut uart1_vspace,
             uart1_cnode,
-            &mut local_vspace_scratch,
+            mapped_region,
+            &root_cnode,
             uart::run,
             uart1_params,
-            ut,
             ut,
             ut,
             slots,

@@ -93,6 +93,12 @@ pub mod ferros {
     pub mod vspace {
         use core::marker::PhantomData;
         pub struct ScratchRegion<'a, 'b, T = ()>(pub PhantomData<&'a T>, pub PhantomData<&'b T>);
+        pub struct MappedMemoryRegion<T, SS: SharedStatus>(PhantomData<T>, PhantomData<SS>);
+        pub trait SharedStatus {}
+        pub mod shared_status {
+            pub struct Exclusive;
+            impl super::SharedStatus for Exclusive {}
+        }
     }
     pub mod cap {
         use core::marker::PhantomData;
@@ -142,5 +148,6 @@ pub mod ferros {
             Success,
             Failure,
         }
+        pub type MaxMappedMemoryRegionBitSize = U20;
     }
 }

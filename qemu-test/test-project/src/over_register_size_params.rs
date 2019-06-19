@@ -6,7 +6,7 @@ use ferros::cap::*;
 use ferros::userland::{
     fault_or_message_channel, FaultOrMessage, ReadyProcess, RetypeForSetup, Sender,
 };
-use ferros::vspace::{ProcessCodeImageConfig, ScratchRegion, VSpace};
+use ferros::vspace::*;
 
 use super::TopLevelError;
 
@@ -17,7 +17,7 @@ pub fn over_register_size_params<'a, 'b, 'c>(
     local_slots: LocalCNodeSlots<U32768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U1>>,
-    local_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
+    local_mapped_region: MappedMemoryRegion<U16, shared_status::Exclusive>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -55,10 +55,10 @@ pub fn over_register_size_params<'a, 'b, 'c>(
         let child_process = ReadyProcess::new(
             &mut child_vspace,
             child_cnode,
-            local_vspace_scratch,
+            local_mapped_region,
+            root_cnode,
             proc_main,
             params,
-            ut,
             ut,
             ut,
             slots,

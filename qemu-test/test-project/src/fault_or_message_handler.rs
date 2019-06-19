@@ -16,7 +16,7 @@ pub fn fault_or_message_handler(
     mut outer_slots: LocalCNodeSlots<U32768>,
     mut outer_ut: LocalCap<Untyped<U21>>,
     mut asid_pool: LocalCap<ASIDPool<U1024>>,
-    local_vspace_scratch: &mut ScratchRegion,
+    mut local_mapped_region: MappedMemoryRegion<U16, shared_status::Exclusive>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -37,7 +37,8 @@ pub fn fault_or_message_handler(
             &mut outer_slots,
             &mut outer_ut,
             &mut asid_pool,
-            |inner_slots, inner_ut, inner_asid_pool| -> Result<(), TopLevelError> {
+            &mut local_mapped_region,
+            |inner_slots, inner_ut, inner_asid_pool, mapped_region| -> Result<(), TopLevelError> {
                 let uts = ut_buddy(inner_ut);
                 smart_alloc!(|slots: inner_slots, ut: uts| {
                     let (child_cnode, child_slots) = retype_cnode::<U12>(ut, slots)?;
@@ -74,10 +75,10 @@ pub fn fault_or_message_handler(
                     let child_process = ReadyProcess::new(
                         &mut child_vspace,
                         child_cnode,
-                        local_vspace_scratch,
+                        mapped_region,
+                        root_cnode,
                         proc_main,
                         params,
-                        ut,
                         ut,
                         ut,
                         slots,

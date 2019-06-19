@@ -3,6 +3,8 @@
 //! copy of the user image.
 use core::ptr;
 
+use typenum::*;
+
 use ferros::alloc::{smart_alloc, ut_buddy};
 use ferros::bootstrap::UserImage;
 use ferros::cap::*;
@@ -10,9 +12,7 @@ use ferros::userland::{
     call_channel, fault_or_message_channel, Caller, FaultOrMessage, ReadyProcess, Responder,
     RetypeForSetup, Sender,
 };
-use ferros::vspace::{ProcessCodeImageConfig, ScratchRegion, VSpace};
-
-use typenum::*;
+use ferros::vspace::*;
 
 use super::TopLevelError;
 
@@ -23,6 +23,7 @@ pub fn dont_tread_on_me<'a, 'b, 'c>(
     local_slots: LocalCNodeSlots<U42768>,
     local_ut: LocalCap<Untyped<U27>>,
     asid_pool: LocalCap<ASIDPool<U2>>,
+    local_mapped_region: MappedMemoryRegion<U17, shared_status::Exclusive>,
     local_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
@@ -84,13 +85,15 @@ pub fn dont_tread_on_me<'a, 'b, 'c>(
         };
         let proc2_params = proc2::Proc2Params { cllr: caller };
 
+        let (proc1_region, proc2_region) = local_mapped_region.split()?;
+
         let proc1_process = ReadyProcess::new(
             &mut proc1_vspace,
             proc1_cspace,
-            local_vspace_scratch,
+            proc1_region,
+            root_cnode,
             proc1::run,
             proc1_params,
-            ut,
             ut,
             ut,
             slots,
@@ -102,10 +105,10 @@ pub fn dont_tread_on_me<'a, 'b, 'c>(
         let proc2_process = ReadyProcess::new(
             &mut proc2_vspace,
             proc2_cspace,
-            local_vspace_scratch,
+            proc2_region,
+            root_cnode,
             proc2::run,
             proc2_params,
-            ut,
             ut,
             ut,
             slots,

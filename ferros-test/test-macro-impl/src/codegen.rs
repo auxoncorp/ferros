@@ -461,7 +461,7 @@ mod tests {
                     Ok(())
                 }
                 let outcome = {
-                    let ( _a0 , mapped_memory_region ) = mapped_memory_region.alloc();
+                    let ( _a0 , mapped_memory_region ) = mapped_memory_region.split_into().unwrap();
                     match under_test(_a0) {
                         Ok(_) => ferros::test_support::TestOutcome::Success,
                         Err(_) => ferros::test_support::TestOutcome::Failure,

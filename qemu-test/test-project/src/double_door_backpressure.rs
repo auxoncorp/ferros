@@ -11,7 +11,7 @@ use ferros::userland::{
     fault_or_message_channel, Consumer1, Consumer2, FaultOrMessage, Producer, QueueFullError,
     ReadyProcess, RetypeForSetup, Sender, Waker,
 };
-use ferros::vspace::{ProcessCodeImageConfig, ScratchRegion, VSpace};
+use ferros::vspace::*;
 
 type U66536 = Sum<U65536, U1000>;
 
@@ -20,6 +20,7 @@ pub fn double_door_backpressure(
     local_slots: LocalCNodeSlots<U66536>,
     local_ut: LocalCap<Untyped<U27>>,
     asid_pool: LocalCap<ASIDPool<U4>>,
+    local_mapped_region: MappedMemoryRegion<U18, shared_status::Exclusive>,
     local_vspace_scratch: &mut ScratchRegion,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
@@ -149,13 +150,17 @@ pub fn double_door_backpressure(
         let waker = Waker::new(&waker_setup, slots_w, &root_cnode)?;
         let waker_params = WakerParams::<role::Child> { waker };
 
+        let (u17_region_a, u17_region_b) = local_mapped_region.split()?;
+        let (consumer_region, producer_a_region) = u17_region_a.split()?;
+        let (producer_b_region, waker_region) = u17_region_b.split()?;
+
         let consumer_process = ReadyProcess::new(
             &mut consumer_vspace,
             consumer_cnode,
-            local_vspace_scratch,
+            consumer_region,
+            root_cnode,
             consumer_proc,
             consumer_params,
-            ut,
             ut,
             ut,
             slots,
@@ -166,10 +171,10 @@ pub fn double_door_backpressure(
         let producer_a_process = ReadyProcess::new(
             &mut producer_a_vspace,
             producer_a_cnode,
-            local_vspace_scratch,
+            producer_a_region,
+            root_cnode,
             producer_a_proc,
             producer_a_params,
-            ut,
             ut,
             ut,
             slots,
@@ -180,10 +185,10 @@ pub fn double_door_backpressure(
         let producer_b_process = ReadyProcess::new(
             &mut producer_b_vspace,
             producer_b_cnode,
-            local_vspace_scratch,
+            producer_b_region,
+            root_cnode,
             producer_b_proc,
             producer_b_params,
-            ut,
             ut,
             ut,
             slots,
@@ -194,10 +199,10 @@ pub fn double_door_backpressure(
         let waker_process = ReadyProcess::new(
             &mut waker_vspace,
             waker_cnode,
-            local_vspace_scratch,
+            waker_region,
+            root_cnode,
             waker_proc,
             waker_params,
-            ut,
             ut,
             ut,
             slots,
@@ -205,10 +210,10 @@ pub fn double_door_backpressure(
             None, // fault
         )?;
 
-        consumer_process.start();
-        producer_a_process.start();
-        producer_b_process.start();
-        waker_process.start();
+        consumer_process.start()?;
+        producer_a_process.start()?;
+        producer_b_process.start()?;
+        waker_process.start()?;
     });
 
     match handler.await_message()? {

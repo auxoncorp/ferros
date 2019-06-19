@@ -6,7 +6,7 @@ use ferros::cap::{
     ThreadPriorityAuthority, Untyped,
 };
 use ferros::userland::*;
-use ferros::vspace::{ProcessCodeImageConfig, ScratchRegion, VSpace};
+use ferros::vspace::*;
 use typenum::*;
 
 type U33768 = Sum<U32768, U1000>;
@@ -16,7 +16,7 @@ pub fn call_and_response_loop(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U2>>,
-    local_vspace_scratch: &mut ScratchRegion,
+    local_mapped_region: MappedMemoryRegion<U17, shared_status::Exclusive>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -71,13 +71,15 @@ pub fn call_and_response_loop(
 
         let responder_params = ResponderParams::<role::Child> { responder };
 
+        let (caller_region, responder_region) = local_mapped_region.split()?;
+
         let caller_process = ReadyProcess::new(
             &mut caller_vspace,
             caller_cnode,
-            local_vspace_scratch,
+            caller_region,
+            root_cnode,
             caller_proc,
             caller_params,
-            ut,
             ut,
             ut,
             slots,
@@ -89,10 +91,10 @@ pub fn call_and_response_loop(
         let responder_process = ReadyProcess::new(
             &mut responder_vspace,
             responder_cnode,
-            local_vspace_scratch,
+            responder_region,
+            &root_cnode,
             responder_proc,
             responder_params,
-            ut,
             ut,
             ut,
             slots,

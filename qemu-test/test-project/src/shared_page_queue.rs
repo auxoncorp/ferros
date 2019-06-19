@@ -7,7 +7,7 @@ use ferros::userland::{
     fault_or_message_channel, Consumer1, FaultOrMessage, Producer, QueueFullError, ReadyProcess,
     RetypeForSetup, Sender,
 };
-use ferros::vspace::{ProcessCodeImageConfig, ScratchRegion, VSpace};
+use ferros::vspace::*;
 
 use super::TopLevelError;
 
@@ -18,6 +18,7 @@ pub fn shared_page_queue<'a, 'b, 'c>(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U2>>,
+    local_mapped_region: MappedMemoryRegion<U17, shared_status::Exclusive>,
     local_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
@@ -85,13 +86,15 @@ pub fn shared_page_queue<'a, 'b, 'c>(
 
         let producer_params = ProducerParams::<role::Child> { producer };
 
+        let (producer_region, consumer_region) = local_mapped_region.split()?;
+
         let consumer_process = ReadyProcess::new(
             &mut consumer_vspace,
             consumer_cnode,
-            local_vspace_scratch,
+            consumer_region,
+            root_cnode,
             consumer_run,
             consumer_params,
-            ut,
             ut,
             ut,
             slots,
@@ -103,10 +106,10 @@ pub fn shared_page_queue<'a, 'b, 'c>(
         let producer_process = ReadyProcess::new(
             &mut producer_vspace,
             producer_cnode,
-            local_vspace_scratch,
+            producer_region,
+            root_cnode,
             producer_run,
             producer_params,
-            ut,
             ut,
             ut,
             slots,
