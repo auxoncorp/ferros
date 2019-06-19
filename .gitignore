@@ -6,3 +6,4 @@ artifacts
 .dir-locals.el
 .\#*
 \#*\#
+.gdbhistory
