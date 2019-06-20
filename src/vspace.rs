@@ -9,6 +9,9 @@ use core::ops::Sub;
 
 use typenum::*;
 
+#[cfg(feature = "vspace_map_region_at_addr")]
+use arrayvec::{ArrayVec, CapacityError};
+
 use crate::alloc::ut_buddy::{self, UTBuddyError, WUTBuddy};
 use crate::arch::cap::{page_state, AssignedASID, Page, UnassignedASID};
 use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot};
@@ -131,6 +134,10 @@ pub enum VSpaceError {
     InsufficientCNodeSlots,
     ExceededAvailableAddressSpace,
     ASIDMismatch,
+    #[cfg(feature = "vspace_map_region_at_addr")]
+    OverlappingRegion,
+    #[cfg(feature = "vspace_map_region_at_addr")]
+    OutOfRegions,
 }
 
 impl From<RetypeError> for VSpaceError {
@@ -142,6 +149,13 @@ impl From<RetypeError> for VSpaceError {
 impl From<SeL4Error> for VSpaceError {
     fn from(e: SeL4Error) -> VSpaceError {
         VSpaceError::SeL4Error(e)
+    }
+}
+
+#[cfg(feature = "vspace_map_region_at_addr")]
+impl From<CapacityError<(usize, usize)>> for VSpaceError {
+    fn from(_: CapacityError<(usize, usize)>) -> VSpaceError {
+        VSpaceError::OutOfRegions
     }
 }
 
@@ -251,7 +265,7 @@ where
     }
 }
 
-// 2^12 * PageCount
+// 2^12 / PageCount
 type NumPages<Size> = Pow<op!(Size - PageBits)>;
 
 /// A `1 << SizeBits` bytes region of unmapped memory. It can be
@@ -583,6 +597,48 @@ pub enum ProcessCodeImageConfig<'a, 'b, 'c> {
     },
 }
 
+// TODO(dan@auxon.io): Could this come in as a config item?
+#[cfg(feature = "vspace_map_region_at_addr")]
+const NUM_SPECIFIC_REGIONS: usize = 128;
+
+#[cfg(feature = "vspace_map_region_at_addr")]
+struct RegionLocations {
+    regions: ArrayVec<[(usize, usize); NUM_SPECIFIC_REGIONS]>,
+}
+
+#[cfg(feature = "vspace_map_region_at_addr")]
+impl RegionLocations {
+    fn new() -> Self {
+        RegionLocations {
+            regions: ArrayVec::new(),
+        }
+    }
+
+    fn add<SizeBits: Unsigned, SS: SharedStatus>(
+        &mut self,
+        region: &MappedMemoryRegion<SizeBits, SS>,
+    ) -> Result<(), VSpaceError>
+    where
+        SizeBits: IsGreaterOrEqual<PageBits>,
+        SizeBits: Sub<PageBits>,
+        <SizeBits as Sub<PageBits>>::Output: Unsigned,
+        <SizeBits as Sub<PageBits>>::Output: _Pow,
+        Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
+    {
+        self.regions.try_push((region.vaddr, region.size()))?;
+        Ok(())
+    }
+
+    fn is_overlap(&self, desired_vaddr: usize) -> bool {
+        for (addr, size) in self.regions.iter() {
+            if desired_vaddr >= *addr && desired_vaddr <= (*addr + size) {
+                return true;
+            }
+        }
+        false
+    }
+}
+
 /// A virtual address space manager.
 pub struct VSpace<State: VSpaceState = vspace_state::Imaged> {
     /// The cap to this address space's root-of-the-tree item.
@@ -601,6 +657,8 @@ pub struct VSpace<State: VSpaceState = vspace_state::Imaged> {
     /// when building out intermediate layers.
     untyped: WUTBuddy,
     slots: WCNodeSlots,
+    #[cfg(feature = "vspace_map_region_at_addr")]
+    specific_regions: RegionLocations,
     _state: PhantomData<State>,
 }
 
@@ -619,6 +677,8 @@ impl VSpace<vspace_state::Empty> {
             next_addr: 0,
             untyped: ut_buddy::weak_ut_buddy(untyped),
             slots,
+            #[cfg(feature = "vspace_map_region_at_addr")]
+            specific_regions: RegionLocations::new(),
             _state: PhantomData,
         })
     }
@@ -658,7 +718,9 @@ impl<S: VSpaceState> VSpace<S> {
             Ok(_) => (),
         };
         let vaddr = self.next_addr;
-        self.next_addr += PageBytes::USIZE;
+
+        self.set_next_addr()?;
+
         Ok(Cap {
             cptr: page.cptr,
             cap_data: Page {
@@ -669,6 +731,29 @@ impl<S: VSpaceState> VSpace<S> {
             },
             _role: PhantomData,
         })
+    }
+
+    #[cfg(not(feature = "vspace_map_region_at_addr"))]
+    fn set_next_addr(&mut self) -> Result<(), VSpaceError> {
+        let current_addr = self.next_addr;
+        self.next_addr = match current_addr.checked_add(PageBytes::USIZE) {
+            Some(n) => n,
+            None => return Err(VSpaceError::ExceededAvailableAddressSpace),
+        };
+        Ok(())
+    }
+
+    #[cfg(feature = "vspace_map_region_at_addr")]
+    fn set_next_addr(&mut self) -> Result<(), VSpaceError> {
+        let mut next_addr = self.next_addr;
+        while self.specific_regions.is_overlap(next_addr) {
+            next_addr = match next_addr.checked_add(PageBytes::USIZE) {
+                Some(n) => n,
+                None => return Err(VSpaceError::ExceededAvailableAddressSpace),
+            }
+        }
+        self.next_addr = next_addr;
+        Ok(())
     }
 }
 
@@ -752,6 +837,8 @@ impl VSpace<vspace_state::Imaged> {
             next_addr: vspace.next_addr,
             untyped: vspace.untyped,
             slots: vspace.slots,
+            #[cfg(feature = "vspace_map_region_at_addr")]
+            specific_regions: RegionLocations::new(),
             _state: PhantomData,
         })
     }
@@ -773,10 +860,66 @@ impl VSpace<vspace_state::Imaged> {
             },
             untyped: ut_buddy::weak_ut_buddy(ut),
             slots: cslots,
+            #[cfg(feature = "vspace_map_region_at_addr")]
+            specific_regions: RegionLocations::new(),
             next_addr,
             asid,
             _state: PhantomData,
         }
+    }
+
+    #[cfg(feature = "vspace_map_region_at_addr")]
+    pub fn map_region_at_addr<SizeBits: Unsigned, SS: SharedStatus>(
+        &mut self,
+        region: UnmappedMemoryRegion<SizeBits, SS>,
+        vaddr: usize,
+        rights: CapRights,
+    ) -> Result<MappedMemoryRegion<SizeBits, SS>, VSpaceError>
+    where
+        SizeBits: IsGreaterOrEqual<PageBits>,
+        SizeBits: Sub<PageBits>,
+        <SizeBits as Sub<PageBits>>::Output: Unsigned,
+        <SizeBits as Sub<PageBits>>::Output: _Pow,
+        Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
+    {
+        if self.specific_regions.is_overlap(vaddr) {
+            return Err(VSpaceError::OverlappingRegion);
+        }
+
+        let mut mapping_vaddr = vaddr;
+        let cptr = region.caps.start_cptr;
+        for page in region.caps.iter() {
+            match self.layers.map_layer(
+                &page,
+                mapping_vaddr,
+                &mut self.root,
+                rights,
+                &mut self.untyped,
+                &mut self.slots,
+            ) {
+                Err(MappingError::PageMapFailure(e)) => return Err(VSpaceError::SeL4Error(e)),
+                Err(MappingError::IntermediateLayerFailure(e)) => {
+                    return Err(VSpaceError::SeL4Error(e));
+                }
+                Err(e) => return Err(VSpaceError::MappingError(e)),
+                Ok(_) => (),
+            };
+            mapping_vaddr += PageBytes::USIZE;
+        }
+        let region = MappedMemoryRegion {
+            caps: MappedPageRange {
+                initial_cptr: cptr,
+                initial_vaddr: vaddr,
+                _count: PhantomData,
+                asid: self.asid.cap_data.asid,
+            },
+            vaddr: vaddr,
+            asid: self.asid.cap_data.asid,
+            _size_bits: PhantomData,
+            _shared_status: PhantomData,
+        };
+        self.specific_regions.add(&region)?;
+        Ok(region)
     }
 
     /// Map a region of memory at some address, I don't care where.
