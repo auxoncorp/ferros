@@ -23,7 +23,7 @@ const GD_MASK: usize = (((1 << PageGlobalDirIndexBits::USIZE) - 1)
 pub struct PageGlobalDirectory {}
 
 impl Maps<PageUpperDirectory> for PageGlobalDirectory {
-    fn map_granule<RootG, Root>(
+    fn map_granule<RootLowerLevel, Root>(
         &mut self,
         upper_dir: &LocalCap<PageUpperDirectory>,
         addr: usize,
@@ -31,9 +31,9 @@ impl Maps<PageUpperDirectory> for PageGlobalDirectory {
         _rights: CapRights,
     ) -> Result<(), MappingError>
     where
-        Root: Maps<RootG>,
+        Root: Maps<RootLowerLevel>,
         Root: CapType,
-        RootG: CapType,
+        RootLowerLevel: CapType,
     {
         match unsafe {
             seL4_ARM_PageUpperDirectory_Map(

@@ -40,28 +40,42 @@ pub trait VSpaceState: private::SealedVSpaceState {}
 pub mod vspace_state {
     use super::VSpaceState;
 
+    /// A VSpace state where there is a blank address space and the
+    /// capability to do some mapping, but no awareness of the
+    /// user image or mappings. The root vspace should never be in this
+    /// state in user-land code.
     pub struct Empty;
     impl VSpaceState for Empty {}
 
+    /// A VSpace state where the address space takes into account
+    /// the presence of the user image and reserved regions of
+    /// the address space. All unclaimed address space is fair game
+    /// for the VSpace to use.
     pub struct Imaged;
     impl VSpaceState for Imaged {}
 }
 
 /// A `Maps` implementor is a paging layer that maps granules of type
-/// `G`. If this layer isn't present for the incoming address,
+/// `LowerLevel`. If this layer isn't present for the incoming address,
 /// `MappingError::Overflow` should be returned, as this signals to
 /// the caller—the layer above—that it needs to create a new object at
 /// this layer and then attempt again to map the `item`.
-pub trait Maps<G: CapType> {
-    fn map_granule<RootG: CapType, Root>(
+///
+/// N.B. A "Granule" is "one of the constituent members of a layer", or
+/// "the level one level down from the current level".
+pub trait Maps<LowerLevel: CapType> {
+    /// Map the level/layer down relative to this layer.
+    /// E.G. for a PageTable, this would map a Page.
+    /// E.G. for a PageDirectory, this would map a PageTable.
+    fn map_granule<RootLowerLevel: CapType, Root>(
         &mut self,
-        item: &LocalCap<G>,
+        item: &LocalCap<LowerLevel>,
         addr: usize,
         root: &mut LocalCap<Root>,
         rights: CapRights,
     ) -> Result<(), MappingError>
     where
-        Root: Maps<RootG>,
+        Root: Maps<RootLowerLevel>,
         Root: CapType;
 }
 
@@ -144,7 +158,7 @@ pub trait PagingLayer {
     /// implementor ought to return `MappingError::Overflow` to signal
     /// that mapping is needed at the layer above, otherwise the error
     /// is just bubbled up to the caller.
-    fn map_layer<RootG: CapType, Root>(
+    fn map_layer<RootLowerLevel: CapType, Root>(
         &mut self,
         item: &LocalCap<Self::Item>,
         addr: usize,
@@ -154,29 +168,29 @@ pub trait PagingLayer {
         slots: &mut WCNodeSlots,
     ) -> Result<(), MappingError>
     where
-        Root: Maps<RootG>,
+        Root: Maps<RootLowerLevel>,
         Root: CapType;
 }
 
 /// `PagingTop` represents the root of an address space structure.
-pub struct PagingTop<G, L: Maps<G>>
+pub struct PagingTop<LowerLevel, CurrentLevel: Maps<LowerLevel>>
 where
-    L: CapType,
-    G: CapType,
+    CurrentLevel: CapType,
+    LowerLevel: CapType,
 {
-    pub layer: L,
-    pub(super) _item: PhantomData<G>,
+    pub layer: CurrentLevel,
+    pub(super) _item: PhantomData<LowerLevel>,
 }
 
-impl<G, L: Maps<G>> PagingLayer for PagingTop<G, L>
+impl<LowerLevel, CurrentLevel: Maps<LowerLevel>> PagingLayer for PagingTop<LowerLevel, CurrentLevel>
 where
-    L: CapType,
-    G: CapType + DirectRetype + PhantomCap,
+    CurrentLevel: CapType,
+    LowerLevel: CapType + DirectRetype + PhantomCap,
 {
-    type Item = G;
-    fn map_layer<RootG: CapType, Root>(
+    type Item = LowerLevel;
+    fn map_layer<RootLowerLevel: CapType, Root>(
         &mut self,
-        item: &LocalCap<G>,
+        item: &LocalCap<LowerLevel>,
         addr: usize,
         root: &mut LocalCap<Root>,
         rights: CapRights,
@@ -184,30 +198,31 @@ where
         _slots: &mut WCNodeSlots,
     ) -> Result<(), MappingError>
     where
-        Root: Maps<RootG>,
+        Root: Maps<RootLowerLevel>,
         Root: CapType,
     {
         self.layer.map_granule(item, addr, root, rights)
     }
 }
 
-/// `PagingRec` represents an intermediate layer. It is of type `L`,
-/// while it maps `G`s. The layer above it is inside `P`.
-pub struct PagingRec<G: CapType, L: Maps<G>, P: PagingLayer> {
-    pub(crate) layer: L,
-    pub(crate) next: P,
-    pub(crate) _item: PhantomData<G>,
+/// `PagingRec` represents an intermediate layer. It is of type `CurrentLevel`,
+/// while it maps `LowerLevel`s. The layer above it is `UpperLevel`.
+pub struct PagingRec<LowerLevel: CapType, CurrentLevel: Maps<LowerLevel>, UpperLevel: PagingLayer> {
+    pub(crate) layer: CurrentLevel,
+    pub(crate) next: UpperLevel,
+    pub(crate) _item: PhantomData<LowerLevel>,
 }
 
-impl<G, L: Maps<G>, P: PagingLayer> PagingLayer for PagingRec<G, L, P>
+impl<LowerLevel, CurrentLevel: Maps<LowerLevel>, UpperLevel: PagingLayer> PagingLayer
+    for PagingRec<LowerLevel, CurrentLevel, UpperLevel>
 where
-    L: CapType,
-    G: CapType + DirectRetype + PhantomCap,
+    CurrentLevel: CapType,
+    LowerLevel: CapType + DirectRetype + PhantomCap,
 {
-    type Item = G;
-    fn map_layer<RootG: CapType, Root>(
+    type Item = LowerLevel;
+    fn map_layer<RootLowerLevel: CapType, Root>(
         &mut self,
-        item: &LocalCap<G>,
+        item: &LocalCap<LowerLevel>,
         addr: usize,
         root: &mut LocalCap<Root>,
         rights: CapRights,
@@ -215,7 +230,7 @@ where
         mut slots: &mut WCNodeSlots,
     ) -> Result<(), MappingError>
     where
-        Root: Maps<RootG>,
+        Root: Maps<RootLowerLevel>,
         Root: CapType,
     {
         // Attempt to map this layer's granule.
@@ -223,8 +238,9 @@ where
             // if it fails with a lookup error, ask the next layer up
             // to map a new instance at this layer.
             Err(MappingError::Overflow) => {
-                let mut ut = utb.alloc(slots, <P::Item as DirectRetype>::SizeBits::USIZE)?;
-                let next_item = ut.retype::<P::Item>(&mut slots)?;
+                let mut ut =
+                    utb.alloc(slots, <UpperLevel::Item as DirectRetype>::SizeBits::USIZE)?;
+                let next_item = ut.retype::<UpperLevel::Item>(&mut slots)?;
                 self.next
                     .map_layer(&next_item, addr, root, rights, utb, slots)?;
                 // Then try again to map this layer.
@@ -404,6 +420,9 @@ where
         self.vaddr
     }
 
+    /// In the Ok case,
+    /// returns a shared, unmapped copy of the memory region (backed by fresh page-caps)
+    /// along with this self-same mapped memory region, marked as shared
     pub fn share(
         self,
         slots: LocalCNodeSlots<NumPages<SizeBits>>,
@@ -451,7 +470,7 @@ where
 
     #[cfg(feature = "test_support")]
     /// Super dangerous copy-aliasing
-    pub(crate) unsafe fn internal_alias(&mut self) -> Self {
+    pub(crate) unsafe fn dangerous_internal_alias(&mut self) -> Self {
         MappedMemoryRegion::unchecked_new(self.caps.initial_cptr, self.vaddr, self.asid)
     }
 
@@ -692,8 +711,6 @@ impl VSpace<vspace_state::Imaged> {
             } => {
                 // First, retype the untyped into `CodePageCount`
                 // pages.
-                // TODO - consider whether we should slice the UT/Slots resources needed here
-                // off of the weak runtime resources made available to this VSpace
                 let fresh_pages: CapRange<
                     Page<page_state::Unmapped>,
                     role::Local,
@@ -720,10 +737,10 @@ impl VSpace<vspace_state::Imaged> {
                         },
                     )?;
                     // Finally, map that page into the target vspace
-                    // TODO - do we need to manually pipe through a vaddr,
-                    // or can we trust that setting the starting next_addr above
-                    // combined with the user_image pages iterator will produce
-                    // the right ordering of values?
+                    // N.B. This mapping assumes that the provided UserImage
+                    // reserves a single contiguous region after some starting offset
+                    // and that the VSpace has been mutated to match that starting offset
+                    // and that we always copy-map pages without rearrangement or skipping
                     let _mapped_page =
                         vspace.map_given_page(unmapped_region.to_page(), CapRights::RW)?;
                 }
@@ -893,16 +910,7 @@ impl VSpace<vspace_state::Imaged> {
         &mut self,
         page: LocalCap<Page<page_state::Mapped>>,
     ) -> Result<LocalCap<Page<page_state::Unmapped>>, SeL4Error> {
-        match unsafe { seL4_ARM_Page_Unmap(page.cptr) } {
-            0 => Ok(Cap {
-                cptr: page.cptr,
-                cap_data: Page {
-                    state: page_state::Unmapped {},
-                },
-                _role: PhantomData,
-            }),
-            e => Err(SeL4Error::PageUnmap(e)),
-        }
+        page.unmap()
     }
 
     fn map_region_internal<SizeBits: Unsigned, SSIn: SharedStatus, SSOut: SharedStatus>(

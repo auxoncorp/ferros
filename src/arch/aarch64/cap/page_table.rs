@@ -11,7 +11,7 @@ use super::{page_state, Page};
 pub struct PageTable {}
 
 impl Maps<Page<page_state::Unmapped>> for PageTable {
-    fn map_granule<RootG, Root>(
+    fn map_granule<RootLowerLevel, Root>(
         &mut self,
         page: &LocalCap<Page<page_state::Unmapped>>,
         addr: usize,
@@ -19,9 +19,9 @@ impl Maps<Page<page_state::Unmapped>> for PageTable {
         rights: CapRights,
     ) -> Result<(), MappingError>
     where
-        Root: Maps<RootG>,
+        Root: Maps<RootLowerLevel>,
         Root: CapType,
-        RootG: CapType,
+        RootLowerLevel: CapType,
     {
         if is_aligned(addr) {
             match unsafe {

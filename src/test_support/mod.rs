@@ -74,13 +74,17 @@ pub fn execute_tests<'t, R: types::TestReporter>(
             untyped,
             asid_pool,
             mapped_memory_region,
-            |s, u, a, r| -> Result<(), SeL4Error> {
+            |inner_slots,
+             inner_untyped,
+             inner_asid_pool,
+             inner_mapped_memory_region|
+             -> Result<(), SeL4Error> {
                 let (name, outcome) = t(
-                    s,
-                    u,
-                    a,
+                    inner_slots,
+                    inner_untyped,
+                    inner_asid_pool,
                     &mut scratch,
-                    r,
+                    inner_mapped_memory_region,
                     cnode,
                     thread_authority,
                     user_image,
@@ -110,8 +114,8 @@ pub fn with_temporary_resources<
     SlotCount: Unsigned,
     UntypedBitSize: Unsigned,
     MappedBitSize: Unsigned,
-    E,
-    F,
+    InnerError,
+    Func,
 >(
     slots: &mut LocalCNodeSlots<SlotCount>,
     untyped: &mut LocalCap<Untyped<UntypedBitSize>>,
@@ -120,15 +124,15 @@ pub fn with_temporary_resources<
         MappedBitSize,
         crate::vspace::shared_status::Exclusive,
     >,
-    f: F,
-) -> Result<Result<(), E>, SeL4Error>
+    f: Func,
+) -> Result<Result<(), InnerError>, SeL4Error>
 where
-    F: FnOnce(
+    Func: FnOnce(
         LocalCNodeSlots<SlotCount>,
         LocalCap<Untyped<UntypedBitSize>>,
         LocalCap<ASIDPool<arch::ASIDPoolSize>>,
         MappedMemoryRegion<MappedBitSize, crate::vspace::shared_status::Exclusive>,
-    ) -> Result<(), E>,
+    ) -> Result<(), InnerError>,
 
     MappedBitSize: IsGreaterOrEqual<PageBits>,
     MappedBitSize: Sub<PageBits>,
@@ -156,7 +160,7 @@ where
                 _free_slots: PhantomData,
             },
         },
-        unsafe { mapped_memory_region.internal_alias() },
+        unsafe { mapped_memory_region.dangerous_internal_alias() },
     );
     unsafe { slots.revoke_in_reverse() }
 

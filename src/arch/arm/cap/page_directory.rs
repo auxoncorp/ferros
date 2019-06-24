@@ -17,7 +17,7 @@ const PD_MASK: usize =
 pub struct PageDirectory {}
 
 impl Maps<PageTable> for PageDirectory {
-    fn map_granule<RootG, Root>(
+    fn map_granule<RootLowerLevel, Root>(
         &mut self,
         table: &LocalCap<PageTable>,
         addr: usize,
@@ -25,9 +25,9 @@ impl Maps<PageTable> for PageDirectory {
         _rights: CapRights,
     ) -> Result<(), MappingError>
     where
-        Root: Maps<RootG>,
+        Root: Maps<RootLowerLevel>,
         Root: CapType,
-        RootG: CapType,
+        RootLowerLevel: CapType,
     {
         match unsafe {
             seL4_ARM_PageTable_Map(

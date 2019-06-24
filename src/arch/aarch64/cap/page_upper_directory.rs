@@ -17,7 +17,7 @@ const UD_MASK: usize = (((1 << PageUpperDirIndexBits::USIZE) - 1)
 pub struct PageUpperDirectory {}
 
 impl Maps<PageDirectory> for PageUpperDirectory {
-    fn map_granule<RootG, Root>(
+    fn map_granule<RootLowerLevel, Root>(
         &mut self,
         dir: &LocalCap<PageDirectory>,
         addr: usize,
@@ -25,9 +25,9 @@ impl Maps<PageDirectory> for PageUpperDirectory {
         _rights: CapRights,
     ) -> Result<(), MappingError>
     where
-        Root: Maps<RootG>,
+        Root: Maps<RootLowerLevel>,
         Root: CapType,
-        RootG: CapType,
+        RootLowerLevel: CapType,
     {
         match unsafe {
             seL4_ARM_PageDirectory_Map(

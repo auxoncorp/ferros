@@ -21,7 +21,7 @@ pub type ASIDPoolCount = op!((U1 << ASIDHighBits) - U1);
 pub type ASIDPoolSize = op!(U1 << ASIDLowBits);
 
 #[cfg(KernelHypervisorSupport)]
-mod hyp_or_not {
+mod hyp_dependent_constants {
     use typenum::*;
     pub type PGDBits = U5;
     pub type PGDIndexBits = U2;
@@ -34,7 +34,7 @@ mod hyp_or_not {
 }
 
 #[cfg(not(KernelHypervisorSupport))]
-mod hyp_or_not {
+mod hyp_dependent_constants {
     use core::marker::PhantomData;
 
     use crate::vspace::{PagingRec, PagingTop};
@@ -71,7 +71,7 @@ mod hyp_or_not {
     }
 }
 
-pub use hyp_or_not::*;
+pub use hyp_dependent_constants::*;
 
 pub type PageDirectoryBits = U14;
 pub type PageBits = U12;

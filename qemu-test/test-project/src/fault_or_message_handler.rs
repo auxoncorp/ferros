@@ -71,7 +71,6 @@ pub fn fault_or_message_handler(
                         root_cnode,
                     )?;
 
-                    debug_println!("setting up child");
                     let child_process = ReadyProcess::new(
                         &mut child_vspace,
                         child_cnode,
@@ -86,10 +85,7 @@ pub fn fault_or_message_handler(
                         Some(source),
                     )?;
                 });
-                debug_println!("starting child");
                 child_process.start()?;
-
-                debug_println!("awating a message");
 
                 match handler.await_message()? {
                     FaultOrMessage::Fault(_) => {
@@ -144,7 +140,6 @@ impl RetypeForSetup for ProcParams<role::Local> {
 }
 
 pub extern "C" fn proc_main(params: ProcParams<role::Local>) {
-    debug_println!("proc_main: enter");
     let ProcParams { command, sender } = params;
     match command {
         Command::ReportTrue => sender.blocking_send(&true).expect("Could not send true"),

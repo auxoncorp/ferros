@@ -76,7 +76,7 @@ pub struct BootInfo<ASIDControlFreePools: Unsigned> {
 }
 
 impl BootInfo<op!(ASIDPoolCount - U1)> {
-    /* TODO(dan@auxon.io): Just wanted to leave a quick note here: Now
+    /* NB(dan@auxon.io): Just wanted to leave a quick note here: Now
      * that the vspace needs some resources to do its job, we need the
      * ability to give those resources to the root threads vspace
      * which is initialized here in `wrap`. This results in the a
@@ -86,9 +86,8 @@ impl BootInfo<op!(ASIDPoolCount - U1)> {
      * for the root thread to use. After this change, those two latter
      * things will need to happen first, only then can we call `wrap`,
      * yielding to it some of the resources from those prior
-     * constructions. This makes me think: Should there be further
-     * "wrapping"? Could `BootInfo` grow to also contain those two
-     * allocators? */
+     * constructions.
+     */
 
     /// Bootstrap the bootinfo structure the root task gets from the
     /// kernel.
@@ -106,6 +105,8 @@ impl BootInfo<op!(ASIDPoolCount - U1)> {
             _role: PhantomData,
         };
 
+        // Assume that the first usable vaddr is after the space allocated
+        // for the user image frames, with 100% of that size as a buffer.
         let init_vaddr = 2 * (user_image.frames_count * PageBytes::USIZE);
         BootInfo {
             root_vspace: VSpace::bootstrap(

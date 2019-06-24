@@ -36,7 +36,7 @@ pub struct TestResourceRefs<'t> {
     pub(super) user_image: &'t UserImage<role::Local>,
 }
 
-type PageBitsPlusOne = Sum<U1, <Page<page_state::Unmapped> as DirectRetype>::SizeBits>;
+type PageFallbackNextSize = Sum<U1, <Page<page_state::Unmapped> as DirectRetype>::SizeBits>;
 
 impl Resources {
     pub fn with_debug_reporting(
@@ -67,11 +67,11 @@ impl Resources {
                 Some(v) => v,
                 None => {
                     let ut_plus_one =
-                        allocator.get_untyped::<PageBitsPlusOne>().ok_or_else(|| {
-                            super::TestSetupError::InitialUntypedNotFound {
-                                bit_size: PageBitsPlusOne::USIZE,
-                            }
-                        })?;
+                        allocator
+                            .get_untyped::<PageFallbackNextSize>()
+                            .ok_or_else(|| super::TestSetupError::InitialUntypedNotFound {
+                                bit_size: PageFallbackNextSize::USIZE,
+                            })?;
                     let (ut_page, _) = ut_plus_one.split(extra_scratch_slots)?;
                     ut_page
                 }
@@ -138,7 +138,7 @@ impl Resources {
             scratch: self
                 .reserved_for_scratch
                 .as_scratch(&mut self.vspace)
-                .expect("Failed to use root VSpace as the VSpace reserved for scratch space."),
+                .expect("Failed to use root VSpace in combination with the reserved region, likely an ASID mismatch."),
             mapped_memory_region: &mut self.mapped_memory_region,
             cnode: &self.cnode,
             thread_authority: &self.thread_authority,

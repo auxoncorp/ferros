@@ -10,6 +10,17 @@ root_task_image = "target/armv7-unknown-linux-gnueabihf/debug/minimal-ferros-tes
 make_root_task = "cargo xbuild --target=armv7-unknown-linux-gnueabihf --release"
 root_task_image = "target/armv7-unknown-linux-gnueabihf/release/minimal-ferros-test"
 
+### TX1 (ARMv8)
+[build.tx1]
+cross_compiler_prefix = "aarch64-linux-gnu-"
+
+[build.tx1.debug]
+make_root_task = "cargo xbuild --target=aarch64-unknown-linux-gnu"
+root_task_image = "target/aarch64-unknown-linux-gnu/debug/minimal-ferros-test"
+
+[build.tx1.release]
+make_root_task = "cargo xbuild --target=aarch64-unknown-linux-gnu --release"
+root_task_image = "target/aarch64-unknown-linux-gnu/release/minimal-ferros-test"
 
 [sel4]
 # We need some of the changes since last release for TX1/aarch64 hyp support
