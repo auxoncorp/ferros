@@ -1095,6 +1095,10 @@ where
                 next_addr,
                 &mut self.vspace.root,
                 CapRights::RW,
+                // NB: In the case of a ReservedRegion, we've already
+                // mapped any of the intermediate layers so should
+                // therefore not need a cache of resources for
+                // temporarily mapping this scratch region.
                 &mut WUTBuddy::empty(),
                 &mut dummy_empty_slots(),
             ) {
