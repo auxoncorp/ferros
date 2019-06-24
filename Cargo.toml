@@ -5,9 +5,8 @@ authors = ["Russell Mull <russell@auxon.io>", "Zack Pierce <zack@auxon.io"]
 edition = "2018"
 
 [features]
-default = ["four_param_rights"]
+default = []
 test_support = []
-four_param_rights = []
 
 [dependencies]
 # NOTE: We use a git dependency directly since the git submodules

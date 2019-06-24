@@ -24,12 +24,6 @@ fn main() {
 }
 
 fn generate_root_task_stack_types(out_dir: &Path, config: &Contextualized) {
-    // if &SeL4Arch::Aarch32 != &config.context.sel4_arch {
-    //     panic!("ferros is not yet portable across architectures. aarch32, please.")
-    // }
-    // if env::var("CARGO_CFG_TARGET_ARCH").unwrap() != "arm" {
-    //     panic!("ferros should not compile if the target_arch is not arm")
-    // }
     // TODO - check against target-pointer-width or similar for 32/64 bit differences and panic if unsupported
     // Gleaned from: sel4/kernel/include/arch/arm/arch/32/mode/api/constants.h
     // TODO - instead of calculating these now, we would much rather prefer to have typenum constants

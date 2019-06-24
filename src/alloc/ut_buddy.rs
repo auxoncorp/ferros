@@ -323,11 +323,13 @@ fn alloc(
     })
 }
 
-unsafe fn make_pool() -> [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE] {
-    let mut pool: [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE] =
-        core::mem::uninitialized();
-    for p in pool.iter_mut() {
-        core::ptr::write(p, ArrayVec::default());
+fn make_pool() -> [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE] {
+    unsafe {
+        let mut pool: [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE] =
+            core::mem::uninitialized();
+        for p in pool.iter_mut() {
+            core::ptr::write(p, ArrayVec::default());
+        }
+        pool
     }
-    pool
 }
