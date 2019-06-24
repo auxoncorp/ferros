@@ -16,7 +16,7 @@ pub fn fault_or_message_handler(
     mut outer_slots: LocalCNodeSlots<U32768>,
     mut outer_ut: LocalCap<Untyped<U21>>,
     mut asid_pool: LocalCap<ASIDPool<U1024>>,
-    local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+    mut local_mapped_region: MappedMemoryRegion<U16, shared_status::Exclusive>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -37,7 +37,8 @@ pub fn fault_or_message_handler(
             &mut outer_slots,
             &mut outer_ut,
             &mut asid_pool,
-            |inner_slots, inner_ut, inner_asid_pool| -> Result<(), TopLevelError> {
+            &mut local_mapped_region,
+            |inner_slots, inner_ut, inner_asid_pool, mapped_region| -> Result<(), TopLevelError> {
                 let uts = ut_buddy(inner_ut);
                 smart_alloc!(|slots: inner_slots, ut: uts| {
                     let (child_cnode, child_slots) = retype_cnode::<U12>(ut, slots)?;
@@ -55,18 +56,36 @@ pub fn fault_or_message_handler(
                     };
 
                     let (child_asid, _asid_pool) = inner_asid_pool.alloc();
-                    let child_vspace =
-                        VSpace::new(ut, slots, child_asid, &user_image, &root_cnode)?;
 
-                    let (child_process, _) = child_vspace.prepare_thread(
+                    let child_root = retype(ut, slots)?;
+                    let child_vspace_slots: LocalCNodeSlots<U1024> = slots;
+                    let child_vspace_ut: LocalCap<Untyped<U14>> = ut;
+
+                    let mut child_vspace = VSpace::new(
+                        child_root,
+                        child_asid,
+                        child_vspace_slots.weaken(),
+                        child_vspace_ut.weaken(),
+                        ProcessCodeImageConfig::ReadOnly,
+                        user_image,
+                        root_cnode,
+                    )?;
+
+                    let child_process = ReadyProcess::new(
+                        &mut child_vspace,
+                        child_cnode,
+                        mapped_region,
+                        root_cnode,
                         proc_main,
                         params,
                         ut,
+                        ut,
                         slots,
-                        local_vspace_scratch,
+                        tpa,
+                        Some(source),
                     )?;
                 });
-                child_process.start(child_cnode, Some(source), tpa, 255)?;
+                child_process.start()?;
 
                 match handler.await_message()? {
                     FaultOrMessage::Fault(_) => {

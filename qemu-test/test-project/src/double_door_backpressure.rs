@@ -9,9 +9,9 @@ use ferros::bootstrap::UserImage;
 use ferros::cap::*;
 use ferros::userland::{
     fault_or_message_channel, Consumer1, Consumer2, FaultOrMessage, Producer, QueueFullError,
-    RetypeForSetup, Sender, Waker,
+    ReadyProcess, RetypeForSetup, Sender, Waker,
 };
-use ferros::vspace::{VSpace, VSpaceScratchSlice};
+use ferros::vspace::*;
 
 type U66536 = Sum<U65536, U1000>;
 
@@ -20,7 +20,8 @@ pub fn double_door_backpressure(
     local_slots: LocalCNodeSlots<U66536>,
     local_ut: LocalCap<Untyped<U27>>,
     asid_pool: LocalCap<ASIDPool<U4>>,
-    local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+    local_mapped_region: MappedMemoryRegion<U18, shared_status::Exclusive>,
+    local_vspace_scratch: &mut ScratchRegion,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -39,28 +40,74 @@ pub fn double_door_backpressure(
         let (waker_cnode, waker_slots) = retype_cnode::<U12>(ut, slots)?;
 
         // vspace setup
-        let consumer_vspace = VSpace::new(ut, slots, consumer_asid, &user_image, &root_cnode)?;
-        let producer_a_vspace = VSpace::new(ut, slots, producer_a_asid, &user_image, &root_cnode)?;
-        let producer_b_vspace = VSpace::new(ut, slots, producer_b_asid, &user_image, &root_cnode)?;
-        let waker_vspace = VSpace::new(ut, slots, waker_asid, &user_image, &root_cnode)?;
+        let consumer_root = retype(ut, slots)?;
+        let consumer_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let consumer_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let mut consumer_vspace = VSpace::new(
+            consumer_root,
+            consumer_asid,
+            consumer_vspace_slots.weaken(),
+            consumer_vspace_ut.weaken(),
+            ProcessCodeImageConfig::ReadOnly,
+            user_image,
+            root_cnode,
+        )?;
+
+        let producer_a_root = retype(ut, slots)?;
+        let producer_a_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let producer_a_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let mut producer_a_vspace = VSpace::new(
+            producer_a_root,
+            producer_a_asid,
+            producer_a_vspace_slots.weaken(),
+            producer_a_vspace_ut.weaken(),
+            ProcessCodeImageConfig::ReadOnly,
+            user_image,
+            root_cnode,
+        )?;
+
+        let producer_b_root = retype(ut, slots)?;
+        let producer_b_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let producer_b_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let mut producer_b_vspace = VSpace::new(
+            producer_b_root,
+            producer_b_asid,
+            producer_b_vspace_slots.weaken(),
+            producer_b_vspace_ut.weaken(),
+            ProcessCodeImageConfig::ReadOnly,
+            user_image,
+            root_cnode,
+        )?;
+
+        let waker_root = retype(ut, slots)?;
+        let waker_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let waker_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let mut waker_vspace = VSpace::new(
+            waker_root,
+            waker_asid,
+            waker_vspace_slots.weaken(),
+            waker_vspace_ut.weaken(),
+            ProcessCodeImageConfig::ReadOnly,
+            user_image,
+            root_cnode,
+        )?;
 
         let (slots_c, consumer_slots) = consumer_slots.alloc();
-        let (consumer, consumer_token, producer_setup_a, waker_setup, consumer_vspace) =
-            Consumer1::new(
-                ut,
-                ut,
-                consumer_vspace,
-                local_vspace_scratch,
-                &root_cnode,
-                slots,
-                slots_c,
-            )?;
+        let (consumer, consumer_token, producer_setup_a, waker_setup) = Consumer1::new(
+            ut,
+            ut,
+            local_vspace_scratch,
+            &mut consumer_vspace,
+            &root_cnode,
+            slots,
+            slots_c,
+        )?;
 
-        let (consumer, producer_setup_b, consumer_vspace) = consumer.add_queue(
+        let (consumer, producer_setup_b) = consumer.add_queue(
             &consumer_token,
             ut,
-            consumer_vspace,
             local_vspace_scratch,
+            &mut consumer_vspace,
             &root_cnode,
             slots,
         )?;
@@ -74,10 +121,10 @@ pub fn double_door_backpressure(
         };
 
         let (slots_a, _producer_a_slots) = producer_a_slots.alloc();
-        let (producer_a, producer_a_vspace) = Producer::new(
+        let producer_a = Producer::new(
             &producer_setup_a,
             slots_a,
-            producer_a_vspace,
+            &mut producer_a_vspace,
             &root_cnode,
             slots,
         )?;
@@ -87,10 +134,10 @@ pub fn double_door_backpressure(
         };
 
         let (slots_b, _producer_b_slots) = producer_b_slots.alloc();
-        let (producer_b, producer_b_vspace) = Producer::new(
+        let producer_b = Producer::new(
             &producer_setup_b,
             slots_b,
-            producer_b_vspace,
+            &mut producer_b_vspace,
             &root_cnode,
             slots,
         )?;
@@ -103,42 +150,70 @@ pub fn double_door_backpressure(
         let waker = Waker::new(&waker_setup, slots_w, &root_cnode)?;
         let waker_params = WakerParams::<role::Child> { waker };
 
-        let (consumer_thread, _) = consumer_vspace.prepare_thread(
-            consumer_process,
+        let (u17_region_a, u17_region_b) = local_mapped_region.split()?;
+        let (consumer_region, producer_a_region) = u17_region_a.split()?;
+        let (producer_b_region, waker_region) = u17_region_b.split()?;
+
+        let consumer_process = ReadyProcess::new(
+            &mut consumer_vspace,
+            consumer_cnode,
+            consumer_region,
+            root_cnode,
+            consumer_proc,
             consumer_params,
             ut,
+            ut,
             slots,
-            local_vspace_scratch,
+            tpa,
+            None, // fault
         )?;
 
-        let (producer_a_thread, _) = producer_a_vspace.prepare_thread(
-            producer_x_process,
+        let producer_a_process = ReadyProcess::new(
+            &mut producer_a_vspace,
+            producer_a_cnode,
+            producer_a_region,
+            root_cnode,
+            producer_a_proc,
             producer_a_params,
             ut,
+            ut,
             slots,
-            local_vspace_scratch,
+            tpa,
+            None, // fault
         )?;
 
-        let (producer_b_thread, _) = producer_b_vspace.prepare_thread(
-            producer_y_process,
+        let producer_b_process = ReadyProcess::new(
+            &mut producer_b_vspace,
+            producer_b_cnode,
+            producer_b_region,
+            root_cnode,
+            producer_b_proc,
             producer_b_params,
             ut,
-            slots,
-            local_vspace_scratch,
-        )?;
-
-        let (waker_thread, _) = waker_vspace.prepare_thread(
-            waker_process,
-            waker_params,
             ut,
             slots,
-            local_vspace_scratch,
+            tpa,
+            None, // fault
         )?;
 
-        consumer_thread.start(consumer_cnode, Some(fault_source), tpa, 255)?;
-        producer_a_thread.start(producer_a_cnode, None, tpa, 255)?;
-        producer_b_thread.start(producer_b_cnode, None, tpa, 255)?;
-        waker_thread.start(waker_cnode, None, tpa, 255)?;
+        let waker_process = ReadyProcess::new(
+            &mut waker_vspace,
+            waker_cnode,
+            waker_region,
+            root_cnode,
+            waker_proc,
+            waker_params,
+            ut,
+            ut,
+            slots,
+            tpa,
+            None, // fault
+        )?;
+
+        consumer_process.start()?;
+        producer_a_process.start()?;
+        producer_b_process.start()?;
+        waker_process.start()?;
     });
 
     match handler.await_message()? {
@@ -192,7 +267,7 @@ impl RetypeForSetup for WakerParams<role::Local> {
     type Output = WakerParams<role::Child>;
 }
 
-pub extern "C" fn consumer_process(p: ConsumerParams<role::Local>) {
+pub extern "C" fn consumer_proc(p: ConsumerParams<role::Local>) {
     #[derive(Debug)]
     struct State {
         interrupt_count: usize,
@@ -254,11 +329,11 @@ pub extern "C" fn consumer_process(p: ConsumerParams<role::Local>) {
     )
 }
 
-pub extern "C" fn waker_process(p: WakerParams<role::Local>) {
+pub extern "C" fn waker_proc(p: WakerParams<role::Local>) {
     p.waker.send_wakeup_signal();
 }
 
-pub extern "C" fn producer_x_process(p: ProducerXParams<role::Local>) {
+pub extern "C" fn producer_a_proc(p: ProducerXParams<role::Local>) {
     for i in 0..20 {
         let mut x = Xenon { a: i };
         loop {
@@ -277,7 +352,7 @@ pub extern "C" fn producer_x_process(p: ProducerXParams<role::Local>) {
     }
 }
 
-pub extern "C" fn producer_y_process(p: ProducerYParams<role::Local>) {
+pub extern "C" fn producer_b_proc(p: ProducerYParams<role::Local>) {
     let mut rejection_count = 0;
     for i in 0..20 {
         let mut y = Yttrium { b: i };

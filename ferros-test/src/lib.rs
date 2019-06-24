@@ -7,8 +7,10 @@ pub use test_macro_impl::ferros_test;
 #[doc(hidden)]
 pub fn sel4_start_main(tests: &[&ferros::test_support::RunTest]) {
     let raw_boot_info = unsafe { &*sel4_start::BOOTINFO };
+    let allocator = ferros::alloc::micro_alloc::Allocator::bootstrap(raw_boot_info)
+        .expect("Test allocator setup failure");
     let (mut resources, reporter) =
-        ferros::test_support::Resources::with_debug_reporting(raw_boot_info)
+        ferros::test_support::Resources::with_debug_reporting(raw_boot_info, allocator)
             .expect("Test resource setup failure");
 
     ferros::test_support::execute_tests(reporter, resources.as_mut_ref(), tests)

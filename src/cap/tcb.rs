@@ -2,13 +2,11 @@ use typenum::*;
 
 use selfe_sys::*;
 
-use crate::arch::cap::{AssignedPageDirectory, MappedPage};
-use crate::cap::{
-    memory_kind, role, CNodeRole, CapType, ChildCNode, CopyAliasable, DirectRetype,
-    ImmobileIndelibleInertCapabilityReference, LocalCap, PhantomCap,
-};
+use crate::arch::cap::{page_state, Page};
+use crate::cap::{role, CapType, ChildCNode, CopyAliasable, DirectRetype, LocalCap, PhantomCap};
 use crate::error::SeL4Error;
 use crate::userland::FaultSource;
+use crate::vspace::VSpace;
 
 #[derive(Debug)]
 pub struct ThreadControlBlock {}
@@ -61,14 +59,12 @@ impl LocalCap<ThreadControlBlock> {
         unsafe { core::mem::transmute(self) }
     }
 
-    pub(crate) fn configure<VSpaceRole: CNodeRole>(
+    pub(crate) fn configure(
         &mut self,
         cspace_root: LocalCap<ChildCNode>,
         fault_source: Option<FaultSource<role::Child>>,
-        vspace_cptr: ImmobileIndelibleInertCapabilityReference<
-            AssignedPageDirectory<U0, VSpaceRole>,
-        >, // vspace_root,
-        ipc_buffer: LocalCap<MappedPage<VSpaceRole, memory_kind::General>>,
+        vspace: &VSpace, // vspace_root,
+        ipc_buffer: LocalCap<Page<page_state::Mapped>>,
     ) -> Result<(), SeL4Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
         // used by the radix.
@@ -86,9 +82,9 @@ impl LocalCap<ThreadControlBlock> {
                 fault_source.map_or(seL4_CapNull as usize, |source| source.endpoint.cptr), // fault_ep.cptr,
                 cspace_root.cptr,
                 cspace_root_data,
-                vspace_cptr.get_capability_pointer(), //vspace_root.cptr,
+                vspace.root_cptr(),
                 seL4_NilData as usize, // vspace_root_data, always 0, reserved by kernel?
-                ipc_buffer.cap_data.vaddr, // buffer address
+                ipc_buffer.vaddr(),    // buffer address
                 ipc_buffer.cptr,       // bufferFrame capability
             )
         };

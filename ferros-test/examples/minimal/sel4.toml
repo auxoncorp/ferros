@@ -10,11 +10,24 @@ root_task_image = "target/armv7-unknown-linux-gnueabihf/debug/minimal-ferros-tes
 make_root_task = "cargo xbuild --target=armv7-unknown-linux-gnueabihf --release"
 root_task_image = "target/armv7-unknown-linux-gnueabihf/release/minimal-ferros-test"
 
+### TX1 (ARMv8)
+[build.tx1]
+cross_compiler_prefix = "aarch64-linux-gnu-"
+
+[build.tx1.debug]
+make_root_task = "cargo xbuild --target=aarch64-unknown-linux-gnu"
+root_task_image = "target/aarch64-unknown-linux-gnu/debug/minimal-ferros-test"
+
+[build.tx1.release]
+make_root_task = "cargo xbuild --target=aarch64-unknown-linux-gnu --release"
+root_task_image = "target/aarch64-unknown-linux-gnu/release/minimal-ferros-test"
 
 [sel4]
-kernel = { git = "https://github.com/seL4/seL4" , tag = "10.1.1" }
-tools = { git = "https://github.com/seL4/seL4_tools" , branch = "10.1.x-compatible" }
-util_libs  = { git = "https://github.com/seL4/util_libs" , branch = "10.1.x-compatible" }
+# We need some of the changes since last release for TX1/aarch64 hyp support
+# These refs are from master as of 10MAY2019
+kernel = { git = "https://github.com/seL4/seL4" , rev = "4d0f02c029560cae0e8d93727eb17d58bcecc2ac" }
+tools = { git = "https://github.com/seL4/seL4_tools" , rev = "f3b4bef672b92858c139787bc6fd5124e6022d26" }
+util_libs  = { git = "https://github.com/seL4/util_libs" , rev = "98aaebe56c66d46576485216f8c4626ed76a3757" }
 
 ### arch
 

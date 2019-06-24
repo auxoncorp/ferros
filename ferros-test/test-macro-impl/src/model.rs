@@ -39,6 +39,7 @@ pub(crate) enum ParamKind {
     CNodeSlots { count: usize },
     Untyped { bits: usize },
     ASIDPool { count: usize },
+    MappedMemoryRegion,
     VSpaceScratch,
     CNode,
     ThreadPriorityAuthority,

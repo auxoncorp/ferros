@@ -29,6 +29,13 @@ pub struct CNodeSlotsData<Size: Unsigned, Role: CNodeRole> {
     pub(crate) _role: PhantomData<Role>,
 }
 
+/// Can only represent local CNode slots with capacity tracked at runtime
+#[derive(Debug)]
+pub struct WCNodeSlotsData {
+    pub(crate) offset: usize,
+    pub(crate) size: usize,
+}
+
 impl<Role: CNodeRole> CapType for CNode<Role> {}
 
 impl<Size: Unsigned, Role: CNodeRole> CapType for CNodeSlotsData<Size, Role> {}
@@ -40,6 +47,9 @@ pub type ChildCNodeSlots<Size> = CNodeSlots<Size, role::Child>;
 pub type CNodeSlot<Role> = CNodeSlots<U1, Role>;
 pub type LocalCNodeSlot = CNodeSlot<role::Local>;
 pub type ChildCNodeSlot = CNodeSlot<role::Child>;
+
+impl CapType for WCNodeSlotsData {}
+pub type WCNodeSlots = LocalCap<WCNodeSlotsData>;
 
 impl<Size: Unsigned, CapRole: CNodeRole, Role: CNodeRole> Cap<CNodeSlotsData<Size, Role>, CapRole> {
     /// A private constructor
@@ -127,6 +137,19 @@ impl<Size: Unsigned> LocalCNodeSlots<Size> {
             );
         }
     }
+
+    /// weaken erases the state-tracking types on a set of CNode
+    /// slots.
+    pub fn weaken(self) -> WCNodeSlots {
+        WCNodeSlots {
+            cptr: self.cptr,
+            _role: PhantomData,
+            cap_data: WCNodeSlotsData {
+                offset: self.cap_data.offset,
+                size: Size::USIZE,
+            },
+        }
+    }
 }
 
 impl LocalCap<ChildCNode> {
@@ -174,5 +197,43 @@ impl LocalCap<ChildCNode> {
                 Cap::internal_new(dest_offset, dest_offset + 1),
             ))
         }
+    }
+}
+
+#[derive(Debug)]
+pub enum CNodeSlotsError {
+    NotEnoughSlots,
+}
+
+impl WCNodeSlots {
+    /// Split the WCNodeSlots(original_size) into (WCNodeSlots(count), WCNodeSlots(original_size - count))
+    /// Peel off a single cptr from these slots. Advance the state.
+    pub(crate) fn alloc(&mut self, count: usize) -> Result<WCNodeSlots, CNodeSlotsError> {
+        if count > self.cap_data.size {
+            return Err(CNodeSlotsError::NotEnoughSlots);
+        }
+        let offset = self.cap_data.offset;
+        self.cap_data.offset += count;
+        self.cap_data.size -= count;
+        Ok(Cap {
+            cptr: self.cptr,
+            cap_data: WCNodeSlotsData {
+                offset: offset,
+                size: count,
+            },
+            _role: PhantomData,
+        })
+    }
+
+    pub(crate) fn into_strong_iter(self) -> impl Iterator<Item = LocalCNodeSlot> {
+        (0..self.cap_data.size).map(move |n| Cap {
+            cptr: self.cptr,
+            _role: PhantomData,
+            cap_data: CNodeSlotsData {
+                offset: self.cap_data.offset + n,
+                _size: PhantomData,
+                _role: PhantomData,
+            },
+        })
     }
 }

@@ -34,7 +34,7 @@ mod uart;
 use ferros::alloc::micro_alloc::Error as AllocError;
 use ferros::cap::IRQError;
 use ferros::error::SeL4Error;
-use ferros::userland::{FaultManagementError, IPCError, MultiConsumerError};
+use ferros::userland::{FaultManagementError, IPCError, MultiConsumerError, ProcessSetupError};
 use ferros::vspace::VSpaceError;
 use ferros_test::ferros_test_main;
 
@@ -70,6 +70,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     sel4_start::debug_panic_handler(&info)
 }
 
+#[cfg(test_case = "uart")]
 pub fn run(raw_boot_info: &'static seL4_BootInfo) {
     uart::run(raw_boot_info).expect("run");
     unsafe {
@@ -88,6 +89,7 @@ pub enum TopLevelError {
     SeL4Error(SeL4Error),
     IRQError(IRQError),
     FaultManagementError(FaultManagementError),
+    ProcessSetupError(ProcessSetupError),
     TestAssertionFailure(&'static str),
 }
 
@@ -130,5 +132,11 @@ impl From<IRQError> for TopLevelError {
 impl From<FaultManagementError> for TopLevelError {
     fn from(e: FaultManagementError) -> Self {
         TopLevelError::FaultManagementError(e)
+    }
+}
+
+impl From<ProcessSetupError> for TopLevelError {
+    fn from(e: ProcessSetupError) -> Self {
+        TopLevelError::ProcessSetupError(e)
     }
 }

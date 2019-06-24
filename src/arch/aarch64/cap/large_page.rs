@@ -2,8 +2,6 @@ use core::marker::PhantomData;
 
 use selfe_sys::*;
 
-use typenum::*;
-
 use crate::arch::LargePageBits;
 
 use crate::cap::{

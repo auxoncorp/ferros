@@ -1,9 +1,15 @@
-use core::cmp;
 use core::marker::PhantomData;
-use core::mem::{self, size_of};
-use core::ptr;
+
+use crate::arch::{self, *};
+use crate::cap::*;
+use crate::userland::rights::CapRights;
+use crate::vspace::*;
 
 use selfe_sys::*;
+use typenum::*;
+
+pub(crate) use crate::arch::userland::process::*;
+use crate::error::SeL4Error;
 
 // TODO - consider renaming for clarity
 pub trait RetypeForSetup: Sized + Send + Sync {
@@ -11,105 +17,6 @@ pub trait RetypeForSetup: Sized + Send + Sync {
 }
 
 pub type SetupVer<X> = <X as RetypeForSetup>::Output;
-
-/// Set up the target registers and stack to pass the parameter. See
-/// http://infocenter.arm.com/help/topic/com.arm.doc.ihi0042f/IHI0042F_aapcs.pdf
-/// "Procedure Call Standard for the ARM Architecture", Section 5.5
-///
-/// Returns a tuple of (regs, stack_extent), where regs only has r0-r3 set.
-pub(crate) unsafe fn setup_initial_stack_and_regs(
-    param: *const usize,
-    param_size: usize,
-    stack_top: *mut usize,
-) -> (seL4_UserContext, usize) {
-    let word_size = size_of::<usize>();
-
-    // The 'tail' is the part of the parameter that doesn't fit in the
-    // word-aligned part.
-    let tail_size = param_size % word_size;
-
-    // The parameter must be zero-padded, at the end, to a word boundary
-    let padding_size = if tail_size == 0 {
-        0
-    } else {
-        word_size - tail_size
-    };
-    let padded_param_size = param_size + padding_size;
-
-    // 4 words are stored in registers, so only the remainder needs to go on the
-    // stack
-    let param_size_on_stack =
-        cmp::max(0, padded_param_size as isize - (4 * word_size) as isize) as usize;
-
-    let mut regs: seL4_UserContext = mem::zeroed();
-
-    // The cursor pointer to traverse the parameter data word one word at a
-    // time
-    let mut p = param;
-
-    // This is the pointer to the start of the tail.
-    let tail = (p as *const u8).add(param_size).sub(tail_size);
-
-    // Compute the tail word ahead of time, for easy use below.
-    let mut tail_word = 0usize;
-    if tail_size >= 1 {
-        tail_word |= *tail.add(0) as usize;
-    }
-
-    if tail_size >= 2 {
-        tail_word |= (*tail.add(1) as usize) << 8;
-    }
-
-    if tail_size >= 3 {
-        tail_word |= (*tail.add(2) as usize) << 16;
-    }
-
-    // Fill up r0 - r3 with the first 4 words.
-
-    if p < tail as *const usize {
-        // If we've got a whole word worth of data, put the whole thing in
-        // the register.
-        regs.r0 = *p;
-        p = p.add(1);
-    } else {
-        // If not, store the pre-computed tail word here and be done.
-        regs.r0 = tail_word;
-        return (regs, 0);
-    }
-
-    if p < tail as *const usize {
-        regs.r1 = *p;
-        p = p.add(1);
-    } else {
-        regs.r1 = tail_word;
-        return (regs, 0);
-    }
-
-    if p < tail as *const usize {
-        regs.r2 = *p;
-        p = p.add(1);
-    } else {
-        regs.r2 = tail_word;
-        return (regs, 0);
-    }
-
-    if p < tail as *const usize {
-        regs.r3 = *p;
-        p = p.add(1);
-    } else {
-        regs.r3 = tail_word;
-        return (regs, 0);
-    }
-
-    // The rest of the data goes on the stack.
-    if param_size_on_stack > 0 {
-        // TODO: stack pointer is supposed to be 8-byte aligned on ARM 32
-        let sp = (stack_top as *mut u8).sub(param_size_on_stack);
-        ptr::copy_nonoverlapping(p as *const u8, sp, param_size_on_stack);
-    }
-
-    (regs, param_size_on_stack)
-}
 
 /// A helper zero-sized struct that forces structures
 /// which have a field of its type to not auto-implement
@@ -126,108 +33,146 @@ impl core::default::Default for NeitherSendNorSync {
     }
 }
 
-#[cfg(feature = "test")]
-pub mod test {
-    use super::*;
-    use proptest::test_runner::TestError;
-
-    #[cfg(feature = "test")]
-    fn check_equal(name: &str, expected: usize, actual: usize) -> Result<(), TestError<()>> {
-        if (expected != actual) {
-            Err(TestError::Fail(
-                format!(
-                    "{} didn't match. Expected: {:08x}, actual: {:08x}",
-                    name, expected, actual
-                )
-                .into(),
-                (),
-            ))
-        } else {
-            Ok(())
+pub fn yield_forever() -> ! {
+    unsafe {
+        loop {
+            seL4_Yield();
         }
     }
+}
 
-    #[cfg(feature = "test")]
-    fn test_stack_setup_case<T: Sized>(
-        param: T,
-        r0: usize,
-        r1: usize,
-        r2: usize,
-        r3: usize,
-        stack0: usize,
-        sp_offset: usize,
-    ) -> Result<(), TestError<()>> {
-        use core::mem::size_of_val;
-        let mut fake_stack = [0usize; 1024];
+/// A TCB associated with a VSpace that has:
+///  * A usable code image mapped/written into it
+///  * Stack pages reserved and mapped
+///  * Initial process state (e.g. parameter data) written into a seL4_UserContext
+///  * Overflow initial process parameter struct data written into the stack
+///  * Said seL4_UserContext written into the TCB
+///  * An IPC buffer and CSpace and fault handler associated with that TCB
+pub struct ReadyProcess {
+    tcb: LocalCap<ThreadControlBlock>,
+}
 
-        let param_size = size_of_val(&param);
+#[derive(Debug)]
+pub enum ProcessSetupError {
+    ProcessParameterTooBigForStack,
+    ProcessParameterHandoffSizeMismatch,
+    VSpaceError(VSpaceError),
+    SeL4Error(SeL4Error),
+}
 
-        let (regs, stack_extent) = unsafe {
+impl From<VSpaceError> for ProcessSetupError {
+    fn from(e: VSpaceError) -> Self {
+        ProcessSetupError::VSpaceError(e)
+    }
+}
+
+impl From<SeL4Error> for ProcessSetupError {
+    fn from(e: SeL4Error) -> Self {
+        ProcessSetupError::SeL4Error(e)
+    }
+}
+
+// TODO - Consider making this a parameter of ReadyProcess::new
+pub type StackPageCount = U16;
+pub type PrepareThreadCNodeSlots = U32;
+
+impl ReadyProcess {
+    pub fn new<T: RetypeForSetup>(
+        vspace: &mut VSpace,
+        cspace: LocalCap<ChildCNode>,
+        parent_mapped_region: MappedMemoryRegion<StackPageCount, shared_status::Exclusive>,
+        parent_cnode: &LocalCap<LocalCNode>,
+        function_descriptor: extern "C" fn(T) -> (),
+        process_parameter: SetupVer<T>,
+        ipc_buffer_ut: LocalCap<Untyped<PageBits>>,
+        tcb_ut: LocalCap<Untyped<<ThreadControlBlock as DirectRetype>::SizeBits>>,
+        slots: LocalCNodeSlots<PrepareThreadCNodeSlots>,
+        priority_authority: &LocalCap<ThreadPriorityAuthority>,
+        fault_source: Option<crate::userland::FaultSource<role::Child>>,
+    ) -> Result<Self, ProcessSetupError> {
+        // TODO - lift these checks to compile-time, as static assertions
+        // Note - This comparison is conservative because technically
+        // we can fit some of the params into available registers.
+        if core::mem::size_of::<SetupVer<T>>() > (StackPageCount::USIZE * arch::PageBytes::USIZE) {
+            return Err(ProcessSetupError::ProcessParameterTooBigForStack);
+        }
+        if core::mem::size_of::<SetupVer<T>>() != core::mem::size_of::<T>() {
+            return Err(ProcessSetupError::ProcessParameterHandoffSizeMismatch);
+        }
+
+        // Reserve a guard page before the stack
+        vspace.skip_pages(1)?;
+
+        // map the child stack into local memory so we can copy the contents
+        // of the process params into it
+        let stack_top = parent_mapped_region.vaddr() + parent_mapped_region.size();
+        let (mut registers, param_size_on_stack) = unsafe {
             setup_initial_stack_and_regs(
-                &param as *const T as *const usize,
-                param_size,
-                (&mut fake_stack[0] as *mut usize).add(1024),
+                &process_parameter as *const SetupVer<T> as *const usize,
+                core::mem::size_of::<SetupVer<T>>(),
+                stack_top as *mut usize,
             )
         };
 
-        check_equal("r0", r0, regs.r0)?;
-        check_equal("r1", r1, regs.r1)?;
-        check_equal("r2", r2, regs.r2)?;
-        check_equal("r3", r3, regs.r3)?;
-        check_equal("top stack word", stack0, fake_stack[1023])?;
-        check_equal("sp_offset", sp_offset, stack_extent)?;
+        // Map the stack to the target address space
+        let (page_slots, slots) = slots.alloc();
+        let (unmapped_stack_pages, _) =
+            parent_mapped_region.share(page_slots, parent_cnode, CapRights::RW)?;
+        let mapped_stack_pages =
+            vspace.map_shared_region_and_consume(unmapped_stack_pages, CapRights::RW)?;
+        let stack_pointer =
+            mapped_stack_pages.vaddr() + mapped_stack_pages.size() - param_size_on_stack;
 
-        Ok(())
+        registers.sp = stack_pointer;
+        registers.pc = function_descriptor as usize;
+
+        // TODO - Probably ought to suspend or destroy the thread instead of endlessly yielding
+        set_thread_link_register(&mut registers, yield_forever);
+
+        // Reserve a guard page after the stack
+        vspace.skip_pages(1)?;
+
+        // Allocate and map the ipc buffer
+        let (ipc_slots, slots) = slots.alloc();
+        let ipc_buffer = ipc_buffer_ut.retype(ipc_slots)?;
+        let ipc_buffer = vspace.map_given_page(ipc_buffer, CapRights::RW)?;
+
+        //// allocate the thread control block
+        let (tcb_slots, _slots) = slots.alloc();
+        let mut tcb = tcb_ut.retype(tcb_slots)?;
+
+        tcb.configure(cspace, fault_source, &vspace, ipc_buffer)?;
+        unsafe {
+            let err = seL4_TCB_WriteRegisters(
+                tcb.cptr,
+                0,
+                0,
+                // all the regs
+                core::mem::size_of::<seL4_UserContext>() / core::mem::size_of::<usize>(),
+                &mut registers,
+            );
+            if err != 0 {
+                return Err(ProcessSetupError::SeL4Error(SeL4Error::TCBWriteRegisters(
+                    err,
+                )));
+            }
+
+            // TODO - priority management could be exposed once we plan on actually using it
+            let err = seL4_TCB_SetPriority(tcb.cptr, priority_authority.cptr, 255);
+            if err != 0 {
+                return Err(ProcessSetupError::SeL4Error(SeL4Error::TCBSetPriority(err)));
+            }
+        }
+        Ok(ReadyProcess { tcb })
     }
 
-    #[cfg(feature = "test")]
-    #[rustfmt::skip]
-    pub fn test_stack_setup() -> Result<(), TestError<()>> {
-        test_stack_setup_case(42u8,
-                              42, 0, 0, 0, 0, 0)?;
-
-        test_stack_setup_case([1u8, 2u8],
-                              2 << 8 | 1, // r0
-                              0, 0, 0, 0, 0)?;
-
-        test_stack_setup_case([1u8, 2u8, 3u8],
-                              3 << 16 | 2 << 8 | 1, // r0
-                              0, 0, 0, 0, 0)?;
-
-        test_stack_setup_case([1u8, 2u8, 3u8, 4u8],
-                              4 << 24 | 3 << 16 | 2 << 8 | 1, // r0
-                              0, 0, 0, 0, 0)?;
-
-        test_stack_setup_case([1u8, 2u8, 3u8, 4u8, 5u8],
-                              4 << 24 | 3 << 16 | 2 << 8 | 1, // r0
-                                                           5, // r1
-                              0, 0, 0, 0)?;
-
-        test_stack_setup_case([1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8, 9u8],
-                              4 << 24 | 3 << 16 | 2 << 8 | 1, // r0
-                              8 << 24 | 7 << 16 | 6 << 8 | 5, // r1
-                                                           9, // r2
-                              0, 0, 0)?;
-
-        test_stack_setup_case([ 1u8,  2u8,  3u8,  4u8,  5u8, 6u8, 7u8, 8u8,
-                                9u8, 10u8, 11u8, 12u8, 13u8],
-                                4 << 24 |  3 << 16 |  2 << 8 |  1,  // r0
-                                8 << 24 |  7 << 16 |  6 << 8 |  5,  // r1
-                               12 << 24 | 11 << 16 | 10 << 8 |  9,  // r2
-                                                               13,  // r3
-                              0, 0)?;
-
-        test_stack_setup_case([ 1u8,  2u8,  3u8,  4u8,  5u8,  6u8,  7u8,  8u8,
-                                9u8, 10u8, 11u8, 12u8, 13u8, 14u8, 15u8, 16u8,
-                               17u8, 18u8],
-                                4 << 24 |  3 << 16 |  2 << 8 |  1,   // r0
-                                8 << 24 |  7 << 16 |  6 << 8 |  5,   // r1
-                               12 << 24 | 11 << 16 | 10 << 8 |  9,   // r2
-                               16 << 24 | 15 << 16 | 14 << 8 | 13,   // r3
-                                                     18 << 8 | 17,   // stack top
-                                                                4)?; // sp offset
-
-        Ok(())
+    pub fn start(self) -> Result<(), SeL4Error> {
+        unsafe {
+            let err = seL4_TCB_Resume(self.tcb.cptr);
+            if err != 0 {
+                return Err(SeL4Error::TCBResume(err));
+            }
+            Ok(())
+        }
     }
-
 }

@@ -60,7 +60,7 @@ fn localcap_threadpriorityauthority_parameter(tpa: &LocalCap<ThreadPriorityAutho
 fn userimage_parameter(image: &UserImage<ferros::cap::role::Local>) {}
 
 #[ferros_test]
-fn vspacescratch_parameter(scratch: &mut VSpaceScratchSlice<ferros::cap::role::Local>) {}
+fn vspacescratch_parameter(scratch: &mut ScratchRegion) {}
 
 pub mod ferros {
     pub mod alloc {
@@ -87,9 +87,18 @@ pub mod ferros {
         use core::marker::PhantomData;
         pub struct UserImage<T>(pub PhantomData<T>);
     }
+    pub mod userland {
+        pub struct StackPageCount;
+    }
     pub mod vspace {
         use core::marker::PhantomData;
-        pub struct VSpaceScratchSlice<T>(pub PhantomData<T>);
+        pub struct ScratchRegion<'a, 'b, T = ()>(pub PhantomData<&'a T>, pub PhantomData<&'b T>);
+        pub struct MappedMemoryRegion<T, SS: SharedStatus>(PhantomData<T>, PhantomData<SS>);
+        pub trait SharedStatus {}
+        pub mod shared_status {
+            pub struct Exclusive;
+            impl super::SharedStatus for Exclusive {}
+        }
     }
     pub mod cap {
         use core::marker::PhantomData;
@@ -139,5 +148,6 @@ pub mod ferros {
             Success,
             Failure,
         }
+        pub type MaxMappedMemoryRegionBitSize = U20;
     }
 }

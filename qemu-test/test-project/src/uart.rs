@@ -4,26 +4,36 @@ use typenum::*;
 
 use ferros::alloc::{self, micro_alloc, smart_alloc};
 use ferros::bootstrap::{root_cnode, BootInfo};
-use ferros::cap::{retype_cnode, role, CNodeRole};
-use ferros::userland::{InterruptConsumer, RetypeForSetup};
-use ferros::vspace::{VSpace, VSpaceScratchSlice};
+use ferros::cap::{retype, retype_cnode, role, CNodeRole, LocalCNodeSlots, LocalCap, Untyped};
+use ferros::userland::{CapRights, InterruptConsumer, ReadyProcess, RetypeForSetup};
+use ferros::vspace::*;
 
 use super::TopLevelError;
 
-const UART1_PADDR: usize = 0x02020000;
+const UART1_PADDR: usize = 0x02020000; //33685504
+const LARGE_DEVICE_REGION_PADDR: usize = 0x02000000; //33554432
+                                                     // relative offset from LARGE_DEVICE_REGION_PADDR: 131072 ( == 2097152 / 16 )
+type LargeDeviceRegionSize = U21; // 2097152 bytes
 type Uart1IrqLine = U58;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
+    let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
+    let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
+    let (root_vspace_slots, local_slots): (LocalCNodeSlots<U100>, _) = local_slots.alloc();
     let BootInfo {
-        root_page_directory,
+        mut root_vspace,
         asid_control,
         user_image,
         root_tcb,
         mut irq_control,
         ..
-    } = BootInfo::wrap(&raw_boot_info);
-    let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
-    let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
+    } = BootInfo::wrap(
+        &raw_boot_info,
+        allocator
+            .get_untyped::<U13>()
+            .expect("Initial untyped retrieval failure"),
+        root_vspace_slots,
+    );
     let uts = alloc::ut_buddy(
         allocator
             .get_untyped::<U20>()
@@ -32,17 +42,30 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
     // The UART1 region is 4 pages i.e. 14 bits.
     // C.f. i.MX 6ULL Reference Manual Table 2.2.
-    let uart1_base_untyped = allocator
-        .get_device_untyped::<U14>(UART1_PADDR)
+    // As of the recent changes in memory region mapping,
+    // that section is part of a 21-bit untyped region we'll need to manually whittle down
+    let device_untyped = allocator
+        .get_device_untyped::<LargeDeviceRegionSize>(LARGE_DEVICE_REGION_PADDR)
         .expect("find uart1 device memory");
 
     smart_alloc!(|slots: local_slots, ut: uts| {
-        let (mut local_vspace_scratch, _root_page_directory) =
-            VSpaceScratchSlice::from_parts(slots, ut, root_page_directory)?;
+        let unmapped_region = UnmappedMemoryRegion::new(ut, slots)?;
+        let mapped_region = root_vspace.map_region(unmapped_region, CapRights::RW)?;
 
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (uart1_asid, _asid_pool) = asid_pool.alloc();
-        let uart1_vspace = VSpace::new(ut, slots, uart1_asid, &user_image, &root_cnode)?;
+
+        let vspace_slots: LocalCNodeSlots<ferros::arch::CodePageCount> = slots;
+        let vspace_ut: LocalCap<Untyped<U13>> = ut;
+        let mut uart1_vspace = VSpace::new(
+            retype(ut, slots)?,
+            uart1_asid,
+            vspace_slots.weaken(),
+            vspace_ut.weaken(),
+            ProcessCodeImageConfig::ReadOnly,
+            &user_image,
+            &root_cnode,
+        )?;
 
         let (uart1_cnode, uart1_slots) = retype_cnode::<U12>(ut, slots)?;
 
@@ -50,24 +73,40 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (interrupt_consumer, _) =
             InterruptConsumer::new(ut, &mut irq_control, &root_cnode, slots, slots_u)?;
 
-        let (uart1_page_1_untyped, _, _, _) = uart1_base_untyped.quarter(slots)?;
+        // the UART1's region is offset by 131072 from the 21-bit device paddr, so it starts
+        // at the second sixteenth
+        let (u19, _, _, _) = device_untyped.quarter(slots)?;
+        let (_, uart_and_then_some_ut17, _, _) = u19.quarter(slots)?;
+
+        let (uart_and_then_some_ut15, _, _, _) = uart_and_then_some_ut17.quarter(slots)?;
+        // Made it to the 4 pages reserved for UART1
+        let (uart1_pages, _) = uart_and_then_some_ut15.split(slots)?;
+        let (uart1_page_1_untyped, _, _, _) = uart1_pages.quarter(slots)?;
         let uart1_page_1 = uart1_page_1_untyped.retype_device_page(slots)?;
-        let (uart1_page_1, uart1_vspace) = uart1_vspace.map_page(uart1_page_1)?;
+        // TODO - should we use something more device-specialized
+        // for turning device memory into device pages and mapping them?
+        let uart1_page_1 = uart1_vspace.map_given_page(uart1_page_1, CapRights::RW)?;
 
         let uart1_params = uart::UartParams::<Uart1IrqLine, role::Child> {
             base_ptr: uart1_page_1.vaddr(),
             consumer: interrupt_consumer,
         };
 
-        let (uart1_thread, _) = uart1_vspace.prepare_thread(
+        let uart1_process = ReadyProcess::new(
+            &mut uart1_vspace,
+            uart1_cnode,
+            mapped_region,
+            &root_cnode,
             uart::run,
             uart1_params,
             ut,
+            ut,
             slots,
-            &mut local_vspace_scratch,
+            root_tcb.as_ref(),
+            None,
         )?;
 
-        uart1_thread.start(uart1_cnode, None, root_tcb.as_ref(), 255)?;
+        uart1_process.start()?;
     });
 
     Ok(())

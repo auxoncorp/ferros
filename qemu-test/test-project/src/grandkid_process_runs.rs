@@ -1,12 +1,15 @@
 use typenum::*;
 
 use ferros::alloc::{smart_alloc, ut_buddy};
+use ferros::arch::{CodePageCount, CodePageTableCount};
 use ferros::bootstrap::UserImage;
 use ferros::cap::*;
 use ferros::userland::{
-    fault_or_message_channel, CapRights, FaultOrMessage, RetypeForSetup, Sender,
+    fault_or_message_channel, CapRights, FaultOrMessage, ReadyProcess, RetypeForSetup, Sender,
 };
-use ferros::vspace::{NewVSpaceCNodeSlots, VSpace, VSpaceScratchSlice};
+use ferros::vspace::{
+    shared_status, MappedMemoryRegion, ProcessCodeImageConfig, UnmappedMemoryRegion, VSpace,
+};
 
 use super::TopLevelError;
 
@@ -17,7 +20,7 @@ pub fn grandkid_process_runs(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U27>>,
     asid_pool: LocalCap<ASIDPool<U6>>,
-    local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+    local_mapped_region: MappedMemoryRegion<U16, shared_status::Exclusive>,
     cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -28,7 +31,19 @@ pub fn grandkid_process_runs(
         let (child_cnode, child_slots) = retype_cnode::<U20>(ut, slots)?;
 
         let (child_asid, asid_pool) = asid_pool.alloc();
-        let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &cnode)?;
+        let child_root = retype(ut, slots)?;
+        let child_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let child_vspace_ut: LocalCap<Untyped<U14>> = ut;
+
+        let mut child_vspace = VSpace::new(
+            child_root,
+            child_asid,
+            child_vspace_slots.weaken(),
+            child_vspace_ut.weaken(),
+            ProcessCodeImageConfig::ReadOnly,
+            user_image,
+            cnode,
+        )?;
 
         smart_alloc! {|slots_c: child_slots| {
             let (cnode_for_child, slots_for_child) =
@@ -36,12 +51,6 @@ pub fn grandkid_process_runs(
             let untyped_for_child = ut.move_to_slot(&cnode, slots_c)?;
             let (asid_pool_for_child, _asid_pool): (_, LocalCap<ASIDPool<U0>>) = asid_pool.split(slots_c, slots, &cnode)?;
             let user_image_for_child = user_image.copy(&cnode, slots_c)?;
-            let (vspace_scratch_for_child, child_vspace) = child_vspace.create_child_scratch(
-                ut,
-                slots,
-                slots_c,
-                &cnode,
-            )?;
             let thread_priority_authority_for_child =
                 tpa.copy(&cnode, slots_c, CapRights::RWG)?;
 
@@ -52,6 +61,15 @@ pub fn grandkid_process_runs(
                 slots_c,
                 slots,
             )?;
+
+            let child_unmapped_region: UnmappedMemoryRegion<U16, shared_status::Exclusive> =
+                UnmappedMemoryRegion::new(ut, slots)?;
+            let child_mapped_region = child_vspace.map_region_and_move(
+                child_unmapped_region,
+                CapRights::RW,
+                cnode,
+                slots_c,
+            )?;
         }}
 
         let params = ChildParams {
@@ -60,16 +78,27 @@ pub fn grandkid_process_runs(
             untyped: untyped_for_child,
             asid_pool: asid_pool_for_child,
             user_image: user_image_for_child,
-            vspace_scratch: vspace_scratch_for_child,
+            mapped_region: child_mapped_region,
             thread_priority_authority: thread_priority_authority_for_child,
             outcome_sender,
         };
 
-        let (child_process, _) =
-            child_vspace.prepare_thread(child_main, params, ut, slots, local_vspace_scratch)?;
+        let child_process = ReadyProcess::new(
+            &mut child_vspace,
+            child_cnode,
+            local_mapped_region,
+            &cnode,
+            child_main,
+            params,
+            ut,
+            ut,
+            slots,
+            tpa,
+            Some(fault_source),
+        )?;
     });
 
-    child_process.start(child_cnode, Some(fault_source), tpa, 255)?;
+    child_process.start()?;
 
     match handler.await_message()? {
         FaultOrMessage::Message(true) => Ok(()),
@@ -79,14 +108,13 @@ pub fn grandkid_process_runs(
     }
 }
 
-#[derive(Debug)]
 pub struct ChildParams<Role: CNodeRole> {
     cnode: Cap<CNode<Role>, Role>,
-    cnode_slots: Cap<CNodeSlotsData<Sum<NewVSpaceCNodeSlots, U70>, Role>, Role>,
+    cnode_slots: Cap<CNodeSlotsData<op!(CodePageTableCount + CodePageCount + U70), Role>, Role>,
     untyped: Cap<Untyped<U25>, Role>,
     asid_pool: Cap<ASIDPool<U2>, Role>,
     user_image: UserImage<Role>,
-    vspace_scratch: VSpaceScratchSlice<Role>,
+    mapped_region: MappedMemoryRegion<U16, shared_status::Exclusive>,
     thread_priority_authority: Cap<ThreadPriorityAuthority, Role>,
     outcome_sender: Sender<bool, Role>,
 }
@@ -101,12 +129,12 @@ pub extern "C" fn child_main(params: ChildParams<role::Local>) {
 
 fn child_run(params: ChildParams<role::Local>) -> Result<(), TopLevelError> {
     let ChildParams {
-        cnode,
+        mut cnode,
         cnode_slots,
         untyped,
         asid_pool,
         user_image,
-        mut vspace_scratch,
+        mapped_region,
         thread_priority_authority,
         outcome_sender,
     } = params;
@@ -120,11 +148,35 @@ fn child_run(params: ChildParams<role::Local>) -> Result<(), TopLevelError> {
         };
 
         let (child_asid, _asid_pool) = asid_pool.alloc();
-        let child_vspace = VSpace::new(ut, slots, child_asid, &user_image, &cnode)?;
-        let (child_process, _) =
-            child_vspace.prepare_thread(grandkid_main, params, ut, slots, &mut vspace_scratch)?;
+        let child_root = retype(ut, slots)?;
+        let child_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let child_vspace_ut: LocalCap<Untyped<U14>> = ut;
+
+        let mut child_vspace = VSpace::new(
+            child_root,
+            child_asid,
+            child_vspace_slots.weaken(),
+            child_vspace_ut.weaken(),
+            ProcessCodeImageConfig::ReadOnly,
+            &user_image,
+            &cnode,
+        )?;
+
+        let child_process = ReadyProcess::new(
+            &mut child_vspace,
+            child_cnode,
+            mapped_region,
+            &mut cnode,
+            grandkid_main,
+            params,
+            ut,
+            ut,
+            slots,
+            &thread_priority_authority,
+            None,
+        )?;
     });
-    child_process.start(child_cnode, None, &thread_priority_authority, 255)?;
+    child_process.start()?;
 
     Ok(())
 }

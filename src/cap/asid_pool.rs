@@ -1,10 +1,10 @@
 use core::marker::PhantomData;
-use core::ops::{Add, Sub};
+use core::ops::Sub;
 
 use typenum::*;
 
 use crate::arch;
-use crate::cap::{CNodeRole, CNodeSlot, Cap, CapType, LocalCNode, LocalCap};
+use crate::cap::{Cap, CapType, LocalCap};
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
 
@@ -51,15 +51,15 @@ impl<FreeSlots: Unsigned> LocalCap<ASIDPool<FreeSlots>> {
 
     #[cfg(feature = "test_support")]
     pub fn split<
-        LeftRole: CNodeRole,
-        RightRole: CNodeRole,
+        LeftRole: crate::cap::CNodeRole,
+        RightRole: crate::cap::CNodeRole,
         LeftSlots: Unsigned,
         RightSlots: Unsigned,
     >(
         self,
-        left_slot: CNodeSlot<LeftRole>,
-        right_slot: CNodeSlot<RightRole>,
-        src_cnode: &LocalCap<LocalCNode>,
+        left_slot: crate::cap::CNodeSlot<LeftRole>,
+        right_slot: crate::cap::CNodeSlot<RightRole>,
+        src_cnode: &LocalCap<crate::cap::LocalCNode>,
     ) -> Result<
         (
             Cap<ASIDPool<LeftSlots>, LeftRole>,
@@ -70,8 +70,8 @@ impl<FreeSlots: Unsigned> LocalCap<ASIDPool<FreeSlots>> {
     where
         FreeSlots: Sub<U2>,
         op!(FreeSlots - U2): Unsigned,
-        LeftSlots: Add<RightSlots>,
-        RightSlots: Add<LeftSlots>,
+        LeftSlots: core::ops::Add<RightSlots>,
+        RightSlots: core::ops::Add<LeftSlots>,
         op!(LeftSlots + RightSlots): Unsigned,
         op!(LeftSlots + RightSlots): IsLessOrEqual<FreeSlots, Output = True>,
     {

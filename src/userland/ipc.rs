@@ -2,12 +2,14 @@ use core::marker::PhantomData;
 
 use selfe_sys::*;
 
+use crate::arch;
 use crate::cap::{
     role, CNodeRole, CNodeSlot, Cap, ChildCNodeSlot, DirectRetype, Endpoint, LocalCNode,
     LocalCNodeSlot, LocalCap, Untyped,
 };
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
+use crate::vspace::VSpaceError;
 
 #[derive(Debug)]
 pub enum IPCError {
@@ -16,11 +18,18 @@ pub enum IPCError {
     ResponseSizeMismatch,
     RequestSizeMismatch,
     SeL4Error(SeL4Error),
+    VSpaceError(VSpaceError),
 }
 
 impl From<SeL4Error> for IPCError {
     fn from(s: SeL4Error) -> Self {
         IPCError::SeL4Error(s)
+    }
+}
+
+impl From<VSpaceError> for IPCError {
+    fn from(v: VSpaceError) -> Self {
+        IPCError::VSpaceError(v)
     }
 }
 
@@ -193,10 +202,10 @@ pub(crate) fn type_length_in_words<T>() -> usize {
 fn type_length_message_info<T>() -> seL4_MessageInfo_t {
     unsafe {
         seL4_MessageInfo_new(
-            0,                                  // label,
-            0,                                  // capsUnwrapped,
-            0,                                  // extraCaps,
-            type_length_in_words::<T>() as u32, // length in words!
+            0,                                               // label,
+            0,                                               // capsUnwrapped,
+            0,                                               // extraCaps,
+            arch::to_sel4_word(type_length_in_words::<T>()), // length in words!
         )
     }
 }

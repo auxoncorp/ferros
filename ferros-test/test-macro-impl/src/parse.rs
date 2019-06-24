@@ -153,18 +153,22 @@ impl ParamKind {
                     });
                 }
             }
-            "VSpaceScratchSlice" => {
-                let seg_name = extract_first_arg_type_path_last_segment(&segment.arguments)?
-                    .ident
-                    .to_string();
-                if &seg_name == "Local" && arg_kind == ArgKind::RefMut {
-                    ParamKind::VSpaceScratch
+            "MappedMemoryRegion" => {
+                // TODO - check whether the MappedMemoryRegion is Exclusive
+                // TODO - optionally provide useful error messages if the requested size type parameter
+                // is parseable without context and appears to be over the supported limit
+                if arg_kind == ArgKind::Owned {
+                    ParamKind::MappedMemoryRegion
                 } else {
                     return Err(ParseError::InvalidArgumentType {
-                        msg: "The only supported test function argument for VSpaceScratchSlice is &mut VSpaceScratchSlice<ferros::userland::role::Local>".to_string(),
+                        msg: "MappedMemoryRegion must be specified as an owned instance parameter, not a reference.".to_string(),
                         span: segment.span(),
                     });
                 }
+            }
+            "ScratchRegion" => {
+                // TODO - More detailed lifetime and ScratchRegion number of pages as type param matching
+                ParamKind::VSpaceScratch
             }
             "CNodeSlots" => ParamKind::CNodeSlots {
                 count: extract_first_argument_as_unsigned(&segment.arguments)?,

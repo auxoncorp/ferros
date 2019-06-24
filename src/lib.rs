@@ -1,5 +1,5 @@
 #![no_std]
-#![recursion_limit = "128"]
+#![recursion_limit = "256"]
 #![feature(proc_macro_hygiene)]
 
 extern crate arrayvec;

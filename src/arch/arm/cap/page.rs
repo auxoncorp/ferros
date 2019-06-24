@@ -1,56 +1,78 @@
-use core::marker::PhantomData;
-
-use typenum::*;
-
 use selfe_sys::*;
 
-use crate::cap::{
-    memory_kind, role, CNodeRole, Cap, CapType, CopyAliasable, DirectRetype, MemoryKind, PhantomCap,
-};
+use crate::cap::{CapType, CopyAliasable, DirectRetype, LocalCap, Movable, PhantomCap};
 
-#[derive(Debug)]
-pub struct UnmappedPage<Kind: MemoryKind> {
-    _kind: PhantomData<Kind>,
+pub trait PageState: private::SealedPageState {}
+
+pub mod page_state {
+    pub struct Mapped {
+        pub(crate) vaddr: usize,
+        pub(crate) asid: u32,
+    }
+    impl super::PageState for Mapped {}
+
+    pub struct Unmapped;
+    impl super::PageState for Unmapped {}
 }
 
-impl<Kind: MemoryKind> CapType for UnmappedPage<Kind> {}
+pub struct Page<State: PageState> {
+    pub(crate) state: State,
+}
 
-impl<Kind: MemoryKind> PhantomCap for UnmappedPage<Kind> {
-    fn phantom_instance() -> Self {
-        UnmappedPage {
-            _kind: PhantomData::<Kind>,
+impl LocalCap<Page<page_state::Mapped>> {
+    pub fn vaddr(&self) -> usize {
+        self.cap_data.state.vaddr
+    }
+    pub fn asid(&self) -> u32 {
+        self.cap_data.state.asid
+    }
+
+    /// Keeping this non-public in order to restrict mapping operations to owners
+    /// of a VSpace-related object
+    pub(crate) fn unmap(
+        self,
+    ) -> Result<LocalCap<Page<page_state::Unmapped>>, crate::error::SeL4Error> {
+        match unsafe { seL4_ARM_Page_Unmap(self.cptr) } {
+            0 => Ok(crate::cap::Cap {
+                cptr: self.cptr,
+                cap_data: Page {
+                    state: page_state::Unmapped {},
+                },
+                _role: core::marker::PhantomData,
+            }),
+            e => Err(crate::error::SeL4Error::PageUnmap(e)),
         }
     }
 }
 
-impl DirectRetype for UnmappedPage<memory_kind::General> {
-    type SizeBits = U12;
+impl<State: PageState> CapType for Page<State> {}
+impl<State: PageState> Movable for Page<State> {}
+
+impl DirectRetype for Page<page_state::Unmapped> {
+    type SizeBits = super::super::PageBits;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_SmallPageObject as usize
     }
 }
 
-impl<Kind: MemoryKind> CopyAliasable for UnmappedPage<Kind> {
+impl CopyAliasable for Page<page_state::Unmapped> {
     type CopyOutput = Self;
 }
 
-#[derive(Debug)]
-pub struct MappedPage<Role: CNodeRole, Kind: MemoryKind> {
-    pub(crate) vaddr: usize,
-    pub(crate) _role: PhantomData<Role>,
-    pub(crate) _kind: PhantomData<Kind>,
+impl CopyAliasable for Page<page_state::Mapped> {
+    type CopyOutput = Page<page_state::Unmapped>;
 }
 
-impl Cap<MappedPage<role::Child, memory_kind::Device>, role::Local> {
-    /// `vaddr` allows a parent process to extract the vaddr of a
-    /// device page mapped into a child's VSpace.
-    pub fn vaddr(&self) -> usize {
-        self.cap_data.vaddr
+impl PhantomCap for Page<page_state::Unmapped> {
+    fn phantom_instance() -> Self {
+        Page {
+            state: page_state::Unmapped {},
+        }
     }
 }
 
-impl<Role: CNodeRole, Kind: MemoryKind> CapType for MappedPage<Role, Kind> {}
-
-impl<Role: CNodeRole, Kind: MemoryKind> CopyAliasable for MappedPage<Role, Kind> {
-    type CopyOutput = UnmappedPage<Kind>;
+mod private {
+    pub trait SealedPageState {}
+    impl SealedPageState for super::page_state::Unmapped {}
+    impl SealedPageState for super::page_state::Mapped {}
 }

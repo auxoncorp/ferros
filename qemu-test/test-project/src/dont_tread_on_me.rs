@@ -3,27 +3,28 @@
 //! copy of the user image.
 use core::ptr;
 
+use typenum::*;
+
 use ferros::alloc::{smart_alloc, ut_buddy};
 use ferros::bootstrap::UserImage;
 use ferros::cap::*;
 use ferros::userland::{
-    call_channel, fault_or_message_channel, Caller, FaultOrMessage, Responder, RetypeForSetup,
-    Sender,
+    call_channel, fault_or_message_channel, Caller, FaultOrMessage, ReadyProcess, Responder,
+    RetypeForSetup, Sender,
 };
-use ferros::vspace::{VSpace, VSpaceScratchSlice};
-
-use typenum::*;
+use ferros::vspace::*;
 
 use super::TopLevelError;
 
 type U42768 = Sum<U32768, U10000>;
 
 #[ferros_test::ferros_test]
-pub fn dont_tread_on_me(
+pub fn dont_tread_on_me<'a, 'b, 'c>(
     local_slots: LocalCNodeSlots<U42768>,
     local_ut: LocalCap<Untyped<U27>>,
     asid_pool: LocalCap<ASIDPool<U2>>,
-    local_vspace_scratch: &mut VSpaceScratchSlice<role::Local>,
+    local_mapped_region: MappedMemoryRegion<U17, shared_status::Exclusive>,
+    local_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -38,14 +39,35 @@ pub fn dont_tread_on_me(
         let (proc1_asid, asid_pool) = asid_pool.alloc();
         let (proc2_asid, _asid_pool) = asid_pool.alloc();
 
-        let proc1_vspace = VSpace::new(ut, slots, proc1_asid, &user_image, &root_cnode)?;
-        let proc2_vspace = VSpace::new_with_writable_user_image(
-            ut,
-            slots,
+        let proc1_root = retype(ut, slots)?;
+        let proc1_vspace_slots: LocalCNodeSlots<U4096> = slots;
+        let proc1_vspace_ut: LocalCap<Untyped<U12>> = ut;
+
+        let mut proc1_vspace = VSpace::new(
+            proc1_root,
+            proc1_asid,
+            proc1_vspace_slots.weaken(),
+            proc1_vspace_ut.weaken(),
+            ProcessCodeImageConfig::ReadOnly,
+            user_image,
+            root_cnode,
+        )?;
+
+        let proc2_vspace_slots: LocalCNodeSlots<ferros::arch::CodePageCount> = slots;
+        let proc2_vspace_ut: LocalCap<Untyped<U12>> = ut;
+
+        let mut proc2_vspace = VSpace::new(
+            retype(ut, slots)?,
             proc2_asid,
-            &user_image,
-            &root_cnode,
-            (local_vspace_scratch, ut),
+            proc2_vspace_slots.weaken(),
+            proc2_vspace_ut.weaken(),
+            ProcessCodeImageConfig::ReadWritable {
+                parent_vspace_scratch: local_vspace_scratch,
+                code_pages_ut: ut,
+                code_pages_slots: slots,
+            },
+            user_image,
+            root_cnode,
         )?;
 
         let (slots1, proc1_slots) = proc1_slots.alloc();
@@ -63,25 +85,37 @@ pub fn dont_tread_on_me(
         };
         let proc2_params = proc2::Proc2Params { cllr: caller };
 
-        let (proc1_thread, _) = proc1_vspace.prepare_thread(
+        let (proc1_region, proc2_region) = local_mapped_region.split()?;
+
+        let proc1_process = ReadyProcess::new(
+            &mut proc1_vspace,
+            proc1_cspace,
+            proc1_region,
+            root_cnode,
             proc1::run,
             proc1_params,
             ut,
+            ut,
             slots,
-            local_vspace_scratch,
+            tpa,
+            None, // fault
         )?;
+        proc1_process.start()?;
 
-        proc1_thread.start(proc1_cspace, Some(fault_source), tpa, 255)?;
-
-        let (proc2_thread, _) = proc2_vspace.prepare_thread(
+        let proc2_process = ReadyProcess::new(
+            &mut proc2_vspace,
+            proc2_cspace,
+            proc2_region,
+            root_cnode,
             proc2::run,
             proc2_params,
             ut,
+            ut,
             slots,
-            local_vspace_scratch,
+            tpa,
+            None, // fault
         )?;
-
-        proc2_thread.start(proc2_cspace, None, tpa, 255)?;
+        proc2_process.start()?;
     });
 
     match handler.await_message()? {

@@ -2,6 +2,7 @@ use typenum::*;
 
 pub mod cap;
 pub mod fault;
+pub mod userland;
 
 pub type WordSize = U32;
 pub type MinUntypedSize = U4;
@@ -19,13 +20,67 @@ pub type ASIDLowBits = U10;
 pub type ASIDPoolCount = op!((U1 << ASIDHighBits) - U1);
 pub type ASIDPoolSize = op!(U1 << ASIDLowBits);
 
-pub type PageDirectoryBits = U12;
-pub type PageTableBits = U8;
-pub type PageBits = U12;
-pub type PageBytes = op!(U1 << U12);
+#[cfg(KernelHypervisorSupport)]
+mod hyp_dependent_constants {
+    use typenum::*;
+    pub type PGDBits = U5;
+    pub type PGDIndexBits = U2;
+    pub type PageTableBits = U12;
+    pub type PageTableIndexBits = U9;
+    pub type PageDirIndexBits = U11;
+    pub type VCPUBits = U12;
+    pub type SectionBits = U21;
+    pub type SuperSectionBits = U25;
+}
 
-pub type BasePageDirFreeSlots = op!((U1 << PageDirectoryBits) - (U1 << U9));
-pub type BasePageTableFreeSlots = op!(U1 << PageTableBits);
+#[cfg(not(KernelHypervisorSupport))]
+mod hyp_dependent_constants {
+    use core::marker::PhantomData;
+
+    use crate::vspace::{PagingRec, PagingTop};
+
+    use typenum::*;
+
+    use super::cap;
+
+    pub type PageTableBits = U10;
+    pub type PageTableIndexBits = U8;
+    pub type PageDirIndexBits = U12;
+    pub type SectionBits = U20;
+    pub type SuperSectionBits = U24;
+
+    pub type AddressSpace = PagingRec<
+        cap::Page<cap::page_state::Unmapped>,
+        cap::PageTable,
+        PagingTop<cap::PageTable, cap::PageDirectory>,
+    >;
+
+    pub type PagingRoot = cap::PageDirectory;
+
+    impl AddressSpace {
+        pub fn new() -> Self {
+            PagingRec {
+                layer: cap::PageTable {},
+                next: PagingTop {
+                    layer: cap::PageDirectory {},
+                    _item: PhantomData,
+                },
+                _item: PhantomData,
+            }
+        }
+    }
+}
+
+pub use hyp_dependent_constants::*;
+
+pub type PageDirectoryBits = U14;
+pub type PageBits = U12;
+pub type PageIndexBits = U12;
+pub type PageBytes = op!(U1 << U12);
+pub type LargePageBits = U16;
+
+pub type BasePageDirFreeSlots = op!((U1 << PageDirIndexBits) - (U1 << U9));
+pub type BasePageTableFreeSlots = op!(U1 << PageTableIndexBits);
 
 // TODO remove these when elf stuff lands.
 // this is a magic number we got from inspecting the binary.
@@ -49,6 +104,6 @@ pub type RootTaskReservedPageDirSlots = op!(CodePageTableCount + RootTaskStackPa
 pub type RootTaskPageDirFreeSlots = op!(BasePageDirFreeSlots - RootTaskReservedPageDirSlots);
 
 /// 0xe0000000
-pub type KernelReservedStart = op!((U1 << U31) + (U1 << U30) + (U1 << U29));
+pub type KernelReservedStart = op!((U1 << U32) - U1);
 
 pub const WORDS_PER_PAGE: usize = PageBytes::USIZE / core::mem::size_of::<usize>();

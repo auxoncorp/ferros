@@ -1,5 +1,4 @@
 use crate::cap::Badge;
-use crate::userland::Fault;
 use crate::userland::MessageInfo;
 use selfe_sys::*;
 

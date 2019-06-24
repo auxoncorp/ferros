@@ -3,16 +3,15 @@ use core::ops::Sub;
 
 use selfe_sys::{seL4_Signal, seL4_Wait};
 use typenum::operator_aliases::Sub1;
-use typenum::{Unsigned, B1, U2, U5};
+use typenum::{Unsigned, B1, U2, U4};
 
-use crate::arch::cap::UnmappedPage;
-use crate::arch::PageBytes;
+use crate::arch::{PageBits, PageBytes};
 use crate::cap::{
-    memory_kind, role, Badge, CNodeRole, Cap, ChildCNodeSlots, DirectRetype, LocalCNode,
-    LocalCNodeSlots, LocalCap, Notification, Untyped,
+    role, Badge, CNodeRole, Cap, ChildCNodeSlots, DirectRetype, LocalCNode, LocalCNodeSlots,
+    LocalCap, Notification, Untyped,
 };
 use crate::userland::{CapRights, IPCError};
-use crate::vspace::VSpace;
+use crate::vspace::{UnmappedMemoryRegion, VSpace};
 
 pub mod sync {
     use super::*;
@@ -26,26 +25,18 @@ pub mod sync {
         Rsp: Send + Sync,
     >(
         local_cnode: &LocalCap<LocalCNode>,
-        local_slots: LocalCNodeSlots<U5>,
-        shared_page_ut: LocalCap<
-            Untyped<<UnmappedPage<memory_kind::General> as DirectRetype>::SizeBits>,
-        >,
+        local_slots: LocalCNodeSlots<U4>,
+        shared_region_ut: LocalCap<Untyped<PageBits>>,
         call_notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
         response_notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
-        caller_vspace: VSpace<CallerPageDirFreeSlots, CallerPageTableFreeSlots, role::Child>,
-        responder_vspace: VSpace<
-            ResponderPageDirFreeSlots,
-            ResponderPageTableFreeSlots,
-            role::Child,
-        >,
+        caller_vspace: &mut VSpace,
+        responder_vspace: &mut VSpace,
         caller_slots: ChildCNodeSlots<U2>,
         responder_slots: ChildCNodeSlots<U2>,
     ) -> Result<
         (
             ExtendedCaller<Req, Rsp, role::Child>,
             ExtendedResponder<Req, Rsp, role::Child>,
-            VSpace<CallerPageDirFreeSlots, Sub1<CallerPageTableFreeSlots>, role::Child>,
-            VSpace<ResponderPageDirFreeSlots, Sub1<ResponderPageTableFreeSlots>, role::Child>,
         ),
         IPCError,
     >
@@ -67,17 +58,15 @@ pub mod sync {
         }
 
         let (slot, local_slots) = local_slots.alloc();
-        let shared_page: LocalCap<UnmappedPage<memory_kind::General>> =
-            shared_page_ut.retype(slot)?;
+        let region = UnmappedMemoryRegion::new(shared_region_ut, slot)?;
+        let shared_region = region.to_shared();
 
         let (slot, local_slots) = local_slots.alloc();
-        let caller_shared_page = shared_page.copy(&local_cnode, slot, CapRights::RW)?;
-        let (caller_shared_page, caller_vspace) = caller_vspace.map_page(caller_shared_page)?;
+        let caller_shared_region =
+            caller_vspace.map_shared_region(&shared_region, CapRights::RW, slot, &local_cnode)?;
 
-        let (slot, local_slots) = local_slots.alloc();
-        let responder_shared_page = shared_page.copy(&local_cnode, slot, CapRights::RW)?;
-        let (responder_shared_page, responder_vspace) =
-            responder_vspace.map_page(responder_shared_page)?;
+        let responder_shared_region =
+            responder_vspace.map_shared_region_and_consume(shared_region, CapRights::RW)?;
 
         let (slot, local_slots) = local_slots.alloc();
         let local_request_ready: LocalCap<Notification> = call_notification_ut.retype(slot)?;
@@ -105,7 +94,7 @@ pub mod sync {
             inner: SyncExtendedIpcPair {
                 request_ready: caller_request_ready,
                 response_ready: caller_response_ready,
-                shared_page_address: caller_shared_page.cap_data.vaddr,
+                shared_page_address: caller_shared_region.vaddr(),
                 _req: PhantomData,
                 _rsp: PhantomData,
                 _role: PhantomData,
@@ -132,13 +121,13 @@ pub mod sync {
             inner: SyncExtendedIpcPair {
                 request_ready: responder_request_ready,
                 response_ready: responder_response_ready,
-                shared_page_address: responder_shared_page.cap_data.vaddr,
+                shared_page_address: responder_shared_region.vaddr(),
                 _req: PhantomData,
                 _rsp: PhantomData,
                 _role: PhantomData,
             },
         };
-        Ok((caller, responder, caller_vspace, responder_vspace))
+        Ok((caller, responder))
     }
 
     #[derive(Debug)]
