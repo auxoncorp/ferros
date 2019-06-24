@@ -173,7 +173,7 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
 /// Make a weak ut buddy around a weak untyped.
 pub fn weak_ut_buddy(ut: LocalCap<WUntyped>) -> WUTBuddy {
     let mut pool = unsafe { make_pool() };
-    pool[ut.cap_data.size - MinUntypedSize::USIZE].push(ut.cptr);
+    pool[ut.cap_data.size_bits - MinUntypedSize::USIZE].push(ut.cptr);
     WUTBuddy { pool }
 }
 
@@ -276,12 +276,12 @@ impl WUTBuddy {
 fn alloc(
     pool: &mut [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE],
     slots_iter: impl Iterator<Item = LocalCNodeSlot>,
-    size: usize,
+    size_bits: usize,
     split_count: usize,
 ) -> Result<LocalCap<WUntyped>, SeL4Error> {
     // The index in the pool array where Untypeds of the requested
     // size are stored.
-    let index = size - MinUntypedSize::USIZE;
+    let index = size_bits - MinUntypedSize::USIZE;
 
     // If there's no cptr of the requested size, make one by splitting
     // the larger ones.
@@ -318,7 +318,7 @@ fn alloc(
 
     Ok(Cap {
         cptr,
-        cap_data: WUntyped { size },
+        cap_data: WUntyped { size_bits },
         _role: PhantomData,
     })
 }

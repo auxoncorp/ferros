@@ -659,14 +659,14 @@ impl VSpace<vspace_state::Imaged> {
     pub fn new(
         paging_root: LocalCap<PagingRoot>,
         asid: LocalCap<UnassignedASID>,
-        slots: WCNodeSlots,
+        mut slots: WCNodeSlots,
         paging_untyped: LocalCap<WUntyped>,
         // Things relating to user image code
         code_image_config: ProcessCodeImageConfig,
         user_image: &UserImage<role::Local>,
         parent_cnode: &LocalCap<LocalCNode>,
     ) -> Result<Self, VSpaceError> {
-        let (code_slots, slots) = match slots.split(user_image.pages_count()) {
+        let code_slots = match slots.alloc(user_image.pages_count()) {
             Ok(t) => t,
             Err(_) => return Err(VSpaceError::InsufficientCNodeSlots),
         };

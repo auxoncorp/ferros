@@ -30,7 +30,7 @@ pub struct Untyped<BitSize: Unsigned, Kind: MemoryKind = memory_kind::General> {
 }
 
 pub struct WUntyped {
-    pub(crate) size: usize,
+    pub(crate) size_bits: usize,
 }
 
 impl<BitSize: Unsigned, Kind: MemoryKind> CapType for Untyped<BitSize, Kind> {}
@@ -42,17 +42,21 @@ impl LocalCap<WUntyped> {
         &mut self,
         slots: &mut WCNodeSlots,
     ) -> Result<LocalCap<D>, RetypeError> {
-        let slot_cptr = slots.alloc()?;
+        if D::SizeBits::USIZE > self.cap_data.size_bits {
+            return Err(RetypeError::NotBigEnough);
+        }
+
+        let slot = slots.alloc(1)?;
         let err = unsafe {
             seL4_Untyped_Retype(
-                self.cptr,         // _service
-                D::sel4_type_id(), // type
-                0,                 // size_bits
-                slots.cptr,        // root
-                0,                 // index
-                0,                 // depth
-                slot_cptr,         // offset
-                1,                 // num_objects
+                self.cptr,            // _service
+                D::sel4_type_id(),    // type
+                0,                    // size_bits
+                slots.cptr,           // root
+                0,                    // index
+                0,                    // depth
+                slot.cap_data.offset, // offset
+                1,                    // num_objects
             )
         };
 
@@ -60,7 +64,7 @@ impl LocalCap<WUntyped> {
             return Err(RetypeError::SeL4RetypeError(SeL4Error::UntypedRetype(err)));
         }
 
-        Ok(Cap::wrap_cptr(slot_cptr))
+        Ok(Cap::wrap_cptr(slot.cap_data.offset))
     }
 }
 
@@ -274,7 +278,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
         Cap {
             cptr: self.cptr,
             cap_data: WUntyped {
-                size: BitSize::USIZE,
+                size_bits: BitSize::USIZE,
             },
             _role: PhantomData,
         }

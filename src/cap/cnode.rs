@@ -207,45 +207,22 @@ pub enum CNodeSlotsError {
 
 impl WCNodeSlots {
     /// Split the WCNodeSlots(original_size) into (WCNodeSlots(count), WCNodeSlots(original_size - count))
-    pub(crate) fn split(self, count: usize) -> Result<(WCNodeSlots, WCNodeSlots), WCNodeSlots> {
-        let original_size = self.cap_data.size;
-        if original_size >= count {
-            Ok((
-                Cap {
-                    cptr: self.cptr,
-                    _role: PhantomData,
-                    cap_data: WCNodeSlotsData {
-                        offset: self.cap_data.offset,
-                        size: count,
-                    },
-                },
-                Cap {
-                    cptr: self.cptr,
-                    _role: PhantomData,
-                    cap_data: WCNodeSlotsData {
-                        offset: self
-                            .cap_data
-                            .offset
-                            .checked_add(count)
-                            .ok_or_else(|| self)?,
-                        size: original_size - count, // Can elide checking due to comparison above
-                    },
-                },
-            ))
-        } else {
-            Err(self)
-        }
-    }
     /// Peel off a single cptr from these slots. Advance the state.
-    pub(crate) fn alloc(&mut self) -> Result<usize, CNodeSlotsError> {
-        if self.cap_data.size >= 1 {
-            let offset = self.cap_data.offset;
-            self.cap_data.offset += 1;
-            self.cap_data.size -= 1;
-            Ok(offset)
-        } else {
-            Err(CNodeSlotsError::NotEnoughSlots)
+    pub(crate) fn alloc(&mut self, count: usize) -> Result<WCNodeSlots, CNodeSlotsError> {
+        if count > self.cap_data.size {
+            return Err(CNodeSlotsError::NotEnoughSlots);
         }
+        let offset = self.cap_data.offset;
+        self.cap_data.offset += count;
+        self.cap_data.size -= count;
+        Ok(Cap {
+            cptr: self.cptr,
+            cap_data: WCNodeSlotsData {
+                offset: offset,
+                size: count,
+            },
+            _role: PhantomData,
+        })
     }
 
     pub(crate) fn into_strong_iter(self) -> impl Iterator<Item = LocalCNodeSlot> {
@@ -256,17 +233,6 @@ impl WCNodeSlots {
                 offset: self.cap_data.offset + n,
                 _size: PhantomData,
                 _role: PhantomData,
-            },
-        })
-    }
-
-    pub(crate) fn into_iter(self) -> impl Iterator<Item = WCNodeSlots> {
-        (0..self.cap_data.size).map(move |n| Cap {
-            cptr: self.cptr,
-            _role: PhantomData,
-            cap_data: WCNodeSlotsData {
-                offset: self.cap_data.offset + n,
-                size: 1,
             },
         })
     }
