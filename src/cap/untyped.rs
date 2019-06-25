@@ -14,7 +14,7 @@ use crate::cap::{
     ChildCNode, ChildCNodeSlots, Delible, DirectRetype, LocalCNode, LocalCNodeSlot,
     LocalCNodeSlots, LocalCap, Movable, PhantomCap, WCNodeSlots,
 };
-use crate::error::SeL4Error;
+use crate::error::{ErrorExt, SeL4Error};
 use crate::pow::{Pow, _Pow};
 
 // The seL4 kernel's maximum amount of retypes per system call is configurable
@@ -47,7 +47,7 @@ impl LocalCap<WUntyped> {
         }
 
         let slot = slots.alloc(1)?;
-        let err = unsafe {
+        unsafe {
             seL4_Untyped_Retype(
                 self.cptr,            // _service
                 D::sel4_type_id(),    // type
@@ -58,11 +58,9 @@ impl LocalCap<WUntyped> {
                 slot.cap_data.offset, // offset
                 1,                    // num_objects
             )
-        };
-
-        if err != 0 {
-            return Err(RetypeError::SeL4RetypeError(SeL4Error::UntypedRetype(err)));
         }
+        .as_result()
+        .map_err(|err| RetypeError::SeL4RetypeError(SeL4Error::UntypedRetype(err)))?;
 
         Ok(Cap::wrap_cptr(slot.cap_data.offset))
     }
@@ -148,7 +146,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
     {
         let (dest_cptr, dest_offset, _) = dest_slots.elim();
 
-        let err = unsafe {
+        unsafe {
             seL4_Untyped_Retype(
                 self.cptr,                              // _service
                 api_object_seL4_UntypedObject as usize, // type
@@ -159,10 +157,9 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
                 dest_offset,                            // offset
                 2,                                      // num_objects
             )
-        };
-        if err != 0 {
-            return Err(SeL4Error::UntypedRetype(err));
         }
+        .as_result()
+        .map_err(|e| SeL4Error::UntypedRetype(e))?;
 
         Ok((
             Cap {
@@ -206,10 +203,9 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
                 dest_offset,                            // offset
                 4,                                      // num_objects
             )
-        };
-        if err != 0 {
-            return Err(SeL4Error::UntypedRetype(err));
         }
+        .as_result()
+        .map_err(|e| SeL4Error::UntypedRetype(e))?;
 
         Ok((
             Cap {
@@ -337,7 +333,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
     {
         let (dest_cptr, dest_offset, _) = dest_slot.elim();
 
-        let err = unsafe {
+        unsafe {
             seL4_Untyped_Retype(
                 self.cptr,                     // _service
                 TargetCapType::sel4_type_id(), // type
@@ -348,11 +344,9 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
                 dest_offset,                   // offset
                 1,                             // num_objects
             )
-        };
-
-        if err != 0 {
-            return Err(SeL4Error::UntypedRetype(err));
         }
+        .as_result()
+        .map_err(|e| SeL4Error::UntypedRetype(e))?;
 
         Ok(Cap {
             cptr: dest_offset,
@@ -453,7 +447,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         dest_cptr: usize,
         dest_offset: usize,
     ) -> Result<(), SeL4Error> {
-        let err = seL4_Untyped_Retype(
+        seL4_Untyped_Retype(
             self_cptr,   // _service
             type_id,     // type
             0,           // size_bits
@@ -462,12 +456,9 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
             0,           // depth
             dest_offset, // offset
             count,       // num_objects
-        );
-
-        if err != 0 {
-            return Err(SeL4Error::UntypedRetype(err));
-        }
-        Ok(())
+        )
+        .as_result()
+        .map_err(|e| SeL4Error::UntypedRetype(e))
     }
 
     pub fn retype_cnode<ChildRadix: Unsigned>(
@@ -499,7 +490,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
 
         unsafe {
             // Retype to fill the scratch slot with a fresh CNode
-            let err = seL4_Untyped_Retype(
+            seL4_Untyped_Retype(
                 self.cptr,                               // _service
                 api_object_seL4_CapTableObject as usize, // type
                 ChildRadix::to_usize(),                  // size_bits
@@ -508,11 +499,9 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
                 0,                                       // depth
                 scratch_offset,                          // offset
                 1,                                       // num_objects
-            );
-
-            if err != 0 {
-                return Err(SeL4Error::CNodeMutate(err));
-            }
+            )
+            .as_result()
+            .map_err(|e| SeL4Error::UntypedRetype(e))?;
 
             // In order to set the guard (for the sake of our C-pointer simplification scheme),
             // mutate the CNode in the scratch slot, which copies the CNode into a second slot
@@ -537,7 +526,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
             // the incorrect guard (the one originally occupying the scratch slot).
 
             if err != 0 {
-                return Err(SeL4Error::UntypedRetype(err));
+                return Err(SeL4Error::CNodeMutate(err));
             }
         }
 
@@ -570,7 +559,7 @@ impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
 
         let (dest_cptr, dest_offset, _) = dest_slot.elim();
 
-        let err = unsafe {
+        unsafe {
             seL4_Untyped_Retype(
                 self.cptr,            // _service
                 Page::sel4_type_id(), // type
@@ -581,11 +570,9 @@ impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
                 dest_offset,          // offset
                 1,                    // num_objects
             )
-        };
-
-        if err != 0 {
-            return Err(SeL4Error::UntypedRetype(err));
         }
+        .as_result()
+        .map_err(|e| SeL4Error::UntypedRetype(e))?;
 
         Ok(Cap {
             cptr: dest_offset,

@@ -9,7 +9,7 @@ use crate::arch::{MaxUntypedSize, MinUntypedSize};
 use crate::cap::{
     Cap, LocalCNodeSlot, LocalCNodeSlots, LocalCap, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
 };
-use crate::error::SeL4Error;
+use crate::error::{ErrorExt, SeL4Error};
 
 type UTPoolSlotsPerSize = U4;
 
@@ -293,7 +293,7 @@ fn alloc(
 
             let (slot_cptr, slot_offset, _) = slot.elim();
 
-            let err = unsafe {
+            unsafe {
                 seL4_Untyped_Retype(
                     cptr,                                   // _service
                     api_object_seL4_UntypedObject as usize, // type
@@ -304,10 +304,9 @@ fn alloc(
                     slot_offset,                            // offset
                     2,                                      // num_objects
                 )
-            };
-            if err != 0 {
-                return Err(SeL4Error::UntypedRetype(err));
             }
+            .as_result()
+            .map_err(|e| SeL4Error::UntypedRetype(e))?;
 
             pool[i - 1].push(slot_offset);
             pool[i - 1].push(slot_offset + 1);
