@@ -307,6 +307,10 @@ where
 {
     /// The size of this region in bytes.
     pub const SIZE_BYTES: usize = 1 << SizeBits::USIZE;
+
+    pub fn size(&self) -> usize {
+        Self::SIZE_BYTES
+    }
 }
 
 impl<SizeBits: Unsigned> UnmappedMemoryRegion<SizeBits, shared_status::Exclusive>
@@ -625,17 +629,117 @@ impl RegionLocations {
         <SizeBits as Sub<PageBits>>::Output: _Pow,
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
     {
-        self.regions.try_push((region.vaddr, region.size()))?;
+        let regions_len = self.regions.len();
+        let index = {
+            let mut idx = 0;
+            for i in 0..regions_len {
+                // We've reached the tail (len - 1), or this is the
+                // initial insertion (len == i == 0).
+                if i == regions_len - 1 || i == regions_len {
+                    idx = regions_len;
+                    break;
+                }
+
+                let (addr, _) = self.regions[i];
+                if region.vaddr() < addr {
+                    idx = i;
+                    break;
+                }
+            }
+            idx
+        };
+
+        // This new region is either greater than all the others or is
+        // the first to be added so we'll just push it at the
+        // tail.
+        if index == regions_len {
+            return self
+                .regions
+                .try_push((region.vaddr, region.size()))
+                .map_err(|_| VSpaceError::OutOfRegions);
+        }
+
+        // We want to check beforehand whether or not we can do the
+        // insert, otherwise we're stuck with a mutated `self.regions`
+        // and are left to put the peices back as we found them.
+        if self.regions.len() == self.regions.capacity() {
+            return Err(VSpaceError::OutOfRegions);
+        }
+
+        self.regions.insert(index, (region.vaddr, region.size()));
+
         Ok(())
     }
 
     fn is_overlap(&self, desired_vaddr: usize) -> bool {
-        for (addr, size) in self.regions.iter() {
+        self.regions.iter().any(|(addr, size)| {
             if desired_vaddr >= *addr && desired_vaddr <= (*addr + size) {
                 return true;
             }
+            false
+        })
+    }
+
+    fn find_first_fit<SizeBits: Unsigned, SS: SharedStatus>(
+        &self,
+        current_addr: usize,
+        desired_region: &UnmappedMemoryRegion<SizeBits, SS>,
+    ) -> Result<usize, VSpaceError>
+    where
+        SizeBits: IsGreaterOrEqual<PageBits>,
+        SizeBits: Sub<PageBits>,
+        <SizeBits as Sub<PageBits>>::Output: Unsigned,
+        <SizeBits as Sub<PageBits>>::Output: _Pow,
+        Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
+    {
+        struct FoldState {
+            found: bool,
+            current_addr: usize,
         }
-        false
+
+        let fit = self.regions.iter().fold(
+            Ok(FoldState {
+                found: false,
+                current_addr,
+            }),
+            |fold_state, (region_addr, region_size)| {
+                if let Ok(fs) = fold_state {
+                    // We've found a chunk of address space that can
+                    // fit this region. Just carry through our result.
+                    if fs.found {
+                        return Ok(fs);
+                    }
+
+                    // If our cursor + the desired_region's size is
+                    // less than the this region's address then we can
+                    // fit this region in this chunk. Set `found` to
+                    // true and retain the current address.
+                    if fs.current_addr + desired_region.size() < *region_addr {
+                        return Ok(FoldState {
+                            found: true,
+                            current_addr: fs.current_addr,
+                        });
+                    }
+
+                    // Otherwise, skip forward to the end of the
+                    // region at hand. If we run out of address space,
+                    // say so.
+                    let next_addr = match region_addr.checked_add(*region_size) {
+                        Some(n) => n,
+                        None => return Err(VSpaceError::ExceededAvailableAddressSpace),
+                    };
+                    return Ok(FoldState {
+                        found: false,
+                        current_addr: next_addr,
+                    });
+                }
+
+                // We've encountered an error! Do no further
+                // processing and just return the error.
+                fold_state
+            },
+        )?;
+        Ok(fit.current_addr)
     }
 }
 
@@ -702,6 +806,11 @@ impl<S: VSpaceState> VSpace<S> {
         page: LocalCap<Page<page_state::Unmapped>>,
         rights: CapRights,
     ) -> Result<LocalCap<Page<page_state::Mapped>>, VSpaceError> {
+        let future_next_addr = match self.next_addr.checked_add(PageBytes::USIZE) {
+            Some(n) => n,
+            None => return Err(VSpaceError::ExceededAvailableAddressSpace),
+        };
+
         match self.layers.map_layer(
             &page,
             self.next_addr,
@@ -717,9 +826,9 @@ impl<S: VSpaceState> VSpace<S> {
             Err(e) => return Err(VSpaceError::MappingError(e)),
             Ok(_) => (),
         };
-        let vaddr = self.next_addr;
 
-        self.set_next_addr()?;
+        let vaddr = self.next_addr;
+        self.next_addr = future_next_addr;
 
         Ok(Cap {
             cptr: page.cptr,
@@ -731,29 +840,6 @@ impl<S: VSpaceState> VSpace<S> {
             },
             _role: PhantomData,
         })
-    }
-
-    #[cfg(not(feature = "vspace_map_region_at_addr"))]
-    fn set_next_addr(&mut self) -> Result<(), VSpaceError> {
-        let current_addr = self.next_addr;
-        self.next_addr = match current_addr.checked_add(PageBytes::USIZE) {
-            Some(n) => n,
-            None => return Err(VSpaceError::ExceededAvailableAddressSpace),
-        };
-        Ok(())
-    }
-
-    #[cfg(feature = "vspace_map_region_at_addr")]
-    fn set_next_addr(&mut self) -> Result<(), VSpaceError> {
-        let mut next_addr = self.next_addr;
-        while self.specific_regions.is_overlap(next_addr) {
-            next_addr = match next_addr.checked_add(PageBytes::USIZE) {
-                Some(n) => n,
-                None => return Err(VSpaceError::ExceededAvailableAddressSpace),
-            }
-        }
-        self.next_addr = next_addr;
-        Ok(())
     }
 }
 
@@ -1054,6 +1140,79 @@ impl VSpace<vspace_state::Imaged> {
         page.unmap()
     }
 
+    #[cfg(feature = "vspace_map_region_at_addr")]
+    fn map_region_internal<SizeBits: Unsigned, SSIn: SharedStatus, SSOut: SharedStatus>(
+        &mut self,
+        region: UnmappedMemoryRegion<SizeBits, SSIn>,
+        rights: CapRights,
+    ) -> Result<MappedMemoryRegion<SizeBits, SSOut>, VSpaceError>
+    where
+        SizeBits: IsGreaterOrEqual<PageBits>,
+        SizeBits: Sub<PageBits>,
+        <SizeBits as Sub<PageBits>>::Output: Unsigned,
+        <SizeBits as Sub<PageBits>>::Output: _Pow,
+        Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
+    {
+        let mut vaddr = self.find_next_vaddr(&region)?;
+
+        let future_next_addr = match vaddr.checked_add(PageBytes::USIZE) {
+            Some(n) => n,
+            None => return Err(VSpaceError::ExceededAvailableAddressSpace),
+        };
+
+        // create the mapped region first because we need to pluck out
+        // the `start_cptr` before the iteration below consumes the
+        // unmapped region.
+        let mapped_region = MappedMemoryRegion {
+            caps: MappedPageRange::new(region.caps.start_cptr, vaddr, self.asid()),
+            asid: self.asid(),
+            _size_bits: PhantomData,
+            _shared_status: PhantomData,
+            vaddr,
+        };
+
+        for page_cap in region.caps.iter() {
+            match self.layers.map_layer(
+                &page_cap,
+                vaddr,
+                &mut self.root,
+                rights,
+                &mut self.untyped,
+                &mut self.slots,
+            ) {
+                Err(MappingError::PageMapFailure(e)) => return Err(VSpaceError::SeL4Error(e)),
+                Err(MappingError::IntermediateLayerFailure(e)) => {
+                    return Err(VSpaceError::SeL4Error(e));
+                }
+                Err(e) => return Err(VSpaceError::MappingError(e)),
+                Ok(_) => (),
+            };
+            // It's safe to do a direct addition as we've already
+            // determined that this region will fit here.
+            vaddr += PageBytes::USIZE;
+        }
+
+        self.next_addr = future_next_addr;
+
+        Ok(mapped_region)
+    }
+
+    #[cfg(feature = "vspace_map_region_at_addr")]
+    fn find_next_vaddr<SizeBits: Unsigned, SS: SharedStatus>(
+        &self,
+        region: &UnmappedMemoryRegion<SizeBits, SS>,
+    ) -> Result<usize, VSpaceError>
+    where
+        SizeBits: IsGreaterOrEqual<PageBits>,
+        SizeBits: Sub<PageBits>,
+        <SizeBits as Sub<PageBits>>::Output: Unsigned,
+        <SizeBits as Sub<PageBits>>::Output: _Pow,
+        Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
+    {
+        self.specific_regions.find_first_fit(self.next_addr, region)
+    }
+
+    #[cfg(not(feature = "vspace_map_region_at_addr"))]
     fn map_region_internal<SizeBits: Unsigned, SSIn: SharedStatus, SSOut: SharedStatus>(
         &mut self,
         region: UnmappedMemoryRegion<SizeBits, SSIn>,
