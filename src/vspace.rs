@@ -9,8 +9,6 @@ use core::ops::Sub;
 
 use typenum::*;
 
-use selfe_sys::*;
-
 use crate::alloc::ut_buddy::{self, UTBuddyError, WUTBuddy};
 use crate::arch::cap::{page_state, AssignedASID, Page, UnassignedASID};
 use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot};

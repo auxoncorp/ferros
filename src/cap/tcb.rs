@@ -4,7 +4,7 @@ use selfe_sys::*;
 
 use crate::arch::cap::{page_state, Page};
 use crate::cap::{role, CapType, ChildCNode, CopyAliasable, DirectRetype, LocalCap, PhantomCap};
-use crate::error::SeL4Error;
+use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::FaultSource;
 use crate::vspace::VSpace;
 
@@ -76,7 +76,7 @@ impl LocalCap<ThreadControlBlock> {
         }
         .words[0] as usize;
 
-        let tcb_err = unsafe {
+        unsafe {
             seL4_TCB_Configure(
                 self.cptr,
                 fault_source.map_or(seL4_CapNull as usize, |source| source.endpoint.cptr), // fault_ep.cptr,
@@ -87,12 +87,8 @@ impl LocalCap<ThreadControlBlock> {
                 ipc_buffer.vaddr(),    // buffer address
                 ipc_buffer.cptr,       // bufferFrame capability
             )
-        };
-
-        if tcb_err != 0 {
-            Err(SeL4Error::TCBConfigure(tcb_err))
-        } else {
-            Ok(())
         }
+        .as_result()
+        .map_err(|e| SeL4Error::TCBConfigure(e))
     }
 }

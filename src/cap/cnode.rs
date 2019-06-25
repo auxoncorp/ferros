@@ -7,7 +7,7 @@ use typenum::operator_aliases::Diff;
 use typenum::*;
 
 use crate::cap::{role, CNodeRole, Cap, CapType, ChildCap, LocalCap};
-use crate::error::SeL4Error;
+use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::CapRights;
 
 /// There will only ever be one CNode in a process with Role = Root. The
@@ -170,7 +170,7 @@ impl LocalCap<ChildCNode> {
     {
         let (dest_cptr, dest_offset, _) = dest_slots.elim();
 
-        let err = unsafe {
+        unsafe {
             seL4_CNode_Copy(
                 dest_cptr,            // _service
                 dest_offset,          // index
@@ -180,23 +180,20 @@ impl LocalCap<ChildCNode> {
                 seL4_WordBits as u8,  // src_depth
                 CapRights::RW.into(), // rights
             )
-        };
-
-        if err != 0 {
-            Err(SeL4Error::CNodeCopy(err))
-        } else {
-            Ok((
-                Cap {
-                    cptr: dest_offset,
-                    _role: PhantomData,
-                    cap_data: CNode {
-                        radix: self.cap_data.radix,
-                        _role: PhantomData,
-                    },
-                },
-                Cap::internal_new(dest_offset, dest_offset + 1),
-            ))
         }
+        .as_result()
+        .map_err(|e| SeL4Error::CNodeCopy(e))?;
+        Ok((
+            Cap {
+                cptr: dest_offset,
+                _role: PhantomData,
+                cap_data: CNode {
+                    radix: self.cap_data.radix,
+                    _role: PhantomData,
+                },
+            },
+            Cap::internal_new(dest_offset, dest_offset + 1),
+        ))
     }
 }
 

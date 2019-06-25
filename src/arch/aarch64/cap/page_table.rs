@@ -1,7 +1,7 @@
 use selfe_sys::*;
 
 use crate::cap::{CapType, DirectRetype, LocalCap, PhantomCap};
-use crate::error::SeL4Error;
+use crate::error::{ErrorExt, KernelError, SeL4Error};
 use crate::userland::CapRights;
 use crate::vspace::{MappingError, Maps};
 
@@ -33,15 +33,12 @@ impl Maps<Page<page_state::Unmapped>> for PageTable {
                     seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
                         | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled,
                 )
-            } {
-                // Really sorry about this random 6 here, but it is
-                // the `seL4_FailedLookup` value. See
-                // seL4/libsel4/include/sel4/errors.h
-                // TODO(dan@auxon.io): Find a way to map between seL4
-                // errors and a Rust error enum.
-                6 => Err(MappingError::Overflow),
-                0 => Ok(()),
-                e => Err(MappingError::PageMapFailure(SeL4Error::PageMap(e))),
+            }
+            .as_result()
+            {
+                Ok(_) => Ok(()),
+                Err(KernelError::FailedLookup) => Err(MappingError::Overflow),
+                Err(e) => Err(MappingError::PageMapFailure(SeL4Error::PageMap(e))),
             }
         } else {
             Err(MappingError::AddrNotPageAligned)

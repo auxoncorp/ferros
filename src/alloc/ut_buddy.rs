@@ -9,7 +9,7 @@ use crate::arch::{MaxUntypedSize, MinUntypedSize};
 use crate::cap::{
     Cap, LocalCNodeSlot, LocalCNodeSlots, LocalCap, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
 };
-use crate::error::SeL4Error;
+use crate::error::{ErrorExt, SeL4Error};
 
 type UTPoolSlotsPerSize = U4;
 
@@ -127,7 +127,7 @@ where
     Diff<BitSize, U4>: _OneHotUList,
     OneHotUList<Diff<BitSize, U4>>: UList,
 {
-    let mut pool = unsafe { make_pool() };
+    let mut pool = make_pool();
     pool[BitSize::USIZE - MinUntypedSize::USIZE].push(ut.cptr);
 
     UTBuddy {
@@ -172,7 +172,7 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
 
 /// Make a weak ut buddy around a weak untyped.
 pub fn weak_ut_buddy(ut: LocalCap<WUntyped>) -> WUTBuddy {
-    let mut pool = unsafe { make_pool() };
+    let mut pool = make_pool();
     pool[ut.cap_data.size_bits - MinUntypedSize::USIZE].push(ut.cptr);
     WUTBuddy { pool }
 }
@@ -201,7 +201,6 @@ impl From<SeL4Error> for UTBuddyError {
     }
 }
 
-#[derive(Debug)]
 pub struct WUTBuddy {
     pool: [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE],
 }
@@ -268,8 +267,7 @@ impl WUTBuddy {
     }
 
     pub(crate) fn empty() -> Self {
-        let pool = unsafe { make_pool() };
-        WUTBuddy { pool }
+        WUTBuddy { pool: make_pool() }
     }
 }
 
@@ -293,7 +291,7 @@ fn alloc(
 
             let (slot_cptr, slot_offset, _) = slot.elim();
 
-            let err = unsafe {
+            unsafe {
                 seL4_Untyped_Retype(
                     cptr,                                   // _service
                     api_object_seL4_UntypedObject as usize, // type
@@ -304,10 +302,9 @@ fn alloc(
                     slot_offset,                            // offset
                     2,                                      // num_objects
                 )
-            };
-            if err != 0 {
-                return Err(SeL4Error::UntypedRetype(err));
             }
+            .as_result()
+            .map_err(|e| SeL4Error::UntypedRetype(e))?;
 
             pool[i - 1].push(slot_offset);
             pool[i - 1].push(slot_offset + 1);

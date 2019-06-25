@@ -6,7 +6,7 @@ use typenum::*;
 
 use crate::arch::{self, PageBits};
 use crate::cap::*;
-use crate::error::SeL4Error;
+use crate::error::{ErrorExt, SeL4Error};
 use crate::pow::{Pow, _Pow};
 
 mod resources;
@@ -167,15 +167,14 @@ where
     // Clean up any child/derived capabilities that may have been created from the memory
     // Because the slots and the untyped are both Local, the slots' parent CNode capability pointer
     // must be the same as the untyped's parent CNode
-    let err = unsafe {
+    unsafe {
         seL4_CNode_Revoke(
             slots.cptr,          // _service
             untyped.cptr,        // index
             seL4_WordBits as u8, // depth
         )
-    };
-    if err != 0 {
-        return Err(SeL4Error::CNodeRevoke(err));
     }
+    .as_result()
+    .map_err(|e| SeL4Error::CNodeRevoke(e))?;
     Ok(r)
 }

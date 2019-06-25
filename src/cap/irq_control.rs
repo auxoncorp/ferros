@@ -5,7 +5,7 @@ use typenum::*;
 use selfe_sys::*;
 
 use crate::cap::{irq_state, CNodeRole, CNodeSlot, Cap, CapType, IRQHandler, LocalCap};
-use crate::error::SeL4Error;
+use crate::error::{ErrorExt, SeL4Error};
 
 // TODO - consider moving IRQ code allocation tracking to compile-time,
 // which may be feasible since we treat IRQControl as a global
@@ -41,7 +41,7 @@ impl LocalCap<IRQControl> {
         if self.cap_data.known_handled[IRQ::USIZE] {
             return Err(IRQError::UnavailableIRQ);
         }
-        let err = unsafe {
+        unsafe {
             seL4_IRQControl_Get(
                 self.cptr,           // service/authority
                 IRQ::USIZE,          // irq
@@ -49,10 +49,9 @@ impl LocalCap<IRQControl> {
                 dest_offset,         // index
                 seL4_WordBits as u8, // depth
             )
-        };
-        if err != 0 {
-            return Err(IRQError::SeL4Error(SeL4Error::IRQControlGet(err)));
         }
+        .as_result()
+        .map_err(|e| IRQError::SeL4Error(SeL4Error::IRQControlGet(e)))?;
 
         self.cap_data.known_handled[IRQ::USIZE] = true;
 

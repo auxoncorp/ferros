@@ -37,8 +37,8 @@ pub type PageUpperDirBits = U12;
 pub type PageUpperDirIndexBits = U9;
 pub type PageDirectoryBits = U12;
 pub type PageDirIndexBits = U9;
-pub type PageTableBits = U12;
-pub type PageTableIndexBits = U9;
+pub type PageTableBits = U12; // How big is the kernel object for a PageTable
+pub type PageTableIndexBits = U9; // How many slots are there, in addressable bit space?
 pub type PageBits = U12;
 pub type PageIndexBits = U12;
 
@@ -86,16 +86,16 @@ impl AddressSpace {
 pub type ARMVCPUBits = U12;
 
 pub type BasePageDirFreeSlots = op!((U1 << PageDirectoryBits) - (U1 << U9));
-pub type BasePageTableFreeSlots = op!(U1 << PageTableBits);
+pub type BasePageTableFreeSlots = op!(U1 << PageTableIndexBits);
 
 // TODO remove these when elf stuff lands.
 // this is a magic numbers we got from inspecting the binary.
 /// 0x00010000
 pub type ProgramStart = op!(U1 << U16);
-pub type CodePageTableBits = U6;
-pub type CodePageTableCount = op!(U1 << CodePageTableBits); // 64 page tables == 64 mb
+pub type CodePageTableBits = U5;
+pub type CodePageTableCount = op!(U1 << CodePageTableBits); // 32 page tables, but larger == 64 mb
 pub type CodePageCount = op!(CodePageTableCount * BasePageTableFreeSlots); // 2^14
-pub type TotalCodeSizeBits = U26;
+pub type TotalCodeSizeBits = op!(CodePageTableBits + PageBits + PageTableIndexBits);
 // The root task has a stack size configurable by the sel4.toml
 // in the `root-task-stack-bytes` metadata property.
 // This configuration is turned into a generated Rust type named `RootTaskStackPageTableCount`

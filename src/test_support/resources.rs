@@ -37,6 +37,7 @@ pub struct TestResourceRefs<'t> {
 }
 
 type PageFallbackNextSize = Sum<U1, <Page<page_state::Unmapped> as DirectRetype>::SizeBits>;
+type MappedMemoryRegionFallbackNextSize = Sum<U1, MaxMappedMemoryRegionBitSize>;
 
 impl Resources {
     pub fn with_debug_reporting(
@@ -97,11 +98,20 @@ impl Resources {
         let (asid_pool, _asid_control) =
             asid_control.allocate_asid_pool(ut_for_asid_pool, asid_pool_slots)?;
 
-        let memory_region_ut = allocator
-            .get_untyped::<MaxMappedMemoryRegionBitSize>()
-            .ok_or_else(|| super::TestSetupError::InitialUntypedNotFound {
-                bit_size: MaxMappedMemoryRegionBitSize::USIZE,
-            })?;
+        let (extra_memory_slots, local_slots) = local_slots.alloc();
+        let memory_region_ut = match allocator.get_untyped::<MaxMappedMemoryRegionBitSize>() {
+            Some(v) => v,
+            None => {
+                let ut_fallback = allocator
+                    .get_untyped::<MappedMemoryRegionFallbackNextSize>()
+                    .ok_or_else(|| super::TestSetupError::InitialUntypedNotFound {
+                        bit_size: MappedMemoryRegionFallbackNextSize::USIZE,
+                    })?;
+                let (ut_target, _) = ut_fallback.split(extra_memory_slots)?;
+                ut_target
+            }
+        };
+
         let (memory_region_slots, local_slots) = local_slots.alloc();
         let unmapped_region: UnmappedMemoryRegion<
             MaxMappedMemoryRegionBitSize,
