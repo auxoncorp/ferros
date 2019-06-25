@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 use selfe_sys::*;
 use typenum::*;
 
-use crate::error::SeL4Error;
+use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::CapRights;
 
 mod asid_pool;
@@ -205,7 +205,7 @@ impl<CT: CapType> LocalCap<CT> {
         rights: CapRights,
     ) -> Result<usize, SeL4Error> {
         let (dest_cptr, dest_offset, _) = dest_slot.elim();
-        let err = unsafe {
+        match unsafe {
             seL4_CNode_Copy(
                 dest_cptr,           // _service
                 dest_offset,         // index
@@ -217,11 +217,11 @@ impl<CT: CapType> LocalCap<CT> {
                 seL4_WordBits as u8, // src_depth
                 rights.into(),       // rights
             )
-        };
-        if err != 0 {
-            Err(SeL4Error::CNodeCopy(err))
-        } else {
-            Ok(dest_offset)
+        }
+        .as_result()
+        {
+            Ok(_) => Ok(dest_offset),
+            Err(e) => Err(SeL4Error::CNodeCopy(e)),
         }
     }
 
@@ -240,7 +240,7 @@ impl<CT: CapType> LocalCap<CT> {
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
         let (dest_cptr, dest_offset, _) = dest_slot.elim();
-        let err = unsafe {
+        unsafe {
             seL4_CNode_Mint(
                 dest_cptr,           // _service
                 dest_offset,         // dest index
@@ -253,17 +253,14 @@ impl<CT: CapType> LocalCap<CT> {
                 rights.into(),       // rights
                 badge.into(),        // badge
             )
-        };
-
-        if err != 0 {
-            Err(SeL4Error::CNodeMint(err))
-        } else {
-            Ok(Cap {
-                cptr: dest_offset,
-                cap_data: PhantomCap::phantom_instance(),
-                _role: PhantomData,
-            })
         }
+        .as_result()
+        .map_err(|e| SeL4Error::CNodeMint(e))?;
+        Ok(Cap {
+            cptr: dest_offset,
+            cap_data: PhantomCap::phantom_instance(),
+            _role: PhantomData,
+        })
     }
 
     /// Copy a capability to another CNode while also setting rights and a badge
@@ -281,7 +278,7 @@ impl<CT: CapType> LocalCap<CT> {
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
         let (dest_cptr, dest_offset, _) = dest_slot.elim();
-        let err = unsafe {
+        unsafe {
             seL4_CNode_Mint(
                 dest_cptr,           // _service
                 dest_offset,         // dest index
@@ -294,17 +291,14 @@ impl<CT: CapType> LocalCap<CT> {
                 rights.into(),       // rights
                 badge.into(),        // badge
             )
-        };
-
-        if err != 0 {
-            Err(SeL4Error::CNodeMint(err))
-        } else {
-            Ok(Cap {
-                cptr: dest_offset,
-                cap_data: PhantomCap::phantom_instance(),
-                _role: PhantomData,
-            })
         }
+        .as_result()
+        .map_err(|e| SeL4Error::CNodeMint(e))?;
+        Ok(Cap {
+            cptr: dest_offset,
+            cap_data: PhantomCap::phantom_instance(),
+            _role: PhantomData,
+        })
     }
 
     /// Copy a capability to another slot inside the same CNode while also setting rights and a badge
@@ -320,7 +314,7 @@ impl<CT: CapType> LocalCap<CT> {
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
         let (dest_cptr, dest_offset, _) = dest_slot.elim();
-        let err = unsafe {
+        unsafe {
             seL4_CNode_Mint(
                 dest_cptr,           // _service
                 dest_offset,         // index
@@ -333,17 +327,14 @@ impl<CT: CapType> LocalCap<CT> {
                 rights.into(),       // rights
                 badge.into(),        // badge
             )
-        };
-
-        if err != 0 {
-            Err(SeL4Error::CNodeMint(err))
-        } else {
-            Ok(Cap {
-                cptr: dest_offset,
-                cap_data: PhantomCap::phantom_instance(),
-                _role: PhantomData,
-            })
         }
+        .as_result()
+        .map_err(|e| SeL4Error::CNodeMint(e))?;
+        Ok(Cap {
+            cptr: dest_offset,
+            cap_data: PhantomCap::phantom_instance(),
+            _role: PhantomData,
+        })
     }
 
     /// Migrate a capability from one CNode slot to another.
@@ -356,7 +347,7 @@ impl<CT: CapType> LocalCap<CT> {
         CT: Movable,
     {
         let (dest_cptr, dest_offset, _) = dest_slot.elim();
-        let err = unsafe {
+        unsafe {
             seL4_CNode_Move(
                 dest_cptr,           // _service
                 dest_offset,         // index
@@ -367,17 +358,14 @@ impl<CT: CapType> LocalCap<CT> {
                 self.cptr,           // src_index
                 seL4_WordBits as u8, // src_depth
             )
-        };
-
-        if err != 0 {
-            Err(SeL4Error::CNodeMove(err))
-        } else {
-            Ok(Cap {
-                cptr: dest_offset,
-                cap_data: self.cap_data,
-                _role: PhantomData,
-            })
         }
+        .as_result()
+        .map_err(|e| SeL4Error::CNodeMove(e))?;
+        Ok(Cap {
+            cptr: dest_offset,
+            cap_data: self.cap_data,
+            _role: PhantomData,
+        })
     }
 
     /// Delete a capability
@@ -385,18 +373,15 @@ impl<CT: CapType> LocalCap<CT> {
     where
         CT: Delible,
     {
-        let err = unsafe {
+        unsafe {
             seL4_CNode_Delete(
                 parent_cnode.cptr,   // _service
                 self.cptr,           // index
                 seL4_WordBits as u8, // depth
             )
-        };
-        if err != 0 {
-            Err(SeL4Error::CNodeDelete(err))
-        } else {
-            Ok(())
         }
+        .as_result()
+        .map_err(|e| SeL4Error::CNodeDelete(e))
     }
 }
 

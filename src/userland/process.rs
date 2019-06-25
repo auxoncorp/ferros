@@ -9,7 +9,7 @@ use selfe_sys::*;
 use typenum::*;
 
 pub(crate) use crate::arch::userland::process::*;
-use crate::error::SeL4Error;
+use crate::error::{ErrorExt, SeL4Error};
 
 // TODO - consider renaming for clarity
 pub trait RetypeForSetup: Sized + Send + Sync {
@@ -143,36 +143,28 @@ impl ReadyProcess {
 
         tcb.configure(cspace, fault_source, &vspace, ipc_buffer)?;
         unsafe {
-            let err = seL4_TCB_WriteRegisters(
+            seL4_TCB_WriteRegisters(
                 tcb.cptr,
                 0,
                 0,
                 // all the regs
                 core::mem::size_of::<seL4_UserContext>() / core::mem::size_of::<usize>(),
                 &mut registers,
-            );
-            if err != 0 {
-                return Err(ProcessSetupError::SeL4Error(SeL4Error::TCBWriteRegisters(
-                    err,
-                )));
-            }
+            )
+            .as_result()
+            .map_err(|e| ProcessSetupError::SeL4Error(SeL4Error::TCBWriteRegisters(e)))?;
 
             // TODO - priority management could be exposed once we plan on actually using it
-            let err = seL4_TCB_SetPriority(tcb.cptr, priority_authority.cptr, 255);
-            if err != 0 {
-                return Err(ProcessSetupError::SeL4Error(SeL4Error::TCBSetPriority(err)));
-            }
+            seL4_TCB_SetPriority(tcb.cptr, priority_authority.cptr, 255)
+                .as_result()
+                .map_err(|e| ProcessSetupError::SeL4Error(SeL4Error::TCBSetPriority(e)))?;
         }
         Ok(ReadyProcess { tcb })
     }
 
     pub fn start(self) -> Result<(), SeL4Error> {
-        unsafe {
-            let err = seL4_TCB_Resume(self.tcb.cptr);
-            if err != 0 {
-                return Err(SeL4Error::TCBResume(err));
-            }
-            Ok(())
-        }
+        unsafe { seL4_TCB_Resume(self.tcb.cptr) }
+            .as_result()
+            .map_err(|e| SeL4Error::TCBResume(e))
     }
 }

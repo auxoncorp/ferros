@@ -255,18 +255,16 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
         });
 
         // Clean up any child/derived capabilities that may have been created.
-        let err = unsafe {
+        unsafe {
             seL4_CNode_Revoke(
                 parent_cnode.cptr,   // _service
                 self.cptr,           // index
                 seL4_WordBits as u8, // depth
             )
-        };
-        if err != 0 {
-            Err(SeL4Error::CNodeRevoke(err))
-        } else {
-            Ok(r)
         }
+        .as_result()
+        .map_err(|e| SeL4Error::CNodeRevoke(e))?;
+        Ok(r)
     }
 
     /// weaken erases the type-level state-tracking (size).
@@ -511,7 +509,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
             )
             .words[0];
 
-            let err = seL4_CNode_Mutate(
+            seL4_CNode_Mutate(
                 dest_cptr,           // _service: seL4_CNode,
                 dest_offset,         // dest_index: seL4_Word,
                 seL4_WordBits as u8, // dest_depth: seL4_Uint8,
@@ -519,15 +517,13 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
                 scratch_offset,      // src_index: seL4_Word,
                 seL4_WordBits as u8, // src_depth: seL4_Uint8,
                 guard_data as usize, // badge or guard: seL4_Word,
-            );
+            )
+            .as_result()
+            .map_err(|e| SeL4Error::CNodeMutate(e))?;
 
             // TODO - If we wanted to make more efficient use of our available slots at the cost
             // of complexity, we could swap the two created CNodes, then delete the one with
             // the incorrect guard (the one originally occupying the scratch slot).
-
-            if err != 0 {
-                return Err(SeL4Error::CNodeMutate(err));
-            }
         }
 
         Ok((

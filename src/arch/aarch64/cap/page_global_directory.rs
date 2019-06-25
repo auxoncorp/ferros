@@ -3,7 +3,7 @@ use selfe_sys::*;
 use typenum::Unsigned;
 
 use crate::cap::{CapType, DirectRetype, LocalCap, PhantomCap};
-use crate::error::SeL4Error;
+use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::CapRights;
 use crate::vspace::{MappingError, Maps};
 
@@ -35,7 +35,7 @@ impl Maps<PageUpperDirectory> for PageGlobalDirectory {
         Root: CapType,
         RootLowerLevel: CapType,
     {
-        match unsafe {
+        unsafe {
             seL4_ARM_PageUpperDirectory_Map(
                 upper_dir.cptr,
                 root.cptr,
@@ -43,12 +43,9 @@ impl Maps<PageUpperDirectory> for PageGlobalDirectory {
                 seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
                     | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled,
             )
-        } {
-            0 => Ok(()),
-            e => Err(MappingError::IntermediateLayerFailure(
-                SeL4Error::PageUpperDirectoryMap(e),
-            )),
         }
+        .as_result()
+        .map_err(|e| MappingError::IntermediateLayerFailure(SeL4Error::PageUpperDirectoryMap(e)))
     }
 }
 

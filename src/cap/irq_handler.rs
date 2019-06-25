@@ -5,7 +5,7 @@ use typenum::*;
 use selfe_sys::*;
 
 use crate::cap::{Cap, CapType, LocalCap, Movable, Notification};
-use crate::error::SeL4Error;
+use crate::error::{ErrorExt, SeL4Error};
 
 /// Whether or not an IRQ Handle has been set to a particular Notification
 pub trait IRQSetState: private::SealedIRQSetState {}
@@ -50,10 +50,9 @@ where
         self,
         notification: &LocalCap<Notification>,
     ) -> Result<(LocalCap<IRQHandler<IRQ, irq_state::Set>>), SeL4Error> {
-        let err = unsafe { seL4_IRQHandler_SetNotification(self.cptr, notification.cptr) };
-        if err != 0 {
-            return Err(SeL4Error::IRQHandlerSetNotification(err));
-        }
+        unsafe { seL4_IRQHandler_SetNotification(self.cptr, notification.cptr) }
+            .as_result()
+            .map_err(|e| SeL4Error::IRQHandlerSetNotification(e))?;
         Ok(Cap {
             cptr: self.cptr,
             _role: self._role,
@@ -70,11 +69,9 @@ where
     IRQ: IsLess<U256, Output = True>,
 {
     pub fn ack(&self) -> Result<(), SeL4Error> {
-        let err = unsafe { seL4_IRQHandler_Ack(self.cptr) };
-        if err != 0 {
-            return Err(SeL4Error::IRQHandlerAck(err));
-        }
-        Ok(())
+        unsafe { seL4_IRQHandler_Ack(self.cptr) }
+            .as_result()
+            .map_err(|e| SeL4Error::IRQHandlerAck(e))
     }
 }
 
