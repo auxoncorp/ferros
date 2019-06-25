@@ -192,7 +192,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
         Diff<BitSize, U2>: Unsigned,
     {
         let (dest_cptr, dest_offset, _) = dest_slots.elim();
-        let err = unsafe {
+        unsafe {
             seL4_Untyped_Retype(
                 self.cptr,                              // _service
                 api_object_seL4_UntypedObject as usize, // type

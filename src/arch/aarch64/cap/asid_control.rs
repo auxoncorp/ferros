@@ -10,7 +10,7 @@ use crate::arch;
 use crate::cap::{
     memory_kind, ASIDPool, Cap, CapType, LocalCNodeSlot, LocalCap, PhantomCap, Untyped,
 };
-use crate::error::SeL4Error;
+use crate::error::{ErrorExt, SeL4Error};
 
 #[derive(Debug)]
 pub struct ASIDControl<FreePools: Unsigned> {
@@ -44,7 +44,7 @@ impl<FreePools: Unsigned> LocalCap<ASIDControl<FreePools>> {
         op!(FreePools - U1): Unsigned,
     {
         let (dest_cptr, dest_offset, _) = dest_slot.elim();
-        let err = unsafe {
+        let make_pool_result = unsafe {
             seL4_ARM_ASIDControl_MakePool(
                 self.cptr,          // _service
                 ut12.cptr,          // untyped
@@ -52,10 +52,14 @@ impl<FreePools: Unsigned> LocalCap<ASIDControl<FreePools>> {
                 dest_offset,        // index
                 arch::WordSize::U8, // depth
             )
-        };
-
-        if err != 0 {
-            return Err(SeL4Error::UntypedRetype(err));
+        }
+        .as_result();
+        if let Err(e) = make_pool_result {
+            // N.B. - This continues prior pattern of
+            // not introducing arch-specific variants in
+            // the cross-architecture SeL4Error type, which
+            // may be revisited in the future.
+            return Err(SeL4Error::UntypedRetype(e));
         }
 
         Ok((

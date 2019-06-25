@@ -127,7 +127,7 @@ where
     Diff<BitSize, U4>: _OneHotUList,
     OneHotUList<Diff<BitSize, U4>>: UList,
 {
-    let mut pool = unsafe { make_pool() };
+    let mut pool = make_pool();
     pool[BitSize::USIZE - MinUntypedSize::USIZE].push(ut.cptr);
 
     UTBuddy {
@@ -172,7 +172,7 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
 
 /// Make a weak ut buddy around a weak untyped.
 pub fn weak_ut_buddy(ut: LocalCap<WUntyped>) -> WUTBuddy {
-    let mut pool = unsafe { make_pool() };
+    let mut pool = make_pool();
     pool[ut.cap_data.size_bits - MinUntypedSize::USIZE].push(ut.cptr);
     WUTBuddy { pool }
 }
@@ -201,7 +201,6 @@ impl From<SeL4Error> for UTBuddyError {
     }
 }
 
-#[derive(Debug)]
 pub struct WUTBuddy {
     pool: [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE],
 }
@@ -268,8 +267,7 @@ impl WUTBuddy {
     }
 
     pub(crate) fn empty() -> Self {
-        let pool = unsafe { make_pool() };
-        WUTBuddy { pool }
+        WUTBuddy { pool: make_pool() }
     }
 }
 

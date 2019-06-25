@@ -89,7 +89,7 @@ pub type ProgramStart = op!(U1 << U16);
 pub type CodePageTableBits = U6;
 pub type CodePageTableCount = op!(U1 << CodePageTableBits); // 64 page tables == 64 mb
 pub type CodePageCount = op!(CodePageTableCount * BasePageTableFreeSlots); // 2^14
-pub type TotalCodeSizeBits = U26;
+pub type TotalCodeSizeBits = op!(CodePageTableBits + PageBits + PageTableIndexBits);
 // The root task has a stack size configurable by the sel4.toml
 // in the `root-task-stack-bytes` metadata property.
 // This configuration is turned into a generated Rust type named `RootTaskStackPageTableCount`
