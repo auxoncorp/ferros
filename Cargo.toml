@@ -7,6 +7,7 @@ edition = "2018"
 [features]
 default = []
 test_support = []
+vspace_map_region_at_addr = []
 
 [dependencies]
 # NOTE: We use a git dependency directly since the git submodules
