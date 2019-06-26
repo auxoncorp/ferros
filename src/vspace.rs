@@ -138,7 +138,17 @@ pub enum VSpaceError {
     OverlappingRegion,
     #[cfg(feature = "vspace_map_region_at_addr")]
     OutOfRegions,
+
+    /// This error is returned by `map_region_at_addr` its rollback
+    /// ArrayVec is not large enough to hold the number of pages, it's
+    /// arbitrary and we'll need to address this when we get to doing
+    /// special-sized granules.
+    #[cfg(feature = "vspace_map_region_at_addr")]
+    TriedToMapTooManyPagesAtOnce,
 }
+
+#[cfg(feature = "vspace_map_region_at_addr")]
+const MAX_MAP_AT_ONCE: usize = 128;
 
 impl From<RetypeError> for VSpaceError {
     fn from(e: RetypeError) -> VSpaceError {
@@ -960,7 +970,7 @@ impl VSpace<vspace_state::Imaged> {
         region: UnmappedMemoryRegion<SizeBits, SS>,
         vaddr: usize,
         rights: CapRights,
-    ) -> Result<MappedMemoryRegion<SizeBits, SS>, VSpaceError>
+    ) -> Result<MappedMemoryRegion<SizeBits, SS>, (VSpaceError, UnmappedMemoryRegion<SizeBits, SS>)>
     where
         SizeBits: IsGreaterOrEqual<PageBits>,
         SizeBits: Sub<PageBits>,
@@ -969,11 +979,21 @@ impl VSpace<vspace_state::Imaged> {
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
     {
         if self.specific_regions.is_overlap(vaddr) {
-            return Err(VSpaceError::OverlappingRegion);
+            return Err((VSpaceError::OverlappingRegion, region));
         }
+
+        // Verify that we can fit this region into the address space.
+        match vaddr.checked_add(region.size()) {
+            None => return Err((VSpaceError::ExceededAvailableAddressSpace, region)),
+            _ => (),
+        };
 
         let mut mapping_vaddr = vaddr;
         let cptr = region.caps.start_cptr;
+
+        let mut mapped_pages: ArrayVec<[LocalCap<Page<page_state::Mapped>>; MAX_MAP_AT_ONCE]> =
+            ArrayVec::new();
+
         for page in region.caps.iter() {
             match self.layers.map_layer(
                 &page,
@@ -983,15 +1003,74 @@ impl VSpace<vspace_state::Imaged> {
                 &mut self.untyped,
                 &mut self.slots,
             ) {
-                Err(MappingError::PageMapFailure(e)) => return Err(VSpaceError::SeL4Error(e)),
-                Err(MappingError::IntermediateLayerFailure(e)) => {
-                    return Err(VSpaceError::SeL4Error(e));
+                Err(MappingError::PageMapFailure(e)) => {
+                    // Rollback the pages we've mapped thus far.
+                    let _ = mapped_pages.into_iter().map(|page| page.unmap());
+                    return Err((
+                        VSpaceError::SeL4Error(e),
+                        UnmappedMemoryRegion {
+                            caps: CapRange::new(cptr),
+                            _size_bits: PhantomData,
+                            _shared_status: PhantomData,
+                        },
+                    ));
                 }
-                Err(e) => return Err(VSpaceError::MappingError(e)),
-                Ok(_) => (),
+                Err(MappingError::IntermediateLayerFailure(e)) => {
+                    // Rollback the pages we've mapped thus far.
+                    let _ = mapped_pages.into_iter().map(|page| page.unmap());
+                    return Err((
+                        VSpaceError::SeL4Error(e),
+                        UnmappedMemoryRegion {
+                            caps: CapRange::new(cptr),
+                            _size_bits: PhantomData,
+                            _shared_status: PhantomData,
+                        },
+                    ));
+                }
+                Err(e) => {
+                    // Rollback the pages we've mapped thus far.
+                    let _ = mapped_pages.into_iter().map(|page| page.unmap());
+                    return Err((
+                        VSpaceError::MappingError(e),
+                        UnmappedMemoryRegion {
+                            caps: CapRange::new(cptr),
+                            _size_bits: PhantomData,
+                            _shared_status: PhantomData,
+                        },
+                    ));
+                }
+                Ok(_) => {
+                    // save pages we've mapped thus far so we can roll
+                    // them back if we fail to map all of this
+                    // region. I.e., something was previously mapped
+                    // here.
+                    match mapped_pages.try_push(Cap {
+                        cptr: page.cptr,
+                        cap_data: Page {
+                            state: page_state::Mapped {
+                                vaddr: mapping_vaddr,
+                                asid: self.asid.cap_data.asid,
+                            },
+                        },
+                        _role: PhantomData,
+                    }) {
+                        Err(_) => {
+                            return Err((
+                                VSpaceError::TriedToMapTooManyPagesAtOnce,
+                                UnmappedMemoryRegion {
+                                    caps: CapRange::new(cptr),
+                                    _shared_status: PhantomData,
+                                    _size_bits: PhantomData,
+                                },
+                            ))
+                        }
+                        _ => (),
+                    }
+                }
             };
             mapping_vaddr += PageBytes::USIZE;
         }
+
         let region = MappedMemoryRegion {
             caps: MappedPageRange {
                 initial_cptr: cptr,
@@ -1004,8 +1083,21 @@ impl VSpace<vspace_state::Imaged> {
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         };
-        self.specific_regions.add(&region)?;
-        Ok(region)
+
+        match self.specific_regions.add(&region) {
+            Err(e) => {
+                let _ = mapped_pages.into_iter().map(|page| page.unmap());
+                Err((
+                    VSpaceError::OutOfRegions,
+                    UnmappedMemoryRegion {
+                        caps: CapRange::new(cptr),
+                        _size_bits: PhantomData,
+                        _shared_status: PhantomData,
+                    },
+                ))
+            }
+            Ok(_) => Ok(region),
+        }
     }
 
     /// Map a region of memory at some address, I don't care where.
