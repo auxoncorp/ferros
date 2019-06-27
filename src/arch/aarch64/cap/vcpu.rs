@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 
 use selfe_sys::*;
 
-use crate::cap::{Cap, CapType, DirectRetype, LocalCap, ThreadControlBlock};
+use crate::cap::{Cap, CapType, DirectRetype, LocalCap, PhantomCap, ThreadControlBlock};
 use crate::error::{ErrorExt, SeL4Error};
 
 #[derive(Debug, Clone, Copy)]
@@ -127,6 +127,14 @@ impl DirectRetype for VCpu<vcpu_state::Unbound> {
     type SizeBits = super::super::ARMVCPUBits;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_VCPUObject as usize
+    }
+}
+
+impl PhantomCap for VCpu<vcpu_state::Unbound> {
+    fn phantom_instance() -> Self {
+        Self {
+            _state: PhantomData,
+        }
     }
 }
 
