@@ -59,7 +59,7 @@ impl LocalCap<ThreadControlBlock> {
         unsafe { core::mem::transmute(self) }
     }
 
-    pub(crate) fn configure(
+    pub fn configure(
         &mut self,
         cspace_root: LocalCap<ChildCNode>,
         fault_source: Option<FaultSource<role::Child>>,
