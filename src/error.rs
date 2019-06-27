@@ -22,6 +22,10 @@ pub enum SeL4Error {
     GetPageAddr(KernelError),
     PageCleanInvalidateData(KernelError),
     CNodeRevoke(KernelError),
+    VCPUInjectIRQ(KernelError),
+    VCPUReadRegisters(KernelError),
+    VCPUWriteRegisters(KernelError),
+    VCPUBindTcb(KernelError),
 }
 
 #[derive(Debug)]
