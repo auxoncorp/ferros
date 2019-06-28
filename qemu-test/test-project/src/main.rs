@@ -19,7 +19,17 @@ mod child_process_cap_management;
 mod child_process_runs;
 mod dont_tread_on_me;
 mod double_door_backpressure;
-mod fault_or_message_handler;
+
+#[cfg(any(target_arch = "arm", target_arch = "aarch32"))]
+mod fault_or_message_handler_arm;
+#[cfg(any(target_arch = "arm", target_arch = "aarch32"))]
+use fault_or_message_handler_arm as fault_or_message_handler;
+
+#[cfg(target_arch = "aarch64")]
+mod fault_or_message_handler_aarch64;
+#[cfg(target_arch = "aarch64")]
+use fault_or_message_handler_aarch64 as fault_or_message_handler;
+
 mod fault_pair;
 mod grandkid_process_runs;
 mod memory_read_protection;

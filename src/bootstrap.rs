@@ -107,7 +107,7 @@ impl BootInfo<op!(ASIDPoolCount - U1)> {
 
         // Assume that the first usable vaddr is after the space allocated
         // for the user image frames, with 100% of that size as a buffer.
-        let init_vaddr = 2 * (user_image.frames_count * PageBytes::USIZE);
+        let init_vaddr = TotalCodeSizeBytes::USIZE * 2;
         BootInfo {
             root_vspace: VSpace::bootstrap(
                 seL4_CapInitThreadVSpace as usize,

@@ -296,7 +296,7 @@ where
 /// A version of retype_cnode that concretely specifies the required untyped size,
 /// to work well with type inference.
 pub fn retype_cnode<ChildRadix: Unsigned>(
-    untyped: LocalCap<Untyped<Sum<ChildRadix, U4>, memory_kind::General>>,
+    untyped: LocalCap<Untyped<Sum<ChildRadix, U5>, memory_kind::General>>,
     local_slots: LocalCNodeSlots<U2>,
 ) -> Result<
     (
@@ -312,9 +312,9 @@ where
     Pow<ChildRadix>: Sub<U1>,
     Diff<Pow<ChildRadix>, U1>: Unsigned,
 
-    ChildRadix: Add<U4>,
-    Sum<ChildRadix, U4>: Unsigned,
-    Sum<ChildRadix, U4>: IsGreaterOrEqual<Sum<ChildRadix, U4>>,
+    ChildRadix: Add<U5>,
+    Sum<ChildRadix, U5>: Unsigned,
+    Sum<ChildRadix, U5>: IsGreaterOrEqual<Sum<ChildRadix, U5>>,
 {
     untyped.retype_cnode::<ChildRadix>(local_slots)
 }
@@ -476,9 +476,9 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         Pow<ChildRadix>: Sub<U1>,
         Diff<Pow<ChildRadix>, U1>: Unsigned,
 
-        ChildRadix: Add<U4>,
-        Sum<ChildRadix, U4>: Unsigned,
-        BitSize: IsGreaterOrEqual<Sum<ChildRadix, U4>>,
+        ChildRadix: Add<U5>,
+        Sum<ChildRadix, U5>: Unsigned,
+        BitSize: IsGreaterOrEqual<Sum<ChildRadix, U5>>,
     {
         let (scratch_slot, local_slots) = local_slots.alloc::<U1>();
         let (dest_slot, _) = local_slots.alloc::<U1>();

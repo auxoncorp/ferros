@@ -9,7 +9,7 @@ pub mod cap;
 pub mod fault;
 pub mod userland;
 
-pub type WordSize = U32;
+pub type WordSize = U64;
 pub type MinUntypedSize = U4;
 // MaxUntypedSize is half the address space and/or word size.
 pub type MaxUntypedSize = U47;
@@ -96,6 +96,7 @@ pub type CodePageTableBits = U5;
 pub type CodePageTableCount = op!(U1 << CodePageTableBits); // 32 page tables, but larger == 64 mb
 pub type CodePageCount = op!(CodePageTableCount * BasePageTableFreeSlots); // 2^14
 pub type TotalCodeSizeBits = op!(CodePageTableBits + PageBits + PageTableIndexBits);
+pub type TotalCodeSizeBytes = crate::pow::Pow<TotalCodeSizeBits>;
 // The root task has a stack size configurable by the sel4.toml
 // in the `root-task-stack-bytes` metadata property.
 // This configuration is turned into a generated Rust type named `RootTaskStackPageTableCount`
