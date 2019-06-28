@@ -1,8 +1,7 @@
-use typenum::*;
-
 use selfe_sys::*;
 
 use crate::arch::cap::{page_state, Page};
+use crate::arch::TCBBits;
 use crate::cap::{role, CapType, ChildCNode, CopyAliasable, DirectRetype, LocalCap, PhantomCap};
 use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::FaultSource;
@@ -20,7 +19,7 @@ impl PhantomCap for ThreadControlBlock {
 }
 
 impl DirectRetype for ThreadControlBlock {
-    type SizeBits = U10;
+    type SizeBits = TCBBits;
     fn sel4_type_id() -> usize {
         api_object_seL4_TCBObject as usize
     }
