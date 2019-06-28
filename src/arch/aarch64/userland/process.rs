@@ -156,3 +156,25 @@ pub(crate) fn set_thread_link_register(
 ) {
     registers.x30 = (post_return_fn as *const fn() -> !) as usize;
 }
+#[doc(hidden)]
+#[allow(dead_code)]
+#[cfg(feature = "test_support")]
+pub mod test {
+    use super::*;
+
+    #[doc(hidden)]
+    #[derive(Debug, Clone)]
+    pub struct ComparisonError {
+        name: &'static str,
+        expected: usize,
+        actual: usize,
+    }
+    #[rustfmt::skip]
+    pub fn test_stack_setup() -> Result<(), ComparisonError> {
+        Err(ComparisonError {
+            name: "No comparisons have been implemented",
+            expected: 3141592653589,
+            actual: 0
+        })
+    }
+}
