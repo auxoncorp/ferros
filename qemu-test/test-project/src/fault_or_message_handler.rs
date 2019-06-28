@@ -15,7 +15,7 @@ use super::TopLevelError;
 pub fn fault_or_message_handler(
     mut outer_slots: LocalCNodeSlots<U32768>,
     mut outer_ut: LocalCap<Untyped<U21>>,
-    mut asid_pool: LocalCap<ASIDPool<U1024>>,
+    mut asid_pool: LocalCap<ASIDPool<U512>>,
     mut local_mapped_region: MappedMemoryRegion<U16, shared_status::Exclusive>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,

@@ -29,3 +29,8 @@ pub(crate) unsafe fn to_sel4_word(n: usize) -> u64 {
 pub(crate) unsafe fn to_sel4_word(n: usize) -> u32 {
     n as u32
 }
+
+#[cfg(target_pointer_width = "64")]
+pub type CNodeSlotBits = typenum::U5;
+#[cfg(target_pointer_width = "32")]
+pub type CNodeSlotBits = typenum::U4;

@@ -26,12 +26,36 @@ macro_rules! sequential_test {
     };
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum TestPlatform {
+    /// A virtual aarch64 platform similar to the tx1
+    VirtTx1Aarch64,
+    /// The sabre aarch32
+    SabreAarch32,
+}
+
+impl TestPlatform {
+    fn sel4_arch(&self) -> &'static str {
+        match self {
+            TestPlatform::VirtTx1Aarch64 => "aarch64",
+            TestPlatform::SabreAarch32 => "aarch32",
+        }
+    }
+    fn platform(&self) -> &'static str {
+        match self {
+            TestPlatform::VirtTx1Aarch64 => "virt",
+            TestPlatform::SabreAarch32 => "sabre",
+        }
+    }
+}
+
 fn run_qemu_test<F>(
     test_case: &str,
     pass_line: Regex,
     fail_line: Regex,
     ready_line_and_func: Option<(Regex, F)>,
     serial_override: Option<&str>,
+    test_platform: TestPlatform,
 ) where
     F: Fn(),
 {
@@ -45,16 +69,13 @@ fn run_qemu_test<F>(
         );
     }
 
-    let sel4_arch = "aarch32";
-    let platform = "sabre";
-
     let mut build_command = Command::new("selfe");
     (&mut build_command)
         .arg("build")
         .arg("--sel4_arch")
-        .arg(sel4_arch)
+        .arg(test_platform.sel4_arch())
         .arg("--platform")
-        .arg(platform)
+        .arg(test_platform.platform())
         .arg("-v")
         .current_dir("test-project")
         .env("TEST_CASE", test_case);
@@ -76,9 +97,9 @@ fn run_qemu_test<F>(
 
     sim_command
         .arg("--sel4_arch")
-        .arg(sel4_arch)
+        .arg(test_platform.sel4_arch())
         .arg("--platform")
-        .arg(platform)
+        .arg(test_platform.platform())
         .arg("-v")
         .current_dir("test-project")
         .env("TEST_CASE", test_case);
@@ -137,19 +158,33 @@ mod tests {
     use super::*;
 
     sequential_test! {
-        fn unified_tests() {
+        fn unified_tests_sabre() {
             run_qemu_test::<fn()>(
                 "unified_tests",
                 Regex::new(".*test result: ok\\. 15 passed;.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
                 None,
                 None,
+                TestPlatform::SabreAarch32,
             );
         }
     }
 
     sequential_test! {
-        fn uart() {
+        fn unified_tests_virt() {
+            run_qemu_test::<fn()>(
+                "unified_tests",
+                Regex::new(".*test result: ok\\. 15 passed;.*").unwrap(),
+                Regex::new(".*Root task should never return from main.*").unwrap(),
+                None,
+                None,
+                TestPlatform::VirtTx1Aarch64,
+            );
+        }
+    }
+
+    sequential_test! {
+        fn uart_sabre() {
             use std::net::TcpStream;
             use std::io::Write;
 
@@ -163,6 +198,7 @@ mod tests {
                     stream.write(&[1]).expect("write stream");
                 })),
                 Some("-serial tcp:localhost:8888,server,nowait,nodelay -serial mon:stdio"),
+                TestPlatform::SabreAarch32,
             );
         }
     }
