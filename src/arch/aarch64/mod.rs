@@ -24,6 +24,7 @@ pub type ASIDLowBits = U9;
 /// there is an initial pool given to the root thread.
 pub type ASIDPoolCount = op!(U1 << ASIDHighBits);
 pub type ASIDPoolSize = op!(U1 << ASIDLowBits);
+pub type TCBBits = U11;
 
 // The paging structures are layed out as follows:
 // L0: PageGlobalDirectory

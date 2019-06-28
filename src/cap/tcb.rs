@@ -20,7 +20,7 @@ impl PhantomCap for ThreadControlBlock {
 }
 
 impl DirectRetype for ThreadControlBlock {
-    type SizeBits = U10;
+    type SizeBits = crate::arch::TCBBits;
     fn sel4_type_id() -> usize {
         api_object_seL4_TCBObject as usize
     }

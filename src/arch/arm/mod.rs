@@ -19,6 +19,7 @@ pub type ASIDLowBits = U10;
 /// there is an initial pool given to the root thread.
 pub type ASIDPoolCount = op!((U1 << ASIDHighBits) - U1);
 pub type ASIDPoolSize = op!(U1 << ASIDLowBits);
+pub type TCBBits = U10;
 
 #[cfg(KernelHypervisorSupport)]
 mod hyp_dependent_constants {
