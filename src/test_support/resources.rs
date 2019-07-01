@@ -116,6 +116,7 @@ impl Resources {
         let unmapped_region: UnmappedMemoryRegion<
             MaxMappedMemoryRegionBitSize,
             shared_status::Exclusive,
+            _,
         > = UnmappedMemoryRegion::new(memory_region_ut, memory_region_slots)?;
         let mapped_memory_region =
             root_vspace.map_region(unmapped_region, crate::userland::CapRights::RW)?;

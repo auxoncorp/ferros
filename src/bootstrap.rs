@@ -155,6 +155,7 @@ impl UserImage<role::Local> {
                 cptr,
                 cap_data: Page {
                     state: page_state::Mapped { vaddr, asid: 0 },
+                    _kind: PhantomData,
                 },
                 _role: PhantomData,
             })
