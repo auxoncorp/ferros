@@ -106,12 +106,38 @@ pub mod test {
         expected: usize,
         actual: usize,
     }
-    #[rustfmt::skip]
+
+    fn smaller_than_16() -> Result<(), ComparisonError> {
+        let smaller_than_16: [usize; 1] = [42; 1];
+        let stack_top: [u8; 1024] = mem::zeroed();
+        let child_stack_top = 2048;
+        let (regs, param_size) = unsafe {
+            setup_initial_stack_and_regs(
+                &smaller_than_16 as *const usize,
+                mem::size_of::<[usize; 1]>(),
+                &mut stack_top as *mut usize,
+                child_stack_top,
+            )
+        };
+        if param_size != 0 {
+            return Err(ComparisonError {
+                name: "param size was incorrect",
+                expected: 0,
+                actual: param_size,
+            });
+        }
+
+        if regs.x0 != 42 {
+            return Err(ComparisonError {
+                name: "x0 was incorrect",
+                expected: 42,
+                actual: regs.x0,
+            });
+        }
+        Ok(())
+    }
+
     pub fn test_stack_setup() -> Result<(), ComparisonError> {
-        Err(ComparisonError {
-            name: "No comparisons have been implemented",
-            expected: 3141592653589,
-            actual: 0
-        })
+        smaller_than_16()?;
     }
 }

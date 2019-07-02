@@ -124,13 +124,10 @@ impl RetypeForSetup for ChildParams<role::Local> {
 }
 
 pub extern "C" fn child_main(params: ChildParams<role::Local>) {
-    debug_println!("top of child_main...");
     child_run(params).expect("Error in child process");
-    debug_println!("bottom of child_main...");
 }
 
 fn child_run(params: ChildParams<role::Local>) -> Result<(), TopLevelError> {
-    debug_println!("top of child_run...");
     let ChildParams {
         mut cnode,
         cnode_slots,
@@ -142,12 +139,7 @@ fn child_run(params: ChildParams<role::Local>) -> Result<(), TopLevelError> {
         outcome_sender,
     } = params;
 
-
-    debug_println!("child_run #2...");
-
     let uts = ut_buddy(untyped);
-
-    debug_println!("child_run #3...");
 
     smart_alloc!(|slots: cnode_slots, ut: uts| {
         let (child_cnode, child_slots) = retype_cnode::<U8>(ut, slots)?;

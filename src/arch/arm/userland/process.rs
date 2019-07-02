@@ -13,6 +13,8 @@ pub(crate) unsafe fn setup_initial_stack_and_regs(
     param: *const usize,
     param_size: usize,
     stack_top: *mut usize,
+    // aarch32 does not need the child-mapped stack address.
+    _: usize,
 ) -> (seL4_UserContext, usize) {
     let word_size = size_of::<usize>();
 
