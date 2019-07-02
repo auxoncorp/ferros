@@ -11,7 +11,7 @@ mod badge;
 mod cnode;
 mod endpoint;
 mod irq_control;
-mod irq_handler;
+pub mod irq_handler;
 mod notification;
 mod tcb;
 mod untyped;
