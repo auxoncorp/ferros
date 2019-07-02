@@ -28,12 +28,11 @@ pub(crate) unsafe fn setup_initial_stack_and_regs(
     } else {
         word_size - tail_size
     };
-    let padded_param_size = param_size + padding_size;
 
     // 4 words are stored in registers, so only the remainder needs to go on the
     // stack
-    let param_size_on_stack =
-        cmp::max(0, padded_param_size as isize - (4 * word_size) as isize) as usize;
+    let param_size_on_stack = cmp::max(0, param_size as isize - (4 * word_size) as isize) as usize;
+    let padded_param_size_on_stack = param_size_on_stack + padding_size;
 
     let mut regs: seL4_UserContext = mem::zeroed();
 
@@ -98,11 +97,11 @@ pub(crate) unsafe fn setup_initial_stack_and_regs(
     // The rest of the data goes on the stack.
     if param_size_on_stack > 0 {
         // TODO: stack pointer is supposed to be 8-byte aligned on ARM 32
-        let sp = (stack_top as *mut u8).sub(param_size_on_stack);
+        let sp = (stack_top as *mut u8).sub(padded_param_size_on_stack);
         ptr::copy_nonoverlapping(p as *const u8, sp, param_size_on_stack);
     }
 
-    (regs, param_size_on_stack)
+    (regs, padded_param_size_on_stack)
 }
 
 pub(crate) fn set_thread_link_register(
