@@ -74,6 +74,7 @@ impl From<SeL4Error> for ProcessSetupError {
 
 // TODO - Consider making this a parameter of ReadyProcess::new
 pub type StackBitSize = U17;
+pub type StackPageCount = U32; // this is 2^stackbitsize / 4k
 pub type PrepareThreadCNodeSlots = U64;
 
 impl ReadyProcess {
