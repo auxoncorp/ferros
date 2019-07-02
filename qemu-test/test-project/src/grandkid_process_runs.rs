@@ -94,8 +94,7 @@ pub fn grandkid_process_runs(
             ut,
             slots,
             tpa,
-            None
-            // Some(fault_source),
+            Some(fault_source),
         )?;
     });
 
