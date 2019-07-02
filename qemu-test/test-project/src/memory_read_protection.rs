@@ -26,8 +26,8 @@ pub fn memory_read_protection(
 
     smart_alloc!(|slots: local_slots, ut: uts| {
         let (child_asid, _asid_pool) = asid_pool.alloc();
-        let child_vspace_slots: LocalCNodeSlots<U4096> = slots;
-        let child_vspace_ut: LocalCap<Untyped<U12>> = ut;
+        let child_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let child_vspace_ut: LocalCap<Untyped<U14>> = ut;
         let mut child_vspace = VSpace::new(
             retype(ut, slots)?,
             child_asid,
