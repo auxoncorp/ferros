@@ -4,7 +4,7 @@ use typenum::*;
 
 use ferros::alloc::{self, micro_alloc, smart_alloc};
 use ferros::bootstrap::{root_cnode, BootInfo};
-use ferros::cap::{retype, retype_cnode, role, CNodeRole, LocalCNodeSlots, LocalCap, Untyped};
+use ferros::cap::{retype, retype_cnode, role, CNodeRole, LocalCNodeSlots, LocalCap, MaxIRQCount, Untyped};
 use ferros::userland::{CapRights, InterruptConsumer, ReadyProcess, RetypeForSetup};
 use ferros::vspace::*;
 
@@ -119,7 +119,7 @@ pub mod uart {
 
     pub struct UartParams<IRQ: Unsigned + Sync + Send, Role: CNodeRole>
     where
-        IRQ: IsLess<U256, Output = True>,
+        IRQ: IsLess<MaxIRQCount, Output = True>,
     {
         pub base_ptr: usize,
         pub consumer: InterruptConsumer<IRQ, Role>,
@@ -127,7 +127,7 @@ pub mod uart {
 
     impl<IRQ: Unsigned + Sync + Send> RetypeForSetup for UartParams<IRQ, role::Local>
     where
-        IRQ: IsLess<U256, Output = True>,
+        IRQ: IsLess<MaxIRQCount, Output = True>,
     {
         type Output = UartParams<IRQ, role::Child>;
     }
@@ -236,7 +236,7 @@ pub mod uart {
 
     pub extern "C" fn run<IRQ: Unsigned + Sync + Send>(params: UartParams<IRQ, role::Local>)
     where
-        IRQ: IsLess<U256, Output = True>,
+        IRQ: IsLess<MaxIRQCount, Output = True>,
     {
         let uart = Uart {
             addr: params.base_ptr as u32,

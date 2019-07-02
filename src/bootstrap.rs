@@ -9,7 +9,7 @@ use crate::arch::cap::*;
 use crate::arch::*;
 use crate::cap::{
     role, CNode, CNodeRole, CNodeSlots, Cap, IRQControl, LocalCNode, LocalCNodeSlots, LocalCap,
-    ThreadControlBlock, Untyped,
+    MaxIRQCount, ThreadControlBlock, Untyped,
 };
 use crate::error::SeL4Error;
 use crate::pow::Pow;
@@ -125,7 +125,7 @@ impl BootInfo<op!(ASIDPoolCount - U1)> {
             irq_control: Cap {
                 cptr: seL4_CapIRQControl as usize,
                 cap_data: IRQControl {
-                    known_handled: [false; 256],
+                    known_handled: [false; MaxIRQCount::USIZE],
                 },
                 _role: PhantomData,
             },
