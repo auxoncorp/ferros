@@ -20,7 +20,7 @@ pub fn grandkid_process_runs(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U27>>,
     asid_pool: LocalCap<ASIDPool<U6>>,
-    local_mapped_region: MappedMemoryRegion<U16, shared_status::Exclusive>,
+    local_mapped_region: MappedMemoryRegion<U17, shared_status::Exclusive>,
     cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -62,7 +62,7 @@ pub fn grandkid_process_runs(
                 slots,
             )?;
 
-            let child_unmapped_region: UnmappedMemoryRegion<U16, shared_status::Exclusive> =
+            let child_unmapped_region: UnmappedMemoryRegion<U17, shared_status::Exclusive> =
                 UnmappedMemoryRegion::new(ut, slots)?;
             let child_mapped_region = child_vspace.map_region_and_move(
                 child_unmapped_region,
@@ -94,7 +94,8 @@ pub fn grandkid_process_runs(
             ut,
             slots,
             tpa,
-            Some(fault_source),
+            None
+            // Some(fault_source),
         )?;
     });
 
@@ -114,7 +115,7 @@ pub struct ChildParams<Role: CNodeRole> {
     untyped: Cap<Untyped<U25>, Role>,
     asid_pool: Cap<ASIDPool<U2>, Role>,
     user_image: UserImage<Role>,
-    mapped_region: MappedMemoryRegion<U16, shared_status::Exclusive>,
+    mapped_region: MappedMemoryRegion<U17, shared_status::Exclusive>,
     thread_priority_authority: Cap<ThreadPriorityAuthority, Role>,
     outcome_sender: Sender<bool, Role>,
 }
@@ -124,10 +125,13 @@ impl RetypeForSetup for ChildParams<role::Local> {
 }
 
 pub extern "C" fn child_main(params: ChildParams<role::Local>) {
+    debug_println!("top of child_main...");
     child_run(params).expect("Error in child process");
+    debug_println!("bottom of child_main...");
 }
 
 fn child_run(params: ChildParams<role::Local>) -> Result<(), TopLevelError> {
+    debug_println!("top of child_run...");
     let ChildParams {
         mut cnode,
         cnode_slots,
@@ -138,7 +142,13 @@ fn child_run(params: ChildParams<role::Local>) -> Result<(), TopLevelError> {
         thread_priority_authority,
         outcome_sender,
     } = params;
+
+
+    debug_println!("child_run #2...");
+
     let uts = ut_buddy(untyped);
+
+    debug_println!("child_run #3...");
 
     smart_alloc!(|slots: cnode_slots, ut: uts| {
         let (child_cnode, child_slots) = retype_cnode::<U8>(ut, slots)?;

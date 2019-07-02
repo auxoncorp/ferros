@@ -73,14 +73,14 @@ impl From<SeL4Error> for ProcessSetupError {
 }
 
 // TODO - Consider making this a parameter of ReadyProcess::new
-pub type StackPageCount = U16;
-pub type PrepareThreadCNodeSlots = U32;
+pub type StackBitSize = U17;
+pub type PrepareThreadCNodeSlots = U64;
 
 impl ReadyProcess {
     pub fn new<T: RetypeForSetup>(
         vspace: &mut VSpace,
         cspace: LocalCap<ChildCNode>,
-        parent_mapped_region: MappedMemoryRegion<StackPageCount, shared_status::Exclusive>,
+        parent_mapped_region: MappedMemoryRegion<StackBitSize, shared_status::Exclusive>,
         parent_cnode: &LocalCap<LocalCNode>,
         function_descriptor: extern "C" fn(T) -> (),
         process_parameter: SetupVer<T>,
@@ -93,7 +93,7 @@ impl ReadyProcess {
         // TODO - lift these checks to compile-time, as static assertions
         // Note - This comparison is conservative because technically
         // we can fit some of the params into available registers.
-        if core::mem::size_of::<SetupVer<T>>() > (StackPageCount::USIZE * arch::PageBytes::USIZE) {
+        if core::mem::size_of::<SetupVer<T>>() > (StackBitSize::USIZE * arch::PageBytes::USIZE) {
             return Err(ProcessSetupError::ProcessParameterTooBigForStack);
         }
         if core::mem::size_of::<SetupVer<T>>() != core::mem::size_of::<T>() {

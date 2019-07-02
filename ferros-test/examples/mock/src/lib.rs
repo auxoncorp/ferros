@@ -88,7 +88,7 @@ pub mod ferros {
         pub struct UserImage<T>(pub PhantomData<T>);
     }
     pub mod userland {
-        pub struct StackPageCount;
+        pub struct StackBitSize;
     }
     pub mod vspace {
         use core::marker::PhantomData;
