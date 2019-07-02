@@ -72,11 +72,10 @@ pub(crate) unsafe fn setup_initial_stack_and_regs(
 
         if p < tail as *const usize {
             regs.x1 = *p;
-            p = p.add(1);
         } else {
             regs.x1 = tail_word;
-            return (regs, 0);
         }
+        return (regs, 0);
     } else {
         let sp = (stack_top as *mut u8).sub(param_size);
         ptr::copy_nonoverlapping(param as *const u8, sp, param_size);
@@ -109,19 +108,20 @@ pub mod test {
 
     fn smaller_than_16() -> Result<(), ComparisonError> {
         let smaller_than_16: [usize; 1] = [42; 1];
-        let stack_top: [u8; 1024] = mem::zeroed();
+        let mut stack: [usize; 256] = [0; 256];
+        let stack_top = unsafe { (&mut stack as *mut [usize; 256] as *mut usize).add(256) };
         let child_stack_top = 2048;
         let (regs, param_size) = unsafe {
             setup_initial_stack_and_regs(
                 &smaller_than_16 as *const usize,
                 mem::size_of::<[usize; 1]>(),
-                &mut stack_top as *mut usize,
+                stack_top,
                 child_stack_top,
             )
         };
         if param_size != 0 {
             return Err(ComparisonError {
-                name: "param size was incorrect",
+                name: "smaller_than_16: param size was incorrect",
                 expected: 0,
                 actual: param_size,
             });
@@ -129,7 +129,7 @@ pub mod test {
 
         if regs.x0 != 42 {
             return Err(ComparisonError {
-                name: "x0 was incorrect",
+                name: "smaller_than_16: x0 was incorrect",
                 expected: 42,
                 actual: regs.x0,
             });
@@ -137,7 +137,89 @@ pub mod test {
         Ok(())
     }
 
+    fn is_16() -> Result<(), ComparisonError> {
+        let is_16: [usize; 2] = [42; 2];
+        let mut stack: [usize; 256] = [0; 256];
+        let stack_top = unsafe { (&mut stack as *mut [usize; 256] as *mut usize).add(256) };
+        let child_stack_top = 2048;
+        let (regs, param_size) = unsafe {
+            setup_initial_stack_and_regs(
+                &is_16 as *const usize,
+                mem::size_of::<[usize; 2]>(),
+                stack_top,
+                child_stack_top,
+            )
+        };
+        if param_size != 0 {
+            return Err(ComparisonError {
+                name: "is_16: param size was incorrect",
+                expected: 0,
+                actual: param_size,
+            });
+        }
+
+        if regs.x0 != 42 {
+            return Err(ComparisonError {
+                name: "is_16: x0 was incorrect",
+                expected: 42,
+                actual: regs.x0,
+            });
+        }
+        if regs.x1 != 42 {
+            return Err(ComparisonError {
+                name: "is_16: x1 was incorrect",
+                expected: 42,
+                actual: regs.x1,
+            });
+        }
+        Ok(())
+    }
+
+    fn larger_than_16() -> Result<(), ComparisonError> {
+        let larger_than_16: [usize; 10] = [42; 10];
+        let mut stack: [usize; 256] = [0; 256];
+        let stack_top = unsafe { (&mut stack as *mut [usize; 256] as *mut usize).add(256) };
+        let child_stack_top = 2048;
+        let (regs, param_size) = unsafe {
+            setup_initial_stack_and_regs(
+                &larger_than_16 as *const usize,
+                mem::size_of::<[usize; 10]>(),
+                stack_top,
+                child_stack_top,
+            )
+        };
+        if param_size != 80 {
+            return Err(ComparisonError {
+                name: "larger_than_16: param size was incorrect",
+                expected: 80,
+                actual: param_size,
+            });
+        }
+
+        if regs.x0 != child_stack_top - mem::size_of::<[usize; 10]>() {
+            return Err(ComparisonError {
+                name: "larger_than_16: x0 was incorrect",
+                expected: mem::size_of::<[usize; 10]>(),
+                actual: regs.x0,
+            });
+        }
+        for idx in 0..10 {
+            // we should copy into the last ten slots of the stack.
+            if stack[idx + 246] != 42 {
+                return Err(ComparisonError {
+                    name: "larger_than_16: stack was incorrect",
+                    expected: 42,
+                    actual: stack[idx],
+                });
+            }
+        }
+        Ok(())
+    }
+
     pub fn test_stack_setup() -> Result<(), ComparisonError> {
         smaller_than_16()?;
+        is_16()?;
+        larger_than_16()?;
+        Ok(())
     }
 }
