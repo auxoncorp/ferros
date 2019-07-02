@@ -99,7 +99,10 @@ fn call_fn_under_test(
         UserTestFnOutput::Result => parse_quote! {{
             match #call {
                 Ok(_) => ferros::test_support::TestOutcome::Success,
-                Err(_) => ferros::test_support::TestOutcome::Failure,
+                Err(e) => {
+                    ferros::debug_println!("Test failed:\n {:#?}\n", e);
+                    ferros::test_support::TestOutcome::Failure
+                }
             }
         }},
     }
