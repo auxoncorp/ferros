@@ -25,6 +25,7 @@ pub type ASIDLowBits = U9;
 pub type ASIDPoolCount = op!(U1 << ASIDHighBits);
 pub type ASIDPoolSize = op!(U1 << ASIDLowBits);
 pub type TCBBits = U11;
+pub type NotificationBits = U5;
 
 // The paging structures are layed out as follows:
 // L0: PageGlobalDirectory

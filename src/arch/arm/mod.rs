@@ -20,6 +20,7 @@ pub type ASIDLowBits = U10;
 pub type ASIDPoolCount = op!((U1 << ASIDHighBits) - U1);
 pub type ASIDPoolSize = op!(U1 << ASIDLowBits);
 pub type TCBBits = U10;
+pub type NotificationBits = U4;
 
 #[cfg(KernelHypervisorSupport)]
 mod hyp_dependent_constants {

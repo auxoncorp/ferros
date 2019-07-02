@@ -22,7 +22,7 @@ impl CopyAliasable for Notification {
 impl Mintable for Notification {}
 
 impl DirectRetype for Notification {
-    type SizeBits = U4;
+    type SizeBits = crate::arch::NotificationBits;
     fn sel4_type_id() -> usize {
         api_object_seL4_NotificationObject as usize
     }
