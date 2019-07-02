@@ -165,6 +165,7 @@ pub mod test {
                 &param as *const T as *const usize,
                 param_size,
                 (&mut fake_stack[0] as *mut usize).add(1024),
+                0, // unused
             )
         };
 
