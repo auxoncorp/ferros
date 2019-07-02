@@ -403,7 +403,7 @@ mod private {
     impl<FreeSlots: Unsigned> SealedCapType for ASIDPool<FreeSlots> {}
     impl SealedCapType for IRQControl {}
     impl<IRQ: Unsigned, SetState: IRQSetState> SealedCapType for IRQHandler<IRQ, SetState> where
-        IRQ: IsLess<U256, Output = True>
+        IRQ: IsLess<MaxIRQCount, Output = True>
     {
     }
 

@@ -5,7 +5,7 @@ use typenum::*;
 use selfe_sys::*;
 
 use crate::cap::irq_handler::weak::WIRQHandler;
-use crate::cap::{Cap, CapType, LocalCap, Movable, Notification, PhantomCap};
+use crate::cap::{Cap, CapType, LocalCap, MaxIRQCount, Movable, Notification, PhantomCap};
 use crate::error::{ErrorExt, SeL4Error};
 
 /// Whether or not an IRQ Handle has been set to a particular Notification
@@ -27,25 +27,25 @@ pub mod irq_state {
 
 pub struct IRQHandler<IRQ: Unsigned, SetState: IRQSetState>
 where
-    IRQ: IsLess<U256, Output = True>,
+    IRQ: IsLess<MaxIRQCount, Output = True>,
 {
     pub(crate) _irq: PhantomData<IRQ>,
     pub(crate) _set_state: PhantomData<SetState>,
 }
 
 impl<IRQ: Unsigned, SetState: IRQSetState> CapType for IRQHandler<IRQ, SetState> where
-    IRQ: IsLess<U256, Output = True>
+    IRQ: IsLess<MaxIRQCount, Output = True>
 {
 }
 
 impl<IRQ: Unsigned, SetState: IRQSetState> Movable for IRQHandler<IRQ, SetState> where
-    IRQ: IsLess<U256, Output = True>
+    IRQ: IsLess<MaxIRQCount, Output = True>
 {
 }
 
 impl<IRQ: Unsigned, SetState: IRQSetState> PhantomCap for IRQHandler<IRQ, SetState>
 where
-    IRQ: IsLess<U256, Output = True>,
+    IRQ: IsLess<MaxIRQCount, Output = True>,
 {
     fn phantom_instance() -> Self {
         Self {
@@ -57,14 +57,14 @@ where
 
 impl<IRQ: Unsigned, SetState: IRQSetState> LocalCap<IRQHandler<IRQ, SetState>>
 where
-    IRQ: IsLess<U256, Output = True>,
+    IRQ: IsLess<MaxIRQCount, Output = True>,
 {
     pub fn weaken(self) -> LocalCap<weak::WIRQHandler<SetState>> {
         Cap {
             cptr: self.cptr,
             _role: PhantomData,
             cap_data: WIRQHandler {
-                irq: IRQ::U8,
+                irq: IRQ::U16,
                 _set_state: PhantomData,
             },
         }
@@ -73,7 +73,7 @@ where
 
 impl<IRQ: Unsigned> LocalCap<IRQHandler<IRQ, irq_state::Unset>>
 where
-    IRQ: IsLess<U256, Output = True>,
+    IRQ: IsLess<MaxIRQCount, Output = True>,
 {
     pub fn set_notification(
         self,
@@ -95,7 +95,7 @@ where
 
 impl<IRQ: Unsigned> LocalCap<IRQHandler<IRQ, irq_state::Set>>
 where
-    IRQ: IsLess<U256, Output = True>,
+    IRQ: IsLess<MaxIRQCount, Output = True>,
 {
     pub fn ack(&self) -> Result<(), SeL4Error> {
         unsafe { seL4_IRQHandler_Ack(self.cptr) }
@@ -108,7 +108,7 @@ pub mod weak {
     use super::*;
 
     pub struct WIRQHandler<SetState: IRQSetState> {
-        pub(crate) irq: u8,
+        pub(crate) irq: u16,
         pub(crate) _set_state: PhantomData<SetState>,
     }
 
