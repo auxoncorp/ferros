@@ -40,8 +40,8 @@ pub fn dont_tread_on_me<'a, 'b, 'c>(
         let (proc2_asid, _asid_pool) = asid_pool.alloc();
 
         let proc1_root = retype(ut, slots)?;
-        let proc1_vspace_slots: LocalCNodeSlots<U4096> = slots;
-        let proc1_vspace_ut: LocalCap<Untyped<U12>> = ut;
+        let proc1_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let proc1_vspace_ut: LocalCap<Untyped<U14>> = ut;
 
         let mut proc1_vspace = VSpace::new(
             proc1_root,
@@ -54,7 +54,7 @@ pub fn dont_tread_on_me<'a, 'b, 'c>(
         )?;
 
         let proc2_vspace_slots: LocalCNodeSlots<ferros::arch::CodePageCount> = slots;
-        let proc2_vspace_ut: LocalCap<Untyped<U12>> = ut;
+        let proc2_vspace_ut: LocalCap<Untyped<U14>> = ut;
 
         let mut proc2_vspace = VSpace::new(
             retype(ut, slots)?,

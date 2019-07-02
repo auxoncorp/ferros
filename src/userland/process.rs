@@ -103,23 +103,25 @@ impl ReadyProcess {
         // Reserve a guard page before the stack
         vspace.skip_pages(1)?;
 
-        // map the child stack into local memory so we can copy the contents
-        // of the process params into it
-        let stack_top = parent_mapped_region.vaddr() + parent_mapped_region.size();
-        let (mut registers, param_size_on_stack) = unsafe {
-            setup_initial_stack_and_regs(
-                &process_parameter as *const SetupVer<T> as *const usize,
-                core::mem::size_of::<SetupVer<T>>(),
-                stack_top as *mut usize,
-            )
-        };
-
         // Map the stack to the target address space
+        let stack_top = parent_mapped_region.vaddr() + parent_mapped_region.size();
         let (page_slots, slots) = slots.alloc();
         let (unmapped_stack_pages, _) =
             parent_mapped_region.share(page_slots, parent_cnode, CapRights::RW)?;
         let mapped_stack_pages =
             vspace.map_shared_region_and_consume(unmapped_stack_pages, CapRights::RW)?;
+
+        // map the child stack into local memory so we can copy the contents
+        // of the process params into it
+        let (mut registers, param_size_on_stack) = unsafe {
+            setup_initial_stack_and_regs(
+                &process_parameter as *const SetupVer<T> as *const usize,
+                core::mem::size_of::<SetupVer<T>>(),
+                stack_top as *mut usize,
+                mapped_stack_pages.vaddr() + mapped_stack_pages.size(),
+            )
+        };
+
         let stack_pointer =
             mapped_stack_pages.vaddr() + mapped_stack_pages.size() - param_size_on_stack;
 

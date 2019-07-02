@@ -26,8 +26,8 @@ pub fn over_register_size_params<'a, 'b, 'c>(
 
     smart_alloc!(|slots: local_slots, ut: uts| {
         let (child_asid, _asid_pool) = asid_pool.alloc();
-        let child_vspace_slots: LocalCNodeSlots<U4096> = slots;
-        let child_vspace_ut: LocalCap<Untyped<U12>> = ut;
+        let child_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let child_vspace_ut: LocalCap<Untyped<U14>> = ut;
         let mut child_vspace = VSpace::new(
             retype(ut, slots)?,
             child_asid,
@@ -44,9 +44,7 @@ pub fn over_register_size_params<'a, 'b, 'c>(
             fault_or_message_channel(&root_cnode, ut, slots, child_fault_source_slot, slots)?;
 
         let params = {
-            let mut nums = [0xaaaaaaaa; 140];
-            nums[0] = 0xbbbbbbbb;
-            nums[139] = 0xcccccccc;
+            let nums = [427; 10];
             OverRegisterSizeParams {
                 nums,
                 outcome_sender,
@@ -63,7 +61,7 @@ pub fn over_register_size_params<'a, 'b, 'c>(
             ut,
             slots,
             tpa,
-            Some(fault_source),
+            None,
         )?;
     });
 
@@ -86,7 +84,7 @@ impl RetypeForSetup for ProcParams {
 }
 
 pub struct OverRegisterSizeParams<Role: CNodeRole> {
-    pub nums: [usize; 140],
+    pub nums: [usize; 10],
     pub outcome_sender: Sender<bool, Role>,
 }
 
@@ -100,8 +98,6 @@ pub extern "C" fn proc_main(params: OverRegisterSizeParams<role::Local>) {
         outcome_sender,
     } = params;
     outcome_sender
-        .blocking_send(
-            &(nums[0] == 0xbbbbbbbb && nums[70] == 0xaaaaaaaa && nums[139] == 0xcccccccc),
-        )
+        .blocking_send(&(nums[7] == 427))
         .expect("Failure sending test assertion outcome");
 }
