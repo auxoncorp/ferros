@@ -11,7 +11,7 @@ mod badge;
 mod cnode;
 mod endpoint;
 mod irq_control;
-mod irq_handler;
+pub mod irq_handler;
 mod notification;
 mod tcb;
 mod untyped;
@@ -264,7 +264,7 @@ impl<CT: CapType> LocalCap<CT> {
     }
 
     /// Copy a capability to another CNode while also setting rights and a badge
-    pub(crate) fn mint<DestRole: CNodeRole>(
+    pub fn mint<DestRole: CNodeRole>(
         &self,
         src_cnode: &LocalCap<LocalCNode>,
         dest_slot: CNodeSlot<DestRole>,
@@ -302,7 +302,7 @@ impl<CT: CapType> LocalCap<CT> {
     }
 
     /// Copy a capability to another slot inside the same CNode while also setting rights and a badge
-    pub(crate) fn mint_inside_cnode(
+    pub fn mint_inside_cnode(
         &self,
         dest_slot: LocalCNodeSlot,
         rights: CapRights,
