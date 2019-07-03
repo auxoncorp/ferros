@@ -9,8 +9,8 @@ use ferros::alloc::{smart_alloc, ut_buddy};
 use ferros::arch::fault::Fault;
 use ferros::bootstrap::UserImage;
 use ferros::cap::{
-    retype, retype_cnode, role, ASIDPool, CNodeRole, LocalCNode, LocalCNodeSlots, LocalCap,
-    ThreadPriorityAuthority, Untyped,
+    retype, retype_cnode, role, ASIDPool, CNodeRole, CNodeSlot, CNodeSlotsData, Cap,
+    FaultReplyEndpoint, LocalCNode, LocalCNodeSlots, LocalCap, ThreadPriorityAuthority, Untyped,
 };
 use ferros::userland::{
     fault_or_message_channel, setup_fault_endpoint_pair, FaultOrMessage, FaultSink, ReadyProcess,
@@ -72,13 +72,18 @@ pub fn fault_pair(
 
         let mischief_maker_params = MischiefMakerParams { _role: PhantomData };
 
-        let (outcome_sender_slots, _) = fault_handler_slots.alloc();
+        let (outcome_sender_slots, fault_handler_slots) = fault_handler_slots.alloc();
         let (fault_source_for_the_handler, outcome_sender, handler) =
             fault_or_message_channel(&root_cnode, ut, slots, outcome_sender_slots, slots)?;
-        let fault_handler_params = MischiefDetectorParams::<role::Child> {
-            fault_sink,
-            outcome_sender,
-        };
+
+        smart_alloc! {|slots_fh: fault_handler_slots| {
+            let (_fh_cnode_for_child, slots_for_fh) = fault_handler_cnode.generate_self_reference(&root_cnode, slots_fh)?;
+            let fault_handler_params = MischiefDetectorParams::<role::Child> {
+                fault_sink,
+                outcome_sender,
+                local_slots: slots_for_fh
+            };
+        }}
 
         let (mischief_region, fault_region) = local_mapped_region.split()?;
 
@@ -134,6 +139,7 @@ impl RetypeForSetup for MischiefMakerParams<role::Local> {
 pub struct MischiefDetectorParams<Role: CNodeRole> {
     pub fault_sink: FaultSink<Role>,
     pub outcome_sender: Sender<bool, Role>,
+    pub local_slots: Cap<CNodeSlotsData<U1, Role>, Role>,
 }
 
 impl RetypeForSetup for MischiefDetectorParams<role::Local> {
@@ -141,21 +147,47 @@ impl RetypeForSetup for MischiefDetectorParams<role::Local> {
 }
 
 pub extern "C" fn mischief_maker_proc(_p: MischiefMakerParams<role::Local>) {
-    unsafe {
-        seL4_Send(
-            314159, // bogus cptr to nonexistent endpoint
-            seL4_MessageInfo_new(0, 0, 0, 0),
-        )
-    }
+    unsafe { seL4_Send(314159, seL4_MessageInfo_new(0, 0, 0, 0)) }
+
     debug_println!("This is after the capability fault inducing code, and should not be printed.");
 }
 
 pub extern "C" fn fault_handler_proc(p: MischiefDetectorParams<role::Local>) {
     let fault = p.fault_sink.wait_for_fault();
+
+    match fault {
+        Fault::CapFault(_) => (),
+        f => {
+            debug_println!("Received fault {:?}, which is not the expected CapFault", f);
+            p.outcome_sender
+                .blocking_send(&false)
+                .expect("Failed to send test outcome");
+            return;
+        }
+    }
+
+    let reply = LocalCap::<FaultReplyEndpoint>::save_caller_and_create(p.local_slots)
+        .expect("Failed to save caller");
+
+    // resume the thread, which will try to do the same thing as becore and fault again
+    let slot = reply.resume_faulted_thread();
+    let fault = p.fault_sink.wait_for_fault();
+
+    match fault {
+        Fault::CapFault(_) => (),
+        f => {
+            debug_println!("Received fault {:?}, which is not the expected CapFault", f);
+            p.outcome_sender
+                .blocking_send(&false)
+                .expect("Failed to send test outcome");
+            return;
+        }
+    }
+
+    // Make sure we can reuse the slot a second time, and manually
+    let reply = LocalCap::<FaultReplyEndpoint>::save_caller_and_create(slot);
+
     p.outcome_sender
-        .blocking_send(&match fault {
-            Fault::CapFault(_) => true,
-            _ => false,
-        })
+        .blocking_send(&true)
         .expect("Failed to send test outcome");
 }

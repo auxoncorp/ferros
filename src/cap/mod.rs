@@ -10,6 +10,7 @@ mod asid_pool;
 mod badge;
 mod cnode;
 mod endpoint;
+mod fault_reply_endpoint;
 mod irq_control;
 mod irq_handler;
 mod notification;
@@ -20,6 +21,7 @@ pub use asid_pool::*;
 pub use badge::*;
 pub use cnode::*;
 pub use endpoint::*;
+pub use fault_reply_endpoint::*;
 pub use irq_control::*;
 pub use irq_handler::*;
 pub use notification::*;
@@ -399,6 +401,7 @@ mod private {
     impl SealedCapType for ThreadControlBlock {}
     impl SealedCapType for ThreadPriorityAuthority {}
     impl SealedCapType for Endpoint {}
+    impl SealedCapType for FaultReplyEndpoint {}
     impl SealedCapType for Notification {}
     impl<FreeSlots: Unsigned> SealedCapType for ASIDPool<FreeSlots> {}
     impl SealedCapType for IRQControl {}
