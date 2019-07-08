@@ -49,7 +49,7 @@ use crate::arch::{PageBits, PageBytes};
 use crate::cap::{
     irq_state, role, Badge, CNodeRole, Cap, ChildCNodeSlot, ChildCNodeSlots, DirectRetype,
     IRQControl, IRQError, IRQHandler, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap,
-    Notification, PhantomCap, Untyped,
+    MaxIRQCount, Notification, PhantomCap, Untyped,
 };
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
@@ -63,7 +63,7 @@ use crate::vspace::{
 /// initial thread parameters struct (see `VSpace::prepare_thread`).
 pub struct InterruptConsumer<IRQ: Unsigned, Role: CNodeRole>
 where
-    IRQ: IsLess<U256, Output = True>,
+    IRQ: IsLess<MaxIRQCount, Output = True>,
 {
     irq_handler: Cap<IRQHandler<IRQ, irq_state::Set>, Role>,
     interrupt_badge: Badge,
@@ -76,7 +76,7 @@ where
 /// initial thread parameters struct (see `VSpace::prepare_thread`).
 pub struct Consumer1<Role: CNodeRole, T: Sized + Sync + Send, QLen: Unsigned, IRQ: Unsigned = U0>
 where
-    IRQ: IsLess<U256, Output = True>,
+    IRQ: IsLess<MaxIRQCount, Output = True>,
     QLen: IsGreater<U0, Output = True>,
     QLen: ArrayLength<Slot<T>>,
 {
@@ -93,7 +93,7 @@ where
 /// initial thread parameters struct (see `VSpace::prepare_thread`).
 pub struct Consumer2<Role: CNodeRole, E, ESize: Unsigned, F, FSize: Unsigned, IRQ: Unsigned = U0>
 where
-    IRQ: IsLess<U256, Output = True>,
+    IRQ: IsLess<MaxIRQCount, Output = True>,
     ESize: IsGreater<U0, Output = True>,
     ESize: ArrayLength<Slot<E>>,
     FSize: IsGreater<U0, Output = True>,
@@ -122,7 +122,7 @@ pub struct Consumer3<
     GSize: Unsigned,
     IRQ: Unsigned = U0,
 > where
-    IRQ: IsLess<U256, Output = True>,
+    IRQ: IsLess<MaxIRQCount, Output = True>,
     ESize: IsGreater<U0, Output = True>,
     ESize: ArrayLength<Slot<E>>,
     FSize: IsGreater<U0, Output = True>,
@@ -227,7 +227,7 @@ pub struct ConsumerToken {
 
 impl<IRQ: Unsigned> InterruptConsumer<IRQ, role::Child>
 where
-    IRQ: IsLess<U256, Output = True>,
+    IRQ: IsLess<MaxIRQCount, Output = True>,
 {
     pub fn new(
         notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
@@ -336,7 +336,7 @@ where
 
 impl<E: Sized + Sync + Send, ELen: Unsigned, IRQ: Unsigned> Consumer1<role::Child, E, ELen, IRQ>
 where
-    IRQ: IsLess<U256, Output = True>,
+    IRQ: IsLess<MaxIRQCount, Output = True>,
     ELen: IsGreater<U0, Output = True>,
     ELen: ArrayLength<Slot<E>>,
 {
@@ -520,7 +520,7 @@ impl<
         IRQ: Unsigned,
     > Consumer2<role::Child, E, ELen, F, FLen, IRQ>
 where
-    IRQ: IsLess<U256, Output = True>,
+    IRQ: IsLess<MaxIRQCount, Output = True>,
     ELen: IsGreater<U0, Output = True>,
     ELen: ArrayLength<Slot<E>>,
     FLen: IsGreater<U0, Output = True>,
@@ -701,7 +701,7 @@ impl Waker<role::Local> {
 
 impl<IRQ: Unsigned> InterruptConsumer<IRQ, role::Local>
 where
-    IRQ: IsLess<U256, Output = True>,
+    IRQ: IsLess<MaxIRQCount, Output = True>,
 {
     pub fn consume<State, WFn>(self, initial_state: State, mut waker_fn: WFn) -> !
     where
