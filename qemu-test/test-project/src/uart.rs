@@ -82,10 +82,9 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         // Made it to the 4 pages reserved for UART1
         let (uart1_pages, _) = uart_and_then_some_ut15.split(slots)?;
         let (uart1_page_1_untyped, _, _, _) = uart1_pages.quarter(slots)?;
-        let uart1_page_1 = uart1_page_1_untyped.retype_device_page(slots)?;
-        // TODO - should we use something more device-specialized
-        // for turning device memory into device pages and mapping them?
-        let uart1_page_1 = uart1_vspace.map_given_page(uart1_page_1, CapRights::RW)?;
+
+        let unmapped_uart1_page1 = UnmappedMemoryRegion::new_device(uart1_page_1_untyped, slots)?;
+        let uart1_page_1 = uart1_vspace.map_region(unmapped_uart1_page1, CapRights::RW)?;
 
         let uart1_params = uart::UartParams::<Uart1IrqLine, role::Child> {
             base_ptr: uart1_page_1.vaddr(),
