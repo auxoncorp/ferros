@@ -73,7 +73,7 @@ pub fn call_and_response_loop(
 
         let (caller_region, responder_region) = local_mapped_region.split()?;
 
-        let caller_process = ReadyProcess::new(
+        let caller_process = StandardProcess::new(
             &mut caller_vspace,
             caller_cnode,
             caller_region,
@@ -88,7 +88,7 @@ pub fn call_and_response_loop(
         )?;
         caller_process.start()?;
 
-        let responder_process = ReadyProcess::new(
+        let responder_process = StandardProcess::new(
             &mut responder_vspace,
             responder_cnode,
             responder_region,

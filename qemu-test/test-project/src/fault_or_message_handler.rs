@@ -71,7 +71,7 @@ pub fn fault_or_message_handler(
                         root_cnode,
                     )?;
 
-                    let child_process = ReadyProcess::new(
+                    let child_process = StandardProcess::new(
                         &mut child_vspace,
                         child_cnode,
                         mapped_region,

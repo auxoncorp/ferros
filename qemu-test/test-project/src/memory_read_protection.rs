@@ -7,7 +7,7 @@ use ferros::cap::{
     retype, retype_cnode, role, ASIDPool, Badge, LocalCNode, LocalCNodeSlots, LocalCap,
     ThreadPriorityAuthority, Untyped,
 };
-use ferros::userland::{FaultSinkSetup, ReadyProcess, RetypeForSetup};
+use ferros::userland::{FaultSinkSetup, RetypeForSetup, StandardProcess};
 use ferros::vspace::*;
 
 use super::TopLevelError;
@@ -47,7 +47,7 @@ pub fn memory_read_protection(
             setup.add_fault_source(&root_cnode, child_slot_for_fault_source, Badge::from(0))?;
         let sink = setup.sink();
 
-        let child_process = ReadyProcess::new(
+        let child_process = StandardProcess::new(
             &mut child_vspace,
             child_cnode,
             local_mapped_region,

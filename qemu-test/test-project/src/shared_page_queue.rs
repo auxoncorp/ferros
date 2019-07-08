@@ -4,8 +4,8 @@ use ferros::alloc::{smart_alloc, ut_buddy};
 use ferros::bootstrap::UserImage;
 use ferros::cap::*;
 use ferros::userland::{
-    fault_or_message_channel, Consumer1, FaultOrMessage, Producer, QueueFullError, ReadyProcess,
-    RetypeForSetup, Sender,
+    fault_or_message_channel, Consumer1, FaultOrMessage, Producer, QueueFullError, RetypeForSetup,
+    Sender, StandardProcess,
 };
 use ferros::vspace::*;
 
@@ -88,7 +88,7 @@ pub fn shared_page_queue<'a, 'b, 'c>(
 
         let (producer_region, consumer_region) = local_mapped_region.split()?;
 
-        let consumer_process = ReadyProcess::new(
+        let consumer_process = StandardProcess::new(
             &mut consumer_vspace,
             consumer_cnode,
             consumer_region,
@@ -103,7 +103,7 @@ pub fn shared_page_queue<'a, 'b, 'c>(
         )?;
         consumer_process.start()?;
 
-        let producer_process = ReadyProcess::new(
+        let producer_process = StandardProcess::new(
             &mut producer_vspace,
             producer_cnode,
             producer_region,

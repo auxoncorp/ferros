@@ -6,7 +6,7 @@ use ferros::alloc::{smart_alloc, ut_buddy};
 use ferros::bootstrap::UserImage;
 use ferros::cap::*;
 use ferros::userland::{
-    fault_or_message_channel, FaultOrMessage, ReadyProcess, RetypeForSetup, Sender,
+    fault_or_message_channel, FaultOrMessage, RetypeForSetup, Sender, StandardProcess,
 };
 use ferros::vspace::*;
 
@@ -62,7 +62,7 @@ pub fn child_process_cap_management(
             root_cnode,
         )?;
 
-        let child_process = ReadyProcess::new(
+        let child_process = StandardProcess::new(
             &mut child_vspace,
             child_cnode,
             local_mapped_region,

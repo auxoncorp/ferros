@@ -13,8 +13,8 @@ use ferros::cap::{
     ThreadPriorityAuthority, Untyped,
 };
 use ferros::userland::{
-    fault_or_message_channel, setup_fault_endpoint_pair, FaultOrMessage, FaultSink, ReadyProcess,
-    RetypeForSetup, Sender,
+    fault_or_message_channel, setup_fault_endpoint_pair, FaultOrMessage, FaultSink, RetypeForSetup,
+    Sender, StandardProcess,
 };
 use ferros::vspace::*;
 
@@ -82,7 +82,7 @@ pub fn fault_pair(
 
         let (mischief_region, fault_region) = local_mapped_region.split()?;
 
-        let mischief_maker_process = ReadyProcess::new(
+        let mischief_maker_process = StandardProcess::new(
             &mut mischief_maker_vspace,
             mischief_maker_cnode,
             mischief_region,
@@ -97,7 +97,7 @@ pub fn fault_pair(
         )?;
         mischief_maker_process.start()?;
 
-        let fault_handler_process = ReadyProcess::new(
+        let fault_handler_process = StandardProcess::new(
             &mut fault_handler_vspace,
             fault_handler_cnode,
             fault_region,
