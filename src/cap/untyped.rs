@@ -319,7 +319,7 @@ where
     untyped.retype_cnode::<ChildRadix>(local_slots)
 }
 
-impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
+impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
     pub fn retype<TargetCapType: CapType, TargetRole: CNodeRole>(
         self,
         dest_slot: CNodeSlot<TargetRole>,

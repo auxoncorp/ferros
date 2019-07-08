@@ -17,8 +17,9 @@ use crate::arch::cap::{page_state, AssignedASID, Page, UnassignedASID};
 use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot};
 use crate::bootstrap::UserImage;
 use crate::cap::{
-    role, CNodeRole, CNodeSlots, Cap, CapRange, CapType, DirectRetype, LocalCNode, LocalCNodeSlots,
-    LocalCap, PhantomCap, RetypeError, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
+    memory_kind, role, CNodeRole, CNodeSlots, Cap, CapRange, CapType, DirectRetype, LocalCNode,
+    LocalCNodeSlots, LocalCap, PhantomCap, RetypeError, Untyped, WCNodeSlots, WCNodeSlotsData,
+    WUntyped,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
@@ -335,6 +336,19 @@ where
     /// capabilities and return the unmapped region.
     pub fn new<Role: CNodeRole>(
         ut: LocalCap<Untyped<SizeBits>>,
+        slots: CNodeSlots<NumPages<SizeBits>, Role>,
+    ) -> Result<Self, VSpaceError> {
+        let page_caps =
+            ut.retype_multi_runtime::<Page<page_state::Unmapped>, NumPages<SizeBits>, _>(slots)?;
+        Ok(UnmappedMemoryRegion {
+            caps: CapRange::new(page_caps.start_cptr),
+            _size_bits: PhantomData,
+            _shared_status: PhantomData,
+        })
+    }
+
+    pub fn new_device<Role: CNodeRole>(
+        ut: LocalCap<Untyped<SizeBits, memory_kind::Device>>,
         slots: CNodeSlots<NumPages<SizeBits>, Role>,
     ) -> Result<Self, VSpaceError> {
         let page_caps =
