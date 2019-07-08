@@ -452,11 +452,11 @@ where
 {
     pub const SIZE_BYTES: usize = 1 << SizeBits::USIZE;
 
-    pub(crate) fn size(&self) -> usize {
+    pub fn size(&self) -> usize {
         Self::SIZE_BYTES
     }
 
-    pub(crate) fn vaddr(&self) -> usize {
+    pub fn vaddr(&self) -> usize {
         self.vaddr
     }
 
