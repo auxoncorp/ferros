@@ -5,6 +5,7 @@ use crate::cap::{
     role, ChildCNode, DirectRetype, LocalCNode, LocalCNodeSlots, LocalCap, ThreadControlBlock,
     ThreadPriorityAuthority, Untyped,
 };
+use crate::userland::CapRights;
 use crate::vspace::*;
 
 use super::*;
@@ -13,17 +14,17 @@ pub struct SelfHostedProcess {
     tcb: LocalCap<ThreadControlBlock>,
 }
 
-struct SelfHostedParams<T: RetypeForSetup> {
+struct SelfHostedParams<T> {
     params: T,
     vspace: VSpace,
     child_main: extern "C" fn(VSpace, T) -> (),
 }
 
-impl RetypeForSetup for SelfHostedParams<role::Local> {
-    type Output = SelfHostedParams<role::Child>;
+impl<T: RetypeForSetup> RetypeForSetup for SelfHostedParams<T> {
+    type Output = SelfHostedParams<T::Output>;
 }
 
-fn self_hosted_run<T: RetypeForSetup>(sh_params: SelfHostedParams<T>) {
+fn self_hosted_run<T>(sh_params: SelfHostedParams<T>) {
     let SelfHostedParams {
         params,
         vspace,
@@ -83,15 +84,15 @@ impl SelfHostedProcess {
         let sh_params = SelfHostedParams {
             vspace: child_vspace,
             params: process_parameter,
-            child_main: function_descriptor,
+            child_main: unsafe { core::mem::transmute(function_descriptor) },
         };
 
         // map the child stack into local memory so we can copy the contents
         // of the process params into it
         let (mut registers, param_size_on_stack) = unsafe {
             setup_initial_stack_and_regs(
-                &sh_params as *const SetupVer<T> as *const usize,
-                core::mem::size_of::<SetupVer<T>>(),
+                &sh_params as *const SetupVer<SelfHostedParams<T>> as *const usize,
+                core::mem::size_of::<SetupVer<SelfHostedParams<T>>>(),
                 stack_top as *mut usize,
                 mapped_stack_pages.vaddr() + mapped_stack_pages.size(),
             )
@@ -101,7 +102,7 @@ impl SelfHostedProcess {
             mapped_stack_pages.vaddr() + mapped_stack_pages.size() - param_size_on_stack;
 
         registers.sp = stack_pointer;
-        registers.pc = self_hosted_run as usize;
+        registers.pc = self_hosted_run::<T> as usize;
 
         // TODO - Probably ought to suspend or destroy the thread instead of endlessly yielding
         set_thread_link_register(&mut registers, yield_forever);
@@ -109,19 +110,19 @@ impl SelfHostedProcess {
         // Reserve a guard page after the stack
 
         unsafe {
-            seL4_TCB_WriteRegisters(
+            selfe_sys::seL4_TCB_WriteRegisters(
                 tcb.cptr,
                 0,
                 0,
                 // all the regs
-                core::mem::size_of::<seL4_UserContext>() / core::mem::size_of::<usize>(),
+                core::mem::size_of::<selfe_sys::seL4_UserContext>() / core::mem::size_of::<usize>(),
                 &mut registers,
             )
             .as_result()
             .map_err(|e| ProcessSetupError::SeL4Error(SeL4Error::TCBWriteRegisters(e)))?;
 
             // TODO - priority management could be exposed once we plan on actually using it
-            seL4_TCB_SetPriority(tcb.cptr, priority_authority.cptr, 255)
+            selfe_sys::seL4_TCB_SetPriority(tcb.cptr, priority_authority.cptr, 255)
                 .as_result()
                 .map_err(|e| ProcessSetupError::SeL4Error(SeL4Error::TCBSetPriority(e)))?;
         }
