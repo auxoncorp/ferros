@@ -49,7 +49,6 @@ impl<FreeSlots: Unsigned> LocalCap<ASIDPool<FreeSlots>> {
         )
     }
 
-    #[cfg(feature = "test_support")]
     pub fn split<
         LeftRole: crate::cap::CNodeRole,
         RightRole: crate::cap::CNodeRole,
