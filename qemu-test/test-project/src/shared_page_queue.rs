@@ -18,7 +18,7 @@ pub fn shared_page_queue<'a, 'b, 'c>(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U2>>,
-    local_mapped_region: MappedMemoryRegion<U17, shared_status::Exclusive>,
+    local_mapped_region: MappedMemoryRegion<U18, shared_status::Exclusive>,
     local_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
@@ -30,8 +30,8 @@ pub fn shared_page_queue<'a, 'b, 'c>(
         let (child_a_asid, asid_pool) = asid_pool.alloc();
         let (child_b_asid, _asid_pool) = asid_pool.alloc();
 
-        let consumer_vspace_slots: LocalCNodeSlots<U4096> = slots;
-        let consumer_vspace_ut: LocalCap<Untyped<U12>> = ut;
+        let consumer_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let consumer_vspace_ut: LocalCap<Untyped<U14>> = ut;
         let mut consumer_vspace = VSpace::new(
             retype(ut, slots)?,
             child_a_asid,
@@ -41,8 +41,8 @@ pub fn shared_page_queue<'a, 'b, 'c>(
             user_image,
             root_cnode,
         )?;
-        let producer_vspace_slots: LocalCNodeSlots<U4096> = slots;
-        let producer_vspace_ut: LocalCap<Untyped<U12>> = ut;
+        let producer_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let producer_vspace_ut: LocalCap<Untyped<U14>> = ut;
         let mut producer_vspace = VSpace::new(
             retype(ut, slots)?,
             child_b_asid,

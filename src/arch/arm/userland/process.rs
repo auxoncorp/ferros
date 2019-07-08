@@ -13,6 +13,8 @@ pub(crate) unsafe fn setup_initial_stack_and_regs(
     param: *const usize,
     param_size: usize,
     stack_top: *mut usize,
+    // aarch32 does not need the child-mapped stack address.
+    _: usize,
 ) -> (seL4_UserContext, usize) {
     let word_size = size_of::<usize>();
 
@@ -26,12 +28,11 @@ pub(crate) unsafe fn setup_initial_stack_and_regs(
     } else {
         word_size - tail_size
     };
-    let padded_param_size = param_size + padding_size;
 
     // 4 words are stored in registers, so only the remainder needs to go on the
     // stack
-    let param_size_on_stack =
-        cmp::max(0, padded_param_size as isize - (4 * word_size) as isize) as usize;
+    let param_size_on_stack = cmp::max(0, param_size as isize - (4 * word_size) as isize) as usize;
+    let padded_param_size_on_stack = param_size_on_stack + padding_size;
 
     let mut regs: seL4_UserContext = mem::zeroed();
 
@@ -96,11 +97,11 @@ pub(crate) unsafe fn setup_initial_stack_and_regs(
     // The rest of the data goes on the stack.
     if param_size_on_stack > 0 {
         // TODO: stack pointer is supposed to be 8-byte aligned on ARM 32
-        let sp = (stack_top as *mut u8).sub(param_size_on_stack);
+        let sp = (stack_top as *mut u8).sub(padded_param_size_on_stack);
         ptr::copy_nonoverlapping(p as *const u8, sp, param_size_on_stack);
     }
 
-    (regs, param_size_on_stack)
+    (regs, padded_param_size_on_stack)
 }
 
 pub(crate) fn set_thread_link_register(
@@ -110,29 +111,41 @@ pub(crate) fn set_thread_link_register(
     registers.r14 = (post_return_fn as *const fn() -> !) as usize;
 }
 
-#[cfg(feature = "test")]
+#[doc(hidden)]
+#[allow(dead_code)]
+#[cfg(feature = "test_support")]
 pub mod test {
     use super::*;
-    use proptest::test_runner::TestError;
 
-    #[cfg(feature = "test")]
-    fn check_equal(name: &str, expected: usize, actual: usize) -> Result<(), TestError<()>> {
-        if (expected != actual) {
-            Err(TestError::Fail(
-                format!(
-                    "{} didn't match. Expected: {:08x}, actual: {:08x}",
-                    name, expected, actual
-                )
-                .into(),
-                (),
-            ))
+    #[doc(hidden)]
+    #[derive(Debug, Clone)]
+    pub struct ComparisonError {
+        case_name: &'static str,
+        field_name: &'static str,
+        expected: usize,
+        actual: usize,
+    }
+
+    fn check_equal(
+        case_name: &'static str,
+        field_name: &'static str,
+        expected: usize,
+        actual: usize,
+    ) -> Result<(), ComparisonError> {
+        if expected != actual {
+            Err(ComparisonError {
+                case_name,
+                field_name,
+                expected,
+                actual,
+            })
         } else {
             Ok(())
         }
     }
 
-    #[cfg(feature = "test")]
     fn test_stack_setup_case<T: Sized>(
+        case_name: &'static str,
         param: T,
         r0: usize,
         r1: usize,
@@ -140,7 +153,7 @@ pub mod test {
         r3: usize,
         stack0: usize,
         sp_offset: usize,
-    ) -> Result<(), TestError<()>> {
+    ) -> Result<(), ComparisonError> {
         use core::mem::size_of_val;
         let mut fake_stack = [0usize; 1024];
 
@@ -151,49 +164,56 @@ pub mod test {
                 &param as *const T as *const usize,
                 param_size,
                 (&mut fake_stack[0] as *mut usize).add(1024),
+                0, // unused
             )
         };
 
-        check_equal("r0", r0, regs.r0)?;
-        check_equal("r1", r1, regs.r1)?;
-        check_equal("r2", r2, regs.r2)?;
-        check_equal("r3", r3, regs.r3)?;
-        check_equal("top stack word", stack0, fake_stack[1023])?;
-        check_equal("sp_offset", sp_offset, stack_extent)?;
+        check_equal(case_name, "r0", r0, regs.r0)?;
+        check_equal(case_name, "r1", r1, regs.r1)?;
+        check_equal(case_name, "r2", r2, regs.r2)?;
+        check_equal(case_name, "r3", r3, regs.r3)?;
+        check_equal(case_name, "top stack word", stack0, fake_stack[1023])?;
+        check_equal(case_name, "sp_offset", sp_offset, stack_extent)?;
 
         Ok(())
     }
 
-    #[cfg(feature = "test")]
     #[rustfmt::skip]
-    pub fn test_stack_setup() -> Result<(), TestError<()>> {
-        test_stack_setup_case(42u8,
+    pub fn test_stack_setup() -> Result<(), ComparisonError> {
+        test_stack_setup_case("single byte",
+                              42u8,
                               42, 0, 0, 0, 0, 0)?;
 
-        test_stack_setup_case([1u8, 2u8],
+        test_stack_setup_case("2 bytes",
+                              [1u8, 2u8],
                               2 << 8 | 1, // r0
                               0, 0, 0, 0, 0)?;
 
-        test_stack_setup_case([1u8, 2u8, 3u8],
+        test_stack_setup_case("3 bytes",
+                              [1u8, 2u8, 3u8],
                               3 << 16 | 2 << 8 | 1, // r0
                               0, 0, 0, 0, 0)?;
 
-        test_stack_setup_case([1u8, 2u8, 3u8, 4u8],
+        test_stack_setup_case("4 bytes",
+                              [1u8, 2u8, 3u8, 4u8],
                               4 << 24 | 3 << 16 | 2 << 8 | 1, // r0
                               0, 0, 0, 0, 0)?;
 
-        test_stack_setup_case([1u8, 2u8, 3u8, 4u8, 5u8],
+        test_stack_setup_case("5 bytes",
+                              [1u8, 2u8, 3u8, 4u8, 5u8],
                               4 << 24 | 3 << 16 | 2 << 8 | 1, // r0
                               5, // r1
                               0, 0, 0, 0)?;
 
-        test_stack_setup_case([1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8, 9u8],
+        test_stack_setup_case("9 bytes",
+                              [1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8, 9u8],
                               4 << 24 | 3 << 16 | 2 << 8 | 1, // r0
                               8 << 24 | 7 << 16 | 6 << 8 | 5, // r1
                               9, // r2
                               0, 0, 0)?;
 
-        test_stack_setup_case([ 1u8,  2u8,  3u8,  4u8,  5u8, 6u8, 7u8, 8u8,
+        test_stack_setup_case("13 bytes",
+                              [ 1u8,  2u8,  3u8,  4u8,  5u8, 6u8, 7u8, 8u8,
                                   9u8, 10u8, 11u8, 12u8, 13u8],
                               4 << 24 |  3 << 16 |  2 << 8 |  1,  // r0
                               8 << 24 |  7 << 16 |  6 << 8 |  5,  // r1
@@ -201,7 +221,8 @@ pub mod test {
                               13,  // r3
                               0, 0)?;
 
-        test_stack_setup_case([ 1u8,  2u8,  3u8,  4u8,  5u8,  6u8,  7u8,  8u8,
+        test_stack_setup_case("18 bytes",
+                              [ 1u8,  2u8,  3u8,  4u8,  5u8,  6u8,  7u8,  8u8,
                                   9u8, 10u8, 11u8, 12u8, 13u8, 14u8, 15u8, 16u8,
                                   17u8, 18u8],
                               4 << 24 |  3 << 16 |  2 << 8 |  1,   // r0
