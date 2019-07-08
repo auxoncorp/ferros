@@ -94,7 +94,7 @@ impl ReadyProcess {
         // TODO - lift these checks to compile-time, as static assertions
         // Note - This comparison is conservative because technically
         // we can fit some of the params into available registers.
-        if core::mem::size_of::<SetupVer<T>>() > (StackBitSize::USIZE * arch::PageBytes::USIZE) {
+        if core::mem::size_of::<SetupVer<T>>() > (StackPageCount::USIZE * arch::PageBytes::USIZE) {
             return Err(ProcessSetupError::ProcessParameterTooBigForStack);
         }
         if core::mem::size_of::<SetupVer<T>>() != core::mem::size_of::<T>() {

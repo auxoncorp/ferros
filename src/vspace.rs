@@ -1414,7 +1414,7 @@ where
 }
 
 /// Borrow of a reserved region and its associated VSpace in order to support temporary mapping
-pub struct ScratchRegion<'a, 'b, PageCount: Unsigned = crate::userland::process::StackBitSize> {
+pub struct ScratchRegion<'a, 'b, PageCount: Unsigned = crate::userland::process::StackPageCount> {
     reserved_region: &'a ReservedRegion<PageCount>,
     vspace: &'b mut VSpace,
 }
