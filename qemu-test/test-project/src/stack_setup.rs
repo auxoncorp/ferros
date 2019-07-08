@@ -5,7 +5,9 @@ pub fn stack_setup() -> Result<(), super::TopLevelError> {
         Ok(_) => Ok(()),
         Err(e) => {
             debug_println!("{:?}", e);
-            Err(super::TopLevelError::TestAssertionFailure("stack setup trouble"))
+            Err(super::TopLevelError::TestAssertionFailure(
+                "stack setup trouble",
+            ))
         }
     }
 }
