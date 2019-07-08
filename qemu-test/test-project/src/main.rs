@@ -29,6 +29,7 @@ mod reuse_slots;
 mod reuse_untyped;
 mod root_task_runs;
 mod shared_page_queue;
+mod stack_setup;
 mod uart;
 
 use ferros::alloc::micro_alloc::Error as AllocError;
@@ -55,6 +56,7 @@ ferros_test_main!(&[
     &reuse_untyped::reuse_untyped,
     &root_task_runs::root_task_runs,
     &shared_page_queue::shared_page_queue,
+    &stack_setup::stack_setup,
 ]);
 
 #[cfg(test_case = "uart")]

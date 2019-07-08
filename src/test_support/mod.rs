@@ -114,12 +114,13 @@ pub fn with_temporary_resources<
     SlotCount: Unsigned,
     UntypedBitSize: Unsigned,
     MappedBitSize: Unsigned,
+    ASIDPoolSlots: Unsigned,
     InnerError,
     Func,
 >(
     slots: &mut LocalCNodeSlots<SlotCount>,
     untyped: &mut LocalCap<Untyped<UntypedBitSize>>,
-    asid_pool: &mut LocalCap<ASIDPool<arch::ASIDPoolSize>>,
+    asid_pool: &mut LocalCap<ASIDPool<ASIDPoolSlots>>,
     mapped_memory_region: &mut MappedMemoryRegion<
         MappedBitSize,
         crate::vspace::shared_status::Exclusive,

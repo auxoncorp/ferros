@@ -10,11 +10,22 @@ root_task_image = "target/armv7-unknown-linux-gnueabihf/debug/test-project"
 make_root_task = "cargo xbuild --target=armv7-unknown-linux-gnueabihf --release"
 root_task_image = "target/armv7-unknown-linux-gnueabihf/release/test-project"
 
+### virt (ARMv8)
+[build.virt]
+cross_compiler_prefix = "aarch64-linux-gnu-"
+
+[build.virt.debug]
+make_root_task = "cargo xbuild --target=aarch64-unknown-linux-gnu"
+root_task_image = "target/aarch64-unknown-linux-gnu/debug/test-project"
+
+[build.virt.release]
+make_root_task = "cargo xbuild --target=aarch64-unknown-linux-gnu --release"
+root_task_image = "target/aarch64-unknown-linux-gnu/release/test-project"
 
 [sel4]
-kernel = { git = "https://github.com/seL4/seL4" , rev = "4d0f02c029560cae0e8d93727eb17d58bcecc2ac" }
-tools = { git = "https://github.com/seL4/seL4_tools" , rev = "f3b4bef672b92858c139787bc6fd5124e6022d26" }
-util_libs  = { git = "https://github.com/seL4/util_libs" , rev = "98aaebe56c66d46576485216f8c4626ed76a3757" }
+kernel = { git = "ssh://git@github.com/auxoncorp/seL4.git", branch = "add-virt-platform" }
+tools = { git = "ssh://git@github.com/auxoncorp/seL4_tools.git", branch = "add-virt-platform" }
+util_libs  = { git = "ssh://git@github.com/auxoncorp/util_libs.git", branch = "add-virt-platform" }
 
 ### arch
 
@@ -28,11 +39,21 @@ KernelIPCBufferLocation = 'threadID_register'
 KernelSel4Arch = 'aarch32'
 KernelArmSel4Arch = 'aarch32'
 
+[sel4.config.aarch64]
+KernelSel4Arch = 'aarch64'
+KernelArmSel4Arch = 'aarch64'
+
 ### platform
 
 [sel4.config.sabre]
 KernelARMPlatform = 'imx6'
 KernelHaveFPU = true
+
+[sel4.config.virt]
+KernelARMPlatform = 'virt'
+KernelHaveFPU = true
+ElfloaderImage = 'elf'
+KernelArmHypervisorSupport = true
 
 ### Build mode
 

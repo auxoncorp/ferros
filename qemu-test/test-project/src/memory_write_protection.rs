@@ -16,7 +16,7 @@ pub fn memory_write_protection<'a, 'b, 'c>(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U1>>,
-    local_mapped_region: MappedMemoryRegion<U16, shared_status::Exclusive>,
+    local_mapped_region: MappedMemoryRegion<U17, shared_status::Exclusive>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -25,8 +25,8 @@ pub fn memory_write_protection<'a, 'b, 'c>(
 
     smart_alloc!(|slots: local_slots, ut: uts| {
         let (child_asid, _asid_pool) = asid_pool.alloc();
-        let child_vspace_slots: LocalCNodeSlots<U4096> = slots;
-        let child_vspace_ut: LocalCap<Untyped<U12>> = ut;
+        let child_vspace_slots: LocalCNodeSlots<U1024> = slots;
+        let child_vspace_ut: LocalCap<Untyped<U14>> = ut;
         let mut child_vspace = VSpace::new(
             retype(ut, slots)?,
             child_asid,

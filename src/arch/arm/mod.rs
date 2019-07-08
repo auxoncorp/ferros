@@ -19,6 +19,8 @@ pub type ASIDLowBits = U10;
 /// there is an initial pool given to the root thread.
 pub type ASIDPoolCount = op!((U1 << ASIDHighBits) - U1);
 pub type ASIDPoolSize = op!(U1 << ASIDLowBits);
+pub type TCBBits = U10;
+pub type NotificationBits = U4;
 
 #[cfg(KernelHypervisorSupport)]
 mod hyp_dependent_constants {
@@ -90,6 +92,7 @@ pub type CodePageTableBits = U6;
 pub type CodePageTableCount = op!(U1 << CodePageTableBits); // 64 page tables == 64 mb
 pub type CodePageCount = op!(CodePageTableCount * BasePageTableFreeSlots); // 2^14
 pub type TotalCodeSizeBits = op!(CodePageTableBits + PageBits + PageTableIndexBits);
+pub type TotalCodeSizeBytes = crate::pow::Pow<TotalCodeSizeBits>;
 // The root task has a stack size configurable by the sel4.toml
 // in the `root-task-stack-bytes` metadata property.
 // This configuration is turned into a generated Rust type named `RootTaskStackPageTableCount`

@@ -20,7 +20,7 @@ pub fn double_door_backpressure(
     local_slots: LocalCNodeSlots<U66536>,
     local_ut: LocalCap<Untyped<U27>>,
     asid_pool: LocalCap<ASIDPool<U4>>,
-    local_mapped_region: MappedMemoryRegion<U18, shared_status::Exclusive>,
+    local_mapped_region: MappedMemoryRegion<U19, shared_status::Exclusive>,
     local_vspace_scratch: &mut ScratchRegion,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
@@ -150,9 +150,9 @@ pub fn double_door_backpressure(
         let waker = Waker::new(&waker_setup, slots_w, &root_cnode)?;
         let waker_params = WakerParams::<role::Child> { waker };
 
-        let (u17_region_a, u17_region_b) = local_mapped_region.split()?;
-        let (consumer_region, producer_a_region) = u17_region_a.split()?;
-        let (producer_b_region, waker_region) = u17_region_b.split()?;
+        let (u18_region_a, u18_region_b) = local_mapped_region.split()?;
+        let (consumer_region, producer_a_region) = u18_region_a.split()?;
+        let (producer_b_region, waker_region) = u18_region_b.split()?;
 
         let consumer_process = StandardProcess::new(
             &mut consumer_vspace,
