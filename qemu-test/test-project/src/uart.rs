@@ -3,8 +3,11 @@ use selfe_sys::*;
 use typenum::*;
 
 use ferros::alloc::{self, micro_alloc, smart_alloc};
+use ferros::arch;
 use ferros::bootstrap::{root_cnode, BootInfo};
-use ferros::cap::{retype, retype_cnode, role, CNodeRole, LocalCNodeSlots, LocalCap, MaxIRQCount, Untyped};
+use ferros::cap::{
+    retype, retype_cnode, role, CNodeRole, LocalCNodeSlots, LocalCap, MaxIRQCount, Untyped,
+};
 use ferros::userland::{CapRights, InterruptConsumer, ReadyProcess, RetypeForSetup};
 use ferros::vspace::*;
 
@@ -50,7 +53,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
     smart_alloc!(|slots: local_slots, ut: uts| {
         let unmapped_region = UnmappedMemoryRegion::new(ut, slots)?;
-        let mapped_region = root_vspace.map_region(unmapped_region, CapRights::RW)?;
+        let mapped_region =
+            root_vspace.map_region(unmapped_region, CapRights::RW, arch::vm_attributes::DEFAULT)?;
 
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (uart1_asid, _asid_pool) = asid_pool.alloc();
@@ -85,7 +89,11 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let uart1_page_1 = uart1_page_1_untyped.retype_device_page(slots)?;
         // TODO - should we use something more device-specialized
         // for turning device memory into device pages and mapping them?
-        let uart1_page_1 = uart1_vspace.map_given_page(uart1_page_1, CapRights::RW)?;
+        let uart1_page_1 = uart1_vspace.map_given_page(
+            uart1_page_1,
+            CapRights::RW,
+            arch::vm_attributes::EXECUTE_NEVER,
+        )?;
 
         let uart1_params = uart::UartParams::<Uart1IrqLine, role::Child> {
             base_ptr: uart1_page_1.vaddr(),

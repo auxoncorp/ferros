@@ -109,8 +109,11 @@ impl ReadyProcess {
         let (page_slots, slots) = slots.alloc();
         let (unmapped_stack_pages, _) =
             parent_mapped_region.share(page_slots, parent_cnode, CapRights::RW)?;
-        let mapped_stack_pages =
-            vspace.map_shared_region_and_consume(unmapped_stack_pages, CapRights::RW)?;
+        let mapped_stack_pages = vspace.map_shared_region_and_consume(
+            unmapped_stack_pages,
+            CapRights::RW,
+            arch::vm_attributes::DEFAULT,
+        )?;
 
         // map the child stack into local memory so we can copy the contents
         // of the process params into it
@@ -138,7 +141,11 @@ impl ReadyProcess {
         // Allocate and map the ipc buffer
         let (ipc_slots, slots) = slots.alloc();
         let ipc_buffer = ipc_buffer_ut.retype(ipc_slots)?;
-        let ipc_buffer = vspace.map_given_page(ipc_buffer, CapRights::RW)?;
+        let ipc_buffer = vspace.map_given_page(
+            ipc_buffer,
+            CapRights::RW,
+            arch::vm_attributes::DEFAULT,
+        )?;
 
         //// allocate the thread control block
         let (tcb_slots, _slots) = slots.alloc();
