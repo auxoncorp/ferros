@@ -28,6 +28,7 @@ mod over_register_size_params;
 mod reuse_slots;
 mod reuse_untyped;
 mod root_task_runs;
+mod self_hosted_mem_mgmt;
 mod shared_page_queue;
 mod stack_setup;
 mod uart;
@@ -41,22 +42,23 @@ use ferros_test::ferros_test_main;
 
 #[cfg(not(test_case = "uart"))]
 ferros_test_main!(&[
-    &call_and_response_loop::call_and_response_loop,
-    &child_process_cap_management::child_process_cap_management,
-    &child_process_runs::child_process_runs,
-    &dont_tread_on_me::dont_tread_on_me,
-    &double_door_backpressure::double_door_backpressure,
-    &fault_or_message_handler::fault_or_message_handler,
-    &fault_pair::fault_pair,
-    &grandkid_process_runs::grandkid_process_runs,
-    &memory_read_protection::memory_read_protection,
-    &memory_write_protection::memory_write_protection,
-    &over_register_size_params::over_register_size_params,
-    &reuse_slots::reuse_slots,
-    &reuse_untyped::reuse_untyped,
-    &root_task_runs::root_task_runs,
-    &shared_page_queue::shared_page_queue,
-    &stack_setup::stack_setup,
+    // &call_and_response_loop::call_and_response_loop,
+    // &child_process_cap_management::child_process_cap_management,
+    // &child_process_runs::child_process_runs,
+    // &dont_tread_on_me::dont_tread_on_me,
+    // &double_door_backpressure::double_door_backpressure,
+    // &fault_or_message_handler::fault_or_message_handler,
+    // &fault_pair::fault_pair,
+    // &grandkid_process_runs::grandkid_process_runs,
+    // &memory_read_protection::memory_read_protection,
+    // &memory_write_protection::memory_write_protection,
+    // &over_register_size_params::over_register_size_params,
+    // &reuse_slots::reuse_slots,
+    // &reuse_untyped::reuse_untyped,
+    // &root_task_runs::root_task_runs,
+    // &shared_page_queue::shared_page_queue,
+    // &stack_setup::stack_setup,
+    &self_hosted_mem_mgmt::self_hosted_mem_mgmt,
 ]);
 
 #[cfg(test_case = "uart")]

@@ -442,13 +442,13 @@ where
         Self::SIZE_BYTES
     }
 
-    pub(crate) fn vaddr(&self) -> usize {
+    pub fn vaddr(&self) -> usize {
         self.vaddr
     }
 
-    /// In the Ok case,
-    /// returns a shared, unmapped copy of the memory region (backed by fresh page-caps)
-    /// along with this self-same mapped memory region, marked as shared
+    /// In the Ok case, returns a shared, unmapped copy of the memory
+    /// region (backed by fresh page-caps) along with this self-same
+    /// mapped memory region, marked as shared.
     pub fn share(
         self,
         slots: LocalCNodeSlots<NumPages<SizeBits>>,
@@ -1354,6 +1354,19 @@ impl VSpace<vspace_state::Imaged> {
         PageCount: IsGreaterOrEqual<U1, Output = True>,
     {
         ReservedRegion::new(self, sacrificial_page)
+    }
+
+    // This function will move the caps into the child's VSpace so
+    // that it may use it.
+    pub(crate) fn for_child<SlotCount: Unsigned>(
+        self,
+        slots: Cap<CNodeSlotsData<SlotCount, role::Child>, role::Child>,
+    ) -> Result<Self, VSpaceError> {
+        let (root_slot, slots) = slots.alloc()?;
+        let child_root_cptr = self.root.move_to_slot(root_slot)?;
+        //let
+        // move the utbuddy caps... with an iter / zip?
+        // use the remaining slots as the new VSpace's slot cache.
     }
 }
 
