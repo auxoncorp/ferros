@@ -6,7 +6,6 @@ use crate::vspace::*;
 use selfe_sys::*;
 use typenum::*;
 
-pub(crate) use crate::arch::userland::process::*;
 use crate::error::{ErrorExt, SeL4Error};
 
 use super::*;

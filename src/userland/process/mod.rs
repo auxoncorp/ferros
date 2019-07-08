@@ -1,9 +1,11 @@
 use core::marker::PhantomData;
 
-use selfe_sys::*;
+use selfe_sys::seL4_Yield;
 
 use crate::error::*;
-use crate::vspace::*;
+use crate::vspace::VSpaceError;
+
+pub(crate) use crate::arch::userland::process::*;
 
 mod standard;
 pub use standard::*;
