@@ -1367,7 +1367,7 @@ impl VSpace<vspace_state::Imaged> {
 /// Note that the type parameter regarding default size matches
 /// the currently defaulted number of pages allowed for a process
 /// stack.
-pub struct ReservedRegion<PageCount: Unsigned = crate::userland::process::StackBitSize> {
+pub struct ReservedRegion<PageCount: Unsigned = crate::userland::process::StackPageCount> {
     vaddr: usize,
     asid: u32,
     _page_count: PhantomData<PageCount>,
