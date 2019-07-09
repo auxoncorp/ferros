@@ -27,6 +27,6 @@ macro_rules! debug_print {
 
 #[macro_export]
 macro_rules! debug_println {
-    ($fmt:expr) => (debug_print!(concat!($fmt, "\n")));
-    ($fmt:expr, $($arg:tt)*) => (debug_print!(concat!($fmt, "\n"), $($arg)*));
+    ($fmt:expr) => ($crate::debug_print!(concat!($fmt, "\n")));
+    ($fmt:expr, $($arg:tt)*) => ($crate::debug_print!(concat!($fmt, "\n"), $($arg)*));
 }
