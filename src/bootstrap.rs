@@ -8,8 +8,8 @@ use typenum::*;
 use crate::arch::cap::*;
 use crate::arch::*;
 use crate::cap::{
-    role, CNode, CNodeRole, CNodeSlots, Cap, IRQControl, LocalCNode, LocalCNodeSlots, LocalCap,
-    MaxIRQCount, ThreadControlBlock, Untyped,
+    role, CNode, CNodeRole, CNodeSlots, Cap, IRQControl, InternalASID, LocalCNode, LocalCNodeSlots,
+    LocalCap, MaxIRQCount, ThreadControlBlock, Untyped,
 };
 use crate::error::SeL4Error;
 use crate::pow::Pow;
@@ -115,7 +115,9 @@ impl BootInfo<op!(ASIDPoolCount - U1)> {
                 root_vspace_cslots.weaken(),
                 Cap {
                     cptr: seL4_CapInitThreadASIDPool as usize,
-                    cap_data: AssignedASID { asid: 0 },
+                    cap_data: AssignedASID {
+                        asid: InternalASID { asid: 0 },
+                    },
                     _role: PhantomData,
                 },
                 root_vspace_ut.weaken(),
@@ -154,7 +156,14 @@ impl UserImage<role::Local> {
             .map(|(cptr, vaddr)| Cap {
                 cptr,
                 cap_data: Page {
-                    state: page_state::Mapped { vaddr, asid: 0 },
+                    state: page_state::Mapped {
+                        vaddr,
+                        // N.B. This ASID is only valid for the root task (since we make up
+                        // an internally consistent scheme for our runtime-tracked ASID values).
+                        // We presently lack the piping to associate a UserImage with a
+                        // particular ASID (or with a particular VSpace)
+                        asid: InternalASID { asid: 0 },
+                    },
                 },
                 _role: PhantomData,
             })

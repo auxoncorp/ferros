@@ -9,7 +9,7 @@ use ferros::bootstrap::UserImage;
 use ferros::cap::*;
 use ferros::userland::{
     fault_or_message_channel, Consumer1, Consumer2, FaultOrMessage, Producer, QueueFullError,
-    ReadyProcess, RetypeForSetup, Sender, Waker,
+    RetypeForSetup, Sender, StandardProcess, Waker,
 };
 use ferros::vspace::*;
 
@@ -154,7 +154,7 @@ pub fn double_door_backpressure(
         let (consumer_region, producer_a_region) = u18_region_a.split()?;
         let (producer_b_region, waker_region) = u18_region_b.split()?;
 
-        let consumer_process = ReadyProcess::new(
+        let consumer_process = StandardProcess::new(
             &mut consumer_vspace,
             consumer_cnode,
             consumer_region,
@@ -168,7 +168,7 @@ pub fn double_door_backpressure(
             None, // fault
         )?;
 
-        let producer_a_process = ReadyProcess::new(
+        let producer_a_process = StandardProcess::new(
             &mut producer_a_vspace,
             producer_a_cnode,
             producer_a_region,
@@ -182,7 +182,7 @@ pub fn double_door_backpressure(
             None, // fault
         )?;
 
-        let producer_b_process = ReadyProcess::new(
+        let producer_b_process = StandardProcess::new(
             &mut producer_b_vspace,
             producer_b_cnode,
             producer_b_region,
@@ -196,7 +196,7 @@ pub fn double_door_backpressure(
             None, // fault
         )?;
 
-        let waker_process = ReadyProcess::new(
+        let waker_process = StandardProcess::new(
             &mut waker_vspace,
             waker_cnode,
             waker_region,

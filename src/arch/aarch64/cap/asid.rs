@@ -3,19 +3,19 @@ use core::mem;
 use selfe_sys::*;
 
 use crate::arch::cap::*;
-use crate::cap::{CapType, LocalCap};
+use crate::cap::{CapType, InternalASID, LocalCap};
 use crate::error::{ErrorExt, SeL4Error};
 
 #[derive(Debug)]
 pub struct UnassignedASID {
-    pub(crate) asid: usize,
+    pub(crate) asid: InternalASID,
 }
 
 impl CapType for UnassignedASID {}
 
 #[derive(Debug)]
 pub struct AssignedASID {
-    pub(crate) asid: u32,
+    pub(crate) asid: InternalASID,
 }
 
 impl CapType for AssignedASID {}

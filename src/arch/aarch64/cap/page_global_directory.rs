@@ -2,7 +2,7 @@ use selfe_sys::*;
 
 use typenum::Unsigned;
 
-use crate::cap::{CapType, DirectRetype, LocalCap, PhantomCap};
+use crate::cap::{CapType, DirectRetype, LocalCap, Movable, PhantomCap};
 use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::CapRights;
 use crate::vspace::{MappingError, Maps};
@@ -50,6 +50,7 @@ impl Maps<PageUpperDirectory> for PageGlobalDirectory {
 }
 
 impl CapType for PageGlobalDirectory {}
+impl Movable for PageGlobalDirectory {}
 impl PhantomCap for PageGlobalDirectory {
     fn phantom_instance() -> Self {
         PageGlobalDirectory {}
