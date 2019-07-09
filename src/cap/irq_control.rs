@@ -14,7 +14,13 @@ pub type MaxIRQCount = U1024;
 
 // The goal of tracking is to prevent accidental double-binding to a single IRQ
 pub struct IRQControl {
-    pub(crate) known_handled: [bool; MaxIRQCount::USIZE],
+    /// Is the IRQ whose id matches the index available to be claimed/create-a-handler for it?
+    ///
+    /// If the value at a given index is false, one of the following is the case:
+    /// * An IRQHandler has been created for that IRQ
+    /// * A different IRQControl instance is responsible for managing that IRQ
+    /// * The bootstrapping code has decided to reserve that IRQ for some non-user-facing purpose
+    pub(crate) available: [bool; MaxIRQCount::USIZE],
 }
 
 impl CapType for IRQControl {}
@@ -79,7 +85,7 @@ impl LocalCap<IRQControl> {
     ) -> Result<usize, IRQError> {
         let (dest_cptr, dest_offset, _) = dest_slot.elim();
 
-        if self.cap_data.known_handled[usize::from(irq)] {
+        if !self.cap_data.available[usize::from(irq)] {
             return Err(IRQError::UnavailableIRQ(irq));
         }
         unsafe {
@@ -94,7 +100,7 @@ impl LocalCap<IRQControl> {
         .as_result()
         .map_err(|e| IRQError::SeL4Error(SeL4Error::IRQControlGet(e)))?;
 
-        self.cap_data.known_handled[usize::from(irq)] = true;
+        self.cap_data.available[usize::from(irq)] = false;
         Ok(dest_offset)
     }
 
@@ -104,27 +110,32 @@ impl LocalCap<IRQControl> {
         dest_slot: CNodeSlot<DestRole>,
         requested_irqs: [bool; MaxIRQCount::USIZE],
     ) -> Result<Cap<IRQControl, DestRole>, IRQError> {
-        // First pass to detect already-handled IRQs and reject the request without mutation
-        for (irq, (is_requested, is_already_handled)) in (0..MaxIRQCount::U16).zip(
-            requested_irqs
-                .iter()
-                .zip(self.cap_data.known_handled.iter()),
-        ) {
-            if *is_requested && *is_already_handled {
+        // First pass to detect requested-but-unavailable IRQs and reject the request without mutation
+        for (irq, (is_requested, is_available)) in
+            (0..MaxIRQCount::U16).zip(requested_irqs.iter().zip(self.cap_data.available.iter()))
+        {
+            if *is_requested && !*is_available {
                 return Err(IRQError::UnavailableIRQ(irq));
             }
         }
+
         let dest_offset = self.unchecked_copy(src_cnode, dest_slot, CapRights::RWG)?;
-        for (is_requested, known_handled_state) in requested_irqs
+
+        let mut split_side_available_irqs = requested_irqs;
+        for (claimed_for_split_side, source_side_available_state) in split_side_available_irqs
             .iter()
-            .zip(self.cap_data.known_handled.iter_mut())
+            .zip(self.cap_data.available.iter_mut())
         {
-            *known_handled_state = *known_handled_state | *is_requested;
+            // The source instance of IRQControl should treat the IRQs split off into the other
+            // instance as if they were unavailable.
+            if *claimed_for_split_side {
+                *source_side_available_state = false;
+            }
         }
         Ok(Cap {
             cptr: dest_offset,
             cap_data: IRQControl {
-                known_handled: requested_irqs,
+                available: split_side_available_irqs,
             },
             _role: PhantomData,
         })
