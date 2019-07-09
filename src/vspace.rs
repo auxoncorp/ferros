@@ -68,16 +68,18 @@ pub trait Maps<LowerLevel: CapType> {
     /// Map the level/layer down relative to this layer.
     /// E.G. for a PageTable, this would map a Page.
     /// E.G. for a PageDirectory, this would map a PageTable.
-    fn map_granule<RootLowerLevel: CapType, Root>(
+    fn map_granule<RootLowerLevel, Root>(
         &mut self,
         item: &LocalCap<LowerLevel>,
         addr: usize,
-        root: &mut LocalCap<Root>,
+        mut root: &mut LocalCap<Root>,
         rights: CapRights,
+        vm_attributes: arch::VMAttributes,
     ) -> Result<(), MappingError>
     where
         Root: Maps<RootLowerLevel>,
-        Root: CapType;
+        Root: CapType,
+        RootLowerLevel: CapType;
 }
 
 #[derive(Debug)]
@@ -186,6 +188,7 @@ pub trait PagingLayer {
         addr: usize,
         root: &mut LocalCap<Root>,
         rights: CapRights,
+        vm_attributes: arch::VMAttributes,
         utb: &mut WUTBuddy,
         slots: &mut WCNodeSlots,
     ) -> Result<(), MappingError>
@@ -216,6 +219,7 @@ where
         addr: usize,
         root: &mut LocalCap<Root>,
         rights: CapRights,
+        vm_attributes: arch::VMAttributes,
         _utb: &mut WUTBuddy,
         _slots: &mut WCNodeSlots,
     ) -> Result<(), MappingError>
@@ -223,7 +227,8 @@ where
         Root: Maps<RootLowerLevel>,
         Root: CapType,
     {
-        self.layer.map_granule(item, addr, root, rights)
+        self.layer
+            .map_granule(item, addr, root, rights, vm_attributes)
     }
 }
 
@@ -248,6 +253,7 @@ where
         addr: usize,
         root: &mut LocalCap<Root>,
         rights: CapRights,
+        vm_attributes: arch::VMAttributes,
         utb: &mut WUTBuddy,
         mut slots: &mut WCNodeSlots,
     ) -> Result<(), MappingError>
@@ -256,7 +262,10 @@ where
         Root: CapType,
     {
         // Attempt to map this layer's granule.
-        match self.layer.map_granule(item, addr, root, rights) {
+        match self
+            .layer
+            .map_granule(item, addr, root, rights, vm_attributes)
+        {
             // if it fails with a lookup error, ask the next layer up
             // to map a new instance at this layer.
             Err(MappingError::Overflow) => {
@@ -264,9 +273,10 @@ where
                     utb.alloc(slots, <UpperLevel::Item as DirectRetype>::SizeBits::USIZE)?;
                 let next_item = ut.retype::<UpperLevel::Item>(&mut slots)?;
                 self.next
-                    .map_layer(&next_item, addr, root, rights, utb, slots)?;
+                    .map_layer(&next_item, addr, root, rights, vm_attributes, utb, slots)?;
                 // Then try again to map this layer.
-                self.layer.map_granule(item, addr, root, rights)
+                self.layer
+                    .map_granule(item, addr, root, rights, vm_attributes)
             }
             // Any other result (success \/ other failure cases) can
             // be returned as is.
@@ -815,6 +825,7 @@ impl<S: VSpaceState> VSpace<S> {
         &mut self,
         page: LocalCap<Page<page_state::Unmapped>>,
         rights: CapRights,
+        vm_attributes: arch::VMAttributes,
     ) -> Result<LocalCap<Page<page_state::Mapped>>, VSpaceError> {
         let future_next_addr = match self.next_addr.checked_add(PageBytes::USIZE) {
             Some(n) => n,
@@ -826,6 +837,7 @@ impl<S: VSpaceState> VSpace<S> {
             self.next_addr,
             &mut self.root,
             rights,
+            vm_attributes,
             &mut self.untyped,
             &mut self.slots,
         ) {
@@ -880,7 +892,11 @@ impl VSpace<vspace_state::Imaged> {
             ProcessCodeImageConfig::ReadOnly => {
                 for (page_cap, slot) in user_image.pages_iter().zip(code_slots.into_strong_iter()) {
                     let copied_page_cap = page_cap.copy(&parent_cnode, slot, CapRights::R)?;
-                    let _ = vspace.map_given_page(copied_page_cap, CapRights::R)?;
+                    let _ = vspace.map_given_page(
+                        copied_page_cap,
+                        CapRights::R,
+                        arch::vm_attributes::DEFAULT,
+                    )?;
                 }
             }
             ProcessCodeImageConfig::ReadWritable {
@@ -920,8 +936,11 @@ impl VSpace<vspace_state::Imaged> {
                     // reserves a single contiguous region after some starting offset
                     // and that the VSpace has been mutated to match that starting offset
                     // and that we always copy-map pages without rearrangement or skipping
-                    let _mapped_page =
-                        vspace.map_given_page(unmapped_region.to_page(), CapRights::RW)?;
+                    let _mapped_page = vspace.map_given_page(
+                        unmapped_region.to_page(),
+                        CapRights::RW,
+                        arch::vm_attributes::DEFAULT,
+                    )?;
                 }
             }
         }
@@ -1105,6 +1124,7 @@ impl VSpace<vspace_state::Imaged> {
         &mut self,
         region: UnmappedMemoryRegion<SizeBits, shared_status::Exclusive>,
         rights: CapRights,
+        vm_attributes: arch::VMAttributes,
     ) -> Result<MappedMemoryRegion<SizeBits, shared_status::Exclusive>, VSpaceError>
     where
         SizeBits: IsGreaterOrEqual<PageBits>,
@@ -1113,7 +1133,7 @@ impl VSpace<vspace_state::Imaged> {
         <SizeBits as Sub<PageBits>>::Output: _Pow,
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
     {
-        self.map_region_internal(region, rights)
+        self.map_region_internal(region, rights, vm_attributes)
     }
 
     /// Map a region of memory at some address, then move it to a
@@ -1122,6 +1142,7 @@ impl VSpace<vspace_state::Imaged> {
         &mut self,
         region: UnmappedMemoryRegion<SizeBits, shared_status::Exclusive>,
         rights: CapRights,
+        vm_attributes: arch::VMAttributes,
         src_cnode: &LocalCap<LocalCNode>,
         dest_slots: CNodeSlots<NumPages<SizeBits>, Role>,
     ) -> Result<MappedMemoryRegion<SizeBits, shared_status::Exclusive>, VSpaceError>
@@ -1133,7 +1154,7 @@ impl VSpace<vspace_state::Imaged> {
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
     {
         let mapped_region: MappedMemoryRegion<_, shared_status::Exclusive> =
-            self.map_region_internal(region, rights)?;
+            self.map_region_internal(region, rights, vm_attributes)?;
         let vaddr = mapped_region.vaddr;
         let dest_init_cptr = dest_slots.cap_data.offset;
 
@@ -1160,6 +1181,7 @@ impl VSpace<vspace_state::Imaged> {
         &mut self,
         region: &UnmappedMemoryRegion<SizeBits, shared_status::Shared>,
         rights: CapRights,
+        vm_attributes: arch::VMAttributes,
         slots: LocalCNodeSlots<NumPages<SizeBits>>,
         cnode: &LocalCap<LocalCNode>,
     ) -> Result<MappedMemoryRegion<SizeBits, shared_status::Shared>, VSpaceError>
@@ -1175,7 +1197,7 @@ impl VSpace<vspace_state::Imaged> {
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         };
-        self.map_region_internal(unmapped_sr, rights)
+        self.map_region_internal(unmapped_sr, rights, vm_attributes)
     }
 
     /// For cases when one does not want to continue to duplicate the
@@ -1187,6 +1209,7 @@ impl VSpace<vspace_state::Imaged> {
         &mut self,
         region: UnmappedMemoryRegion<SizeBits, shared_status::Shared>,
         rights: CapRights,
+        vm_attributes: arch::VMAttributes,
     ) -> Result<MappedMemoryRegion<SizeBits, shared_status::Shared>, VSpaceError>
     where
         SizeBits: IsGreaterOrEqual<PageBits>,
@@ -1195,7 +1218,7 @@ impl VSpace<vspace_state::Imaged> {
         <SizeBits as Sub<PageBits>>::Output: _Pow,
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
     {
-        self.map_region_internal(region, rights)
+        self.map_region_internal(region, rights, vm_attributes)
     }
 
     /// Unmap a region.
@@ -1237,6 +1260,7 @@ impl VSpace<vspace_state::Imaged> {
         &mut self,
         region: UnmappedMemoryRegion<SizeBits, SSIn>,
         rights: CapRights,
+        vm_attributes: arch::VMAttributes,
     ) -> Result<MappedMemoryRegion<SizeBits, SSOut>, VSpaceError>
     where
         SizeBits: IsGreaterOrEqual<PageBits>,
@@ -1269,6 +1293,7 @@ impl VSpace<vspace_state::Imaged> {
                 vaddr,
                 &mut self.root,
                 rights,
+                vm_attributes,
                 &mut self.untyped,
                 &mut self.slots,
             ) {
@@ -1309,6 +1334,7 @@ impl VSpace<vspace_state::Imaged> {
         &mut self,
         region: UnmappedMemoryRegion<SizeBits, SSIn>,
         rights: CapRights,
+        vm_attributes: arch::VMAttributes,
     ) -> Result<MappedMemoryRegion<SizeBits, SSOut>, VSpaceError>
     where
         SizeBits: IsGreaterOrEqual<PageBits>,
@@ -1329,7 +1355,7 @@ impl VSpace<vspace_state::Imaged> {
             vaddr,
         };
         for page_cap in region.caps.iter() {
-            self.map_given_page(page_cap, rights)?;
+            self.map_given_page(page_cap, rights, vm_attributes)?;
         }
         Ok(mapped_region)
     }
@@ -1391,7 +1417,11 @@ where
         // in order to trigger the instantiation of the backing paging
         // structures.
         for _ in 0..PageCount::USIZE {
-            let mapped_page = vspace.map_given_page(unmapped_page, CapRights::RW)?;
+            let mapped_page = vspace.map_given_page(
+                unmapped_page,
+                CapRights::RW,
+                arch::vm_attributes::DEFAULT,
+            )?;
             if let None = first_vaddr {
                 first_vaddr = Some(mapped_page.cap_data.state.vaddr);
             }
@@ -1487,6 +1517,7 @@ where
                 next_addr,
                 &mut self.vspace.root,
                 CapRights::RW,
+                arch::vm_attributes::DEFAULT,
                 // NB: In the case of a ReservedRegion, we've already
                 // mapped any of the intermediate layers so should
                 // therefore not need a cache of resources for

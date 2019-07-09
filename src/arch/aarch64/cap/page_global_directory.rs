@@ -29,6 +29,7 @@ impl Maps<PageUpperDirectory> for PageGlobalDirectory {
         addr: usize,
         root: &mut LocalCap<Root>,
         _rights: CapRights,
+        vm_attributes: seL4_ARM_VMAttributes,
     ) -> Result<(), MappingError>
     where
         Root: Maps<RootLowerLevel>,
@@ -40,8 +41,7 @@ impl Maps<PageUpperDirectory> for PageGlobalDirectory {
                 upper_dir.cptr,
                 root.cptr,
                 addr & GD_MASK,
-                seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
-                    | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled,
+                vm_attributes,
             )
         }
         .as_result()
