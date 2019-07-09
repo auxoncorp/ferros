@@ -1362,6 +1362,8 @@ impl VSpace<vspace_state::Imaged> {
 
     // This function will move the caps into the child's CSpace so
     // that it may use it.
+    // Rustfmt is currently destroying a necessary cfg annotation, so must be disabled here
+    #[rustfmt::skip]
     pub(crate) fn for_child(
         self,
         src_cnode: &LocalCap<LocalCNode>,
@@ -1376,6 +1378,7 @@ impl VSpace<vspace_state::Imaged> {
             next_addr,
             untyped,
             slots,
+            #[cfg(feature = "vspace_map_region_at_addr")]
             specific_regions,
             ..
         } = self;

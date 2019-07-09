@@ -24,14 +24,14 @@ pub fn self_hosted_mem_mgmt(
     let uts = ut_buddy(local_ut);
 
     smart_alloc!(|slots: local_slots, ut: uts| {
-        let (child_cnode, child_slots) = retype_cnode::<U12>(ut, slots)?;
+        let (child_cnode, child_slots) = retype_cnode::<U14>(ut, slots)?;
         debug_println!("have child_cnode");
 
         let ut12: LocalCap<Untyped<U12>> = ut;
 
         smart_alloc! {|slots_c: child_slots| {
             let cap_transfer_slots = slots_c;
-            let (cnode_for_child, slots_for_child) =
+            let (cnode_for_child, slots_for_child):(_, ChildCap<CNodeSlotsData<U2048, role::Child>>) =
                 child_cnode.generate_self_reference(&root_cnode, slots_c)?;
             debug_println!("self ref generated");
             let child_ut12 = ut12.move_to_slot(&root_cnode, slots_c)?;
@@ -47,10 +47,11 @@ pub fn self_hosted_mem_mgmt(
         }}
 
         let (child_paging_slots, slots_for_child) = slots_for_child.alloc();
+        let (exact_child_slots, _) = slots_for_child.alloc();
 
         let params = ProcParams {
             value: 42,
-            child_slots: slots_for_child,
+            child_slots: exact_child_slots,
             untyped: child_ut12,
             outcome_sender,
         };
