@@ -43,7 +43,7 @@ impl SelfHostedProcess {
         tcb_ut: LocalCap<Untyped<<ThreadControlBlock as DirectRetype>::SizeBits>>,
         slots: LocalCNodeSlots<PrepareThreadCNodeSlots>,
         mut cap_transfer_slots: LocalCap<WCNodeSlotsData<role::Child>>,
-        mut child_paging_slots: Cap<WCNodeSlotsData<role::Child>, role::Child>,
+        child_paging_slots: Cap<WCNodeSlotsData<role::Child>, role::Child>,
         priority_authority: &LocalCap<ThreadPriorityAuthority>,
         fault_source: Option<crate::userland::FaultSource<role::Child>>,
     ) -> Result<Self, ProcessSetupError> {

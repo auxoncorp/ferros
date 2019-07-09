@@ -7,10 +7,8 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
 
-use typenum::*;
-
-#[cfg(feature = "vspace_map_region_at_addr")]
 use arrayvec::{ArrayVec, CapacityError};
+use typenum::*;
 
 use crate::alloc::ut_buddy::{self, UTBuddyError, WUTBuddy};
 use crate::arch::cap::{page_state, AssignedASID, Page, UnassignedASID};
@@ -137,20 +135,16 @@ pub enum VSpaceError {
     InsufficientCNodeSlots,
     ExceededAvailableAddressSpace,
     ASIDMismatch,
-    #[cfg(feature = "vspace_map_region_at_addr")]
     OverlappingRegion,
-    #[cfg(feature = "vspace_map_region_at_addr")]
     OutOfRegions,
 
     /// This error is returned by `map_region_at_addr` its rollback
     /// ArrayVec is not large enough to hold the number of pages, it's
     /// arbitrary and we'll need to address this when we get to doing
     /// special-sized granules.
-    #[cfg(feature = "vspace_map_region_at_addr")]
     TriedToMapTooManyPagesAtOnce,
 }
 
-#[cfg(feature = "vspace_map_region_at_addr")]
 const MAX_MAP_AT_ONCE: usize = 128;
 
 impl From<RetypeError> for VSpaceError {
@@ -165,7 +159,6 @@ impl From<SeL4Error> for VSpaceError {
     }
 }
 
-#[cfg(feature = "vspace_map_region_at_addr")]
 impl From<CapacityError<(usize, usize)>> for VSpaceError {
     fn from(_: CapacityError<(usize, usize)>) -> VSpaceError {
         VSpaceError::OutOfRegions
@@ -622,16 +615,12 @@ pub enum ProcessCodeImageConfig<'a, 'b, 'c> {
     },
 }
 
-// TODO(dan@auxon.io): Could this come in as a config item?
-#[cfg(feature = "vspace_map_region_at_addr")]
 const NUM_SPECIFIC_REGIONS: usize = 128;
 
-#[cfg(feature = "vspace_map_region_at_addr")]
 struct RegionLocations {
     regions: ArrayVec<[(usize, usize); NUM_SPECIFIC_REGIONS]>,
 }
 
-#[cfg(feature = "vspace_map_region_at_addr")]
 impl RegionLocations {
     fn new() -> Self {
         RegionLocations {
@@ -785,7 +774,6 @@ pub struct VSpace<State: VSpaceState = vspace_state::Imaged, CapRole: CNodeRole 
     /// when building out intermediate layers.
     untyped: WUTBuddy<CapRole>,
     slots: Cap<WCNodeSlotsData<CapRole>, CapRole>,
-    #[cfg(feature = "vspace_map_region_at_addr")]
     specific_regions: RegionLocations,
     _state: PhantomData<State>,
 }
@@ -805,7 +793,6 @@ impl VSpace<vspace_state::Empty> {
             next_addr: 0,
             untyped: ut_buddy::weak_ut_buddy(untyped),
             slots,
-            #[cfg(feature = "vspace_map_region_at_addr")]
             specific_regions: RegionLocations::new(),
             _state: PhantomData,
         })
@@ -956,7 +943,6 @@ impl VSpace<vspace_state::Imaged> {
             next_addr: vspace.next_addr,
             untyped: vspace.untyped,
             slots: vspace.slots,
-            #[cfg(feature = "vspace_map_region_at_addr")]
             specific_regions: RegionLocations::new(),
             _state: PhantomData,
         })
@@ -979,7 +965,6 @@ impl VSpace<vspace_state::Imaged> {
             },
             untyped: ut_buddy::weak_ut_buddy(ut),
             slots: cslots,
-            #[cfg(feature = "vspace_map_region_at_addr")]
             specific_regions: RegionLocations::new(),
             next_addr,
             asid: asid.cap_data.asid,
@@ -987,7 +972,6 @@ impl VSpace<vspace_state::Imaged> {
         }
     }
 
-    #[cfg(feature = "vspace_map_region_at_addr")]
     pub fn map_region_at_addr<SizeBits: Unsigned, SS: SharedStatus>(
         &mut self,
         region: UnmappedMemoryRegion<SizeBits, SS>,
@@ -1074,7 +1058,7 @@ impl VSpace<vspace_state::Imaged> {
                         cap_data: Page {
                             state: page_state::Mapped {
                                 vaddr: mapping_vaddr,
-                                asid: self.asid.cap_data.asid,
+                                asid: self.asid,
                             },
                         },
                         _role: PhantomData,
@@ -1101,16 +1085,16 @@ impl VSpace<vspace_state::Imaged> {
                 initial_cptr: cptr,
                 initial_vaddr: vaddr,
                 _count: PhantomData,
-                asid: self.asid.cap_data.asid,
+                asid: self.asid,
             },
             vaddr: vaddr,
-            asid: self.asid.cap_data.asid,
+            asid: self.asid,
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         };
 
         match self.specific_regions.add(&region) {
-            Err(e) => {
+            Err(_) => {
                 let _ = mapped_pages.into_iter().map(|page| page.unmap());
                 Err((
                     VSpaceError::OutOfRegions,
@@ -1261,7 +1245,6 @@ impl VSpace<vspace_state::Imaged> {
         page.unmap()
     }
 
-    #[cfg(feature = "vspace_map_region_at_addr")]
     fn map_region_internal<SizeBits: Unsigned, SSIn: SharedStatus, SSOut: SharedStatus>(
         &mut self,
         region: UnmappedMemoryRegion<SizeBits, SSIn>,
@@ -1277,7 +1260,7 @@ impl VSpace<vspace_state::Imaged> {
     {
         let mut vaddr = self.find_next_vaddr(&region)?;
 
-        let future_next_addr = match vaddr.checked_add(PageBytes::USIZE) {
+        let future_next_addr = match vaddr.checked_add(region.size()) {
             Some(n) => n,
             None => return Err(VSpaceError::ExceededAvailableAddressSpace),
         };
@@ -1320,7 +1303,6 @@ impl VSpace<vspace_state::Imaged> {
         Ok(mapped_region)
     }
 
-    #[cfg(feature = "vspace_map_region_at_addr")]
     fn find_next_vaddr<SizeBits: Unsigned, SS: SharedStatus>(
         &self,
         region: &UnmappedMemoryRegion<SizeBits, SS>,
@@ -1333,37 +1315,6 @@ impl VSpace<vspace_state::Imaged> {
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
     {
         self.specific_regions.find_first_fit(self.next_addr, region)
-    }
-
-    #[cfg(not(feature = "vspace_map_region_at_addr"))]
-    fn map_region_internal<SizeBits: Unsigned, SSIn: SharedStatus, SSOut: SharedStatus>(
-        &mut self,
-        region: UnmappedMemoryRegion<SizeBits, SSIn>,
-        rights: CapRights,
-        vm_attributes: arch::VMAttributes,
-    ) -> Result<MappedMemoryRegion<SizeBits, SSOut>, VSpaceError>
-    where
-        SizeBits: IsGreaterOrEqual<PageBits>,
-        SizeBits: Sub<PageBits>,
-        <SizeBits as Sub<PageBits>>::Output: Unsigned,
-        <SizeBits as Sub<PageBits>>::Output: _Pow,
-        Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
-    {
-        let vaddr = self.next_addr;
-        // create the mapped region first because we need to pluck out
-        // the `start_cptr` before the iteration below consumes the
-        // unmapped region.
-        let mapped_region = MappedMemoryRegion {
-            caps: MappedPageRange::new(region.caps.start_cptr, vaddr, self.asid()),
-            asid: self.asid(),
-            _size_bits: PhantomData,
-            _shared_status: PhantomData,
-            vaddr,
-        };
-        for page_cap in region.caps.iter() {
-            self.map_given_page(page_cap, rights, vm_attributes)?;
-        }
-        Ok(mapped_region)
     }
 
     pub(crate) fn skip_pages(&mut self, count: usize) -> Result<(), VSpaceError> {
@@ -1390,8 +1341,6 @@ impl VSpace<vspace_state::Imaged> {
 
     // This function will move the caps into the child's CSpace so
     // that it may use it.
-    // Rustfmt is currently destroying a necessary cfg annotation, so must be disabled here
-    #[rustfmt::skip]
     pub(crate) fn for_child(
         self,
         src_cnode: &LocalCap<LocalCNode>,
@@ -1406,7 +1355,6 @@ impl VSpace<vspace_state::Imaged> {
             next_addr,
             untyped,
             slots: _,
-            #[cfg(feature = "vspace_map_region_at_addr")]
             specific_regions,
             ..
         } = self;
@@ -1427,7 +1375,6 @@ impl VSpace<vspace_state::Imaged> {
             next_addr,
             untyped: child_untyped,
             slots: child_paging_slots,
-            #[cfg(feature = "vspace_map_region_at_addr")]
             specific_regions,
             _state: PhantomData,
         })
