@@ -4,8 +4,8 @@ use selfe_sys::*;
 
 use crate::arch::{self, PageBits};
 use crate::cap::{
-    role, CNodeRole, CNodeSlotsData, Cap, ChildCNode, DirectRetype, LocalCNode, LocalCNodeSlots,
-    LocalCap, ThreadControlBlock, ThreadPriorityAuthority, Untyped,
+    role, CNodeRole, CNodeSlotsError, Cap, ChildCNode, DirectRetype, LocalCNode, LocalCNodeSlots,
+    LocalCap, ThreadControlBlock, ThreadPriorityAuthority, Untyped, WCNodeSlotsData,
 };
 use crate::userland::CapRights;
 use crate::vspace::*;
@@ -42,8 +42,8 @@ impl SelfHostedProcess {
         ipc_buffer_ut: LocalCap<Untyped<PageBits>>,
         tcb_ut: LocalCap<Untyped<<ThreadControlBlock as DirectRetype>::SizeBits>>,
         slots: LocalCNodeSlots<PrepareThreadCNodeSlots>,
-        cap_transfer_slots: LocalCap<CNodeSlotsData<U1024, role::Child>>,
-        child_paging_slots: Cap<CNodeSlotsData<U1024, role::Child>, role::Child>,
+        mut cap_transfer_slots: LocalCap<WCNodeSlotsData<role::Child>>,
+        mut child_paging_slots: Cap<WCNodeSlotsData<role::Child>, role::Child>,
         priority_authority: &LocalCap<ThreadPriorityAuthority>,
         fault_source: Option<crate::userland::FaultSource<role::Child>>,
     ) -> Result<Self, ProcessSetupError> {
@@ -93,14 +93,14 @@ impl SelfHostedProcess {
         // Reserve a guard page after the stack.
         vspace.skip_pages(1)?;
 
-        // TODO - consider whether to make the user-facing params already of the Weak-type
-        // and leave the sizing decisions to the caller
-        let (root_slot, cap_transfer_slots) = cap_transfer_slots.alloc();
+        let root_slot = cap_transfer_slots.alloc_single().map_err(|e| match e {
+            CNodeSlotsError::NotEnoughSlots => ProcessSetupError::NotEnoughCNodeSlots,
+        })?;
         let child_vspace = vspace.for_child(
             parent_cnode,
             root_slot,
-            cap_transfer_slots.weaken(),
-            child_paging_slots.weaken(),
+            cap_transfer_slots,
+            child_paging_slots,
         )?;
 
         let sh_params = SelfHostedParams {

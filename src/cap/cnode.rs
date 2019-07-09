@@ -209,10 +209,12 @@ pub enum CNodeSlotsError {
     NotEnoughSlots,
 }
 
-impl WCNodeSlots {
+impl<Role: CNodeRole> LocalCap<WCNodeSlotsData<Role>> {
     /// Split the WCNodeSlots(original_size) into (WCNodeSlots(count), WCNodeSlots(original_size - count))
-    /// Peel off a single cptr from these slots. Advance the state.
-    pub(crate) fn alloc(&mut self, count: usize) -> Result<WCNodeSlots, CNodeSlotsError> {
+    pub(crate) fn alloc(
+        &mut self,
+        count: usize,
+    ) -> Result<LocalCap<WCNodeSlotsData<Role>>, CNodeSlotsError> {
         if count > self.cap_data.size {
             return Err(CNodeSlotsError::NotEnoughSlots);
         }
@@ -230,6 +232,23 @@ impl WCNodeSlots {
         })
     }
 
+    pub(crate) fn alloc_single(
+        &mut self,
+    ) -> Result<LocalCap<CNodeSlotsData<U1, Role>>, CNodeSlotsError> {
+        let single = self.alloc(1)?;
+        Ok(Cap {
+            cptr: single.cptr,
+            cap_data: CNodeSlotsData {
+                offset: single.cap_data.offset,
+                _size: PhantomData,
+                _role: PhantomData,
+            },
+            _role: PhantomData,
+        })
+    }
+}
+
+impl WCNodeSlots {
     pub(crate) fn into_strong_iter(self) -> impl Iterator<Item = LocalCNodeSlot> {
         (0..self.cap_data.size).map(move |n| Cap {
             cptr: self.cptr,

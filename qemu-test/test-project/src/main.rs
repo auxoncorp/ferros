@@ -12,8 +12,6 @@ extern crate selfe_sys;
 #[macro_use]
 extern crate typenum;
 
-use selfe_sys::*;
-
 mod call_and_response_loop;
 mod child_process_cap_management;
 mod child_process_runs;
@@ -75,11 +73,11 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 }
 
 #[cfg(test_case = "uart")]
-pub fn run(raw_boot_info: &'static seL4_BootInfo) {
+pub fn run(raw_boot_info: &'static selfe_sys::seL4_BootInfo) {
     uart::run(raw_boot_info).expect("run");
     unsafe {
         loop {
-            seL4_Yield();
+            selfe_sys::seL4_Yield();
         }
     }
 }

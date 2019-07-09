@@ -47,6 +47,7 @@ pub fn yield_forever() -> ! {
 pub enum ProcessSetupError {
     ProcessParameterTooBigForStack,
     ProcessParameterHandoffSizeMismatch,
+    NotEnoughCNodeSlots,
     VSpaceError(VSpaceError),
     SeL4Error(SeL4Error),
 }

@@ -17,9 +17,9 @@ use crate::arch::cap::{page_state, AssignedASID, Page, UnassignedASID};
 use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot};
 use crate::bootstrap::UserImage;
 use crate::cap::{
-    role, CNodeRole, CNodeSlots, CNodeSlotsData, Cap, CapRange, CapType, ChildCNodeSlot,
-    DirectRetype, InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, PhantomCap, RetypeError,
-    Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
+    role, CNodeRole, CNodeSlots, Cap, CapRange, CapType, ChildCNodeSlot, DirectRetype,
+    InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, PhantomCap, RetypeError, Untyped,
+    WCNodeSlots, WCNodeSlotsData, WUntyped,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
@@ -1405,7 +1405,7 @@ impl VSpace<vspace_state::Imaged> {
             layers,
             next_addr,
             untyped,
-            slots,
+            slots: _,
             #[cfg(feature = "vspace_map_region_at_addr")]
             specific_regions,
             ..
