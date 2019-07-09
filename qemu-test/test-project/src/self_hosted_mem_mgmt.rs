@@ -86,7 +86,7 @@ pub fn self_hosted_mem_mgmt(
             cap_transfer_slots,
             child_paging_slots,
             tpa,
-            None, // fault
+            Some(fault_source),
         )?;
     });
 

@@ -56,9 +56,9 @@ ferros_test_main!(&[
     &reuse_slots::reuse_slots,
     &reuse_untyped::reuse_untyped,
     &root_task_runs::root_task_runs,
+    &self_hosted_mem_mgmt::self_hosted_mem_mgmt,
     &shared_page_queue::shared_page_queue,
     &stack_setup::stack_setup,
-    &self_hosted_mem_mgmt::self_hosted_mem_mgmt,
 ]);
 
 #[cfg(test_case = "uart")]

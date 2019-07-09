@@ -22,7 +22,7 @@ struct SelfHostedParams<T, Role: CNodeRole> {
     child_main: extern "C" fn(VSpace<vspace_state::Imaged, role::Local>, T) -> (),
 }
 
-fn self_hosted_run<T>(sh_params: SelfHostedParams<T, role::Local>) {
+extern "C" fn self_hosted_run<T>(sh_params: SelfHostedParams<T, role::Local>) {
     debug_println!("in self hosted run");
     let SelfHostedParams {
         params,
@@ -35,11 +35,11 @@ fn self_hosted_run<T>(sh_params: SelfHostedParams<T, role::Local>) {
 
 impl SelfHostedProcess {
     pub fn new<T: RetypeForSetup>(
-        mut vspace: VSpace,
+        mut vspace: VSpace<vspace_state::Imaged, role::Local>,
         cspace: LocalCap<ChildCNode>,
         parent_mapped_region: MappedMemoryRegion<StackBitSize, shared_status::Exclusive>,
         parent_cnode: &LocalCap<LocalCNode>,
-        function_descriptor: extern "C" fn(VSpace, T) -> (),
+        function_descriptor: extern "C" fn(VSpace<vspace_state::Imaged, role::Local>, T) -> (),
         process_parameter: SetupVer<T>,
         ipc_buffer_ut: LocalCap<Untyped<PageBits>>,
         tcb_ut: LocalCap<Untyped<<ThreadControlBlock as DirectRetype>::SizeBits>>,
@@ -57,10 +57,14 @@ impl SelfHostedProcess {
             core::mem::size_of::<SelfHostedParams<SetupVer<T>, role::Child>>(),
             (StackPageCount::USIZE * arch::PageBytes::USIZE)
         );
-        if core::mem::size_of::<SetupVer<T>>() > (StackPageCount::USIZE * arch::PageBytes::USIZE) {
+        if core::mem::size_of::<SelfHostedParams<SetupVer<T>, role::Child>>()
+            > (StackPageCount::USIZE * arch::PageBytes::USIZE)
+        {
             return Err(ProcessSetupError::ProcessParameterTooBigForStack);
         }
-        if core::mem::size_of::<SetupVer<T>>() != core::mem::size_of::<T>() {
+        if core::mem::size_of::<SelfHostedParams<SetupVer<T>, role::Child>>()
+            != core::mem::size_of::<SelfHostedParams<T, role::Child>>()
+        {
             return Err(ProcessSetupError::ProcessParameterHandoffSizeMismatch);
         }
 
