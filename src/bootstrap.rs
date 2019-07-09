@@ -158,9 +158,10 @@ impl UserImage<role::Local> {
                 cap_data: Page {
                     state: page_state::Mapped {
                         vaddr,
-                        // N.B. This ASID is only valid-ish for the root task, however we
-                        // presently lack the piping to associate a UserImage with a particular
-                        // real ASID (or with a particular VSpace)
+                        // N.B. This ASID is only valid for the root task (since we make up
+                        // an internally consistent scheme for our runtime-tracked ASID values).
+                        // We presently lack the piping to associate a UserImage with a
+                        // particular ASID (or with a particular VSpace)
                         asid: InternalASID { asid: 0 },
                     },
                 },
