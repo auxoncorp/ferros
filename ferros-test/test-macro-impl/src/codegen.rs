@@ -97,9 +97,18 @@ fn call_fn_under_test(
             #call
         }},
         UserTestFnOutput::Result => parse_quote! {{
-            match #call {
+            let res = #call;
+
+            // We can't combine this with the lower match clause because
+            // a quirk of the syn parser makes it impossible to parse a trailing
+            // comma after a brace, in this particular test case.
+            if let Err(e) = &res {
+                ferros::debug_println!("Test failed:\n {:#?}\n", e);
+            }
+
+            match res {
                 Ok(_) => ferros::test_support::TestOutcome::Success,
-                Err(_) => ferros::test_support::TestOutcome::Failure,
+                Err(_) => ferros::test_support::TestOutcome::Failure
             }
         }},
     }
@@ -407,9 +416,14 @@ mod tests {
                     let ( _a0 , slots ) = slots.alloc();
                     let ( _a1 , untyped ) = ut_buddy_instance.alloc(_a0).unwrap ();
                     let ( _a2 , slots ) = slots.alloc();
-                    match under_test(_a1, _a2) {
+                    let res = under_test(_a1, _a2);
+                    if let Err(e) = &res {
+                        ferros::debug_println!("Test failed:\n {:#?}\n", e);
+                    }
+
+                    match res {
                         Ok(_) => ferros::test_support::TestOutcome::Success,
-                        Err(_) => ferros::test_support::TestOutcome::Failure,
+                        Err(_) => ferros::test_support::TestOutcome::Failure
                     }
                 };
                 (concat!(module_path!(), "::", "original_target"), outcome)
@@ -462,9 +476,15 @@ mod tests {
                 }
                 let outcome = {
                     let ( _a0 , mapped_memory_region ) = mapped_memory_region.split_into().unwrap();
-                    match under_test(_a0) {
+                    let res = under_test(_a0);
+
+                    if let Err(e) = &res {
+                        ferros::debug_println!("Test failed:\n {:#?}\n", e);
+                    }
+
+                    match res {
                         Ok(_) => ferros::test_support::TestOutcome::Success,
-                        Err(_) => ferros::test_support::TestOutcome::Failure,
+                        Err(_) => ferros::test_support::TestOutcome::Failure
                     }
                 };
                 (concat!(module_path!(), "::", "original_target"), outcome)
