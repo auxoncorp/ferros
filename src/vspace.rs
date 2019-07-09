@@ -15,8 +15,9 @@ use crate::arch::cap::{page_state, AssignedASID, Page, UnassignedASID};
 use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot};
 use crate::bootstrap::UserImage;
 use crate::cap::{
-    role, CNodeRole, CNodeSlots, Cap, CapRange, CapType, DirectRetype, LocalCNode, LocalCNodeSlots,
-    LocalCap, PhantomCap, RetypeError, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
+    role, CNodeRole, CNodeSlots, Cap, CapRange, CapType, ChildCNodeSlot, DirectRetype,
+    InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, PhantomCap, RetypeError, Untyped,
+    WCNodeSlots, WCNodeSlotsData, WUntyped,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
@@ -70,7 +71,7 @@ pub trait Maps<LowerLevel: CapType> {
         &mut self,
         item: &LocalCap<LowerLevel>,
         addr: usize,
-        mut root: &mut LocalCap<Root>,
+        root: &mut LocalCap<Root>,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
     ) -> Result<(), MappingError>
@@ -377,12 +378,12 @@ where
 struct MappedPageRange<Count: Unsigned> {
     initial_cptr: usize,
     initial_vaddr: usize,
-    asid: u32,
+    asid: InternalASID,
     _count: PhantomData<Count>,
 }
 
 impl<Count: Unsigned> MappedPageRange<Count> {
-    fn new(initial_cptr: usize, initial_vaddr: usize, asid: u32) -> Self {
+    fn new(initial_cptr: usize, initial_vaddr: usize, asid: InternalASID) -> Self {
         MappedPageRange {
             initial_cptr,
             initial_vaddr,
@@ -426,7 +427,7 @@ where
 {
     vaddr: usize,
     caps: MappedPageRange<NumPages<SizeBits>>,
-    asid: u32,
+    asid: InternalASID,
     _size_bits: PhantomData<SizeBits>,
     _shared_status: PhantomData<SS>,
 }
@@ -445,13 +446,13 @@ where
         Self::SIZE_BYTES
     }
 
-    pub(crate) fn vaddr(&self) -> usize {
+    pub fn vaddr(&self) -> usize {
         self.vaddr
     }
 
-    /// In the Ok case,
-    /// returns a shared, unmapped copy of the memory region (backed by fresh page-caps)
-    /// along with this self-same mapped memory region, marked as shared
+    /// In the Ok case, returns a shared, unmapped copy of the memory
+    /// region (backed by fresh page-caps) along with this self-same
+    /// mapped memory region, marked as shared.
     pub fn share(
         self,
         slots: LocalCNodeSlots<NumPages<SizeBits>>,
@@ -486,7 +487,7 @@ where
     fn unchecked_new(
         initial_cptr: usize,
         initial_vaddr: usize,
-        asid: u32,
+        asid: InternalASID,
     ) -> MappedMemoryRegion<SizeBits, SS> {
         MappedMemoryRegion {
             caps: MappedPageRange::new(initial_cptr, initial_vaddr, asid),
@@ -753,11 +754,14 @@ impl RegionLocations {
 }
 
 /// A virtual address space manager.
-pub struct VSpace<State: VSpaceState = vspace_state::Imaged> {
+///
+/// CapRole indicates whether the capabilities related to manipulating this VSpace
+/// are accessible from the current thread's CSpace, or from a child's CSpace
+pub struct VSpace<State: VSpaceState = vspace_state::Imaged, CapRole: CNodeRole = role::Local> {
     /// The cap to this address space's root-of-the-tree item.
-    root: LocalCap<PagingRoot>,
+    root: Cap<PagingRoot, CapRole>,
     /// The id of this address space.
-    asid: LocalCap<AssignedASID>,
+    asid: InternalASID,
     /// The recursive structure which represents an address space
     /// structure. `AddressSpace` is a type which is exported by
     /// `crate::arch` and has architecture specific implementations.
@@ -768,8 +772,8 @@ pub struct VSpace<State: VSpaceState = vspace_state::Imaged> {
     next_addr: usize,
     /// The following two members are the resources used by the VSpace
     /// when building out intermediate layers.
-    untyped: WUTBuddy,
-    slots: WCNodeSlots,
+    untyped: WUTBuddy<CapRole>,
+    slots: Cap<WCNodeSlotsData<CapRole>, CapRole>,
     specific_regions: RegionLocations,
     _state: PhantomData<State>,
 }
@@ -784,7 +788,7 @@ impl VSpace<vspace_state::Empty> {
         let assigned_asid = asid.assign(&mut root_cap)?;
         Ok(VSpace {
             root: root_cap,
-            asid: assigned_asid,
+            asid: assigned_asid.cap_data.asid,
             layers: AddressSpace::new(),
             next_addr: 0,
             untyped: ut_buddy::weak_ut_buddy(untyped),
@@ -797,8 +801,8 @@ impl VSpace<vspace_state::Empty> {
 
 impl<S: VSpaceState> VSpace<S> {
     /// This address space's id.
-    pub(crate) fn asid(&self) -> u32 {
-        self.asid.cap_data.asid
+    pub(crate) fn asid(&self) -> InternalASID {
+        self.asid
     }
 
     /// Map a given page at some address, I don't care where.
@@ -963,7 +967,7 @@ impl VSpace<vspace_state::Imaged> {
             slots: cslots,
             specific_regions: RegionLocations::new(),
             next_addr,
-            asid,
+            asid: asid.cap_data.asid,
             _state: PhantomData,
         }
     }
@@ -1054,7 +1058,7 @@ impl VSpace<vspace_state::Imaged> {
                         cap_data: Page {
                             state: page_state::Mapped {
                                 vaddr: mapping_vaddr,
-                                asid: self.asid.cap_data.asid,
+                                asid: self.asid,
                             },
                         },
                         _role: PhantomData,
@@ -1081,16 +1085,16 @@ impl VSpace<vspace_state::Imaged> {
                 initial_cptr: cptr,
                 initial_vaddr: vaddr,
                 _count: PhantomData,
-                asid: self.asid.cap_data.asid,
+                asid: self.asid,
             },
             vaddr: vaddr,
-            asid: self.asid.cap_data.asid,
+            asid: self.asid,
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         };
 
         match self.specific_regions.add(&region) {
-            Err(e) => {
+            Err(_) => {
                 let _ = mapped_pages.into_iter().map(|page| page.unmap());
                 Err((
                     VSpaceError::OutOfRegions,
@@ -1149,8 +1153,8 @@ impl VSpace<vspace_state::Imaged> {
         }
 
         Ok(MappedMemoryRegion {
-            caps: MappedPageRange::new(dest_init_cptr, vaddr, self.asid.cap_data.asid),
-            asid: self.asid.cap_data.asid,
+            caps: MappedPageRange::new(dest_init_cptr, vaddr, self.asid),
+            asid: self.asid,
             _shared_status: PhantomData,
             _size_bits: PhantomData,
             vaddr,
@@ -1334,6 +1338,47 @@ impl VSpace<vspace_state::Imaged> {
     {
         ReservedRegion::new(self, sacrificial_page)
     }
+
+    // This function will move the caps into the child's CSpace so
+    // that it may use it.
+    pub(crate) fn for_child(
+        self,
+        src_cnode: &LocalCap<LocalCNode>,
+        child_root_slot: ChildCNodeSlot,
+        mut ut_transfer_slots: LocalCap<WCNodeSlotsData<role::Child>>,
+        child_paging_slots: Cap<WCNodeSlotsData<role::Child>, role::Child>,
+    ) -> Result<VSpace<vspace_state::Imaged, role::Child>, VSpaceError> {
+        let VSpace {
+            root,
+            asid,
+            layers,
+            next_addr,
+            untyped,
+            slots: _,
+            specific_regions,
+            ..
+        } = self;
+        let child_root = root.move_to_slot(src_cnode, child_root_slot)?;
+        let child_untyped = untyped
+            .move_to_child(src_cnode, &mut ut_transfer_slots)
+            .map_err(|e| match e {
+                UTBuddyError::NotEnoughSlots => VSpaceError::InsufficientCNodeSlots,
+                UTBuddyError::SeL4Error(se) => VSpaceError::SeL4Error(se),
+                _ => unreachable!(
+                    "All other UTBuddyError variants are irrelevant for the move_to_child call"
+                ),
+            })?;
+        Ok(VSpace {
+            root: child_root,
+            asid,
+            layers,
+            next_addr,
+            untyped: child_untyped,
+            slots: child_paging_slots,
+            specific_regions,
+            _state: PhantomData,
+        })
+    }
 }
 
 /// A region of memory in a VSpace that has been reserved
@@ -1348,7 +1393,7 @@ impl VSpace<vspace_state::Imaged> {
 /// stack.
 pub struct ReservedRegion<PageCount: Unsigned = crate::userland::process::StackPageCount> {
     vaddr: usize,
-    asid: u32,
+    asid: InternalASID,
     _page_count: PhantomData<PageCount>,
 }
 
@@ -1410,7 +1455,7 @@ where
         region: &'a ReservedRegion<PageCount>,
         vspace: &'b mut VSpace,
     ) -> Result<Self, VSpaceError> {
-        if region.asid == vspace.asid.cap_data.asid {
+        if region.asid == vspace.asid() {
             Ok(ScratchRegion {
                 reserved_region: region,
                 vspace,
@@ -1454,7 +1499,11 @@ where
             Cap {
                 cptr: core::usize::MAX,
                 _role: PhantomData,
-                cap_data: WCNodeSlotsData { offset: 0, size: 0 },
+                cap_data: WCNodeSlotsData {
+                    offset: 0,
+                    size: 0,
+                    _role: PhantomData,
+                },
             }
         }
         let unmapped_region_copy: UnmappedMemoryRegion<SizeBits, shared_status::Exclusive> =

@@ -8,7 +8,7 @@ use ferros::bootstrap::{root_cnode, BootInfo};
 use ferros::cap::{
     retype, retype_cnode, role, CNodeRole, LocalCNodeSlots, LocalCap, MaxIRQCount, Untyped,
 };
-use ferros::userland::{CapRights, InterruptConsumer, ReadyProcess, RetypeForSetup};
+use ferros::userland::{CapRights, InterruptConsumer, RetypeForSetup, StandardProcess};
 use ferros::vspace::*;
 
 use super::TopLevelError;
@@ -100,7 +100,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             consumer: interrupt_consumer,
         };
 
-        let uart1_process = ReadyProcess::new(
+        let uart1_process = StandardProcess::new(
             &mut uart1_vspace,
             uart1_cnode,
             mapped_region,

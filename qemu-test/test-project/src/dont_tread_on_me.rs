@@ -9,8 +9,8 @@ use ferros::alloc::{smart_alloc, ut_buddy};
 use ferros::bootstrap::UserImage;
 use ferros::cap::*;
 use ferros::userland::{
-    call_channel, fault_or_message_channel, Caller, FaultOrMessage, ReadyProcess, Responder,
-    RetypeForSetup, Sender,
+    call_channel, fault_or_message_channel, Caller, FaultOrMessage, Responder, RetypeForSetup,
+    Sender, StandardProcess,
 };
 use ferros::vspace::*;
 
@@ -87,7 +87,7 @@ pub fn dont_tread_on_me<'a, 'b, 'c>(
 
         let (proc1_region, proc2_region) = local_mapped_region.split()?;
 
-        let proc1_process = ReadyProcess::new(
+        let proc1_process = StandardProcess::new(
             &mut proc1_vspace,
             proc1_cspace,
             proc1_region,
@@ -102,7 +102,7 @@ pub fn dont_tread_on_me<'a, 'b, 'c>(
         )?;
         proc1_process.start()?;
 
-        let proc2_process = ReadyProcess::new(
+        let proc2_process = StandardProcess::new(
             &mut proc2_vspace,
             proc2_cspace,
             proc2_region,

@@ -48,8 +48,8 @@ use typenum::*;
 use crate::arch::{self, PageBits, PageBytes};
 use crate::cap::{
     irq_state, role, Badge, CNodeRole, Cap, ChildCNodeSlot, ChildCNodeSlots, DirectRetype,
-    IRQControl, IRQError, IRQHandler, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap,
-    MaxIRQCount, Notification, PhantomCap, Untyped,
+    IRQControl, IRQError, IRQHandler, InternalASID, LocalCNode, LocalCNodeSlot, LocalCNodeSlots,
+    LocalCap, MaxIRQCount, Notification, PhantomCap, Untyped,
 };
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
@@ -199,7 +199,7 @@ pub struct ProducerSetup<T, QLen: Unsigned> {
     // User-concealed alias'ing happening here.
     // Don't mutate this Cap. Copying/minting is okay.
     notification: LocalCap<Notification>,
-    consumer_vspace_asid: u32,
+    consumer_vspace_asid: InternalASID,
     _queue_element_type: PhantomData<T>,
     _queue_lenth: PhantomData<QLen>,
 }
@@ -222,7 +222,7 @@ pub struct ConsumerToken {
     // User-concealed alias'ing happening here.
     // Don't mutate/delete this Cap. Copying/minting is okay.
     notification: Cap<Notification, role::Local>,
-    consumer_vspace_asid: Option<u32>,
+    consumer_vspace_asid: Option<InternalASID>,
 }
 
 impl<IRQ: Unsigned> InterruptConsumer<IRQ, role::Child>

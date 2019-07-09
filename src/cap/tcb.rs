@@ -1,5 +1,3 @@
-use typenum::*;
-
 use selfe_sys::*;
 
 use crate::arch::cap::{page_state, Page};

@@ -29,11 +29,12 @@ pub struct CNodeSlotsData<Size: Unsigned, Role: CNodeRole> {
     pub(crate) _role: PhantomData<Role>,
 }
 
-/// Can only represent local CNode slots with capacity tracked at runtime
+/// Can only represent CNode slots with capacity tracked at runtime
 #[derive(Debug)]
-pub struct WCNodeSlotsData {
+pub struct WCNodeSlotsData<Role: CNodeRole> {
     pub(crate) offset: usize,
     pub(crate) size: usize,
+    pub(crate) _role: PhantomData<Role>,
 }
 
 impl<Role: CNodeRole> CapType for CNode<Role> {}
@@ -48,8 +49,8 @@ pub type CNodeSlot<Role> = CNodeSlots<U1, Role>;
 pub type LocalCNodeSlot = CNodeSlot<role::Local>;
 pub type ChildCNodeSlot = CNodeSlot<role::Child>;
 
-impl CapType for WCNodeSlotsData {}
-pub type WCNodeSlots = LocalCap<WCNodeSlotsData>;
+impl<Role: CNodeRole> CapType for WCNodeSlotsData<Role> {}
+pub type WCNodeSlots = LocalCap<WCNodeSlotsData<role::Local>>;
 
 impl<Size: Unsigned, CapRole: CNodeRole, Role: CNodeRole> Cap<CNodeSlotsData<Size, Role>, CapRole> {
     /// A private constructor
@@ -67,16 +68,26 @@ impl<Size: Unsigned, CapRole: CNodeRole, Role: CNodeRole> Cap<CNodeSlotsData<Siz
             },
         }
     }
-}
 
-impl<Size: Unsigned, Role: CNodeRole> CNodeSlots<Size, Role> {
-    pub fn elim(self) -> (usize, usize, usize) {
-        (self.cptr, self.cap_data.offset, Size::USIZE)
+    /// weaken erases the state-tracking types on a set of CNode
+    /// slots.
+    pub fn weaken(self) -> Cap<WCNodeSlotsData<Role>, CapRole> {
+        Cap {
+            cptr: self.cptr,
+            _role: PhantomData,
+            cap_data: WCNodeSlotsData {
+                offset: self.cap_data.offset,
+                size: Size::USIZE,
+                _role: PhantomData,
+            },
+        }
     }
-
     pub fn alloc<Count: Unsigned>(
         self,
-    ) -> (CNodeSlots<Count, Role>, CNodeSlots<Diff<Size, Count>, Role>)
+    ) -> (
+        Cap<CNodeSlotsData<Count, Role>, CapRole>,
+        Cap<CNodeSlotsData<Diff<Size, Count>, Role>, CapRole>,
+    )
     where
         Size: Sub<Count>,
         Diff<Size, Count>: Unsigned,
@@ -84,11 +95,20 @@ impl<Size: Unsigned, Role: CNodeRole> CNodeSlots<Size, Role> {
         let (cptr, offset, _) = self.elim();
 
         (
-            CNodeSlots::internal_new(cptr, offset),
-            CNodeSlots::internal_new(cptr, offset + Count::USIZE),
+            Cap::<CNodeSlotsData<Count, Role>, CapRole>::internal_new(cptr, offset),
+            Cap::<CNodeSlotsData<Diff<Size, Count>, Role>, CapRole>::internal_new(
+                cptr,
+                offset + Count::USIZE,
+            ),
         )
     }
 
+    pub(crate) fn elim(self) -> (usize, usize, usize) {
+        (self.cptr, self.cap_data.offset, Size::USIZE)
+    }
+}
+
+impl<Size: Unsigned, Role: CNodeRole> CNodeSlots<Size, Role> {
     pub fn iter(self) -> impl Iterator<Item = CNodeSlot<Role>> {
         let cptr = self.cptr;
         let offset = self.cap_data.offset;
@@ -135,19 +155,6 @@ impl<Size: Unsigned> LocalCNodeSlots<Size> {
                 offset,              // index
                 seL4_WordBits as u8, // depth
             );
-        }
-    }
-
-    /// weaken erases the state-tracking types on a set of CNode
-    /// slots.
-    pub fn weaken(self) -> WCNodeSlots {
-        WCNodeSlots {
-            cptr: self.cptr,
-            _role: PhantomData,
-            cap_data: WCNodeSlotsData {
-                offset: self.cap_data.offset,
-                size: Size::USIZE,
-            },
         }
     }
 }
@@ -202,10 +209,12 @@ pub enum CNodeSlotsError {
     NotEnoughSlots,
 }
 
-impl WCNodeSlots {
+impl<Role: CNodeRole> LocalCap<WCNodeSlotsData<Role>> {
     /// Split the WCNodeSlots(original_size) into (WCNodeSlots(count), WCNodeSlots(original_size - count))
-    /// Peel off a single cptr from these slots. Advance the state.
-    pub(crate) fn alloc(&mut self, count: usize) -> Result<WCNodeSlots, CNodeSlotsError> {
+    pub(crate) fn alloc(
+        &mut self,
+        count: usize,
+    ) -> Result<LocalCap<WCNodeSlotsData<Role>>, CNodeSlotsError> {
         if count > self.cap_data.size {
             return Err(CNodeSlotsError::NotEnoughSlots);
         }
@@ -215,13 +224,31 @@ impl WCNodeSlots {
         Ok(Cap {
             cptr: self.cptr,
             cap_data: WCNodeSlotsData {
-                offset: offset,
+                offset,
                 size: count,
+                _role: PhantomData,
             },
             _role: PhantomData,
         })
     }
 
+    pub(crate) fn alloc_single(
+        &mut self,
+    ) -> Result<LocalCap<CNodeSlotsData<U1, Role>>, CNodeSlotsError> {
+        let single = self.alloc(1)?;
+        Ok(Cap {
+            cptr: single.cptr,
+            cap_data: CNodeSlotsData {
+                offset: single.cap_data.offset,
+                _size: PhantomData,
+                _role: PhantomData,
+            },
+            _role: PhantomData,
+        })
+    }
+}
+
+impl WCNodeSlots {
     pub(crate) fn into_strong_iter(self) -> impl Iterator<Item = LocalCNodeSlot> {
         (0..self.cap_data.size).map(move |n| Cap {
             cptr: self.cptr,
@@ -231,6 +258,32 @@ impl WCNodeSlots {
                 _size: PhantomData,
                 _role: PhantomData,
             },
+        })
+    }
+}
+
+impl<Role: CNodeRole> LocalCap<WCNodeSlotsData<Role>> {
+    /// Iterate through the available slots in the runtime-tracked collection of slots,
+    /// consuming slots each iter step.
+    /// TODO - a way better name that isn't iter_mut or mut_iter
+    pub(crate) fn incrementally_consuming_iter(
+        &mut self,
+    ) -> impl Iterator<Item = CNodeSlot<Role>> + '_ {
+        let original_offset = self.cap_data.offset;
+        let original_size = self.cap_data.size;
+        let cptr = self.cptr;
+        (0..original_size).map(move |n| {
+            self.cap_data.offset += 1;
+            self.cap_data.size -= 1;
+            Cap {
+                cptr,
+                _role: PhantomData,
+                cap_data: CNodeSlotsData {
+                    offset: original_offset + n,
+                    _size: PhantomData,
+                    _role: PhantomData,
+                },
+            }
         })
     }
 }

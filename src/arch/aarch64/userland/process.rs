@@ -1,4 +1,3 @@
-use core::cmp;
 use core::mem;
 use core::ptr;
 

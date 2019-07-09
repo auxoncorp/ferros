@@ -12,8 +12,6 @@ extern crate selfe_sys;
 #[macro_use]
 extern crate typenum;
 
-use selfe_sys::*;
-
 mod call_and_response_loop;
 mod child_process_cap_management;
 mod child_process_runs;
@@ -28,6 +26,7 @@ mod over_register_size_params;
 mod reuse_slots;
 mod reuse_untyped;
 mod root_task_runs;
+mod self_hosted_mem_mgmt;
 mod shared_page_queue;
 mod stack_setup;
 mod uart;
@@ -55,6 +54,7 @@ ferros_test_main!(&[
     &reuse_slots::reuse_slots,
     &reuse_untyped::reuse_untyped,
     &root_task_runs::root_task_runs,
+    &self_hosted_mem_mgmt::self_hosted_mem_mgmt,
     &shared_page_queue::shared_page_queue,
     &stack_setup::stack_setup,
 ]);
@@ -73,11 +73,11 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 }
 
 #[cfg(test_case = "uart")]
-pub fn run(raw_boot_info: &'static seL4_BootInfo) {
+pub fn run(raw_boot_info: &'static selfe_sys::seL4_BootInfo) {
     uart::run(raw_boot_info).expect("run");
     unsafe {
         loop {
-            seL4_Yield();
+            selfe_sys::seL4_Yield();
         }
     }
 }

@@ -4,7 +4,7 @@ use typenum::*;
 use ferros::arch::fault::Fault;
 use ferros::bootstrap::UserImage;
 use ferros::cap::*;
-use ferros::userland::{FaultSinkSetup, ReadyProcess, RetypeForSetup};
+use ferros::userland::{FaultSinkSetup, RetypeForSetup, StandardProcess};
 use ferros::vspace::*;
 
 use super::TopLevelError;
@@ -46,7 +46,7 @@ pub fn memory_write_protection<'a, 'b, 'c>(
             setup.add_fault_source(&root_cnode, child_slot_for_fault_source, Badge::from(0))?;
         let sink = setup.sink();
 
-        let child_process = ReadyProcess::new(
+        let child_process = StandardProcess::new(
             &mut child_vspace,
             child_cnode,
             local_mapped_region,

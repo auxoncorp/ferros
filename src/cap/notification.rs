@@ -1,5 +1,3 @@
-use typenum::*;
-
 use selfe_sys::*;
 
 use crate::cap::{Badge, CapType, CopyAliasable, DirectRetype, LocalCap, Mintable, PhantomCap};

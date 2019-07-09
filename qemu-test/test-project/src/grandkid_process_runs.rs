@@ -5,7 +5,7 @@ use ferros::arch::{self, CodePageCount, CodePageTableCount};
 use ferros::bootstrap::UserImage;
 use ferros::cap::*;
 use ferros::userland::{
-    fault_or_message_channel, CapRights, FaultOrMessage, ReadyProcess, RetypeForSetup, Sender,
+    fault_or_message_channel, CapRights, FaultOrMessage, RetypeForSetup, Sender, StandardProcess,
 };
 use ferros::vspace::{
     shared_status, MappedMemoryRegion, ProcessCodeImageConfig, UnmappedMemoryRegion, VSpace,
@@ -84,7 +84,7 @@ pub fn grandkid_process_runs(
             outcome_sender,
         };
 
-        let child_process = ReadyProcess::new(
+        let child_process = StandardProcess::new(
             &mut child_vspace,
             child_cnode,
             local_mapped_region,
@@ -164,7 +164,7 @@ fn child_run(params: ChildParams<role::Local>) -> Result<(), TopLevelError> {
             &cnode,
         )?;
 
-        let child_process = ReadyProcess::new(
+        let child_process = StandardProcess::new(
             &mut child_vspace,
             child_cnode,
             mapped_region,
