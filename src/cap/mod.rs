@@ -17,6 +17,7 @@ mod tcb;
 mod untyped;
 
 pub use asid_pool::*;
+pub(crate) use asid_pool::*;
 pub use badge::*;
 pub use cnode::*;
 pub use endpoint::*;

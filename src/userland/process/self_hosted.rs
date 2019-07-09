@@ -91,7 +91,7 @@ impl SelfHostedProcess {
         let child_vspace = vspace.for_child(child_slots)?;
 
         let sh_params = SelfHostedParams {
-            vspace: vspace,
+            vspace: child_vspace,
             params: process_parameter,
             child_main: unsafe { core::mem::transmute(function_descriptor) },
         };

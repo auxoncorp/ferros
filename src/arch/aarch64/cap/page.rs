@@ -1,6 +1,8 @@
 use selfe_sys::*;
 
-use crate::cap::{CapType, CopyAliasable, DirectRetype, LocalCap, Movable, PhantomCap};
+use crate::cap::{
+    CapType, CopyAliasable, DirectRetype, InternalASID, LocalCap, Movable, PhantomCap,
+};
 use crate::error::{ErrorExt, SeL4Error};
 
 pub trait PageState: private::SealedPageState {}
@@ -8,7 +10,7 @@ pub trait PageState: private::SealedPageState {}
 pub mod page_state {
     pub struct Mapped {
         pub(crate) vaddr: usize,
-        pub(crate) asid: u32,
+        pub(crate) asid: crate::cap::InternalASID,
     }
     impl super::PageState for Mapped {}
 
@@ -24,7 +26,7 @@ impl LocalCap<Page<page_state::Mapped>> {
     pub fn vaddr(&self) -> usize {
         self.cap_data.state.vaddr
     }
-    pub fn asid(&self) -> u32 {
+    pub(crate) fn asid(&self) -> InternalASID {
         self.cap_data.state.asid
     }
 
