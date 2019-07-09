@@ -352,7 +352,7 @@ where
         slots: CNodeSlots<NumPages<SizeBits>, Role>,
     ) -> Result<Self, VSpaceError> {
         let page_caps =
-            ut.retype_multi_runtime::<Page<page_state::Unmapped>, NumPages<SizeBits>, _>(slots)?;
+            ut.retype_device_pages::<NumPages<SizeBits>, _>(slots)?;
         Ok(UnmappedMemoryRegion {
             caps: CapRange::new(page_caps.start_cptr),
             _size_bits: PhantomData,

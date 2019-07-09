@@ -579,70 +579,49 @@ impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
 }
 
 impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::Device>> {
-    pub(crate) fn retype_multi_runtime<TargetCapType: CapType, Count: Unsigned, CRole: CNodeRole>(
+    pub fn retype_device_pages<Count: Unsigned, CRole: CNodeRole>(
         self,
+        //dest_slots: LocalCNodeSlots<Count>,
         dest_slots: CNodeSlots<Count, CRole>,
-    ) -> Result<CapRange<TargetCapType, role::Local, Count>, RetypeError>
+    ) -> Result<CapRange<Page<page_state::Unmapped>, role::Local, Count>, SeL4Error>
     where
-        TargetCapType: PhantomCap,
-        TargetCapType: DirectRetype,
+        Count: IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
+
+        BitSize: _Pow,
+        Pow<BitSize>: Unsigned,
+
+        // TODO - fixup these
+        <Page<page_state::Unmapped> as DirectRetype>::SizeBits: _Pow,
+        Pow<<Page<page_state::Unmapped> as DirectRetype>::SizeBits>: Mul<Count>,
+        Prod<Pow<<Page<page_state::Unmapped> as DirectRetype>::SizeBits>, Count>: Unsigned,
+
+        Pow<BitSize>: IsGreaterOrEqual<
+            Prod<Pow<<Page<page_state::Unmapped> as DirectRetype>::SizeBits>, Count>,
+            Output = True,
+        >,
     {
         let (dest_cptr, dest_offset, _) = dest_slots.elim();
-
-        let cap_size_bytes = match 2usize
-            .checked_pow(<TargetCapType as DirectRetype>::SizeBits::U32)
-            .and_then(|p| p.checked_mul(Count::USIZE))
-        {
-            Some(c) => c,
-            None => return Err(RetypeError::CapSizeOverflow),
-        };
-
-        let ut_size_bytes = match 2usize.checked_pow(BitSize::U32) {
-            Some(u) => u,
-            None => return Err(RetypeError::BitSizeOverflow),
-        };
-
-        if cap_size_bytes > ut_size_bytes {
-            return Err(RetypeError::NotBigEnough);
-        }
-
         unsafe {
-            Self::retype_multi_internal(
-                self.cptr,
-                Count::USIZE,
-                TargetCapType::sel4_type_id(),
-                dest_cptr,
-                dest_offset,
-            )?;
+            seL4_Untyped_Retype(
+                self.cptr,              // _service
+                Page::sel4_type_id(),   // type
+                0,                      // size_bits
+                dest_cptr,              // root
+                0,                      // index
+                0,                      // depth
+                dest_offset,            // offset
+                Count::USIZE,           // num_objects
+            )
+            .as_result()
+            .map_err(|e| SeL4Error::UntypedRetype(e))?;
         }
 
-        Ok(CapRange {
+         Ok(CapRange {
             start_cptr: dest_offset,
             _cap_type: PhantomData,
             _role: PhantomData,
             _slots: PhantomData,
         })
-    }
-
-    unsafe fn retype_multi_internal(
-        self_cptr: usize,
-        count: usize,
-        type_id: usize,
-        dest_cptr: usize,
-        dest_offset: usize,
-    ) -> Result<(), SeL4Error> {
-        seL4_Untyped_Retype(
-            self_cptr,   // _service
-            type_id,     // type
-            0,           // size_bits
-            dest_cptr,   // root
-            0,           // index
-            0,           // depth
-            dest_offset, // offset
-            count,       // num_objects
-        )
-        .as_result()
-        .map_err(|e| SeL4Error::UntypedRetype(e))
     }
 }
 
