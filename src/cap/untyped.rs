@@ -30,6 +30,7 @@ pub struct Untyped<BitSize: Unsigned, Kind: MemoryKind = memory_kind::General> {
     pub(crate) _kind: PhantomData<Kind>,
 }
 
+/// Weakly-typed (runtime-managed) Untyped
 pub struct WUntyped {
     pub(crate) size_bits: usize,
 }
@@ -77,6 +78,8 @@ impl<BitSize: Unsigned, Kind: MemoryKind> PhantomCap for Untyped<BitSize, Kind> 
 }
 
 impl<BitSize: Unsigned, Kind: MemoryKind> Movable for Untyped<BitSize, Kind> {}
+
+impl Movable for WUntyped {}
 
 impl<BitSize: Unsigned, Kind: MemoryKind> Delible for Untyped<BitSize, Kind> {}
 

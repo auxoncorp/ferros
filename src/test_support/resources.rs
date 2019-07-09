@@ -1,6 +1,7 @@
 use selfe_sys::seL4_BootInfo;
 use typenum::*;
 
+use crate::arch;
 use crate::arch::cap::*;
 use crate::bootstrap::*;
 use crate::cap::*;
@@ -117,8 +118,11 @@ impl Resources {
             MaxMappedMemoryRegionBitSize,
             shared_status::Exclusive,
         > = UnmappedMemoryRegion::new(memory_region_ut, memory_region_slots)?;
-        let mapped_memory_region =
-            root_vspace.map_region(unmapped_region, crate::userland::CapRights::RW)?;
+        let mapped_memory_region = root_vspace.map_region(
+            unmapped_region,
+            crate::userland::CapRights::RW,
+            arch::vm_attributes::DEFAULT,
+        )?;
         let (slots, _local_slots) = local_slots.alloc();
         Ok((
             Resources {

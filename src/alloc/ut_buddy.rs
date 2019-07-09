@@ -7,7 +7,8 @@ use typenum::*;
 
 use crate::arch::{MaxUntypedSize, MinUntypedSize};
 use crate::cap::{
-    Cap, LocalCNodeSlot, LocalCNodeSlots, LocalCap, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
+    role, CNodeRole, Cap, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, Untyped,
+    WCNodeSlots, WCNodeSlotsData, WUntyped,
 };
 use crate::error::{ErrorExt, SeL4Error};
 
@@ -171,10 +172,13 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
 }
 
 /// Make a weak ut buddy around a weak untyped.
-pub fn weak_ut_buddy(ut: LocalCap<WUntyped>) -> WUTBuddy {
+pub fn weak_ut_buddy<Role: CNodeRole>(ut: Cap<WUntyped, Role>) -> WUTBuddy<Role> {
     let mut pool = make_pool();
     pool[ut.cap_data.size_bits - MinUntypedSize::USIZE].push(ut.cptr);
-    WUTBuddy { pool }
+    WUTBuddy {
+        pool,
+        _role: PhantomData,
+    }
 }
 
 /// The error returned when using the runtime-checked (weak)
@@ -201,11 +205,12 @@ impl From<SeL4Error> for UTBuddyError {
     }
 }
 
-pub struct WUTBuddy {
+pub struct WUTBuddy<Role: CNodeRole = role::Local> {
     pool: [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE],
+    _role: PhantomData<Role>,
 }
 
-impl WUTBuddy {
+impl WUTBuddy<role::Local> {
     pub fn alloc(
         &mut self,
         slots: &mut WCNodeSlots,
@@ -248,6 +253,7 @@ impl WUTBuddy {
             cap_data: WCNodeSlotsData {
                 offset: slots.cap_data.offset,
                 size: slot_count,
+                _role: PhantomData,
             },
             _role: PhantomData,
         };
@@ -266,8 +272,51 @@ impl WUTBuddy {
         Ok(ut)
     }
 
-    pub(crate) fn empty() -> Self {
-        WUTBuddy { pool: make_pool() }
+    fn total_occupied_slots(&self) -> usize {
+        self.pool.iter().map(|sub_pool| sub_pool.len()).sum()
+    }
+
+    pub fn move_to_child(
+        self,
+        src_cnode: &LocalCap<LocalCNode>,
+        slots: &mut LocalCap<WCNodeSlotsData<role::Child>>,
+    ) -> Result<WUTBuddy<role::Child>, UTBuddyError> {
+        if self.total_occupied_slots() > slots.cap_data.size {
+            return Err(UTBuddyError::NotEnoughSlots);
+        }
+        // N.B. We could be reclaiming the emptied local slots for future use, but are currently not
+        // purely for implementation-time-and-complexity reasons.
+        let mut child_pool = make_pool();
+        for ((i, local_sub_pool), child_sub_pool) in
+            self.pool.iter().enumerate().zip(child_pool.iter_mut())
+        {
+            let size_bits = i + MinUntypedSize::USIZE;
+            for (local_ut_cptr, dest_slot) in local_sub_pool
+                .iter()
+                .zip(slots.incrementally_consuming_iter())
+            {
+                let local_wut = Cap {
+                    cptr: *local_ut_cptr,
+                    cap_data: WUntyped { size_bits },
+                    _role: PhantomData,
+                };
+                let child_wut = local_wut.move_to_slot(src_cnode, dest_slot)?;
+                child_sub_pool.push(child_wut.cptr);
+            }
+        }
+        Ok(WUTBuddy {
+            pool: child_pool,
+            _role: PhantomData,
+        })
+    }
+}
+
+impl<Role: CNodeRole> WUTBuddy<Role> {
+    pub(crate) fn empty() -> WUTBuddy<Role> {
+        WUTBuddy {
+            pool: make_pool(),
+            _role: PhantomData,
+        }
     }
 }
 

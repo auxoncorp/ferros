@@ -33,8 +33,10 @@ impl<FreeSlots: Unsigned> LocalCap<ASIDPool<FreeSlots>> {
                 cptr: self.cptr,
                 _role: PhantomData,
                 cap_data: arch::cap::UnassignedASID {
-                    asid: (self.cap_data.id << arch::ASIDLowBits::USIZE)
-                        | self.cap_data.next_free_slot,
+                    asid: InternalASID {
+                        asid: (self.cap_data.id << arch::ASIDLowBits::USIZE)
+                            | self.cap_data.next_free_slot,
+                    },
                 },
             },
             Cap {
@@ -113,4 +115,9 @@ impl<FreeSlots: Unsigned> LocalCap<ASIDPool<FreeSlots>> {
             },
         }
     }
+}
+/// Internal-only newtype wrapper around a single unique ASID
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct InternalASID {
+    pub(crate) asid: usize,
 }

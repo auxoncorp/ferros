@@ -1,9 +1,6 @@
 use crate::arch;
-use crate::cap::{
-    CNodeSlotsData, Cap, CapType, CopyAliasable, DirectRetype, LocalCNodeSlot, LocalCap, Mintable,
-    PhantomCap,
-};
-use crate::error::{ErrorExt, KernelError, SeL4Error};
+use crate::cap::{CNodeSlotsData, Cap, CapType, LocalCNodeSlot, LocalCap};
+use crate::error::{ErrorExt, KernelError};
 use core::marker::PhantomData;
 use selfe_sys::*;
 use typenum::*;

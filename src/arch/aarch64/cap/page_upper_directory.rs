@@ -23,6 +23,7 @@ impl Maps<PageDirectory> for PageUpperDirectory {
         addr: usize,
         root: &mut LocalCap<Root>,
         _rights: CapRights,
+        vm_attributes: seL4_ARM_VMAttributes,
     ) -> Result<(), MappingError>
     where
         Root: Maps<RootLowerLevel>,
@@ -30,13 +31,7 @@ impl Maps<PageDirectory> for PageUpperDirectory {
         RootLowerLevel: CapType,
     {
         match unsafe {
-            seL4_ARM_PageDirectory_Map(
-                dir.cptr,
-                root.cptr,
-                addr & UD_MASK,
-                seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
-                    | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled,
-            )
+            seL4_ARM_PageDirectory_Map(dir.cptr, root.cptr, addr & UD_MASK, vm_attributes)
         }
         .as_result()
         {
