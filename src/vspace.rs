@@ -1256,7 +1256,7 @@ impl VSpace<vspace_state::Imaged> {
     {
         let mut vaddr = self.find_next_vaddr(&region)?;
 
-        let future_next_addr = match vaddr.checked_add(PageBytes::USIZE) {
+        let future_next_addr = match vaddr.checked_add(region.size()) {
             Some(n) => n,
             None => return Err(VSpaceError::ExceededAvailableAddressSpace),
         };
