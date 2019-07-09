@@ -17,9 +17,9 @@ use crate::arch::cap::{page_state, AssignedASID, Page, UnassignedASID};
 use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot};
 use crate::bootstrap::UserImage;
 use crate::cap::{
-    role, CNodeRole, CNodeSlots, CNodeSlotsData, Cap, CapRange, CapType, DirectRetype,
-    InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, PhantomCap, RetypeError, Untyped,
-    WCNodeSlots, WCNodeSlotsData, WUntyped,
+    role, CNodeRole, CNodeSlots, CNodeSlotsData, Cap, CapRange, CapType, ChildCNodeSlot,
+    DirectRetype, InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, PhantomCap, RetypeError,
+    Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
@@ -1362,16 +1362,44 @@ impl VSpace<vspace_state::Imaged> {
 
     // This function will move the caps into the child's CSpace so
     // that it may use it.
-    pub(crate) fn for_child<SlotCount: Unsigned>(
+    pub(crate) fn for_child(
         self,
-        _slots: Cap<CNodeSlotsData<SlotCount, role::Child>, role::Child>,
+        src_cnode: &LocalCap<LocalCNode>,
+        child_root_slot: ChildCNodeSlot,
+        mut ut_transfer_slots: LocalCap<WCNodeSlotsData<role::Child>>,
+        child_paging_slots: Cap<WCNodeSlotsData<role::Child>, role::Child>,
     ) -> Result<VSpace<vspace_state::Imaged, role::Child>, VSpaceError> {
-        //let (root_slot, slots) = slots.alloc()?;
-        //let child_root_cptr = self.root.move_to_slot(root_slot)?;
-        //let
-        // move the utbuddy caps... with an iter / zip?
-        // use the remaining slots as the new VSpace's slot cache.
-        unimplemented!()
+        let VSpace {
+            root,
+            asid,
+            layers,
+            next_addr,
+            untyped,
+            slots,
+            specific_regions,
+            ..
+        } = self;
+        let child_root = root.move_to_slot(src_cnode, child_root_slot)?;
+        let child_untyped = untyped
+            .move_to_child(src_cnode, &mut ut_transfer_slots)
+            .map_err(|e| match e {
+                UTBuddyError::NotEnoughSlots => VSpaceError::InsufficientCNodeSlots,
+                UTBuddyError::SeL4Error(se) => VSpaceError::SeL4Error(se),
+                _ => unreachable!(
+                    "All other UTBuddyError variants are irrelevant for the move_to_child call"
+                ),
+            })?;
+        Ok(VSpace {
+            root: child_root,
+            asid,
+            layers,
+            next_addr,
+            untyped: child_untyped,
+            slots: child_paging_slots,
+            #[cfg(feature = "vspace_map_region_at_addr")]
+            specific_regions,
+            _state: PhantomData,
+        })
     }
 }
 

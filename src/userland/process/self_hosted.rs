@@ -44,7 +44,8 @@ impl SelfHostedProcess {
         ipc_buffer_ut: LocalCap<Untyped<PageBits>>,
         tcb_ut: LocalCap<Untyped<<ThreadControlBlock as DirectRetype>::SizeBits>>,
         slots: LocalCNodeSlots<PrepareThreadCNodeSlots>,
-        child_slots: Cap<CNodeSlotsData<U1024, role::Child>, role::Child>,
+        cap_transfer_slots: LocalCap<CNodeSlotsData<U1024, role::Child>>,
+        child_paging_slots: Cap<CNodeSlotsData<U1024, role::Child>, role::Child>,
         priority_authority: &LocalCap<ThreadPriorityAuthority>,
         fault_source: Option<crate::userland::FaultSource<role::Child>>,
     ) -> Result<Self, ProcessSetupError> {
@@ -88,7 +89,15 @@ impl SelfHostedProcess {
         // Reserve a guard page after the stack.
         vspace.skip_pages(1)?;
 
-        let child_vspace = vspace.for_child(child_slots)?;
+        // TODO - consider whether to make the user-facing params already of the Weak-type
+        // and leave the sizing decisions to the caller
+        let (root_slot, cap_transfer_slots) = cap_transfer_slots.alloc();
+        let child_vspace = vspace.for_child(
+            parent_cnode,
+            root_slot,
+            cap_transfer_slots.weaken(),
+            child_paging_slots.weaken(),
+        )?;
 
         let sh_params = SelfHostedParams {
             vspace: child_vspace,

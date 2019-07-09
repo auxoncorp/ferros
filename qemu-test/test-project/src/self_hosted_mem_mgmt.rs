@@ -30,6 +30,7 @@ pub fn self_hosted_mem_mgmt(
         let ut12: LocalCap<Untyped<U12>> = ut;
 
         smart_alloc! {|slots_c: child_slots| {
+            let cap_transfer_slots = slots_c;
             let (cnode_for_child, slots_for_child) =
                 child_cnode.generate_self_reference(&root_cnode, slots_c)?;
             debug_println!("self ref generated");
@@ -44,6 +45,8 @@ pub fn self_hosted_mem_mgmt(
             )?;
             debug_println!("have fault");
         }}
+
+        let (child_paging_slots, slots_for_child) = slots_for_child.alloc();
 
         let params = ProcParams {
             value: 42,
@@ -79,6 +82,8 @@ pub fn self_hosted_mem_mgmt(
             ut,
             ut,
             slots,
+            cap_transfer_slots,
+            child_paging_slots,
             tpa,
             None, // fault
         )?;

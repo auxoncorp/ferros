@@ -172,7 +172,7 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
 }
 
 /// Make a weak ut buddy around a weak untyped.
-pub fn weak_ut_buddy(ut: LocalCap<WUntyped>) -> WUTBuddy {
+pub fn weak_ut_buddy<Role: CNodeRole>(ut: Cap<WUntyped, Role>) -> WUTBuddy<Role> {
     let mut pool = make_pool();
     pool[ut.cap_data.size_bits - MinUntypedSize::USIZE].push(ut.cptr);
     WUTBuddy {

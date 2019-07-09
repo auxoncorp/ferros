@@ -68,16 +68,26 @@ impl<Size: Unsigned, CapRole: CNodeRole, Role: CNodeRole> Cap<CNodeSlotsData<Siz
             },
         }
     }
-}
 
-impl<Size: Unsigned, Role: CNodeRole> CNodeSlots<Size, Role> {
-    pub fn elim(self) -> (usize, usize, usize) {
-        (self.cptr, self.cap_data.offset, Size::USIZE)
+    /// weaken erases the state-tracking types on a set of CNode
+    /// slots.
+    pub fn weaken(self) -> Cap<WCNodeSlotsData<Role>, CapRole> {
+        Cap {
+            cptr: self.cptr,
+            _role: PhantomData,
+            cap_data: WCNodeSlotsData {
+                offset: self.cap_data.offset,
+                size: Size::USIZE,
+                _role: PhantomData,
+            },
+        }
     }
-
     pub fn alloc<Count: Unsigned>(
         self,
-    ) -> (CNodeSlots<Count, Role>, CNodeSlots<Diff<Size, Count>, Role>)
+    ) -> (
+        Cap<CNodeSlotsData<Count, Role>, CapRole>,
+        Cap<CNodeSlotsData<Diff<Size, Count>, Role>, CapRole>,
+    )
     where
         Size: Sub<Count>,
         Diff<Size, Count>: Unsigned,
@@ -85,11 +95,20 @@ impl<Size: Unsigned, Role: CNodeRole> CNodeSlots<Size, Role> {
         let (cptr, offset, _) = self.elim();
 
         (
-            CNodeSlots::internal_new(cptr, offset),
-            CNodeSlots::internal_new(cptr, offset + Count::USIZE),
+            Cap::<CNodeSlotsData<Count, Role>, CapRole>::internal_new(cptr, offset),
+            Cap::<CNodeSlotsData<Diff<Size, Count>, Role>, CapRole>::internal_new(
+                cptr,
+                offset + Count::USIZE,
+            ),
         )
     }
 
+    pub(crate) fn elim(self) -> (usize, usize, usize) {
+        (self.cptr, self.cap_data.offset, Size::USIZE)
+    }
+}
+
+impl<Size: Unsigned, Role: CNodeRole> CNodeSlots<Size, Role> {
     pub fn iter(self) -> impl Iterator<Item = CNodeSlot<Role>> {
         let cptr = self.cptr;
         let offset = self.cap_data.offset;
@@ -136,20 +155,6 @@ impl<Size: Unsigned> LocalCNodeSlots<Size> {
                 offset,              // index
                 seL4_WordBits as u8, // depth
             );
-        }
-    }
-
-    /// weaken erases the state-tracking types on a set of CNode
-    /// slots.
-    pub fn weaken(self) -> WCNodeSlots {
-        WCNodeSlots {
-            cptr: self.cptr,
-            _role: PhantomData,
-            cap_data: WCNodeSlotsData {
-                offset: self.cap_data.offset,
-                size: Size::USIZE,
-                _role: PhantomData,
-            },
         }
     }
 }
