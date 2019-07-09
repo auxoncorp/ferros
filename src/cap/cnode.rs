@@ -29,11 +29,12 @@ pub struct CNodeSlotsData<Size: Unsigned, Role: CNodeRole> {
     pub(crate) _role: PhantomData<Role>,
 }
 
-/// Can only represent local CNode slots with capacity tracked at runtime
+/// Can only represent CNode slots with capacity tracked at runtime
 #[derive(Debug)]
-pub struct WCNodeSlotsData {
+pub struct WCNodeSlotsData<Role: CNodeRole> {
     pub(crate) offset: usize,
     pub(crate) size: usize,
+    pub(crate) _role: PhantomData<Role>,
 }
 
 impl<Role: CNodeRole> CapType for CNode<Role> {}
@@ -48,8 +49,8 @@ pub type CNodeSlot<Role> = CNodeSlots<U1, Role>;
 pub type LocalCNodeSlot = CNodeSlot<role::Local>;
 pub type ChildCNodeSlot = CNodeSlot<role::Child>;
 
-impl CapType for WCNodeSlotsData {}
-pub type WCNodeSlots = LocalCap<WCNodeSlotsData>;
+impl<Role: CNodeRole> CapType for WCNodeSlotsData<Role> {}
+pub type WCNodeSlots = LocalCap<WCNodeSlotsData<role::Local>>;
 
 impl<Size: Unsigned, CapRole: CNodeRole, Role: CNodeRole> Cap<CNodeSlotsData<Size, Role>, CapRole> {
     /// A private constructor
@@ -147,6 +148,7 @@ impl<Size: Unsigned> LocalCNodeSlots<Size> {
             cap_data: WCNodeSlotsData {
                 offset: self.cap_data.offset,
                 size: Size::USIZE,
+                _role: PhantomData,
             },
         }
     }
@@ -215,8 +217,9 @@ impl WCNodeSlots {
         Ok(Cap {
             cptr: self.cptr,
             cap_data: WCNodeSlotsData {
-                offset: offset,
+                offset,
                 size: count,
+                _role: PhantomData,
             },
             _role: PhantomData,
         })
@@ -231,6 +234,32 @@ impl WCNodeSlots {
                 _size: PhantomData,
                 _role: PhantomData,
             },
+        })
+    }
+}
+
+impl<Role: CNodeRole> LocalCap<WCNodeSlotsData<Role>> {
+    /// Iterate through the available slots in the runtime-tracked collection of slots,
+    /// consuming slots each iter step.
+    /// TODO - a way better name that isn't iter_mut or mut_iter
+    pub(crate) fn incrementally_consuming_iter(
+        &mut self,
+    ) -> impl Iterator<Item = CNodeSlot<Role>> + '_ {
+        let original_offset = self.cap_data.offset;
+        let original_size = self.cap_data.size;
+        let cptr = self.cptr;
+        (0..original_size).map(move |n| {
+            self.cap_data.offset += 1;
+            self.cap_data.size -= 1;
+            Cap {
+                cptr,
+                _role: PhantomData,
+                cap_data: CNodeSlotsData {
+                    offset: original_offset + n,
+                    _size: PhantomData,
+                    _role: PhantomData,
+                },
+            }
         })
     }
 }

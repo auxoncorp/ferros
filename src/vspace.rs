@@ -773,8 +773,8 @@ pub struct VSpace<State: VSpaceState = vspace_state::Imaged, CapRole: CNodeRole 
     next_addr: usize,
     /// The following two members are the resources used by the VSpace
     /// when building out intermediate layers.
-    untyped: WUTBuddy,
-    slots: Cap<WCNodeSlotsData, CapRole>,
+    untyped: WUTBuddy<CapRole>,
+    slots: Cap<WCNodeSlotsData<CapRole>, CapRole>,
     #[cfg(feature = "vspace_map_region_at_addr")]
     specific_regions: RegionLocations,
     _state: PhantomData<State>,
@@ -1365,7 +1365,7 @@ impl VSpace<vspace_state::Imaged> {
     pub(crate) fn for_child<SlotCount: Unsigned>(
         self,
         _slots: Cap<CNodeSlotsData<SlotCount, role::Child>, role::Child>,
-    ) -> Result<Self, VSpaceError> {
+    ) -> Result<VSpace<vspace_state::Imaged, role::Child>, VSpaceError> {
         //let (root_slot, slots) = slots.alloc()?;
         //let child_root_cptr = self.root.move_to_slot(root_slot)?;
         //let
@@ -1489,7 +1489,11 @@ where
             Cap {
                 cptr: core::usize::MAX,
                 _role: PhantomData,
-                cap_data: WCNodeSlotsData { offset: 0, size: 0 },
+                cap_data: WCNodeSlotsData {
+                    offset: 0,
+                    size: 0,
+                    _role: PhantomData,
+                },
             }
         }
         let unmapped_region_copy: UnmappedMemoryRegion<SizeBits, shared_status::Exclusive> =

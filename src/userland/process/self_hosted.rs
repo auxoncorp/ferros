@@ -4,8 +4,8 @@ use selfe_sys::*;
 
 use crate::arch::{self, PageBits};
 use crate::cap::{
-    role, CNodeSlotsData, Cap, ChildCNode, DirectRetype, LocalCNode, LocalCNodeSlots, LocalCap,
-    ThreadControlBlock, ThreadPriorityAuthority, Untyped,
+    role, CNodeRole, CNodeSlotsData, Cap, ChildCNode, DirectRetype, LocalCNode, LocalCNodeSlots,
+    LocalCap, ThreadControlBlock, ThreadPriorityAuthority, Untyped,
 };
 use crate::userland::CapRights;
 use crate::vspace::*;
@@ -16,13 +16,13 @@ pub struct SelfHostedProcess {
     tcb: LocalCap<ThreadControlBlock>,
 }
 
-struct SelfHostedParams<T> {
+struct SelfHostedParams<T, Role: CNodeRole> {
     params: T,
-    vspace: VSpace,
-    child_main: extern "C" fn(VSpace, T) -> (),
+    vspace: VSpace<vspace_state::Imaged, Role>,
+    child_main: extern "C" fn(VSpace<vspace_state::Imaged, role::Local>, T) -> (),
 }
 
-fn self_hosted_run<T>(sh_params: SelfHostedParams<T>) {
+fn self_hosted_run<T>(sh_params: SelfHostedParams<T, role::Local>) {
     debug_println!("in self hosted run");
     let SelfHostedParams {
         params,
@@ -53,7 +53,7 @@ impl SelfHostedProcess {
         // we can fit some of the params into available registers.
         debug_println!(
             "params size: {}, page_bytes: {}",
-            core::mem::size_of::<SelfHostedParams<SetupVer<T>>>(),
+            core::mem::size_of::<SelfHostedParams<SetupVer<T>, role::Child>>(),
             (StackPageCount::USIZE * arch::PageBytes::USIZE)
         );
         if core::mem::size_of::<SetupVer<T>>() > (StackPageCount::USIZE * arch::PageBytes::USIZE) {
@@ -100,8 +100,8 @@ impl SelfHostedProcess {
         // of the process params into it
         let (mut registers, param_size_on_stack) = unsafe {
             setup_initial_stack_and_regs(
-                &sh_params as *const SelfHostedParams<SetupVer<T>> as *const usize,
-                core::mem::size_of::<SelfHostedParams<SetupVer<T>>>(),
+                &sh_params as *const SelfHostedParams<SetupVer<T>, role::Child> as *const usize,
+                core::mem::size_of::<SelfHostedParams<SetupVer<T>, role::Child>>(),
                 stack_top as *mut usize,
                 mapped_stack_pages.vaddr() + mapped_stack_pages.size(),
             )
