@@ -16,6 +16,7 @@ use crate::cap::{
 };
 use crate::error::{ErrorExt, SeL4Error};
 use crate::pow::{Pow, _Pow};
+use crate::vspace::NumPages;
 
 // The seL4 kernel's maximum amount of retypes per system call is configurable
 // in the sel4.toml, particularly by the KernelRetypeFanOutLimit property.
@@ -579,25 +580,18 @@ impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
 }
 
 impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::Device>> {
-    pub fn retype_device_pages<Count: Unsigned, CRole: CNodeRole>(
+    pub fn retype_device_pages<CRole: CNodeRole>(
         self,
-        //dest_slots: LocalCNodeSlots<Count>,
-        dest_slots: CNodeSlots<Count, CRole>,
-    ) -> Result<CapRange<Page<page_state::Unmapped>, role::Local, Count>, SeL4Error>
+        dest_slots: CNodeSlots<NumPages<BitSize>, CRole>,
+    ) -> Result<CapRange<Page<page_state::Unmapped>, role::Local, NumPages<BitSize>>, SeL4Error>
     where
-        Count: IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
-
-        BitSize: _Pow,
-        Pow<BitSize>: Unsigned,
-
-        // TODO - fixup these
-        <Page<page_state::Unmapped> as DirectRetype>::SizeBits: _Pow,
-        Pow<<Page<page_state::Unmapped> as DirectRetype>::SizeBits>: Mul<Count>,
-        Prod<Pow<<Page<page_state::Unmapped> as DirectRetype>::SizeBits>, Count>: Unsigned,
-
-        Pow<BitSize>: IsGreaterOrEqual<
-            Prod<Pow<<Page<page_state::Unmapped> as DirectRetype>::SizeBits>, Count>,
-            Output = True,
+        BitSize: IsGreaterOrEqual<PageBits>,
+        BitSize: Sub<PageBits>,
+        <BitSize as Sub<PageBits>>::Output: Unsigned,
+        <BitSize as Sub<PageBits>>::Output: _Pow,
+        Pow<<BitSize as Sub<PageBits>>::Output>: Unsigned,
+        Pow<<BitSize as Sub<PageBits>>::Output>: IsLessOrEqual<
+            KernelRetypeFanOutLimit, Output = True
         >,
     {
         let (dest_cptr, dest_offset, _) = dest_slots.elim();
@@ -610,7 +604,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::Device>> {
                 0,                      // index
                 0,                      // depth
                 dest_offset,            // offset
-                Count::USIZE,           // num_objects
+                1 << (BitSize::USIZE - PageBits::USIZE), // num_objects
             )
             .as_result()
             .map_err(|e| SeL4Error::UntypedRetype(e))?;

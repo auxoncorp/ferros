@@ -25,6 +25,8 @@ use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
 use crate::userland::CapRights;
 
+include!(concat!(env!("OUT_DIR"), "/KERNEL_RETYPE_FAN_OUT_LIMIT"));
+
 pub trait SharedStatus: private::SealedSharedStatus {}
 
 pub mod shared_status {
@@ -277,7 +279,7 @@ where
 }
 
 // 2^12 / PageCount
-type NumPages<Size> = Pow<op!(Size - PageBits)>;
+pub(crate) type NumPages<Size> = Pow<op!(Size - PageBits)>;
 
 /// A `1 << SizeBits` bytes region of unmapped memory. It can be
 /// shared or owned exclusively. The ramifications of its shared
@@ -350,9 +352,12 @@ where
     pub fn new_device<Role: CNodeRole>(
         ut: LocalCap<Untyped<SizeBits, memory_kind::Device>>,
         slots: CNodeSlots<NumPages<SizeBits>, Role>,
-    ) -> Result<Self, VSpaceError> {
-        let page_caps =
-            ut.retype_device_pages::<NumPages<SizeBits>, _>(slots)?;
+    ) -> Result<Self, VSpaceError>
+    where
+        Pow<<SizeBits as Sub<PageBits>>::Output>:
+            IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
+    {
+        let page_caps = ut.retype_device_pages(slots)?;
         Ok(UnmappedMemoryRegion {
             caps: CapRange::new(page_caps.start_cptr),
             _size_bits: PhantomData,
@@ -461,8 +466,9 @@ where
     }
 
     /// In the Ok case,
-    /// returns a shared, unmapped copy of the memory region (backed by fresh page-caps)
-    /// along with this self-same mapped memory region, marked as shared
+    /// returns a shared, unmapped copy of the memory region (backed by fresh
+    /// page-caps) along with this self-same mapped memory region, marked
+    /// as shared
     pub fn share(
         self,
         slots: LocalCNodeSlots<NumPages<SizeBits>>,
@@ -1005,8 +1011,9 @@ impl VSpace<vspace_state::Imaged> {
         let mut mapping_vaddr = vaddr;
         let cptr = region.caps.start_cptr;
 
-        let mut mapped_pages: ArrayVec<[LocalCap<Page<page_state::Mapped>>; MAX_MAP_AT_ONCE]> =
-            ArrayVec::new();
+        let mut mapped_pages: ArrayVec<
+            [LocalCap<Page<page_state::Mapped>>; MAX_MAP_AT_ONCE],
+        > = ArrayVec::new();
 
         for page in region.caps.iter() {
             match self.layers.map_layer(
@@ -1427,7 +1434,8 @@ where
     }
 }
 
-/// Borrow of a reserved region and its associated VSpace in order to support temporary mapping
+/// Borrow of a reserved region and its associated VSpace in order to support
+/// temporary mapping
 pub struct ScratchRegion<'a, 'b, PageCount: Unsigned = crate::userland::process::StackPageCount> {
     reserved_region: &'a ReservedRegion<PageCount>,
     vspace: &'b mut VSpace,
