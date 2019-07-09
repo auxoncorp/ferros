@@ -23,13 +23,11 @@ struct SelfHostedParams<T, Role: CNodeRole> {
 }
 
 extern "C" fn self_hosted_run<T>(sh_params: SelfHostedParams<T, role::Local>) {
-    debug_println!("in self hosted run");
     let SelfHostedParams {
         params,
         vspace,
         child_main,
     } = sh_params;
-    debug_println!("starting child main");
     child_main(vspace, params);
 }
 
@@ -52,11 +50,6 @@ impl SelfHostedProcess {
         // TODO - lift these checks to compile-time, as static assertions
         // Note - This comparison is conservative because technically
         // we can fit some of the params into available registers.
-        debug_println!(
-            "params size: {}, page_bytes: {}",
-            core::mem::size_of::<SelfHostedParams<SetupVer<T>, role::Child>>(),
-            (StackPageCount::USIZE * arch::PageBytes::USIZE)
-        );
         if core::mem::size_of::<SelfHostedParams<SetupVer<T>, role::Child>>()
             > (StackPageCount::USIZE * arch::PageBytes::USIZE)
         {
@@ -120,20 +113,11 @@ impl SelfHostedProcess {
             )
         };
 
-        debug_println!("params on stack {}", param_size_on_stack);
-
         let stack_pointer =
             mapped_stack_pages.vaddr() + mapped_stack_pages.size() - param_size_on_stack;
 
-        debug_println!("stack pointer: {:014x}", stack_pointer);
-
         registers.sp = stack_pointer;
         registers.pc = self_hosted_run::<T> as usize;
-
-        debug_println!(
-            "self hosted run addr: {:014x}",
-            self_hosted_run::<T> as usize
-        );
 
         // TODO - Probably ought to suspend or destroy the thread
         // instead of endlessly yielding

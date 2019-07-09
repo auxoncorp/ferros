@@ -20,12 +20,10 @@ pub fn self_hosted_mem_mgmt(
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
 ) -> Result<(), TopLevelError> {
-    debug_println!("running self hosted mem management");
     let uts = ut_buddy(local_ut);
 
     smart_alloc!(|slots: local_slots, ut: uts| {
         let (child_cnode, child_slots) = retype_cnode::<U14>(ut, slots)?;
-        debug_println!("have child_cnode");
 
         let ut12: LocalCap<Untyped<U12>> = ut;
 
@@ -33,9 +31,7 @@ pub fn self_hosted_mem_mgmt(
             let cap_transfer_slots = slots_c;
             let (cnode_for_child, slots_for_child):(_, ChildCap<CNodeSlotsData<U2048, role::Child>>) =
                 child_cnode.generate_self_reference(&root_cnode, slots_c)?;
-            debug_println!("self ref generated");
             let child_ut12 = ut12.move_to_slot(&root_cnode, slots_c)?;
-            debug_println!("have ut12");
             let (fault_source, outcome_sender, handler) = fault_or_message_channel(
                 &root_cnode,
                 ut,
@@ -43,7 +39,6 @@ pub fn self_hosted_mem_mgmt(
                 slots_c,
                 slots,
             )?;
-            debug_println!("have fault");
         }}
 
         let (child_paging_slots, slots_for_child) = slots_for_child.alloc();
@@ -72,7 +67,6 @@ pub fn self_hosted_mem_mgmt(
             root_cnode,
         )?;
 
-        debug_println!("making process");
         let sh_process = SelfHostedProcess::new(
             child_vspace,
             child_cnode,
@@ -90,9 +84,7 @@ pub fn self_hosted_mem_mgmt(
         )?;
     });
 
-    debug_println!("starting process");
     sh_process.start()?;
-    debug_println!("process started");
 
     match handler.await_message()? {
         FaultOrMessage::Message(true) => Ok(()),
@@ -114,14 +106,12 @@ impl RetypeForSetup for ProcParams<role::Local> {
 }
 
 pub extern "C" fn sh_main(mut vspace: VSpace, params: ProcParams<role::Local>) {
-    debug_println!("in sh_main");
     let ProcParams {
         value,
         child_slots,
         untyped,
         outcome_sender,
     } = params;
-    debug_println!("have params");
     let unmapped_region =
         UnmappedMemoryRegion::new(untyped, child_slots).expect("retyping memory failed");
     let mapped_region = vspace
@@ -129,7 +119,6 @@ pub extern "C" fn sh_main(mut vspace: VSpace, params: ProcParams<role::Local>) {
         .expect("mapping region failed");
     let vaddr = mapped_region.vaddr() as *mut u8;
     let val_at_ptr = unsafe {
-        debug_println!("derefing the addr sigh");
         *vaddr = 8;
         *vaddr
     };
