@@ -3,6 +3,7 @@ use super::TopLevelError;
 use ferros::alloc::{smart_alloc, ut_buddy};
 use typenum::*;
 
+use ferros::arch;
 use ferros::bootstrap::UserImage;
 use ferros::cap::*;
 use ferros::userland::{
@@ -115,7 +116,7 @@ pub extern "C" fn sh_main(mut vspace: VSpace, params: ProcParams<role::Local>) {
     let unmapped_region =
         UnmappedMemoryRegion::new(untyped, child_slots).expect("retyping memory failed");
     let mapped_region = vspace
-        .map_region(unmapped_region, CapRights::RW)
+        .map_region(unmapped_region, CapRights::RW, arch::vm_attributes::DEFAULT)
         .expect("mapping region failed");
     let vaddr = mapped_region.vaddr() as *mut u8;
     let val_at_ptr = unsafe {

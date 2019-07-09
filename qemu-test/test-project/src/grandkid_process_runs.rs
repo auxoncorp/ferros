@@ -1,7 +1,7 @@
 use typenum::*;
 
 use ferros::alloc::{smart_alloc, ut_buddy};
-use ferros::arch::{CodePageCount, CodePageTableCount};
+use ferros::arch::{self, CodePageCount, CodePageTableCount};
 use ferros::bootstrap::UserImage;
 use ferros::cap::*;
 use ferros::userland::{
@@ -67,6 +67,7 @@ pub fn grandkid_process_runs(
             let child_mapped_region = child_vspace.map_region_and_move(
                 child_unmapped_region,
                 CapRights::RW,
+                arch::vm_attributes::DEFAULT,
                 cnode,
                 slots_c,
             )?;

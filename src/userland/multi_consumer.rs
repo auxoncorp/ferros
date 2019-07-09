@@ -45,7 +45,7 @@ use selfe_sys::{seL4_Signal, seL4_Wait};
 
 use typenum::*;
 
-use crate::arch::{PageBits, PageBytes};
+use crate::arch::{self, PageBits, PageBytes};
 use crate::cap::{
     irq_state, role, Badge, CNodeRole, Cap, ChildCNodeSlot, ChildCNodeSlots, DirectRetype,
     IRQControl, IRQError, IRQHandler, InternalASID, LocalCNode, LocalCNodeSlot, LocalCNodeSlots,
@@ -659,6 +659,7 @@ where
     let consumer_shared_region = consumer_vspace.map_shared_region(
         &shared_region,
         CapRights::RW,
+        arch::vm_attributes::DEFAULT,
         shared_slot,
         local_cnode,
     )?;
@@ -1011,6 +1012,7 @@ where
         let producer_shared_region = child_vspace.map_shared_region(
             &setup.shared_region,
             CapRights::RW,
+            arch::vm_attributes::DEFAULT,
             local_slot,
             &local_cnode,
         )?;

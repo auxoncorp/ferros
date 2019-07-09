@@ -7,8 +7,8 @@ use typenum::*;
 
 use crate::arch::{MaxUntypedSize, MinUntypedSize};
 use crate::cap::{
-    role, CNodeRole, CNodeSlotsData, Cap, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap,
-    Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
+    role, CNodeRole, Cap, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, Untyped,
+    WCNodeSlots, WCNodeSlotsData, WUntyped,
 };
 use crate::error::{ErrorExt, SeL4Error};
 

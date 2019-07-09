@@ -64,7 +64,11 @@ impl SelfHostedProcess {
         // Allocate and map the ipc buffer
         let (ipc_slots, slots) = slots.alloc();
         let ipc_buffer = ipc_buffer_ut.retype(ipc_slots)?;
-        let ipc_buffer = vspace.map_given_page(ipc_buffer, CapRights::RW)?;
+        let ipc_buffer = vspace.map_given_page(
+            ipc_buffer,
+            CapRights::RW,
+            arch::vm_attributes::DEFAULT & arch::vm_attributes::EXECUTE_NEVER,
+        )?;
 
         // allocate the thread control block
         let (tcb_slots, slots) = slots.alloc();
@@ -80,8 +84,11 @@ impl SelfHostedProcess {
         let (page_slots, _slots) = slots.alloc();
         let (unmapped_stack_pages, _) =
             parent_mapped_region.share(page_slots, parent_cnode, CapRights::RW)?;
-        let mapped_stack_pages =
-            vspace.map_shared_region_and_consume(unmapped_stack_pages, CapRights::RW)?;
+        let mapped_stack_pages = vspace.map_shared_region_and_consume(
+            unmapped_stack_pages,
+            CapRights::RW,
+            arch::vm_attributes::DEFAULT & arch::vm_attributes::EXECUTE_NEVER,
+        )?;
 
         // Reserve a guard page after the stack.
         vspace.skip_pages(1)?;
