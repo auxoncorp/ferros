@@ -15,13 +15,15 @@ use crate::arch::cap::{page_state, AssignedASID, Page, UnassignedASID};
 use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot};
 use crate::bootstrap::UserImage;
 use crate::cap::{
-    role, CNodeRole, CNodeSlots, Cap, CapRange, CapType, ChildCNodeSlot, DirectRetype,
+    memory_kind, role, CNodeRole, CNodeSlots, Cap, CapRange, CapType, ChildCNodeSlot, DirectRetype,
     InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, PhantomCap, RetypeError, Untyped,
     WCNodeSlots, WCNodeSlotsData, WUntyped,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
 use crate::userland::CapRights;
+
+include!(concat!(env!("OUT_DIR"), "/KERNEL_RETYPE_FAN_OUT_LIMIT"));
 
 pub trait SharedStatus: private::SealedSharedStatus {}
 
@@ -280,7 +282,7 @@ where
 }
 
 // 2^12 / PageCount
-type NumPages<Size> = Pow<op!(Size - PageBits)>;
+pub(crate) type NumPages<Size> = Pow<op!(Size - PageBits)>;
 
 /// A `1 << SizeBits` bytes region of unmapped memory. It can be
 /// shared or owned exclusively. The ramifications of its shared
@@ -343,6 +345,22 @@ where
     ) -> Result<Self, VSpaceError> {
         let page_caps =
             ut.retype_multi_runtime::<Page<page_state::Unmapped>, NumPages<SizeBits>, _>(slots)?;
+        Ok(UnmappedMemoryRegion {
+            caps: CapRange::new(page_caps.start_cptr),
+            _size_bits: PhantomData,
+            _shared_status: PhantomData,
+        })
+    }
+
+    pub fn new_device<Role: CNodeRole>(
+        ut: LocalCap<Untyped<SizeBits, memory_kind::Device>>,
+        slots: CNodeSlots<NumPages<SizeBits>, Role>,
+    ) -> Result<Self, VSpaceError>
+    where
+        Pow<<SizeBits as Sub<PageBits>>::Output>:
+            IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
+    {
+        let page_caps = ut.retype_device_pages(slots)?;
         Ok(UnmappedMemoryRegion {
             caps: CapRange::new(page_caps.start_cptr),
             _size_bits: PhantomData,
@@ -442,7 +460,7 @@ where
 {
     pub const SIZE_BYTES: usize = 1 << SizeBits::USIZE;
 
-    pub(crate) fn size(&self) -> usize {
+    pub fn size(&self) -> usize {
         Self::SIZE_BYTES
     }
 
@@ -1441,7 +1459,8 @@ where
     }
 }
 
-/// Borrow of a reserved region and its associated VSpace in order to support temporary mapping
+/// Borrow of a reserved region and its associated VSpace in order to support
+/// temporary mapping
 pub struct ScratchRegion<'a, 'b, PageCount: Unsigned = crate::userland::process::StackPageCount> {
     reserved_region: &'a ReservedRegion<PageCount>,
     vspace: &'b mut VSpace,
