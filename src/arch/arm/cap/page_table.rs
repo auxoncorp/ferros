@@ -1,5 +1,6 @@
 use selfe_sys::*;
 
+use crate::arch;
 use crate::cap::{CapType, DirectRetype, LocalCap, PhantomCap};
 use crate::error::{ErrorExt, KernelError, SeL4Error};
 use crate::userland::CapRights;
@@ -17,6 +18,7 @@ impl Maps<Page<page_state::Unmapped>> for PageTable {
         addr: usize,
         root: &mut LocalCap<Root>,
         rights: CapRights,
+        vm_attributes: arch::VMAttributes,
     ) -> Result<(), MappingError>
     where
         Root: Maps<RootLowerLevel>,
@@ -30,8 +32,7 @@ impl Maps<Page<page_state::Unmapped>> for PageTable {
                     root.cptr,
                     addr,
                     seL4_CapRights_t::from(rights),
-                    seL4_ARM_VMAttributes_seL4_ARM_PageCacheable
-                        | seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled,
+                    vm_attributes,
                 )
             }
             .as_result()

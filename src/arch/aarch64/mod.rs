@@ -121,3 +121,22 @@ pub type RootTaskPageDirFreeSlots = op!(BasePageDirFreeSlots - RootTaskReservedP
 pub type KernelReservedStart = op!(((U1 << U8) - U1) << U40);
 
 pub const WORDS_PER_PAGE: usize = PageBytes::USIZE / core::mem::size_of::<usize>();
+
+/// Type type alias allows us to treat vm_attributes in a cross-architecture way, abstractly
+pub type VMAttributes = selfe_sys::seL4_ARM_VMAttributes;
+
+/// A convenience module
+pub mod vm_attributes {
+    use super::*;
+
+    pub const DEFAULT: VMAttributes =
+        selfe_sys::seL4_ARM_VMAttributes_seL4_ARM_Default_VMAttributes;
+
+    pub const PAGE_CACHEABLE: VMAttributes =
+        selfe_sys::seL4_ARM_VMAttributes_seL4_ARM_PageCacheable;
+
+    pub const PARITY_ENABLED: VMAttributes =
+        selfe_sys::seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled;
+
+    pub const EXECUTE_NEVER: VMAttributes = selfe_sys::seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever;
+}

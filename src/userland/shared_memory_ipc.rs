@@ -5,7 +5,7 @@ use selfe_sys::{seL4_Signal, seL4_Wait};
 use typenum::operator_aliases::Sub1;
 use typenum::{Unsigned, B1, U2, U4};
 
-use crate::arch::{PageBits, PageBytes};
+use crate::arch::{self, PageBits, PageBytes};
 use crate::cap::{
     role, Badge, CNodeRole, Cap, ChildCNodeSlots, DirectRetype, LocalCNode, LocalCNodeSlots,
     LocalCap, Notification, Untyped,
@@ -62,11 +62,19 @@ pub mod sync {
         let shared_region = region.to_shared();
 
         let (slot, local_slots) = local_slots.alloc();
-        let caller_shared_region =
-            caller_vspace.map_shared_region(&shared_region, CapRights::RW, slot, &local_cnode)?;
+        let caller_shared_region = caller_vspace.map_shared_region(
+            &shared_region,
+            CapRights::RW,
+            arch::vm_attributes::DEFAULT,
+            slot,
+            &local_cnode,
+        )?;
 
-        let responder_shared_region =
-            responder_vspace.map_shared_region_and_consume(shared_region, CapRights::RW)?;
+        let responder_shared_region = responder_vspace.map_shared_region_and_consume(
+            shared_region,
+            CapRights::RW,
+            arch::vm_attributes::DEFAULT,
+        )?;
 
         let (slot, local_slots) = local_slots.alloc();
         let local_request_ready: LocalCap<Notification> = call_notification_ut.retype(slot)?;
