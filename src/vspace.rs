@@ -993,6 +993,7 @@ impl VSpace<vspace_state::Imaged> {
         region: UnmappedMemoryRegion<SizeBits, SS>,
         vaddr: usize,
         rights: CapRights,
+        vm_attributes: arch::VMAttributes,
     ) -> Result<MappedMemoryRegion<SizeBits, SS>, (VSpaceError, UnmappedMemoryRegion<SizeBits, SS>)>
     where
         SizeBits: IsGreaterOrEqual<PageBits>,
@@ -1023,6 +1024,7 @@ impl VSpace<vspace_state::Imaged> {
                 mapping_vaddr,
                 &mut self.root,
                 rights,
+                vm_attributes,
                 &mut self.untyped,
                 &mut self.slots,
             ) {
