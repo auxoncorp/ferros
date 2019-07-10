@@ -30,9 +30,12 @@ mod self_hosted_mem_mgmt;
 mod shared_page_queue;
 mod stack_setup;
 mod uart;
+mod wutbuddy;
 
 use ferros::alloc::micro_alloc::Error as AllocError;
+use ferros::alloc::ut_buddy::UTBuddyError;
 use ferros::cap::IRQError;
+use ferros::cap::RetypeError;
 use ferros::error::SeL4Error;
 use ferros::userland::{FaultManagementError, IPCError, MultiConsumerError, ProcessSetupError};
 use ferros::vspace::VSpaceError;
@@ -57,6 +60,7 @@ ferros_test_main!(&[
     &self_hosted_mem_mgmt::self_hosted_mem_mgmt,
     &shared_page_queue::shared_page_queue,
     &stack_setup::stack_setup,
+    &wutbuddy::wutbuddy,
 ]);
 
 #[cfg(test_case = "uart")]
@@ -92,6 +96,8 @@ pub enum TopLevelError {
     IRQError(IRQError),
     FaultManagementError(FaultManagementError),
     ProcessSetupError(ProcessSetupError),
+    UTBuddyError(UTBuddyError),
+    RetypeError(RetypeError),
     TestAssertionFailure(&'static str),
 }
 
@@ -140,5 +146,17 @@ impl From<FaultManagementError> for TopLevelError {
 impl From<ProcessSetupError> for TopLevelError {
     fn from(e: ProcessSetupError) -> Self {
         TopLevelError::ProcessSetupError(e)
+    }
+}
+
+impl From<UTBuddyError> for TopLevelError {
+    fn from(e: UTBuddyError) -> Self {
+        TopLevelError::UTBuddyError(e)
+    }
+}
+
+impl From<RetypeError> for TopLevelError {
+    fn from(e: RetypeError) -> Self {
+        TopLevelError::RetypeError(e)
     }
 }
