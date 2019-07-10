@@ -352,6 +352,19 @@ where
         })
     }
 
+    // NOTE: only a single page/granule for now
+    pub fn new_weak(
+        mut ut: LocalCap<WUntyped>,
+        slots: &mut WCNodeSlots,
+    ) -> Result<Self, VSpaceError> {
+        let page_caps = ut.retype::<Page<page_state::Unmapped>>(slots)?;
+        Ok(UnmappedMemoryRegion {
+            caps: CapRange::new(page_caps.cptr),
+            _size_bits: PhantomData,
+            _shared_status: PhantomData,
+        })
+    }
+
     pub fn new_device<Role: CNodeRole>(
         ut: LocalCap<Untyped<SizeBits, memory_kind::Device>>,
         slots: CNodeSlots<NumPages<SizeBits>, Role>,
@@ -363,6 +376,20 @@ where
         let page_caps = ut.retype_device_pages(slots)?;
         Ok(UnmappedMemoryRegion {
             caps: CapRange::new(page_caps.start_cptr),
+            _size_bits: PhantomData,
+            _shared_status: PhantomData,
+        })
+    }
+
+    // NOTE: only a single page/granule for now
+    // what about memory_kind with WUntyped?
+    pub fn new_device_weak(
+        ut: LocalCap<Untyped<U12, memory_kind::Device>>,
+        slots: &mut WCNodeSlots,
+    ) -> Result<Self, VSpaceError> {
+        let page_caps = ut.weaken().retype::<Page<page_state::Unmapped>>(slots)?;
+        Ok(UnmappedMemoryRegion {
+            caps: CapRange::new(page_caps.cptr),
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         })
@@ -1017,8 +1044,9 @@ impl VSpace<vspace_state::Imaged> {
         let mut mapping_vaddr = vaddr;
         let cptr = region.caps.start_cptr;
 
-        let mut mapped_pages: ArrayVec<[LocalCap<Page<page_state::Mapped>>; MAX_MAP_AT_ONCE]> =
-            ArrayVec::new();
+        let mut mapped_pages: ArrayVec<
+            [LocalCap<Page<page_state::Mapped>>; MAX_MAP_AT_ONCE],
+        > = ArrayVec::new();
 
         for page in region.caps.iter() {
             match self.layers.map_layer(
