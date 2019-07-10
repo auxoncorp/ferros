@@ -40,8 +40,8 @@ impl<BitSize: Unsigned, Kind: MemoryKind> CapType for Untyped<BitSize, Kind> {}
 impl CapType for WUntyped {}
 
 impl LocalCap<WUntyped> {
-    pub(crate) fn retype<D: CapType + PhantomCap + DirectRetype>(
-        &mut self,
+    pub fn retype<D: CapType + PhantomCap + DirectRetype>(
+        self,
         slots: &mut WCNodeSlots,
     ) -> Result<LocalCap<D>, RetypeError> {
         if D::SizeBits::USIZE > self.cap_data.size_bits {
@@ -65,6 +65,10 @@ impl LocalCap<WUntyped> {
         .map_err(|err| RetypeError::SeL4RetypeError(SeL4Error::UntypedRetype(err)))?;
 
         Ok(Cap::wrap_cptr(slot.cap_data.offset))
+    }
+
+    pub fn size_bits(&self) -> usize {
+        self.cap_data.size_bits
     }
 }
 

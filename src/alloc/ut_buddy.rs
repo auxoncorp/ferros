@@ -7,8 +7,8 @@ use typenum::*;
 
 use crate::arch::{MaxUntypedSize, MinUntypedSize};
 use crate::cap::{
-    role, CNodeRole, Cap, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, Untyped,
-    WCNodeSlots, WCNodeSlotsData, WUntyped,
+    role, CNodeRole, Cap, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, PhantomCap,
+    Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
 };
 use crate::error::{ErrorExt, SeL4Error};
 
@@ -205,12 +205,28 @@ impl From<SeL4Error> for UTBuddyError {
     }
 }
 
+/// A weakened implementation of a UTBuddy allocator where the state
+/// is checked at runtime rather than tracked in the types.
 pub struct WUTBuddy<Role: CNodeRole = role::Local> {
     pool: [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE],
     _role: PhantomData<Role>,
 }
 
 impl WUTBuddy<role::Local> {
+    /// Allocate a strong untyped from the pool.
+    pub fn alloc_strong<Size: Unsigned>(
+        &mut self,
+        slots: &mut WCNodeSlots,
+    ) -> Result<LocalCap<Untyped<Size>>, UTBuddyError> {
+        let weak_ut = self.alloc(slots, Size::USIZE)?;
+        Ok(Cap {
+            cptr: weak_ut.cptr,
+            cap_data: PhantomCap::phantom_instance(),
+            _role: PhantomData,
+        })
+    }
+
+    /// Allocate a weak untyped from the pool.
     pub fn alloc(
         &mut self,
         slots: &mut WCNodeSlots,
