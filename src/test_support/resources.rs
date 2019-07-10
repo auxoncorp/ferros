@@ -21,6 +21,7 @@ pub struct Resources {
     pub(super) cnode: LocalCap<LocalCNode>,
     pub(super) thread_authority: LocalCap<ThreadPriorityAuthority>,
     pub(super) user_image: UserImage<role::Local>,
+    pub(super) irq_control: LocalCap<IRQControl>,
 }
 
 pub struct TestResourceRefs<'t> {
@@ -35,6 +36,7 @@ pub struct TestResourceRefs<'t> {
     pub(super) cnode: &'t LocalCap<LocalCNode>,
     pub(super) thread_authority: &'t LocalCap<ThreadPriorityAuthority>,
     pub(super) user_image: &'t UserImage<role::Local>,
+    pub(super) irq_control: &'t mut LocalCap<IRQControl>,
 }
 
 type PageFallbackNextSize = Sum<U1, <Page<page_state::Unmapped> as DirectRetype>::SizeBits>;
@@ -54,6 +56,7 @@ impl Resources {
             asid_control,
             user_image,
             root_tcb,
+            irq_control,
             ..
         } = BootInfo::wrap(
             &raw_boot_info,
@@ -139,6 +142,7 @@ impl Resources {
                 cnode,
                 thread_authority: root_tcb.downgrade_to_thread_priority_authority(),
                 user_image,
+                irq_control,
             },
             crate::debug::DebugOutHandle,
         ))
@@ -157,6 +161,7 @@ impl Resources {
             cnode: &self.cnode,
             thread_authority: &self.thread_authority,
             user_image: &self.user_image,
+            irq_control: &mut self.irq_control
         }
     }
 }

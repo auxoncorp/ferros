@@ -65,6 +65,7 @@ pub fn execute_tests<'t, R: types::TestReporter>(
         cnode,
         thread_authority,
         user_image,
+        irq_control,
     } = resources;
     let mut successes = 0;
     let mut failures = 0;
@@ -74,10 +75,12 @@ pub fn execute_tests<'t, R: types::TestReporter>(
             untyped,
             asid_pool,
             mapped_memory_region,
+            irq_control,
             |inner_slots,
              inner_untyped,
              inner_asid_pool,
-             inner_mapped_memory_region|
+             inner_mapped_memory_region,
+             inner_irq_control|
              -> Result<(), SeL4Error> {
                 let (name, outcome) = t(
                     inner_slots,
@@ -88,6 +91,7 @@ pub fn execute_tests<'t, R: types::TestReporter>(
                     cnode,
                     thread_authority,
                     user_image,
+                    inner_irq_control,
                 );
                 reporter.report(name, outcome);
                 if outcome == types::TestOutcome::Success {
@@ -125,6 +129,7 @@ pub fn with_temporary_resources<
         MappedBitSize,
         crate::vspace::shared_status::Exclusive,
     >,
+    irq_control: &mut LocalCap<IRQControl>,
     f: Func,
 ) -> Result<Result<(), InnerError>, SeL4Error>
 where
@@ -133,6 +138,7 @@ where
         LocalCap<Untyped<UntypedBitSize>>,
         LocalCap<ASIDPool<arch::ASIDPoolSize>>,
         MappedMemoryRegion<MappedBitSize, crate::vspace::shared_status::Exclusive>,
+        LocalCap<IRQControl>,
     ) -> Result<(), InnerError>,
 
     MappedBitSize: IsGreaterOrEqual<PageBits>,
@@ -146,11 +152,11 @@ where
         Cap::internal_new(slots.cptr, slots.cap_data.offset),
         Cap {
             cptr: untyped.cptr,
+            _role: PhantomData,
             cap_data: Untyped {
                 _bit_size: PhantomData,
                 _kind: PhantomData,
             },
-            _role: PhantomData,
         },
         Cap {
             cptr: asid_pool.cptr,
@@ -162,6 +168,13 @@ where
             },
         },
         unsafe { mapped_memory_region.dangerous_internal_alias() },
+        Cap {
+            cptr: irq_control.cptr,
+            _role: PhantomData,
+            cap_data: IRQControl {
+                available: irq_control.cap_data.available.clone(),
+            },
+        },
     );
     unsafe { slots.revoke_in_reverse() }
 

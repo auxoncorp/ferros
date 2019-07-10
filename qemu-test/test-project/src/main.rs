@@ -20,6 +20,7 @@ mod double_door_backpressure;
 mod fault_or_message_handler;
 mod fault_pair;
 mod grandkid_process_runs;
+mod irq_control_manipulation;
 mod memory_read_protection;
 mod memory_write_protection;
 mod over_register_size_params;
@@ -48,6 +49,7 @@ ferros_test_main!(&[
     &fault_or_message_handler::fault_or_message_handler,
     &fault_pair::fault_pair,
     &grandkid_process_runs::grandkid_process_runs,
+    &irq_control_manipulation::irq_control_manipulation,
     &memory_read_protection::memory_read_protection,
     &memory_write_protection::memory_write_protection,
     &over_register_size_params::over_register_size_params,

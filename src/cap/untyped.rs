@@ -593,27 +593,26 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::Device>> {
         <BitSize as Sub<PageBits>>::Output: Unsigned,
         <BitSize as Sub<PageBits>>::Output: _Pow,
         Pow<<BitSize as Sub<PageBits>>::Output>: Unsigned,
-        Pow<<BitSize as Sub<PageBits>>::Output>: IsLessOrEqual<
-            KernelRetypeFanOutLimit, Output = True
-        >,
+        Pow<<BitSize as Sub<PageBits>>::Output>:
+            IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
     {
         let (dest_cptr, dest_offset, _) = dest_slots.elim();
         unsafe {
             seL4_Untyped_Retype(
-                self.cptr,              // _service
-                Page::sel4_type_id(),   // type
-                0,                      // size_bits
-                dest_cptr,              // root
-                0,                      // index
-                0,                      // depth
-                dest_offset,            // offset
+                self.cptr,                               // _service
+                Page::sel4_type_id(),                    // type
+                0,                                       // size_bits
+                dest_cptr,                               // root
+                0,                                       // index
+                0,                                       // depth
+                dest_offset,                             // offset
                 1 << (BitSize::USIZE - PageBits::USIZE), // num_objects
             )
             .as_result()
             .map_err(|e| SeL4Error::UntypedRetype(e))?;
         }
 
-         Ok(CapRange {
+        Ok(CapRange {
             start_cptr: dest_offset,
             _cap_type: PhantomData,
             _role: PhantomData,

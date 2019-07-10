@@ -16,6 +16,7 @@ pub fn fault_or_message_handler(
     mut outer_slots: LocalCNodeSlots<U32768>,
     mut outer_ut: LocalCap<Untyped<U21>>,
     mut asid_pool: LocalCap<ASIDPool<U512>>,
+    mut irq_control: LocalCap<IRQControl>,
     mut local_mapped_region: MappedMemoryRegion<U17, shared_status::Exclusive>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
@@ -38,7 +39,13 @@ pub fn fault_or_message_handler(
             &mut outer_ut,
             &mut asid_pool,
             &mut local_mapped_region,
-            |inner_slots, inner_ut, inner_asid_pool, mapped_region| -> Result<(), TopLevelError> {
+            &mut irq_control,
+            |inner_slots,
+             inner_ut,
+             inner_asid_pool,
+             mapped_region,
+             _inner_irq_control|
+             -> Result<(), TopLevelError> {
                 let uts = ut_buddy(inner_ut);
                 smart_alloc!(|slots: inner_slots, ut: uts| {
                     let (child_cnode, child_slots) = retype_cnode::<U12>(ut, slots)?;
