@@ -16,6 +16,7 @@ use crate::cap::{
 };
 use crate::error::{ErrorExt, SeL4Error};
 use crate::pow::{Pow, _Pow};
+use crate::vspace::NumPages;
 
 // The seL4 kernel's maximum amount of retypes per system call is configurable
 // in the sel4.toml, particularly by the KernelRetypeFanOutLimit property.
@@ -577,6 +578,46 @@ impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
             cptr: dest_offset,
             cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
+        })
+    }
+}
+
+impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::Device>> {
+    pub fn retype_device_pages<CRole: CNodeRole>(
+        self,
+        dest_slots: CNodeSlots<NumPages<BitSize>, CRole>,
+    ) -> Result<CapRange<Page<page_state::Unmapped>, role::Local, NumPages<BitSize>>, SeL4Error>
+    where
+        BitSize: IsGreaterOrEqual<PageBits>,
+        BitSize: Sub<PageBits>,
+        <BitSize as Sub<PageBits>>::Output: Unsigned,
+        <BitSize as Sub<PageBits>>::Output: _Pow,
+        Pow<<BitSize as Sub<PageBits>>::Output>: Unsigned,
+        Pow<<BitSize as Sub<PageBits>>::Output>: IsLessOrEqual<
+            KernelRetypeFanOutLimit, Output = True
+        >,
+    {
+        let (dest_cptr, dest_offset, _) = dest_slots.elim();
+        unsafe {
+            seL4_Untyped_Retype(
+                self.cptr,              // _service
+                Page::sel4_type_id(),   // type
+                0,                      // size_bits
+                dest_cptr,              // root
+                0,                      // index
+                0,                      // depth
+                dest_offset,            // offset
+                1 << (BitSize::USIZE - PageBits::USIZE), // num_objects
+            )
+            .as_result()
+            .map_err(|e| SeL4Error::UntypedRetype(e))?;
+        }
+
+         Ok(CapRange {
+            start_cptr: dest_offset,
+            _cap_type: PhantomData,
+            _role: PhantomData,
+            _slots: PhantomData,
         })
     }
 }
