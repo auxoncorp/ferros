@@ -40,8 +40,8 @@ impl<BitSize: Unsigned, Kind: MemoryKind> CapType for Untyped<BitSize, Kind> {}
 impl CapType for WUntyped {}
 
 impl LocalCap<WUntyped> {
-    pub(crate) fn retype<D: CapType + PhantomCap + DirectRetype>(
-        &mut self,
+    pub fn retype<D: CapType + PhantomCap + DirectRetype>(
+        self,
         slots: &mut WCNodeSlots,
     ) -> Result<LocalCap<D>, RetypeError> {
         if D::SizeBits::USIZE > self.cap_data.size_bits {
@@ -65,6 +65,10 @@ impl LocalCap<WUntyped> {
         .map_err(|err| RetypeError::SeL4RetypeError(SeL4Error::UntypedRetype(err)))?;
 
         Ok(Cap::wrap_cptr(slot.cap_data.offset))
+    }
+
+    pub fn size_bits(&self) -> usize {
+        self.cap_data.size_bits
     }
 }
 
@@ -593,27 +597,26 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::Device>> {
         <BitSize as Sub<PageBits>>::Output: Unsigned,
         <BitSize as Sub<PageBits>>::Output: _Pow,
         Pow<<BitSize as Sub<PageBits>>::Output>: Unsigned,
-        Pow<<BitSize as Sub<PageBits>>::Output>: IsLessOrEqual<
-            KernelRetypeFanOutLimit, Output = True
-        >,
+        Pow<<BitSize as Sub<PageBits>>::Output>:
+            IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
     {
         let (dest_cptr, dest_offset, _) = dest_slots.elim();
         unsafe {
             seL4_Untyped_Retype(
-                self.cptr,              // _service
-                Page::sel4_type_id(),   // type
-                0,                      // size_bits
-                dest_cptr,              // root
-                0,                      // index
-                0,                      // depth
-                dest_offset,            // offset
+                self.cptr,                               // _service
+                Page::sel4_type_id(),                    // type
+                0,                                       // size_bits
+                dest_cptr,                               // root
+                0,                                       // index
+                0,                                       // depth
+                dest_offset,                             // offset
                 1 << (BitSize::USIZE - PageBits::USIZE), // num_objects
             )
             .as_result()
             .map_err(|e| SeL4Error::UntypedRetype(e))?;
         }
 
-         Ok(CapRange {
+        Ok(CapRange {
             start_cptr: dest_offset,
             _cap_type: PhantomData,
             _role: PhantomData,
