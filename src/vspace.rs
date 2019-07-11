@@ -801,7 +801,7 @@ impl VSpace<vspace_state::Empty> {
         mut root_cap: LocalCap<PagingRoot>,
         asid: LocalCap<UnassignedASID>,
         slots: WCNodeSlots,
-        untyped: LocalCap<WUntyped>,
+        untyped: LocalCap<WUntyped<memory_kind::General>>,
     ) -> Result<Self, VSpaceError> {
         let assigned_asid = asid.assign(&mut root_cap)?;
         Ok(VSpace {
@@ -879,7 +879,7 @@ impl VSpace<vspace_state::Imaged> {
         paging_root: LocalCap<PagingRoot>,
         asid: LocalCap<UnassignedASID>,
         mut slots: WCNodeSlots,
-        paging_untyped: LocalCap<WUntyped>,
+        paging_untyped: LocalCap<WUntyped<memory_kind::General>>,
         // Things relating to user image code
         code_image_config: ProcessCodeImageConfig,
         user_image: &UserImage<role::Local>,
@@ -972,7 +972,7 @@ impl VSpace<vspace_state::Imaged> {
         next_addr: usize,
         cslots: WCNodeSlots,
         asid: LocalCap<AssignedASID>,
-        ut: LocalCap<WUntyped>,
+        ut: LocalCap<WUntyped<memory_kind::General>>,
     ) -> Self {
         VSpace {
             layers: AddressSpace::new(),

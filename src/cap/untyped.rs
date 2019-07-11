@@ -31,15 +31,16 @@ pub struct Untyped<BitSize: Unsigned, Kind: MemoryKind = memory_kind::General> {
 }
 
 /// Weakly-typed (runtime-managed) Untyped
-pub struct WUntyped {
+pub struct WUntyped<Kind: MemoryKind> {
     pub(crate) size_bits: usize,
+    pub(crate) _kind: PhantomData<Kind>,
 }
 
 impl<BitSize: Unsigned, Kind: MemoryKind> CapType for Untyped<BitSize, Kind> {}
 
-impl CapType for WUntyped {}
+impl<Kind: MemoryKind> CapType for WUntyped<Kind> {}
 
-impl LocalCap<WUntyped> {
+impl LocalCap<WUntyped<memory_kind::General>> {
     pub fn retype<D: CapType + PhantomCap + DirectRetype>(
         self,
         slots: &mut WCNodeSlots,
@@ -66,7 +67,9 @@ impl LocalCap<WUntyped> {
 
         Ok(Cap::wrap_cptr(slot.cap_data.offset))
     }
+}
 
+impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
     pub fn size_bits(&self) -> usize {
         self.cap_data.size_bits
     }
@@ -83,7 +86,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> PhantomCap for Untyped<BitSize, Kind> 
 
 impl<BitSize: Unsigned, Kind: MemoryKind> Movable for Untyped<BitSize, Kind> {}
 
-impl Movable for WUntyped {}
+impl<Kind: MemoryKind> Movable for WUntyped<Kind> {}
 
 impl<BitSize: Unsigned, Kind: MemoryKind> Delible for Untyped<BitSize, Kind> {}
 
@@ -276,11 +279,12 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
     }
 
     /// weaken erases the type-level state-tracking (size).
-    pub fn weaken(self) -> LocalCap<WUntyped> {
+    pub fn weaken(self) -> LocalCap<WUntyped<Kind>> {
         Cap {
             cptr: self.cptr,
             cap_data: WUntyped {
                 size_bits: BitSize::USIZE,
+                _kind: PhantomData,
             },
             _role: PhantomData,
         }

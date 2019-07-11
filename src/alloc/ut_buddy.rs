@@ -7,8 +7,8 @@ use typenum::*;
 
 use crate::arch::{MaxUntypedSize, MinUntypedSize};
 use crate::cap::{
-    role, CNodeRole, Cap, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, PhantomCap,
-    Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
+    memory_kind, role, CNodeRole, Cap, LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap,
+    MemoryKind, PhantomCap, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
 };
 use crate::error::{ErrorExt, SeL4Error};
 
@@ -113,7 +113,9 @@ type TakeUntyped_ResultPoolSizes<PoolSizes, Index> =
 #[allow(non_camel_case_types)]
 type TakeUntyped_NumSplits<PoolSizes, Index> = <PoolSizes as _TakeUntyped<Index>>::NumSplits;
 
-// Buddy alloc
+/// Buddy alloc
+///
+/// Presently restricted to provide memory_kind::General untyped
 pub struct UTBuddy<PoolSizes: UList> {
     _pool_sizes: PhantomData<PoolSizes>,
     pool: [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE],
@@ -143,7 +145,7 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
         slots: LocalCNodeSlots<Prod<NumSplits, U2>>,
     ) -> Result<
         (
-            LocalCap<Untyped<BitSize>>,
+            LocalCap<Untyped<BitSize, memory_kind::General>>,
             UTBuddy<TakeUntyped_ResultPoolSizes<PoolSizes, Diff<BitSize, MinUntypedSize>>>,
         ),
         SeL4Error,
@@ -155,7 +157,7 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
         PoolSizes: _TakeUntyped<Diff<BitSize, MinUntypedSize>, NumSplits = NumSplits>,
         TakeUntyped_ResultPoolSizes<PoolSizes, Diff<BitSize, MinUntypedSize>>: UList,
     {
-        let weak_ut = alloc(
+        let weak_ut: LocalCap<WUntyped<memory_kind::General>> = alloc(
             &mut self.pool,
             slots.iter(),
             BitSize::USIZE,
@@ -172,7 +174,9 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
 }
 
 /// Make a weak ut buddy around a weak untyped.
-pub fn weak_ut_buddy<Role: CNodeRole>(ut: Cap<WUntyped, Role>) -> WUTBuddy<Role> {
+pub fn weak_ut_buddy<Role: CNodeRole, Kind: MemoryKind>(
+    ut: Cap<WUntyped<Kind>, Role>,
+) -> WUTBuddy<Role> {
     let mut pool = make_pool();
     pool[ut.cap_data.size_bits - MinUntypedSize::USIZE].push(ut.cptr);
     WUTBuddy {
@@ -207,6 +211,8 @@ impl From<SeL4Error> for UTBuddyError {
 
 /// A weakened implementation of a UTBuddy allocator where the state
 /// is checked at runtime rather than tracked in the types.
+///
+/// Presently restricted to provide memory_kind::General untyped
 pub struct WUTBuddy<Role: CNodeRole = role::Local> {
     pool: [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE],
     _role: PhantomData<Role>,
@@ -231,7 +237,7 @@ impl WUTBuddy<role::Local> {
         &mut self,
         slots: &mut WCNodeSlots,
         size: usize,
-    ) -> Result<LocalCap<WUntyped>, UTBuddyError> {
+    ) -> Result<LocalCap<WUntyped<memory_kind::General>>, UTBuddyError> {
         if size > MaxUntypedSize::USIZE {
             return Err(UTBuddyError::RequestedSizeExceedsMax(size));
         }
@@ -303,21 +309,24 @@ impl WUTBuddy<role::Local> {
         // N.B. We could be reclaiming the emptied local slots for future use, but are currently not
         // purely for implementation-time-and-complexity reasons.
         let mut child_pool = make_pool();
-        for ((i, local_sub_pool), child_sub_pool) in
+        for ((i, local_bucket), child_bucket) in
             self.pool.iter().enumerate().zip(child_pool.iter_mut())
         {
             let size_bits = i + MinUntypedSize::USIZE;
-            for (local_ut_cptr, dest_slot) in local_sub_pool
+            for (local_ut_cptr, dest_slot) in local_bucket
                 .iter()
                 .zip(slots.incrementally_consuming_iter())
             {
-                let local_wut = Cap {
+                let local_wut: Cap<WUntyped<memory_kind::General>, _> = Cap {
                     cptr: *local_ut_cptr,
-                    cap_data: WUntyped { size_bits },
+                    cap_data: WUntyped {
+                        size_bits,
+                        _kind: PhantomData,
+                    },
                     _role: PhantomData,
                 };
                 let child_wut = local_wut.move_to_slot(src_cnode, dest_slot)?;
-                child_sub_pool.push(child_wut.cptr);
+                child_bucket.push(child_wut.cptr);
             }
         }
         Ok(WUTBuddy {
@@ -336,12 +345,12 @@ impl<Role: CNodeRole> WUTBuddy<Role> {
     }
 }
 
-fn alloc(
+fn alloc<Kind: MemoryKind>(
     pool: &mut [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE],
     slots_iter: impl Iterator<Item = LocalCNodeSlot>,
     size_bits: usize,
     split_count: usize,
-) -> Result<LocalCap<WUntyped>, SeL4Error> {
+) -> Result<LocalCap<WUntyped<Kind>>, SeL4Error> {
     // The index in the pool array where Untypeds of the requested
     // size are stored.
     let index = size_bits - MinUntypedSize::USIZE;
@@ -380,7 +389,10 @@ fn alloc(
 
     Ok(Cap {
         cptr,
-        cap_data: WUntyped { size_bits },
+        cap_data: WUntyped {
+            size_bits,
+            _kind: PhantomData,
+        },
         _role: PhantomData,
     })
 }
