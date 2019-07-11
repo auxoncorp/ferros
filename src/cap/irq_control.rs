@@ -103,41 +103,4 @@ impl LocalCap<IRQControl> {
         self.cap_data.available[usize::from(irq)] = false;
         Ok(dest_offset)
     }
-
-    pub fn request_split<DestRole: CNodeRole>(
-        &mut self,
-        src_cnode: &LocalCap<LocalCNode>,
-        dest_slot: CNodeSlot<DestRole>,
-        requested_irqs: [bool; MaxIRQCount::USIZE],
-    ) -> Result<Cap<IRQControl, DestRole>, IRQError> {
-        // First pass to detect requested-but-unavailable IRQs and reject the request without mutation
-        for (irq, (is_requested, is_available)) in
-            (0..MaxIRQCount::U16).zip(requested_irqs.iter().zip(self.cap_data.available.iter()))
-        {
-            if *is_requested && !*is_available {
-                return Err(IRQError::UnavailableIRQ(irq));
-            }
-        }
-
-        let dest_offset = self.unchecked_copy(src_cnode, dest_slot, CapRights::RWG)?;
-
-        let mut split_side_available_irqs = requested_irqs;
-        for (claimed_for_split_side, source_side_available_state) in split_side_available_irqs
-            .iter()
-            .zip(self.cap_data.available.iter_mut())
-        {
-            // The source instance of IRQControl should treat the IRQs split off into the other
-            // instance as if they were unavailable.
-            if *claimed_for_split_side {
-                *source_side_available_state = false;
-            }
-        }
-        Ok(Cap {
-            cptr: dest_offset,
-            cap_data: IRQControl {
-                available: split_side_available_irqs,
-            },
-            _role: PhantomData,
-        })
-    }
 }
