@@ -155,7 +155,7 @@ where
             _role: PhantomData,
             cap_data: Untyped {
                 _bit_size: PhantomData,
-                _kind: PhantomData,
+                kind: untyped.cap_data.kind.clone(),
             },
         },
         Cap {
