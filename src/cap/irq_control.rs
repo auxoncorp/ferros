@@ -5,15 +5,22 @@ use typenum::*;
 use selfe_sys::*;
 
 use crate::cap::{
-    irq_handler, irq_state, CNodeRole, CNodeSlot, Cap, CapType, IRQHandler, LocalCap,
+    irq_handler, irq_state, CNodeRole, CNodeSlot, Cap, CapType, IRQHandler, LocalCNode, LocalCap,
 };
 use crate::error::{ErrorExt, SeL4Error};
+use crate::userland::CapRights;
 
 pub type MaxIRQCount = U1024;
 
 // The goal of tracking is to prevent accidental double-binding to a single IRQ
 pub struct IRQControl {
-    pub(crate) known_handled: [bool; MaxIRQCount::USIZE],
+    /// Is the IRQ whose id matches the index available to be claimed/create-a-handler for it?
+    ///
+    /// If the value at a given index is false, one of the following is the case:
+    /// * An IRQHandler has been created for that IRQ
+    /// * A different IRQControl instance is responsible for managing that IRQ
+    /// * The bootstrapping code has decided to reserve that IRQ for some non-user-facing purpose
+    pub(crate) available: [bool; MaxIRQCount::USIZE],
 }
 
 impl CapType for IRQControl {}
@@ -21,9 +28,9 @@ impl CapType for IRQControl {}
 #[derive(Debug)]
 pub enum IRQError {
     /// The IRQ has already been claimed
-    UnavailableIRQ,
+    UnavailableIRQ(u16),
     /// The IRQ requested is not in the supported range of possible IRQs
-    OutOfRangeIRQ,
+    OutOfRangeIRQ(u16),
     /// The kernel has a problem with how IRQ management is proceeding
     SeL4Error(SeL4Error),
 }
@@ -58,7 +65,7 @@ impl LocalCap<IRQControl> {
         irq: u16,
     ) -> Result<Cap<irq_handler::weak::WIRQHandler<irq_state::Unset>, DestRole>, IRQError> {
         if irq >= MaxIRQCount::U16 {
-            return Err(IRQError::OutOfRangeIRQ);
+            return Err(IRQError::OutOfRangeIRQ(irq));
         }
         let destination_relative_cptr = self.internal_create_handler(dest_slot, irq)?;
         Ok(Cap {
@@ -78,8 +85,8 @@ impl LocalCap<IRQControl> {
     ) -> Result<usize, IRQError> {
         let (dest_cptr, dest_offset, _) = dest_slot.elim();
 
-        if self.cap_data.known_handled[usize::from(irq)] {
-            return Err(IRQError::UnavailableIRQ);
+        if !self.cap_data.available[usize::from(irq)] {
+            return Err(IRQError::UnavailableIRQ(irq));
         }
         unsafe {
             seL4_IRQControl_Get(
@@ -93,7 +100,7 @@ impl LocalCap<IRQControl> {
         .as_result()
         .map_err(|e| IRQError::SeL4Error(SeL4Error::IRQControlGet(e)))?;
 
-        self.cap_data.known_handled[usize::from(irq)] = true;
+        self.cap_data.available[usize::from(irq)] = false;
         Ok(dest_offset)
     }
 }

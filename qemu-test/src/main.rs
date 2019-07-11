@@ -161,7 +161,7 @@ mod tests {
         fn unified_tests_sabre() {
             run_qemu_test::<fn()>(
                 "unified_tests",
-                Regex::new(".*test result: ok\\. 18 passed;.*").unwrap(),
+                Regex::new(".*test result: ok\\. 19 passed;.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
                 None,
                 None,
@@ -174,7 +174,7 @@ mod tests {
         fn unified_tests_virt() {
             run_qemu_test::<fn()>(
                 "unified_tests",
-                Regex::new(".*test result: ok\\. 18 passed;.*").unwrap(),
+                Regex::new(".*test result: ok\\. 19 passed;.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
                 None,
                 None,

@@ -40,6 +40,8 @@ impl TestModel {
         // it would likely behoove us to disallow tests that execute in the same process as the
         // test harness and communicate failure through panics (i.e. tests that return unit).
         let resources = extract_expected_resources(&fn_under_test.decl.inputs)?;
+        validate_param_collection(&resources)?;
+
         Ok(TestModel {
             execution_context,
             fn_under_test,
@@ -64,6 +66,35 @@ fn extract_expected_resources<'a>(
     args: impl IntoIterator<Item = &'a FnArg>,
 ) -> Result<Vec<Param>, ParseError> {
     args.into_iter().map(Param::parse).collect()
+}
+
+fn validate_param_collection(params: &[Param]) -> Result<(), ParseError> {
+    let mut scratch_count = 0;
+    let mut irq_control_count = 0;
+    for p in params {
+        match p.kind {
+            ParamKind::VSpaceScratch => {
+                scratch_count += 1;
+                if scratch_count > 1 {
+                    return Err(ParseError::ArgumentConstraint {
+                        msg: "Only a single scratch argument may be specified.",
+                        span: p.original_ident.span(),
+                    });
+                }
+            }
+            ParamKind::IRQControl => {
+                irq_control_count += 1;
+                if irq_control_count > 1 {
+                    return Err(ParseError::ArgumentConstraint {
+                        msg: "Only a single IRQControl argument may be specified.",
+                        span: p.original_ident.span(),
+                    });
+                }
+            }
+            _ => (),
+        }
+    }
+    Ok(())
 }
 
 impl Param {
@@ -204,6 +235,7 @@ fn parse_localcap_param_kind(
         "ASIDPool" => Ok(ParamKind::ASIDPool {
             count: extract_first_argument_as_unsigned(&segment.arguments)?,
         }),
+        "IRQControl" => Ok(ParamKind::IRQControl),
         "ThreadPriorityAuthority" => {
             if arg_kind == ArgKind::Ref {
                 Ok(ParamKind::ThreadPriorityAuthority)
@@ -420,5 +452,39 @@ mod tests {
             TestExecutionContext::parse(Ident::new("LOCAL", Span::call_site())).unwrap()
         );
         assert!(TestExecutionContext::parse(Ident::new("whatever", Span::call_site())).is_err());
+    }
+
+    #[test]
+    fn parse_model_accepts_single_irq_control_param() {
+        let user_fn = quote! {
+            fn user_fn(_my_irq_control: LocalCap<IRQControl>) {
+            }
+        };
+
+        let content = SynContent::parse(quote!(), user_fn).expect("SynContent not parsed");
+        let model = TestModel::parse(content).expect("TestModel not parsed");
+        assert_eq!(1, model.resources.len());
+        assert_eq!(ParamKind::IRQControl, model.resources[0].kind);
+        assert_eq!(
+            "_my_irq_control",
+            &model.resources[0].original_ident.to_string()
+        );
+    }
+
+    #[test]
+    fn parse_model_rejects_multiple_irq_control_params() {
+        let user_fn = quote! {
+            fn user_fn(_control_a: LocalCap<IRQControl>, _control_b: LocalCap<IRQControl>) {
+            }
+        };
+
+        let content = SynContent::parse(quote!(), user_fn).expect("SynContent not parsed");
+        if let ParseError::ArgumentConstraint { .. } =
+            TestModel::parse(content).expect_err("TestModel parse should have failed")
+        {
+            // Cool
+        } else {
+            panic!("Should have produced an ArgumentConstraint error")
+        }
     }
 }

@@ -29,6 +29,7 @@ pub type RunTest = Fn(
     &LocalCap<LocalCNode>,
     &LocalCap<ThreadPriorityAuthority>,
     &UserImage<role::Local>,
+    LocalCap<IRQControl>,
 ) -> (&'static str, TestOutcome);
 
 pub trait TestReporter {
