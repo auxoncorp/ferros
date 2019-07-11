@@ -24,6 +24,7 @@ pub enum Error {
     TooManyGeneralUntypeds,
 }
 
+/// Use `BootInfo` to bootstrap both the device and general allocators.
 pub fn bootstrap_allocators(
     bootinfo: &'static seL4_BootInfo,
 ) -> Result<(Allocator, DeviceAllocator), Error> {
@@ -38,6 +39,7 @@ pub fn bootstrap_allocators(
                 cptr,
                 cap_data: WUntyped {
                     size_bits: ut.sizeBits as usize,
+                    kind: memory_kind::Device { paddr: ut.paddr },
                 },
                 _role: PhantomData,
             }) {
@@ -49,6 +51,7 @@ pub fn bootstrap_allocators(
                 cptr,
                 cap_data: WUntyped {
                     size_bits: ut.sizeBits as usize,
+                    kind: memory_kind::General {},
                 },
                 _role: PhantomData,
             }) {
@@ -65,8 +68,9 @@ pub fn bootstrap_allocators(
     ))
 }
 
+/// An allocator for general purpose memory.
 pub struct Allocator {
-    items: ArrayVec<[LocalCap<WUntyped>; MAX_INIT_UNTYPED_ITEMS]>,
+    items: ArrayVec<[LocalCap<WUntyped<memory_kind::General>>; MAX_INIT_UNTYPED_ITEMS]>,
 }
 
 impl Debug for Allocator {
@@ -85,6 +89,8 @@ impl Allocator {
         Ok(alloc)
     }
 
+    /// Find an untyped of the given size. If one is found, remove
+    /// from the list and return it.
     pub fn get_untyped<BitSize: Unsigned>(
         &mut self,
     ) -> Option<LocalCap<Untyped<BitSize, memory_kind::General>>> {
@@ -109,18 +115,34 @@ impl Allocator {
 // TODO(dan@auxon.io): I have no idea what to put here.
 const MAX_DEVICE_UTS: usize = 64;
 
+/// An allocator for memory in use by devices.
 pub struct DeviceAllocator {
-    untypeds: ArrayVec<[LocalCap<WUntyped>; MAX_DEVICE_UTS]>,
+    untypeds: ArrayVec<[LocalCap<WUntyped<memory_kind::Device>>; MAX_DEVICE_UTS]>,
 }
 
 impl DeviceAllocator {
-    pub fn get_device_untyped(&mut self, _paddr: usize) -> Option<LocalCap<WUntyped>> {
-        if let Some(position) = self.untypeds.iter().position(|_| false) {
+    /// Get the device untyped which contains the given physical
+    /// address. If it's present in the list, remove it from the list
+    /// and return it.
+    pub fn get_device_untyped(
+        &mut self,
+        paddr: usize,
+    ) -> Option<LocalCap<WUntyped<memory_kind::Device>>> {
+        let untyped_contains_paddr = |ut: &LocalCap<WUntyped<memory_kind::Device>>| -> bool {
+            ut.paddr() < paddr && ut.paddr() + ut.size_bytes() > paddr
+        };
+
+        if let Some(position) = self
+            .untypeds
+            .iter()
+            .position(|ut| untyped_contains_paddr(ut))
+        {
             let ut_ref = &self.untypeds[position];
             let ut = Cap {
                 cptr: ut_ref.cptr,
                 cap_data: WUntyped {
                     size_bits: ut_ref.size_bits(),
+                    kind: ut_ref.cap_data.kind,
                 },
                 _role: PhantomData,
             };
