@@ -48,6 +48,20 @@ impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
     pub fn size_bytes(&self) -> usize {
         2_usize.pow(self.cap_data.size_bits as u32)
     }
+
+    pub fn as_strong<SizeBits: Unsigned>(self) -> Option<LocalCap<Untyped<SizeBits, Kind>>> {
+        if self.size_bits() == SizeBits::USIZE {
+            return Some(Cap {
+                cptr: self.cptr,
+                cap_data: Untyped {
+                    _bit_size: PhantomData,
+                    kind: self.cap_data.kind,
+                },
+                _role: PhantomData,
+            });
+        }
+        None
+    }
 }
 
 impl LocalCap<WUntyped<memory_kind::General>> {

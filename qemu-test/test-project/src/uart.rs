@@ -14,13 +14,12 @@ use ferros::vspace::*;
 use super::TopLevelError;
 
 const UART1_PADDR: usize = 0x02020000; //33685504
-const LARGE_DEVICE_REGION_PADDR: usize = 0x02000000; //33554432
-                                                     // relative offset from LARGE_DEVICE_REGION_PADDR: 131072 ( == 2097152 / 16 )
+
 type LargeDeviceRegionSize = U21; // 2097152 bytes
 type Uart1IrqLine = U58;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
-    let mut allocator = micro_alloc::Allocator::bootstrap(&raw_boot_info)?;
+    let (mut allocator, mut device_allocator) = micro_alloc::bootstrap_allocators(&raw_boot_info)?;
     let (root_cnode, local_slots) = root_cnode(&raw_boot_info);
     let (root_vspace_slots, local_slots): (LocalCNodeSlots<U100>, _) = local_slots.alloc();
     let BootInfo {
@@ -47,9 +46,13 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     // C.f. i.MX 6ULL Reference Manual Table 2.2.
     // As of the recent changes in memory region mapping,
     // that section is part of a 21-bit untyped region we'll need to manually whittle down
-    let device_untyped = allocator
-        .get_device_untyped::<LargeDeviceRegionSize>(LARGE_DEVICE_REGION_PADDR)
+    let device_untyped_weak = device_allocator
+        .get_device_untyped(UART1_PADDR)
         .expect("find uart1 device memory");
+
+    let device_untyped: LocalCap<Untyped<LargeDeviceRegionSize, _>> = device_untyped_weak
+        .as_strong()
+        .expect("device untyped was not the right size!");
 
     smart_alloc!(|slots: local_slots, ut: uts| {
         let unmapped_region = UnmappedMemoryRegion::new(ut, slots)?;
