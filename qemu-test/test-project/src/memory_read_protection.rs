@@ -81,7 +81,8 @@ impl RetypeForSetup for ProcParams {
 pub extern "C" fn proc_main(_params: ProcParams) {
     unsafe {
         let x: *const usize = 0x88888888usize as _;
-        debug_println!("Value from arbitrary memory is: {}", *x);
+        let y = *x;
+        debug_println!("Value from arbitrary memory is: {}", y);
     }
 
     debug_println!("This is after the segfaulting code, and should not be printed.");

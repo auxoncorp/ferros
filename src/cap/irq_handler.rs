@@ -5,7 +5,9 @@ use typenum::*;
 use selfe_sys::*;
 
 use crate::cap::irq_handler::weak::WIRQHandler;
-use crate::cap::{Cap, CapType, LocalCap, MaxIRQCount, Movable, Notification, PhantomCap};
+use crate::cap::{
+    CNodeRole, Cap, CapType, LocalCap, MaxIRQCount, Movable, Notification, PhantomCap,
+};
 use crate::error::{ErrorExt, SeL4Error};
 
 /// Whether or not an IRQ Handle has been set to a particular Notification
@@ -116,6 +118,11 @@ pub mod weak {
 
     impl<SetState: IRQSetState> Movable for WIRQHandler<SetState> {}
 
+    impl<Role: crate::cap::CNodeRole, SetState: IRQSetState> Cap<WIRQHandler<SetState>, Role> {
+        pub fn irq(&self) -> u16 {
+            self.cap_data.irq
+        }
+    }
     impl LocalCap<WIRQHandler<irq_state::Unset>> {
         pub fn set_notification(
             self,

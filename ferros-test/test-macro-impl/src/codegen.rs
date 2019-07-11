@@ -147,6 +147,7 @@ fn local_allocations<G: IdGenerator>(
     let user_image = Ident::new("user_image", Span::call_site());
     let ut_buddy_instance = Ident::new("ut_buddy_instance", Span::call_site());
     let mapped_memory_region = Ident::new("mapped_memory_region", Span::call_site());
+    let irq_control = Ident::new("irq_control", Span::call_site());
     let is_untyped = |p: &Param| {
         if let ParamKind::Untyped { .. } = p.kind {
             true
@@ -195,6 +196,7 @@ fn local_allocations<G: IdGenerator>(
                     pool_id,
                 )
             }
+            ParamKind::IRQControl => (parse_quote!({}), irq_control.clone()),
             ParamKind::VSpaceScratch => (parse_quote!({}), scratch.clone()),
             ParamKind::MappedMemoryRegion => {
                 // TODO - be sure that split/alloc prevents making too-small of regions
@@ -278,6 +280,9 @@ fn run_test_decl() -> FnDecl {
     run_test_inputs.push(parse_quote!(
         user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>
     ));
+    run_test_inputs.push(parse_quote!(
+        irq_control: ferros::cap::LocalCap<ferros::cap::IRQControl>
+    ));
     FnDecl {
         fn_token: syn::token::Fn::default(),
         generics: syn::Generics::default(),
@@ -343,7 +348,8 @@ mod tests {
                     ferros::test_support::MaxMappedMemoryRegionBitSize, ferros::vspace::shared_status::Exclusive,>,
                 local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
                 thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
-                user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>
+                user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>,
+                irq_control: ferros::cap::LocalCap<ferros::cap::IRQControl>
             ) -> (&'static str, ferros::test_support::TestOutcome) {
                 fn under_test() {
                     assert!(true);
@@ -404,7 +410,8 @@ mod tests {
                     ferros::test_support::MaxMappedMemoryRegionBitSize, ferros::vspace::shared_status::Exclusive,>,
                 local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
                 thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
-                user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>
+                user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>,
+                irq_control: ferros::cap::LocalCap<ferros::cap::IRQControl>
             ) -> (&'static str, ferros::test_support::TestOutcome) {
                 fn under_test(ut: LocalCap<Untyped<U5>>, sl: LocalCNodeSlots<U4>) -> Result<(), SeL4Error> {
                     let r = ut.split(sl);
@@ -469,7 +476,8 @@ mod tests {
                     ferros::test_support::MaxMappedMemoryRegionBitSize, ferros::vspace::shared_status::Exclusive,>,
                 local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
                 thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
-                user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>
+                user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>,
+                irq_control: ferros::cap::LocalCap<ferros::cap::IRQControl>
             ) -> (&'static str, ferros::test_support::TestOutcome) {
                 fn under_test(mem: MappedMemoryRegion<U12, shared_status::Exclusive>) -> Result<(), SeL4Error> {
                     Ok(())

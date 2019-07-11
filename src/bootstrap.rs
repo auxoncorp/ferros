@@ -127,7 +127,7 @@ impl BootInfo<op!(ASIDPoolCount - U1)> {
             irq_control: Cap {
                 cptr: seL4_CapIRQControl as usize,
                 cap_data: IRQControl {
-                    known_handled: [false; MaxIRQCount::USIZE],
+                    available: [true; MaxIRQCount::USIZE],
                 },
                 _role: PhantomData,
             },

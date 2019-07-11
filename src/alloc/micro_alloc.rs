@@ -1,7 +1,6 @@
 //! A tiny first-chance allocator for the untyped capabilities sel4's BOOTINFO.
 //! This one doesn't split anything; it just hands out the smallest untyped item
 //! that's big enough for the request.
-
 use core::fmt::{Debug, Error as FmtError, Formatter};
 use core::marker::PhantomData;
 

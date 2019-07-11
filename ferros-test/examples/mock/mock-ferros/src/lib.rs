@@ -1,7 +1,7 @@
 #[macro_export]
 macro_rules! debug_println {
     ($fmt:expr) => {};
-    ($fmt:expr, $($arg:tt)*) => { };
+    ($fmt:expr, $($arg:tt)*) => {};
 }
 
 pub mod alloc {
@@ -49,6 +49,7 @@ pub mod cap {
     pub struct LocalCap<T>(pub PhantomData<T>);
     pub struct Untyped<T>(pub PhantomData<T>);
     pub struct ASIDPool<T>(pub PhantomData<T>);
+    pub struct IRQControl;
     pub struct LocalCNode;
     pub struct ThreadPriorityAuthority;
 

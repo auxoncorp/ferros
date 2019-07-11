@@ -44,6 +44,7 @@ pub(crate) enum ParamKind {
     CNode,
     ThreadPriorityAuthority,
     UserImage,
+    IRQControl,
 }
 
 #[derive(Debug, Clone)]
@@ -52,6 +53,7 @@ pub(crate) enum ParseError {
     InvalidTestAttribute { span: Span },
     InvalidTestFn { span: Span },
     InvalidReturnType { span: Span },
+    ArgumentConstraint { msg: &'static str, span: Span },
 }
 
 impl std::fmt::Display for ParseError {
@@ -61,6 +63,7 @@ impl std::fmt::Display for ParseError {
             ParseError::InvalidTestAttribute { .. } => "Invalid test attribute found. Try `#[ferros_test]` or `#[ferros_test(process)]` or `#[ferros_test(local)]`",
             ParseError::InvalidTestFn { .. } => "Test function could not be parsed as a fn item",
             ParseError::InvalidReturnType { .. } => "Invalid return type, prefer returning either TestOutcome or a Result<T, E> type",
+            ParseError::ArgumentConstraint { msg, .. } => msg,
         };
         f.write_str(s)
     }
@@ -73,6 +76,7 @@ impl ParseError {
             ParseError::InvalidTestAttribute { span, .. } => *span,
             ParseError::InvalidTestFn { span, .. } => *span,
             ParseError::InvalidReturnType { span, .. } => *span,
+            ParseError::ArgumentConstraint { span, .. } => *span,
         }
     }
 
