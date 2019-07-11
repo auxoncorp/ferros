@@ -113,7 +113,8 @@ impl Allocator {
 }
 
 // TODO(dan@auxon.io): I have no idea what to put here.
-const MAX_DEVICE_UTS: usize = 64;
+// N.B.(zack@auxon.io): Linked to another constant with similar need for grounding
+const MAX_DEVICE_UTS: usize = MAX_INIT_UNTYPED_ITEMS;
 
 /// An allocator for memory in use by devices.
 pub struct DeviceAllocator {
@@ -129,7 +130,7 @@ impl DeviceAllocator {
         paddr: usize,
     ) -> Option<LocalCap<WUntyped<memory_kind::Device>>> {
         let untyped_contains_paddr = |ut: &LocalCap<WUntyped<memory_kind::Device>>| -> bool {
-            ut.paddr() < paddr && ut.paddr() + ut.size_bytes() > paddr
+            ut.paddr() <= paddr && ut.paddr() + ut.size_bytes() > paddr
         };
 
         if let Some(position) = self
