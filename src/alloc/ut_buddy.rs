@@ -321,7 +321,8 @@ impl WUTBuddy<role::Local> {
                     cptr: *local_ut_cptr,
                     cap_data: WUntyped {
                         size_bits,
-                        _kind: PhantomData,
+                        // Note the strong assumption that WUTBuddy only represents memory_kind::General
+                        kind: memory_kind::General,
                     },
                     _role: PhantomData,
                 };
@@ -391,7 +392,7 @@ fn alloc(
         cptr,
         cap_data: WUntyped {
             size_bits,
-            _kind: PhantomData,
+            kind: memory_kind::General,
         },
         _role: PhantomData,
     })

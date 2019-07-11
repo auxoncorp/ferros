@@ -2,7 +2,7 @@
 //! This one doesn't split anything; it just hands out the smallest untyped item
 //! that's big enough for the request.
 
-use crate::cap::{memory_kind, wrap_untyped, LocalCap, MemoryKind, Untyped};
+use crate::cap::{memory_kind, wrap_device_untyped, wrap_untyped, LocalCap, MemoryKind, Untyped};
 use arrayvec::ArrayVec;
 use typenum::Unsigned;
 
@@ -101,6 +101,7 @@ impl Allocator {
         &mut self,
     ) -> Option<LocalCap<Untyped<BitSize, memory_kind::General>>> {
         self.find_block::<BitSize, memory_kind::General>(false, None)
+            .and_then(|(cptr, desc)| wrap_untyped(cptr, desc))
     }
 
     pub fn get_device_untyped<BitSize: Unsigned>(
@@ -108,13 +109,14 @@ impl Allocator {
         physical_address: usize,
     ) -> Option<LocalCap<Untyped<BitSize, memory_kind::Device>>> {
         self.find_block::<BitSize, memory_kind::Device>(true, Some(physical_address))
+            .and_then(|(cptr, desc)| wrap_device_untyped(cptr, desc))
     }
 
     fn find_block<BitSize: Unsigned, Kind: MemoryKind>(
         &mut self,
         device_ok: bool,
         physical_address: Option<usize>,
-    ) -> Option<LocalCap<Untyped<BitSize, Kind>>> {
+    ) -> Option<(usize, &seL4_UntypedDesc)> {
         // This is very inefficient. But it should only be called a small
         // handful of times on startup.
         for bit_size in BitSize::to_u8()..=MAX_UNTYPED_SIZE_BITS {
@@ -127,11 +129,8 @@ impl Allocator {
                         None => true,
                     }
                 {
-                    let u = wrap_untyped(item.cptr, item.desc);
-                    if u.is_some() {
-                        item.is_free = false;
-                    }
-                    return u;
+                    item.is_free = false;
+                    return Some((item.cptr, item.desc));
                 }
             }
         }
