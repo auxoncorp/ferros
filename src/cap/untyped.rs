@@ -40,6 +40,30 @@ impl<BitSize: Unsigned, Kind: MemoryKind> CapType for Untyped<BitSize, Kind> {}
 
 impl<Kind: MemoryKind> CapType for WUntyped<Kind> {}
 
+impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
+    pub fn size_bits(&self) -> usize {
+        self.cap_data.size_bits
+    }
+
+    pub fn size_bytes(&self) -> usize {
+        2_usize.pow(self.cap_data.size_bits as u32)
+    }
+
+    pub fn as_strong<SizeBits: Unsigned>(self) -> Option<LocalCap<Untyped<SizeBits, Kind>>> {
+        if self.size_bits() == SizeBits::USIZE {
+            return Some(Cap {
+                cptr: self.cptr,
+                cap_data: Untyped {
+                    _bit_size: PhantomData,
+                    kind: self.cap_data.kind,
+                },
+                _role: PhantomData,
+            });
+        }
+        None
+    }
+}
+
 impl LocalCap<WUntyped<memory_kind::General>> {
     pub fn retype<D: CapType + PhantomCap + DirectRetype>(
         self,
@@ -69,9 +93,9 @@ impl LocalCap<WUntyped<memory_kind::General>> {
     }
 }
 
-impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
-    pub fn size_bits(&self) -> usize {
-        self.cap_data.size_bits
+impl LocalCap<WUntyped<memory_kind::Device>> {
+    pub fn paddr(&self) -> usize {
+        self.cap_data.kind.paddr
     }
 }
 
