@@ -80,16 +80,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (interrupt_consumer, _) =
             InterruptConsumer::new(ut, &mut irq_control, &root_cnode, slots, slots_u)?;
 
-        // the UART1's region is offset by 131072 from the 21-bit device paddr, so it starts
-        // at the second sixteenth
-        //let (u19, _, _, _) = device_untyped.quarter(slots)?;
-        //let (_, uart_and_then_some_ut17, _, _) = u19.quarter(slots)?;
-
-        //let (uart_and_then_some_ut15, _, _, _) = uart_and_then_some_ut17.quarter(slots)?;
-        //// Made it to the 4 pages reserved for UART1
-        //let (uart1_pages, _) = uart_and_then_some_ut15.split(slots)?;
-        //let (uart1_page_1_untyped, _, _, _) = uart1_pages.quarter(slots)?;
-
         let unmapped_uart1_page1 = UnmappedMemoryRegion::new_device(uart1_page_1_untyped, slots)?;
         let uart1_page_1 = uart1_vspace.map_region(
             unmapped_uart1_page1,

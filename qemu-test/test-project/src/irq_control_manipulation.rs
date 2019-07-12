@@ -1,12 +1,11 @@
 use super::TopLevelError;
 use ferros::alloc::smart_alloc;
-use ferros::cap::{IRQControl, LocalCNode, LocalCNodeSlots, LocalCap, MaxIRQCount};
+use ferros::cap::{IRQControl, LocalCNodeSlots, LocalCap, MaxIRQCount};
 use ferros::userland::WIRQHandlerCollection;
 use typenum::*;
 
 #[ferros_test::ferros_test]
 pub fn irq_control_manipulation(
-    src_cnode: &LocalCap<LocalCNode>,
     cnode_slots: LocalCNodeSlots<U24>,
     weak_slots: LocalCNodeSlots<U24>,
     mut irq_control: LocalCap<IRQControl>,
@@ -30,7 +29,7 @@ pub fn irq_control_manipulation(
 
         let mut previously_handled_irq_request = [false; MaxIRQCount::USIZE];
         previously_handled_irq_request[usize::from(TOP_LEVEL_CLAIM)] = true;
-        if let Ok(_) = WIRQHandlerCollection::new(&mut irq_control, src_cnode, &mut weak_slots, previously_handled_irq_request) {
+        if let Ok(_) = WIRQHandlerCollection::new(&mut irq_control, &mut weak_slots, previously_handled_irq_request) {
             return Err(TopLevelError::TestAssertionFailure("Should not be able to split off an WIRQHandlerCollection while requesting a previously claimed/handled IRQ"));
         }
 
@@ -38,11 +37,11 @@ pub fn irq_control_manipulation(
         successful_request[usize::from(COLLECTION_CLAIM_A)] = true;
         successful_request[usize::from(COLLECTION_CLAIM_B)] = true;
         let successful_request_dupe = successful_request.clone();
-        let mut split_collection = WIRQHandlerCollection::new(&mut irq_control,src_cnode, &mut weak_slots, successful_request)
+        let mut split_collection = WIRQHandlerCollection::new(&mut irq_control, &mut weak_slots, successful_request)
             .map_err(|e| {
             debug_println!("{:?}", e);
             TopLevelError::TestAssertionFailure("Should be able to split off unclaimed irqs")})?;
-        if let Ok(_) = WIRQHandlerCollection::new(&mut irq_control,src_cnode, &mut weak_slots, successful_request_dupe) {
+        if let Ok(_) = WIRQHandlerCollection::new(&mut irq_control, &mut weak_slots, successful_request_dupe) {
             return Err(TopLevelError::TestAssertionFailure("The original source IRQControl should not be able split off multiple IRQControls with overlapping requested IRQs"));
         }
 

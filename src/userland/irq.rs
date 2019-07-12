@@ -1,8 +1,6 @@
 use crate::cap::irq_handler::irq_state;
 use crate::cap::irq_handler::weak::{self, WIRQHandler};
-use crate::cap::{
-    role, CNodeRole, Cap, IRQControl, IRQError, LocalCNode, LocalCap, MaxIRQCount, WCNodeSlotsData,
-};
+use crate::cap::{CNodeRole, Cap, IRQControl, IRQError, LocalCap, MaxIRQCount, WCNodeSlotsData};
 use crate::userland::*;
 use arrayvec::ArrayVec;
 use typenum::*;
@@ -20,7 +18,6 @@ pub struct WIRQHandlerCollection<Role: CNodeRole> {
 impl<Role: CNodeRole> WIRQHandlerCollection<Role> {
     pub fn new(
         irq_control: &mut LocalCap<IRQControl>,
-        src_cnode: &LocalCap<LocalCNode>,
         dest_slots: &mut LocalCap<WCNodeSlotsData<Role>>,
         requested_irqs: [bool; MaxIRQCount::USIZE],
     ) -> Result<Self, IRQCollectionError> {

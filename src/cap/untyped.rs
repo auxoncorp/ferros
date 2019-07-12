@@ -196,41 +196,6 @@ pub mod memory_kind {
     impl MemoryKind for Device {}
 }
 
-pub(crate) fn wrap_untyped<BitSize: Unsigned>(
-    cptr: usize,
-    untyped_desc: &seL4_UntypedDesc,
-) -> Option<LocalCap<Untyped<BitSize, memory_kind::General>>> {
-    if untyped_desc.sizeBits == BitSize::to_u8() {
-        Some(Cap {
-            cptr,
-            cap_data: PhantomCap::phantom_instance(),
-            _role: PhantomData,
-        })
-    } else {
-        None
-    }
-}
-
-pub(crate) fn wrap_device_untyped<BitSize: Unsigned>(
-    cptr: usize,
-    untyped_desc: &seL4_UntypedDesc,
-) -> Option<LocalCap<Untyped<BitSize, memory_kind::Device>>> {
-    if untyped_desc.sizeBits == BitSize::to_u8() {
-        Some(Cap {
-            cptr,
-            cap_data: Untyped {
-                kind: memory_kind::Device {
-                    paddr: untyped_desc.paddr,
-                },
-                _bit_size: PhantomData,
-            },
-            _role: PhantomData,
-        })
-    } else {
-        None
-    }
-}
-
 #[derive(Debug)]
 pub enum RetypeError {
     CapSizeOverflow,

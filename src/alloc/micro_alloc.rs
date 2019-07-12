@@ -213,6 +213,11 @@ impl DeviceAllocator {
             })
     }
 
+    /// Extract a single device-memory-backed untyped based on its starting address and size.
+    /// If the requested memory range is managed by this allocator, but does not already exist
+    /// as an Untyped region of the desired size, the allocator will split apart the larger
+    /// memory chunks containing the region of interest just enough to get out exactly the requested
+    /// range, consuming CNode slots as it does so.
     pub fn get_untyped_by_address_range(
         &mut self,
         address_range: PageAlignedAddressRange,
