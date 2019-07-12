@@ -265,8 +265,7 @@ where
             // if it fails with a lookup error, ask the next layer up
             // to map a new instance at this layer.
             Err(MappingError::Overflow) => {
-                let mut ut =
-                    utb.alloc(slots, <UpperLevel::Item as DirectRetype>::SizeBits::USIZE)?;
+                let ut = utb.alloc(slots, <UpperLevel::Item as DirectRetype>::SizeBits::U8)?;
                 let next_item = ut.retype::<UpperLevel::Item>(&mut slots)?;
                 self.next
                     .map_layer(&next_item, addr, root, rights, vm_attributes, utb, slots)?;

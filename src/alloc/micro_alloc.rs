@@ -6,12 +6,18 @@ use core::marker::PhantomData;
 
 use selfe_sys::seL4_BootInfo;
 
-use crate::cap::{memory_kind, Cap, LocalCap, PhantomCap, Untyped, WUntyped};
+use crate::arch::MaxUntypedSize as MaxUntypedSizeBits;
+use crate::arch::MinUntypedSize as MinUntypedSizeBits;
+use crate::cap::{
+    memory_kind, role, Cap, LocalCap, PhantomCap, Untyped, WCNodeSlotsData, WUntyped,
+    WUntypedSplitError,
+};
+use crate::pow::Pow;
 use arrayvec::ArrayVec;
-use typenum::Unsigned;
+use typenum::{Unsigned, U2};
 
-pub const MIN_UNTYPED_SIZE_BITS: u8 = 4;
-pub const MAX_UNTYPED_SIZE_BITS: u8 = 32;
+pub type MIN_UNTYPED_SIZE_BYTES = Pow<MinUntypedSizeBits>;
+pub type MAX_UNTYPED_SIZE_BYTES = Pow<MaxUntypedSizeBits>;
 
 // TODO - pull from configs
 pub const MAX_INIT_UNTYPED_ITEMS: usize = 256;
@@ -38,7 +44,7 @@ pub fn bootstrap_allocators(
             match device_uts.try_push(Cap {
                 cptr,
                 cap_data: WUntyped {
-                    size_bits: ut.sizeBits as usize,
+                    size_bits: ut.sizeBits,
                     kind: memory_kind::Device { paddr: ut.paddr },
                 },
                 _role: PhantomData,
@@ -50,7 +56,7 @@ pub fn bootstrap_allocators(
             match general_uts.try_push(Cap {
                 cptr,
                 cap_data: WUntyped {
-                    size_bits: ut.sizeBits as usize,
+                    size_bits: ut.sizeBits,
                     kind: memory_kind::General {},
                 },
                 _role: PhantomData,
@@ -97,7 +103,7 @@ impl Allocator {
         if let Some(position) = self
             .items
             .iter()
-            .position(|ut| ut.size_bits() == BitSize::USIZE)
+            .position(|ut| ut.size_bits() == BitSize::U8)
         {
             let ut_ref = &self.items[position];
             let ut = Cap {
@@ -121,35 +127,124 @@ pub struct DeviceAllocator {
     untypeds: ArrayVec<[LocalCap<WUntyped<memory_kind::Device>>; MAX_DEVICE_UTS]>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum AddressRangeError {
+    StartNotPageAligned,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PageAlignedAddressRange {
+    start: usize,
+    size_bytes: usize,
+}
+
+impl PageAlignedAddressRange {
+    pub fn new_by_size(
+        start: usize,
+        size_bytes: usize,
+    ) -> Result<PageAlignedAddressRange, AddressRangeError> {
+        if start % crate::arch::PageBytes::USIZE != 0 {
+            return Err(AddressRangeError::StartNotPageAligned);
+        }
+        // TODO - add constraints on minimum size and size alignment?
+        Ok(PageAlignedAddressRange { start, size_bytes })
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum RangeAllocError {
+    AddressStartNotFound,
+    AddressFoundButSizeExceedsAvailableMemory,
+    RangeSizeNotAPowerOfTwo,
+    RangeSizeLessThanMinimumUntypedSize,
+    AddressFoundButSizeDoesNotFitInASingleUntyped,
+    NotEnoughCNodeSlots,
+    SplitError(WUntypedSplitError),
+}
+
 impl DeviceAllocator {
+    fn get_single_untyped_by_address_range(
+        &mut self,
+        address_range: PageAlignedAddressRange,
+        slots: &mut LocalCap<WCNodeSlotsData<role::Local>>,
+    ) -> Result<LocalCap<WUntyped<memory_kind::Device>>, RangeAllocError> {
+        let requested_size_bytes = address_range.size_bytes;
+        if !requested_size_bytes.is_power_of_two() {
+            return Err(RangeAllocError::RangeSizeNotAPowerOfTwo);
+        }
+        if requested_size_bytes < MIN_UNTYPED_SIZE_BYTES::USIZE {
+            return Err(RangeAllocError::RangeSizeLessThanMinimumUntypedSize);
+        }
+        // This bit calculation assumes that MIN_UNTYPED_SIZE_BYTES >= 0
+        // Note that we assume usize >= u32
+        let requested_size_bits = requested_size_bytes.trailing_zeros() as usize + 1;
+
+        let mut ut = self
+            .get_device_untyped_containing(address_range.start)
+            .ok_or_else(|| RangeAllocError::AddressStartNotFound)?;
+        let first_found_size = ut.size_bytes();
+        if first_found_size == address_range.size_bytes {
+            return Ok(ut);
+        } else if first_found_size < address_range.size_bytes {
+            self.untypeds.push(ut);
+            return Err(RangeAllocError::AddressFoundButSizeExceedsAvailableMemory);
+        }
+        let num_splits = usize::from(ut.cap_data.size_bits) - requested_size_bits;
+        if num_splits > slots.size() {
+            self.untypeds.push(ut);
+            return Err(RangeAllocError::NotEnoughCNodeSlots);
+        }
+        // Time to do some splitting
+        while usize::from(ut.size_bits()) > requested_size_bits {
+            let slot_pair = slots
+                .alloc_strong::<U2>()
+                .map_err(|_| RangeAllocError::NotEnoughCNodeSlots)?;
+            let (ut_left, ut_right) = ut
+                .split(slot_pair)
+                .map_err(|e| RangeAllocError::SplitError(e))?;
+            ut = if untyped_contains_paddr(&ut_left, address_range.start) {
+                self.untypeds.push(ut_right);
+                ut_left
+            } else {
+                self.untypeds.push(ut_left);
+                ut_right
+            };
+
+            if address_range.start - ut.paddr() + requested_size_bytes > ut.size_bytes() {
+                return Err(RangeAllocError::AddressFoundButSizeDoesNotFitInASingleUntyped);
+            }
+        }
+
+        if ut.paddr() != address_range.start {
+            unreachable!("Split algorithm with assertions on initial address range should always whittle down to the right starting address")
+        }
+        Ok(ut)
+    }
     /// Get the device untyped which contains the given physical
     /// address. If it's present in the list, remove it from the list
     /// and return it.
-    pub fn get_device_untyped(
+    fn get_device_untyped_containing(
         &mut self,
         paddr: usize,
     ) -> Option<LocalCap<WUntyped<memory_kind::Device>>> {
-        let untyped_contains_paddr = |ut: &LocalCap<WUntyped<memory_kind::Device>>| -> bool {
-            ut.paddr() <= paddr && ut.paddr() + ut.size_bytes() > paddr
-        };
-
-        if let Some(position) = self
+        let position = self
             .untypeds
             .iter()
-            .position(|ut| untyped_contains_paddr(ut))
-        {
-            let ut_ref = &self.untypeds[position];
-            let ut = Cap {
-                cptr: ut_ref.cptr,
-                cap_data: WUntyped {
-                    size_bits: ut_ref.size_bits(),
-                    kind: ut_ref.cap_data.kind,
-                },
-                _role: PhantomData,
-            };
-            self.untypeds.remove(position);
-            return Some(ut);
-        }
-        None
+            .position(|ut| untyped_contains_paddr(ut, paddr))?;
+        let ut_ref = &self.untypeds[position];
+        let ut = Cap {
+            cptr: ut_ref.cptr,
+            cap_data: WUntyped {
+                size_bits: ut_ref.size_bits(),
+                kind: ut_ref.cap_data.kind,
+            },
+            _role: PhantomData,
+        };
+        self.untypeds.remove(position);
+        Some(ut)
     }
+}
+
+fn untyped_contains_paddr(ut: &LocalCap<WUntyped<memory_kind::Device>>, paddr: usize) -> bool {
+    ut.paddr() <= paddr && ut.paddr() + ut.size_bytes() > paddr
 }

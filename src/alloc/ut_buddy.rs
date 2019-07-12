@@ -157,12 +157,7 @@ impl<PoolSizes: UList> UTBuddy<PoolSizes> {
         PoolSizes: _TakeUntyped<Diff<BitSize, MinUntypedSize>, NumSplits = NumSplits>,
         TakeUntyped_ResultPoolSizes<PoolSizes, Diff<BitSize, MinUntypedSize>>: UList,
     {
-        let weak_ut = alloc(
-            &mut self.pool,
-            slots.iter(),
-            BitSize::USIZE,
-            NumSplits::USIZE,
-        )?;
+        let weak_ut = alloc(&mut self.pool, slots.iter(), BitSize::U8, NumSplits::U8)?;
         Ok((
             Cap::wrap_cptr(weak_ut.cptr),
             UTBuddy {
@@ -178,7 +173,7 @@ pub fn weak_ut_buddy<Role: CNodeRole>(
     ut: Cap<WUntyped<memory_kind::General>, Role>,
 ) -> WUTBuddy<Role> {
     let mut pool = make_pool();
-    pool[ut.cap_data.size_bits - MinUntypedSize::USIZE].push(ut.cptr);
+    pool[usize::from(ut.cap_data.size_bits) - MinUntypedSize::USIZE].push(ut.cptr);
     WUTBuddy {
         pool,
         _role: PhantomData,
@@ -191,13 +186,13 @@ pub fn weak_ut_buddy<Role: CNodeRole>(
 pub enum UTBuddyError {
     /// The requested size exceeds max untyped size for this
     /// architecture.
-    RequestedSizeExceedsMax(usize),
+    RequestedSizeExceedsMax(u8),
     /// There are not enough CNode slots to do the requisite
     /// splitting.
     NotEnoughSlots,
     /// The wrapped untyped lacks the sufficient size to do this
     /// allocation request.
-    CannotAllocateRequestedSize(usize),
+    CannotAllocateRequestedSize(u8),
     /// We got an error from an seL4 syscall, namely the
     /// `seL4_Untyped_Retype` call.
     SeL4Error(SeL4Error),
@@ -224,7 +219,7 @@ impl WUTBuddy<role::Local> {
         &mut self,
         slots: &mut WCNodeSlots,
     ) -> Result<LocalCap<Untyped<Size>>, UTBuddyError> {
-        let weak_ut = self.alloc(slots, Size::USIZE)?;
+        let weak_ut = self.alloc(slots, Size::U8)?;
         Ok(Cap {
             cptr: weak_ut.cptr,
             cap_data: PhantomCap::phantom_instance(),
@@ -236,20 +231,20 @@ impl WUTBuddy<role::Local> {
     pub fn alloc(
         &mut self,
         slots: &mut WCNodeSlots,
-        size: usize,
+        size: u8,
     ) -> Result<LocalCap<WUntyped<memory_kind::General>>, UTBuddyError> {
-        if size > MaxUntypedSize::USIZE {
+        if size > MaxUntypedSize::U8 {
             return Err(UTBuddyError::RequestedSizeExceedsMax(size));
         }
 
-        let idx = size - MinUntypedSize::USIZE;
+        let idx = size - MinUntypedSize::U8;
 
         // In the strong case, `NumSplits` can be inferred, however
         // with runtime data we must calculate this.
-        let mut split_count = 0;
+        let mut split_count: u8 = 0;
         let mut ut_big_enough = false;
-        for i in idx..MaxUntypedSize::USIZE {
-            if self.pool[i].len() == 0 {
+        for i in idx..MaxUntypedSize::U8 {
+            if self.pool[usize::from(i)].len() == 0 {
                 split_count += 1;
             } else {
                 ut_big_enough = true;
@@ -264,7 +259,7 @@ impl WUTBuddy<role::Local> {
             return Err(UTBuddyError::CannotAllocateRequestedSize(size));
         }
 
-        let slot_count = split_count * 2;
+        let slot_count = usize::from(split_count) * 2;
         // We also need to confirm that we have enough slots.
         if slot_count > slots.cap_data.size {
             return Err(UTBuddyError::NotEnoughSlots);
@@ -309,10 +304,10 @@ impl WUTBuddy<role::Local> {
         // N.B. We could be reclaiming the emptied local slots for future use, but are currently not
         // purely for implementation-time-and-complexity reasons.
         let mut child_pool = make_pool();
-        for ((i, local_bucket), child_bucket) in
-            self.pool.iter().enumerate().zip(child_pool.iter_mut())
+        for (i, (local_bucket, child_bucket)) in
+            (0..MaxUntypedSize::U8).zip(self.pool.iter().zip(child_pool.iter_mut()))
         {
-            let size_bits = i + MinUntypedSize::USIZE;
+            let size_bits = i + MinUntypedSize::U8;
             for (local_ut_cptr, dest_slot) in local_bucket
                 .iter()
                 .zip(slots.incrementally_consuming_iter())
@@ -349,20 +344,20 @@ impl<Role: CNodeRole> WUTBuddy<Role> {
 fn alloc(
     pool: &mut [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE],
     slots_iter: impl Iterator<Item = LocalCNodeSlot>,
-    size_bits: usize,
-    split_count: usize,
+    size_bits: u8,
+    split_count: u8,
 ) -> Result<LocalCap<WUntyped<memory_kind::General>>, SeL4Error> {
     // The index in the pool array where Untypeds of the requested
     // size are stored.
-    let index = size_bits - MinUntypedSize::USIZE;
+    let index = size_bits - MinUntypedSize::U8;
 
     // If there's no cptr of the requested size, make one by splitting
     // the larger ones.
-    if pool[index].len() == 0 {
+    if pool[usize::from(index)].len() == 0 {
         let split_start_index = index + split_count;
         for (i, slot) in (index..=split_start_index).rev().zip(slots_iter.step_by(2)) {
-            let cptr = pool[i].pop().unwrap();
-            let cptr_bitsize = i + MinUntypedSize::USIZE;
+            let cptr = pool[usize::from(i)].pop().unwrap();
+            let cptr_bitsize = i + MinUntypedSize::U8;
 
             let (slot_cptr, slot_offset, _) = slot.elim();
 
@@ -370,7 +365,7 @@ fn alloc(
                 seL4_Untyped_Retype(
                     cptr,                                   // _service
                     api_object_seL4_UntypedObject as usize, // type
-                    cptr_bitsize - 1,                       // size_bits
+                    usize::from(cptr_bitsize - 1),          // size_bits
                     slot_cptr,                              // root
                     0,                                      // index
                     0,                                      // depth
@@ -381,12 +376,12 @@ fn alloc(
             .as_result()
             .map_err(|e| SeL4Error::UntypedRetype(e))?;
 
-            pool[i - 1].push(slot_offset);
-            pool[i - 1].push(slot_offset + 1);
+            pool[usize::from(i) - 1].push(slot_offset);
+            pool[usize::from(i) - 1].push(slot_offset + 1);
         }
     }
 
-    let cptr = pool[index].pop().unwrap();
+    let cptr = pool[usize::from(index)].pop().unwrap();
 
     Ok(Cap {
         cptr,
