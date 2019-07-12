@@ -102,21 +102,18 @@ impl Allocator {
     pub fn get_untyped<BitSize: Unsigned>(
         &mut self,
     ) -> Option<LocalCap<Untyped<BitSize, memory_kind::General>>> {
-        if let Some(position) = self
+        let position = self
             .items
             .iter()
-            .position(|ut| ut.size_bits() == BitSize::U8)
-        {
-            let ut_ref = &self.items[position];
-            let ut = Cap {
-                cptr: ut_ref.cptr,
-                cap_data: PhantomCap::phantom_instance(),
-                _role: PhantomData,
-            };
-            self.items.remove(position);
-            return Some(ut);
-        }
-        None
+            .position(|ut| ut.size_bits() == BitSize::U8)?;
+        let ut_ref = &self.items[position];
+        let ut = Cap {
+            cptr: ut_ref.cptr,
+            cap_data: PhantomCap::phantom_instance(),
+            _role: PhantomData,
+        };
+        self.items.remove(position);
+        return Some(ut);
     }
 }
 
