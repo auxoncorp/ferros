@@ -116,7 +116,7 @@ impl LocalCap<WUntyped<memory_kind::Device>> {
         WUntypedSplitError,
     > {
         let output_size_bits = self.cap_data.size_bits - 1;
-        if output_size_bits < crate::arch::MinUntypedSize::U8 {
+        if output_size_bits < crate::arch::PageBits::U8 {
             return Err(WUntypedSplitError::TooSmallToBeSplit);
         }
 
@@ -686,6 +686,8 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::Device>> {
     where
         BitSize: Sub<U1>,
         Diff<BitSize, U1>: Unsigned,
+        // Device Untypeds can only be turned into paging leaf structures, so their minimum size is that of a page
+        Diff<BitSize, U1>: IsGreaterOrEqual<crate::arch::PageBits, Output = True>,
     {
         let (dest_cptr, dest_offset, _) = dest_slots.elim();
 
