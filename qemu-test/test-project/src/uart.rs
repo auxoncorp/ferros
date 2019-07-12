@@ -2,6 +2,7 @@ use selfe_sys::*;
 
 use typenum::*;
 
+use ferros::alloc::micro_alloc::*;
 use ferros::alloc::{self, micro_alloc, smart_alloc};
 use ferros::arch;
 use ferros::bootstrap::{root_cnode, BootInfo};
@@ -13,9 +14,10 @@ use ferros::vspace::*;
 
 use super::TopLevelError;
 
+// The UART1 region is 4 pages i.e. 14 bits.
+// C.f. i.MX 6ULL Reference Manual Table 2.2.
 const UART1_PADDR: usize = 0x02020000; //33685504
 
-type LargeDeviceRegionSize = U21; // 2097152 bytes
 type Uart1IrqLine = U58;
 
 pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
@@ -42,19 +44,17 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             .expect("initial alloc failure"),
     );
 
-    // The UART1 region is 4 pages i.e. 14 bits.
-    // C.f. i.MX 6ULL Reference Manual Table 2.2.
-    // As of the recent changes in memory region mapping,
-    // that section is part of a 21-bit untyped region we'll need to manually whittle down
-    let device_untyped_weak = device_allocator
-        .get_device_untyped(UART1_PADDR)
-        .expect("find uart1 device memory");
-
-    let device_untyped: LocalCap<Untyped<LargeDeviceRegionSize, _>> = device_untyped_weak
-        .as_strong()
-        .expect("device untyped was not the right size!");
-
     smart_alloc!(|slots: local_slots, ut: uts| {
+        let uart1_page_1_untyped = device_allocator
+            .get_untyped_by_address_range_slot_infallible(
+                PageAlignedAddressRange::new_by_size(UART1_PADDR, arch::PageBytes::USIZE)
+                    .expect("failed to specify UART1 page range"),
+                slots,
+            )
+            .expect("find uart1 device memory")
+            .as_strong::<arch::PageBits>()
+            .expect("device untyped was not the right size!");
+
         let unmapped_region = UnmappedMemoryRegion::new(ut, slots)?;
         let mapped_region =
             root_vspace.map_region(unmapped_region, CapRights::RW, arch::vm_attributes::DEFAULT)?;
@@ -79,16 +79,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (slots_u, _uart1_slots) = uart1_slots.alloc();
         let (interrupt_consumer, _) =
             InterruptConsumer::new(ut, &mut irq_control, &root_cnode, slots, slots_u)?;
-
-        // the UART1's region is offset by 131072 from the 21-bit device paddr, so it starts
-        // at the second sixteenth
-        let (u19, _, _, _) = device_untyped.quarter(slots)?;
-        let (_, uart_and_then_some_ut17, _, _) = u19.quarter(slots)?;
-
-        let (uart_and_then_some_ut15, _, _, _) = uart_and_then_some_ut17.quarter(slots)?;
-        // Made it to the 4 pages reserved for UART1
-        let (uart1_pages, _) = uart_and_then_some_ut15.split(slots)?;
-        let (uart1_page_1_untyped, _, _, _) = uart1_pages.quarter(slots)?;
 
         let unmapped_uart1_page1 = UnmappedMemoryRegion::new_device(uart1_page_1_untyped, slots)?;
         let uart1_page_1 = uart1_vspace.map_region(

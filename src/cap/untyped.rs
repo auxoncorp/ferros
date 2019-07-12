@@ -14,7 +14,7 @@ use crate::cap::{
     ChildCNode, ChildCNodeSlots, Delible, DirectRetype, LocalCNode, LocalCNodeSlot,
     LocalCNodeSlots, LocalCap, Movable, PhantomCap, WCNodeSlots,
 };
-use crate::error::{ErrorExt, SeL4Error};
+use crate::error::{ErrorExt, KernelError, SeL4Error};
 use crate::pow::{Pow, _Pow};
 use crate::vspace::NumPages;
 
@@ -31,9 +31,10 @@ pub struct Untyped<BitSize: Unsigned, Kind: MemoryKind = memory_kind::General> {
 }
 
 /// Weakly-typed (runtime-managed) Untyped
+#[derive(Debug)]
 pub struct WUntyped<Kind: MemoryKind> {
     pub(crate) kind: Kind,
-    pub(crate) size_bits: usize,
+    pub(crate) size_bits: u8,
 }
 
 impl<BitSize: Unsigned, Kind: MemoryKind> CapType for Untyped<BitSize, Kind> {}
@@ -41,7 +42,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> CapType for Untyped<BitSize, Kind> {}
 impl<Kind: MemoryKind> CapType for WUntyped<Kind> {}
 
 impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
-    pub fn size_bits(&self) -> usize {
+    pub fn size_bits(&self) -> u8 {
         self.cap_data.size_bits
     }
 
@@ -50,7 +51,7 @@ impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
     }
 
     pub fn as_strong<SizeBits: Unsigned>(self) -> Option<LocalCap<Untyped<SizeBits, Kind>>> {
-        if self.size_bits() == SizeBits::USIZE {
+        if self.size_bits() == SizeBits::U8 {
             return Some(Cap {
                 cptr: self.cptr,
                 cap_data: Untyped {
@@ -69,7 +70,7 @@ impl LocalCap<WUntyped<memory_kind::General>> {
         self,
         slots: &mut WCNodeSlots,
     ) -> Result<LocalCap<D>, RetypeError> {
-        if D::SizeBits::USIZE > self.cap_data.size_bits {
+        if D::SizeBits::U8 > self.cap_data.size_bits {
             return Err(RetypeError::NotBigEnough);
         }
 
@@ -93,9 +94,73 @@ impl LocalCap<WUntyped<memory_kind::General>> {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub enum WUntypedSplitError {
+    TooSmallToBeSplit,
+    UntypedRetypeError(KernelError),
+}
+
 impl LocalCap<WUntyped<memory_kind::Device>> {
     pub fn paddr(&self) -> usize {
         self.cap_data.kind.paddr
+    }
+
+    pub fn split(
+        self,
+        dest_slots: LocalCNodeSlots<U2>,
+    ) -> Result<
+        (
+            LocalCap<WUntyped<memory_kind::Device>>,
+            LocalCap<WUntyped<memory_kind::Device>>,
+        ),
+        WUntypedSplitError,
+    > {
+        let output_size_bits = self.cap_data.size_bits - 1;
+        if output_size_bits < crate::arch::PageBits::U8 {
+            return Err(WUntypedSplitError::TooSmallToBeSplit);
+        }
+
+        let (dest_cptr, dest_offset, _) = dest_slots.elim();
+
+        unsafe {
+            seL4_Untyped_Retype(
+                self.cptr,                              // _service
+                api_object_seL4_UntypedObject as usize, // type
+                usize::from(output_size_bits),          // size_bits
+                dest_cptr,                              // root
+                0,                                      // index
+                0,                                      // depth
+                dest_offset,                            // offset
+                2,                                      // num_objects
+            )
+        }
+        .as_result()
+        .map_err(|e| WUntypedSplitError::UntypedRetypeError(e))?;
+
+        let original_paddr = self.cap_data.kind.paddr;
+        let original_size_bytes = 2usize.pow(u32::from(self.cap_data.size_bits));
+        Ok((
+            Cap {
+                cptr: dest_offset,
+                cap_data: WUntyped {
+                    kind: memory_kind::Device {
+                        paddr: original_paddr,
+                    },
+                    size_bits: output_size_bits,
+                },
+                _role: PhantomData,
+            },
+            Cap {
+                cptr: dest_offset + 1,
+                cap_data: WUntyped {
+                    kind: memory_kind::Device {
+                        paddr: original_paddr + original_size_bytes / 2,
+                    },
+                    size_bits: output_size_bits,
+                },
+                _role: PhantomData,
+            },
+        ))
     }
 }
 
@@ -114,7 +179,7 @@ impl<Kind: MemoryKind> Movable for WUntyped<Kind> {}
 
 impl<BitSize: Unsigned, Kind: MemoryKind> Delible for Untyped<BitSize, Kind> {}
 
-pub trait MemoryKind: private::SealedMemoryKind + Clone {}
+pub trait MemoryKind: private::SealedMemoryKind + Clone + core::fmt::Debug {}
 
 pub mod memory_kind {
     use super::MemoryKind;
@@ -129,41 +194,6 @@ pub mod memory_kind {
         pub(crate) paddr: usize,
     }
     impl MemoryKind for Device {}
-}
-
-pub(crate) fn wrap_untyped<BitSize: Unsigned>(
-    cptr: usize,
-    untyped_desc: &seL4_UntypedDesc,
-) -> Option<LocalCap<Untyped<BitSize, memory_kind::General>>> {
-    if untyped_desc.sizeBits == BitSize::to_u8() {
-        Some(Cap {
-            cptr,
-            cap_data: PhantomCap::phantom_instance(),
-            _role: PhantomData,
-        })
-    } else {
-        None
-    }
-}
-
-pub(crate) fn wrap_device_untyped<BitSize: Unsigned>(
-    cptr: usize,
-    untyped_desc: &seL4_UntypedDesc,
-) -> Option<LocalCap<Untyped<BitSize, memory_kind::Device>>> {
-    if untyped_desc.sizeBits == BitSize::to_u8() {
-        Some(Cap {
-            cptr,
-            cap_data: Untyped {
-                kind: memory_kind::Device {
-                    paddr: untyped_desc.paddr,
-                },
-                _bit_size: PhantomData,
-            },
-            _role: PhantomData,
-        })
-    } else {
-        None
-    }
 }
 
 #[derive(Debug)]
@@ -229,7 +259,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
         Cap {
             cptr: self.cptr,
             cap_data: WUntyped {
-                size_bits: BitSize::USIZE,
+                size_bits: BitSize::U8,
                 kind: self.cap_data.kind,
             },
             _role: PhantomData,
@@ -656,6 +686,8 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::Device>> {
     where
         BitSize: Sub<U1>,
         Diff<BitSize, U1>: Unsigned,
+        // Device Untypeds can only be turned into paging leaf structures, so their minimum size is that of a page
+        Diff<BitSize, U1>: IsGreaterOrEqual<crate::arch::PageBits, Output = True>,
     {
         let (dest_cptr, dest_offset, _) = dest_slots.elim();
 

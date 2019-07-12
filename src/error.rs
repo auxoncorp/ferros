@@ -29,7 +29,7 @@ pub enum SeL4Error {
     VCPUBindTcb(KernelError),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum KernelError {
     InvalidArgument,
     InvalidCapability,

@@ -5,9 +5,7 @@ use typenum::*;
 use selfe_sys::*;
 
 use crate::cap::irq_handler::weak::WIRQHandler;
-use crate::cap::{
-    CNodeRole, Cap, CapType, LocalCap, MaxIRQCount, Movable, Notification, PhantomCap,
-};
+use crate::cap::{Cap, CapType, LocalCap, MaxIRQCount, Movable, Notification, PhantomCap};
 use crate::error::{ErrorExt, SeL4Error};
 
 /// Whether or not an IRQ Handle has been set to a particular Notification

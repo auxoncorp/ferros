@@ -5,10 +5,9 @@ use typenum::*;
 use selfe_sys::*;
 
 use crate::cap::{
-    irq_handler, irq_state, CNodeRole, CNodeSlot, Cap, CapType, IRQHandler, LocalCNode, LocalCap,
+    irq_handler, irq_state, CNodeRole, CNodeSlot, Cap, CapType, IRQHandler, LocalCap,
 };
 use crate::error::{ErrorExt, SeL4Error};
-use crate::userland::CapRights;
 
 pub type MaxIRQCount = U1024;
 

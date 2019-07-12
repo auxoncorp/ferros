@@ -210,6 +210,9 @@ pub enum CNodeSlotsError {
 }
 
 impl<Role: CNodeRole> LocalCap<WCNodeSlotsData<Role>> {
+    pub(crate) fn size(&self) -> usize {
+        self.cap_data.size
+    }
     /// Split the WCNodeSlots(original_size) into (WCNodeSlots(count), WCNodeSlots(original_size - count))
     pub(crate) fn alloc(
         &mut self,
@@ -226,6 +229,26 @@ impl<Role: CNodeRole> LocalCap<WCNodeSlotsData<Role>> {
             cap_data: WCNodeSlotsData {
                 offset,
                 size: count,
+                _role: PhantomData,
+            },
+            _role: PhantomData,
+        })
+    }
+    /// Split the WCNodeSlots(original_size) into CNodeSlots<Count> and WCNodeSlots(original_size - count)
+    pub(crate) fn alloc_strong<Count: Unsigned>(
+        &mut self,
+    ) -> Result<LocalCap<CNodeSlotsData<Count, Role>>, CNodeSlotsError> {
+        if Count::USIZE > self.cap_data.size {
+            return Err(CNodeSlotsError::NotEnoughSlots);
+        }
+        let offset = self.cap_data.offset;
+        self.cap_data.offset += Count::USIZE;
+        self.cap_data.size -= Count::USIZE;
+        Ok(Cap {
+            cptr: self.cptr,
+            cap_data: CNodeSlotsData {
+                offset,
+                _size: PhantomData,
                 _role: PhantomData,
             },
             _role: PhantomData,
