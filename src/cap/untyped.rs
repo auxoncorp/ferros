@@ -31,6 +31,7 @@ pub struct Untyped<BitSize: Unsigned, Kind: MemoryKind = memory_kind::General> {
 }
 
 /// Weakly-typed (runtime-managed) Untyped
+#[derive(Debug)]
 pub struct WUntyped<Kind: MemoryKind> {
     pub(crate) kind: Kind,
     pub(crate) size_bits: u8,
@@ -178,7 +179,7 @@ impl<Kind: MemoryKind> Movable for WUntyped<Kind> {}
 
 impl<BitSize: Unsigned, Kind: MemoryKind> Delible for Untyped<BitSize, Kind> {}
 
-pub trait MemoryKind: private::SealedMemoryKind + Clone {}
+pub trait MemoryKind: private::SealedMemoryKind + Clone + core::fmt::Debug {}
 
 pub mod memory_kind {
     use super::MemoryKind;

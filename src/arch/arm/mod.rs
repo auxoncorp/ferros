@@ -8,6 +8,9 @@ pub type WordSize = U32;
 pub type MinUntypedSize = U4;
 // MaxUntypedSize is half the address space and/or word size.
 pub type MaxUntypedSize = U29;
+/// The number of splits it would take to extract an untyped of the minimum
+/// size starting from an untyped of the maximum size
+pub type MaxNaiveSplitCount = op!(MaxUntypedSize - MinUntypedSize);
 
 /// The ASID address space is a total of 16 bits. It is bifurcated
 /// into high bits and low bits where the high bits determine the

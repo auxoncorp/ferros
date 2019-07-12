@@ -6,18 +6,20 @@ use core::marker::PhantomData;
 
 use selfe_sys::seL4_BootInfo;
 
+use crate::arch::MaxNaiveSplitCount;
 use crate::arch::MaxUntypedSize as MaxUntypedSizeBits;
 use crate::arch::MinUntypedSize as MinUntypedSizeBits;
 use crate::cap::{
-    memory_kind, role, Cap, LocalCap, PhantomCap, Untyped, WCNodeSlotsData, WUntyped,
-    WUntypedSplitError,
+    memory_kind, role, Cap, LocalCNodeSlots, LocalCap, PhantomCap, Untyped, WCNodeSlotsData,
+    WUntyped, WUntypedSplitError,
 };
 use crate::pow::Pow;
 use arrayvec::ArrayVec;
-use typenum::{Unsigned, U2};
+use core::convert::{TryFrom, TryInto};
+use typenum::*;
 
-pub type MIN_UNTYPED_SIZE_BYTES = Pow<MinUntypedSizeBits>;
-pub type MAX_UNTYPED_SIZE_BYTES = Pow<MaxUntypedSizeBits>;
+pub type MinUntypedSizeBytes = Pow<MinUntypedSizeBits>;
+pub type MaxUntypedSizeBytes = Pow<MaxUntypedSizeBits>;
 
 // TODO - pull from configs
 pub const MAX_INIT_UNTYPED_ITEMS: usize = 256;
@@ -128,67 +130,127 @@ pub struct DeviceAllocator {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum AddressRangeError {
+pub enum PageAlignedAddressRangeError {
     StartNotPageAligned,
+    SizeNotPageAligned,
+    SizeLessThanAPage,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PageAlignedAddressRange {
-    start: usize,
-    size_bytes: usize,
+    start: PageAligned,
+    size_bytes: PageAligned,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PageAligned(pub usize);
+
+impl TryFrom<usize> for PageAligned {
+    type Error = NotPageAligned;
+
+    fn try_from(value: usize) -> Result<PageAligned, Self::Error> {
+        if value % crate::arch::PageBytes::USIZE == 0 {
+            Ok(PageAligned(value))
+        } else {
+            return Err(NotPageAligned);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct NotPageAligned;
 
 impl PageAlignedAddressRange {
     pub fn new_by_size(
         start: usize,
         size_bytes: usize,
-    ) -> Result<PageAlignedAddressRange, AddressRangeError> {
-        if start % crate::arch::PageBytes::USIZE != 0 {
-            return Err(AddressRangeError::StartNotPageAligned);
+    ) -> Result<PageAlignedAddressRange, PageAlignedAddressRangeError> {
+        let start = start
+            .try_into()
+            .map_err(|_| PageAlignedAddressRangeError::StartNotPageAligned)?;
+        if size_bytes < crate::arch::PageBytes::USIZE {
+            return Err(PageAlignedAddressRangeError::SizeLessThanAPage);
         }
-        // TODO - add constraints on minimum size and size alignment?
+        let size_bytes = size_bytes
+            .try_into()
+            .map_err(|_| PageAlignedAddressRangeError::SizeNotPageAligned)?;
         Ok(PageAlignedAddressRange { start, size_bytes })
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub enum RangeAllocError {
-    AddressStartNotFound,
-    AddressFoundButSizeExceedsAvailableMemory,
+    // Error variants that might be moved over to the range type
     RangeSizeNotAPowerOfTwo,
     RangeSizeLessThanMinimumUntypedSize,
+    RangeSizeGreaterThanMaximumUntypedSize,
+
+    // Error variants limited by what's available in the allocator state
+    AddressStartNotFound,
+    AddressFoundButSizeExceedsAvailableMemory,
     AddressFoundButSizeDoesNotFitInASingleUntyped,
-    NotEnoughCNodeSlots,
+    AddressStartInTheMiddleOfTargetSizeUntyped,
+
     SplitError(WUntypedSplitError),
+
+    // Only relevant when we don't go out of our way to provide excessive slots.
+    NotEnoughCNodeSlots,
 }
 
 impl DeviceAllocator {
-    fn get_single_untyped_by_address_range(
+    pub fn get_untyped_by_address_range_slot_infallible(
+        &mut self,
+        address_range: PageAlignedAddressRange,
+        slots: LocalCNodeSlots<op!(MaxNaiveSplitCount + MaxNaiveSplitCount)>,
+    ) -> Result<LocalCap<WUntyped<memory_kind::Device>>, RangeAllocError> {
+        let mut slots = slots.weaken();
+        self.get_untyped_by_address_range(address_range, &mut slots)
+            .map_err(|e| match e {
+                RangeAllocError::NotEnoughCNodeSlots => {
+                    unreachable!("Should be logically impossible to run out of slots")
+                }
+                _ => e,
+            })
+    }
+
+    pub fn get_untyped_by_address_range(
         &mut self,
         address_range: PageAlignedAddressRange,
         slots: &mut LocalCap<WCNodeSlotsData<role::Local>>,
     ) -> Result<LocalCap<WUntyped<memory_kind::Device>>, RangeAllocError> {
-        let requested_size_bytes = address_range.size_bytes;
+        let requested_size_bytes = address_range.size_bytes.0;
+        if requested_size_bytes >= MaxUntypedSizeBytes::USIZE {
+            return Err(RangeAllocError::RangeSizeGreaterThanMaximumUntypedSize);
+        }
+        if requested_size_bytes < MinUntypedSizeBytes::USIZE {
+            return Err(RangeAllocError::RangeSizeLessThanMinimumUntypedSize);
+        }
         if !requested_size_bytes.is_power_of_two() {
             return Err(RangeAllocError::RangeSizeNotAPowerOfTwo);
         }
-        if requested_size_bytes < MIN_UNTYPED_SIZE_BYTES::USIZE {
-            return Err(RangeAllocError::RangeSizeLessThanMinimumUntypedSize);
-        }
-        // This bit calculation assumes that MIN_UNTYPED_SIZE_BYTES >= 0
+        // This bit calculation assumes that MinUntypedSizeBytes >= 0
+        // and the above is_power_of_two check
         // Note that we assume usize >= u32
-        let requested_size_bits = requested_size_bytes.trailing_zeros() as usize + 1;
+        let requested_size_bits = requested_size_bytes.trailing_zeros() as usize;
 
         let mut ut = self
-            .get_device_untyped_containing(address_range.start)
+            .get_device_untyped_containing(address_range.start.0)
             .ok_or_else(|| RangeAllocError::AddressStartNotFound)?;
         let first_found_size = ut.size_bytes();
-        if first_found_size == address_range.size_bytes {
-            return Ok(ut);
-        } else if first_found_size < address_range.size_bytes {
+
+        if first_found_size < requested_size_bytes {
             self.untypeds.push(ut);
             return Err(RangeAllocError::AddressFoundButSizeExceedsAvailableMemory);
         }
+        if first_found_size == requested_size_bytes {
+            if ut.paddr() == address_range.start.0 {
+                return Ok(ut);
+            } else {
+                self.untypeds.push(ut);
+                return Err(RangeAllocError::AddressStartInTheMiddleOfTargetSizeUntyped);
+            }
+        }
+
         let num_splits = usize::from(ut.cap_data.size_bits) - requested_size_bits;
         if num_splits > slots.size() {
             self.untypeds.push(ut);
@@ -202,7 +264,7 @@ impl DeviceAllocator {
             let (ut_left, ut_right) = ut
                 .split(slot_pair)
                 .map_err(|e| RangeAllocError::SplitError(e))?;
-            ut = if untyped_contains_paddr(&ut_left, address_range.start) {
+            ut = if untyped_contains_paddr(&ut_left, address_range.start.0) {
                 self.untypeds.push(ut_right);
                 ut_left
             } else {
@@ -210,12 +272,12 @@ impl DeviceAllocator {
                 ut_right
             };
 
-            if address_range.start - ut.paddr() + requested_size_bytes > ut.size_bytes() {
+            if address_range.start.0 - ut.paddr() + requested_size_bytes > ut.size_bytes() {
                 return Err(RangeAllocError::AddressFoundButSizeDoesNotFitInASingleUntyped);
             }
         }
 
-        if ut.paddr() != address_range.start {
+        if ut.paddr() != address_range.start.0 {
             unreachable!("Split algorithm with assertions on initial address range should always whittle down to the right starting address")
         }
         Ok(ut)

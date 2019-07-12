@@ -11,10 +11,10 @@ pub fn irq_control_manipulation(
     weak_slots: LocalCNodeSlots<U24>,
     mut irq_control: LocalCap<IRQControl>,
 ) -> Result<(), super::TopLevelError> {
-    const TOP_LEVEL_CLAIM:u16 = 20;
-    const COLLECTION_CLAIM_A:u16 = 30;
-    const COLLECTION_CLAIM_B:u16 = 50;
-    const NEVER_HANDLED:u16 = 70;
+    const TOP_LEVEL_CLAIM: u16 = 20;
+    const COLLECTION_CLAIM_A: u16 = 30;
+    const COLLECTION_CLAIM_B: u16 = 50;
+    const NEVER_HANDLED: u16 = 70;
     let mut weak_slots = weak_slots.weaken();
     smart_alloc! { |slots: cnode_slots<CNodeSlots>| {
 
