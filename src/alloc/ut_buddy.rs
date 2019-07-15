@@ -312,7 +312,7 @@ impl WUTBuddy<role::Local> {
                 .iter()
                 .zip(slots.incrementally_consuming_iter())
             {
-                let local_wut: Cap<WUntyped<memory_kind::General>, _> = Cap {
+                let local_wut: Cap<WUntyped<memory_kind::General>, role::Local> = Cap {
                     cptr: *local_ut_cptr,
                     cap_data: WUntyped {
                         size_bits,
