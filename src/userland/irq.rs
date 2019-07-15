@@ -41,7 +41,7 @@ impl<Role: CNodeRole> WIRQHandlerCollection<Role> {
             // instance as if they were unavailable.
             if *is_requested {
                 let slot = dest_slots
-                    .alloc_single()
+                    .alloc_strong()
                     .map_err(|_| IRQCollectionError::NotEnoughSlots)?;
                 handlers.push(
                     irq_control
