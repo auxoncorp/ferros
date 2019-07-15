@@ -93,7 +93,7 @@ impl SelfHostedProcess {
         // Reserve a guard page after the stack.
         vspace.skip_pages(1)?;
 
-        let root_slot = cap_transfer_slots.alloc_single().map_err(|e| match e {
+        let root_slot = cap_transfer_slots.alloc_strong().map_err(|e| match e {
             CNodeSlotsError::NotEnoughSlots => ProcessSetupError::NotEnoughCNodeSlots,
         })?;
         let child_vspace = vspace.for_child(

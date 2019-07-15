@@ -235,34 +235,14 @@ impl<Role: CNodeRole> LocalCap<WCNodeSlotsData<Role>> {
         })
     }
     /// Split the WCNodeSlots(original_size) into CNodeSlots<Count> and WCNodeSlots(original_size - count)
-    pub(crate) fn alloc_strong<Count: Unsigned>(
+    pub fn alloc_strong<Count: Unsigned>(
         &mut self,
     ) -> Result<LocalCap<CNodeSlotsData<Count, Role>>, CNodeSlotsError> {
-        if Count::USIZE > self.cap_data.size {
-            return Err(CNodeSlotsError::NotEnoughSlots);
-        }
-        let offset = self.cap_data.offset;
-        self.cap_data.offset += Count::USIZE;
-        self.cap_data.size -= Count::USIZE;
+        let cap = self.alloc(Count::USIZE)?;
         Ok(Cap {
-            cptr: self.cptr,
+            cptr: cap.cptr,
             cap_data: CNodeSlotsData {
-                offset,
-                _size: PhantomData,
-                _role: PhantomData,
-            },
-            _role: PhantomData,
-        })
-    }
-
-    pub(crate) fn alloc_single(
-        &mut self,
-    ) -> Result<LocalCap<CNodeSlotsData<U1, Role>>, CNodeSlotsError> {
-        let single = self.alloc(1)?;
-        Ok(Cap {
-            cptr: single.cptr,
-            cap_data: CNodeSlotsData {
-                offset: single.cap_data.offset,
+                offset: cap.cap_data.offset,
                 _size: PhantomData,
                 _role: PhantomData,
             },
