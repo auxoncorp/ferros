@@ -37,7 +37,8 @@ pub fn bootstrap_allocators(
     bootinfo: &'static seL4_BootInfo,
 ) -> Result<(Allocator, DeviceAllocator), Error> {
     let mut general_uts = ArrayVec::new();
-    let mut device_uts = ArrayVec::new();
+    let mut device_uts: ArrayVec<[LocalCap<WUntyped<memory_kind::Device>>; MAX_DEVICE_UTS]> =
+        ArrayVec::new();
 
     for i in 0..(bootinfo.untyped.end - bootinfo.untyped.start) {
         let cptr = (bootinfo.untyped.start + i) as usize;
@@ -68,6 +69,8 @@ pub fn bootstrap_allocators(
             }
         }
     }
+    // N.B. could cut the pdqsort dependency by doing this sorting during the initial insertion
+    pdqsort::sort_by_key(&mut device_uts, |wut| wut.cap_data.kind.paddr);
     Ok((
         Allocator { items: general_uts },
         DeviceAllocator {
@@ -126,6 +129,28 @@ pub struct DeviceAllocator {
     untypeds: ArrayVec<[LocalCap<WUntyped<memory_kind::Device>>; MAX_DEVICE_UTS]>,
 }
 
+impl Debug for DeviceAllocator {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError> {
+        f.write_str("DeviceAllocator {")?;
+        write!(f, "\n  num_untypeds: {}", self.untypeds.len())?;
+        f.write_str("\n  untypeds: [")?;
+        for i in &self.untypeds {
+            let paddr = i.cap_data.kind.paddr;
+            write!(
+                f,
+                "\n    {{ cptr: {}, size_bits: {}, paddr: {:#018X?}, end_paddr: {:#018X?} }},",
+                i.cptr,
+                i.size_bits(),
+                paddr,
+                paddr + 2usize.pow(u32::from(i.size_bits()))
+            )
+            .unwrap();
+        }
+        f.write_str("\n  ]")?;
+        f.write_str("\n}")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum PageAlignedAddressRangeError {
     StartNotPageAligned,
@@ -178,6 +203,8 @@ impl PageAlignedAddressRange {
 
 #[derive(Debug, PartialEq)]
 pub enum DeviceRangeAllocError {
+    // Not enough internal storage space
+    TooManyDeviceUntypeds,
     // Error variants that might be moved over to the range type
     RangeSizeNotAPowerOfTwo,
     RangeSizeLessThanMinimumUntypedSize,
@@ -242,21 +269,24 @@ impl DeviceAllocator {
         let first_found_size = ut.size_bytes();
 
         if first_found_size < requested_size_bytes {
-            self.untypeds.push(ut);
+            self.insert_sorted(ut)
+                .map_err(|_| DeviceRangeAllocError::TooManyDeviceUntypeds)?;
             return Err(DeviceRangeAllocError::AddressFoundButSizeExceedsAvailableMemory);
         }
         if first_found_size == requested_size_bytes {
             if ut.paddr() == address_range.start.0 {
                 return Ok(ut);
             } else {
-                self.untypeds.push(ut);
+                self.insert_sorted(ut)
+                    .map_err(|_| DeviceRangeAllocError::TooManyDeviceUntypeds)?;
                 return Err(DeviceRangeAllocError::AddressStartInTheMiddleOfTargetSizeUntyped);
             }
         }
 
         let num_splits = usize::from(ut.cap_data.size_bits) - requested_size_bits;
         if 2 * num_splits > slots.size() {
-            self.untypeds.push(ut);
+            self.insert_sorted(ut)
+                .map_err(|_| DeviceRangeAllocError::TooManyDeviceUntypeds)?;
             return Err(DeviceRangeAllocError::NotEnoughCNodeSlots);
         }
 
@@ -269,10 +299,12 @@ impl DeviceAllocator {
                 .split(slot_pair)
                 .map_err(|e| DeviceRangeAllocError::SplitError(e))?;
             ut = if untyped_contains_paddr(&ut_left, address_range.start.0) {
-                self.untypeds.push(ut_right);
+                self.insert_sorted(ut_right)
+                    .map_err(|_| DeviceRangeAllocError::TooManyDeviceUntypeds)?;
                 ut_left
             } else {
-                self.untypeds.push(ut_left);
+                self.insert_sorted(ut_left)
+                    .map_err(|_| DeviceRangeAllocError::TooManyDeviceUntypeds)?;
                 ut_right
             };
 
@@ -308,6 +340,24 @@ impl DeviceAllocator {
         };
         self.untypeds.remove(position);
         Some(ut)
+    }
+
+    fn insert_sorted(
+        &mut self,
+        fresh: LocalCap<WUntyped<memory_kind::Device>>,
+    ) -> Result<(), arrayvec::CapacityError<LocalCap<WUntyped<memory_kind::Device>>>> {
+        let paddr = fresh.cap_data.kind.paddr;
+        if let Some(pos) = self
+            .untypeds
+            .iter()
+            .enumerate()
+            .find(|(pos, wut)| wut.cap_data.kind.paddr > paddr)
+            .map(|(pos, _)| pos)
+        {
+            self.untypeds.try_insert(pos, fresh)
+        } else {
+            self.untypeds.try_push(fresh)
+        }
     }
 }
 

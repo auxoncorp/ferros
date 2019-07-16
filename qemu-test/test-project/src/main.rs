@@ -30,7 +30,6 @@ mod root_task_runs;
 mod self_hosted_mem_mgmt;
 mod shared_page_queue;
 mod stack_setup;
-#[cfg(test_case = "uart")]
 mod uart;
 mod wutbuddy;
 
