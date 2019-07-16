@@ -291,27 +291,39 @@ impl DeviceAllocator {
         }
 
         // Time to do some splitting
+        // Note that we take care to maintain the "all untypeds are sorted by paddr" invariant
+        // at every early exit point, while only doing a single full-sort per call of this method
         while usize::from(ut.size_bits()) > requested_size_bits {
-            let slot_pair = slots
-                .alloc_strong::<U2>()
-                .map_err(|_| DeviceRangeAllocError::NotEnoughCNodeSlots)?;
-            let (ut_left, ut_right) = ut
-                .split(slot_pair)
-                .map_err(|e| DeviceRangeAllocError::SplitError(e))?;
+            let slot_pair = slots.alloc_strong::<U2>().map_err(|_| {
+                pdqsort::sort_by_key(&mut self.untypeds, |wut| wut.cap_data.kind.paddr);
+                DeviceRangeAllocError::NotEnoughCNodeSlots
+            })?;
+            let (ut_left, ut_right) = ut.split(slot_pair).map_err(|e| {
+                pdqsort::sort_by_key(&mut self.untypeds, |wut| wut.cap_data.kind.paddr);
+                DeviceRangeAllocError::SplitError(e)
+            })?;
             ut = if untyped_contains_paddr(&ut_left, address_range.start.0) {
-                self.insert_sorted(ut_right)
-                    .map_err(|_| DeviceRangeAllocError::TooManyDeviceUntypeds)?;
+                self.untypeds.try_push(ut_right).map_err(|_| {
+                    pdqsort::sort_by_key(&mut self.untypeds, |wut| wut.cap_data.kind.paddr);
+                    DeviceRangeAllocError::TooManyDeviceUntypeds
+                })?;
                 ut_left
             } else {
-                self.insert_sorted(ut_left)
-                    .map_err(|_| DeviceRangeAllocError::TooManyDeviceUntypeds)?;
+                self.untypeds.try_push(ut_left).map_err(|_| {
+                    pdqsort::sort_by_key(&mut self.untypeds, |wut| wut.cap_data.kind.paddr);
+                    DeviceRangeAllocError::TooManyDeviceUntypeds
+                })?;
                 ut_right
             };
 
             if address_range.start.0 - ut.paddr() + requested_size_bytes > ut.size_bytes() {
+                pdqsort::sort_by_key(&mut self.untypeds, |wut| wut.cap_data.kind.paddr);
                 return Err(DeviceRangeAllocError::AddressFoundButSizeDoesNotFitInASingleUntyped);
             }
         }
+
+        // Finally sort all of those untypeds that were pushed during splitting
+        pdqsort::sort_by_key(&mut self.untypeds, |wut| wut.cap_data.kind.paddr);
 
         if ut.paddr() != address_range.start.0 {
             unreachable!("Split algorithm with assertions on initial address range should always whittle down to the right starting address")
