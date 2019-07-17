@@ -23,11 +23,6 @@ pub struct StandardProcess {
     tcb: LocalCap<ThreadControlBlock>,
 }
 
-// TODO - Consider making this a parameter of ReadyProcess::new
-pub type StackBitSize = U17;
-pub type StackPageCount = U32; // this is 2^stackbitsize / 4k
-pub type PrepareThreadCNodeSlots = U64;
-
 impl StandardProcess {
     pub fn new<T: RetypeForSetup>(
         vspace: &mut VSpace,

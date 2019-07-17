@@ -2,6 +2,8 @@ use core::marker::PhantomData;
 
 use selfe_sys::seL4_Yield;
 
+use typenum::*;
+
 use crate::error::*;
 use crate::vspace::VSpaceError;
 
@@ -12,6 +14,10 @@ pub use standard::*;
 
 mod self_hosted;
 pub use self_hosted::*;
+
+pub type StackBitSize = U20;
+pub type StackPageCount = op!((U1 << U20) / U4096);
+pub type PrepareThreadCNodeSlots = op!(StackPageCount + U64);
 
 // TODO - consider renaming for clarity
 pub trait RetypeForSetup: Sized + Send + Sync {
