@@ -147,7 +147,7 @@ pub enum VSpaceError {
     TriedToMapTooManyPagesAtOnce,
 }
 
-const MAX_MAP_AT_ONCE: usize = 512;
+const MAX_MAP_AT_ONCE: usize = 1024;
 
 impl From<RetypeError> for VSpaceError {
     fn from(e: RetypeError) -> VSpaceError {
@@ -700,7 +700,7 @@ impl RegionLocations {
 
     fn is_overlap(&self, desired_vaddr: usize) -> bool {
         self.regions.iter().any(|(addr, size)| {
-            if desired_vaddr >= *addr && desired_vaddr <= (*addr + size) {
+            if desired_vaddr >= *addr && desired_vaddr < (*addr + size) {
                 return true;
             }
             false
@@ -1016,8 +1016,18 @@ impl VSpace<vspace_state::Imaged> {
         let mut mapping_vaddr = vaddr;
         let cptr = region.caps.start_cptr;
 
-        let mut mapped_pages: ArrayVec<[LocalCap<Page<page_state::Mapped>>; MAX_MAP_AT_ONCE]> =
-            ArrayVec::new();
+        let mut mapped_pages_cptrs: ArrayVec<[usize; MAX_MAP_AT_ONCE]> = ArrayVec::new();
+
+        fn unmap_mapped_page_cptrs(
+            mapped_pages: ArrayVec<[usize; MAX_MAP_AT_ONCE]>,
+        ) -> Result<(), SeL4Error> {
+            mapped_pages
+                .into_iter()
+                .map(|page_cptr| unsafe {
+                    LocalCap::<Page<page_state::Mapped>>::unmap_and_ignore_unchecked_cptr(page_cptr)
+                })
+                .collect()
+        }
 
         for page in region.caps.iter() {
             match self.layers.map_layer(
@@ -1031,7 +1041,7 @@ impl VSpace<vspace_state::Imaged> {
             ) {
                 Err(MappingError::PageMapFailure(e)) => {
                     // Rollback the pages we've mapped thus far.
-                    let _ = mapped_pages.into_iter().map(|page| page.unmap());
+                    let _ = unmap_mapped_page_cptrs(mapped_pages_cptrs);
                     return Err((
                         VSpaceError::SeL4Error(e),
                         UnmappedMemoryRegion {
@@ -1043,7 +1053,7 @@ impl VSpace<vspace_state::Imaged> {
                 }
                 Err(MappingError::IntermediateLayerFailure(e)) => {
                     // Rollback the pages we've mapped thus far.
-                    let _ = mapped_pages.into_iter().map(|page| page.unmap());
+                    let _ = unmap_mapped_page_cptrs(mapped_pages_cptrs);
                     return Err((
                         VSpaceError::SeL4Error(e),
                         UnmappedMemoryRegion {
@@ -1055,7 +1065,7 @@ impl VSpace<vspace_state::Imaged> {
                 }
                 Err(e) => {
                     // Rollback the pages we've mapped thus far.
-                    let _ = mapped_pages.into_iter().map(|page| page.unmap());
+                    let _ = unmap_mapped_page_cptrs(mapped_pages_cptrs);
                     return Err((
                         VSpaceError::MappingError(e),
                         UnmappedMemoryRegion {
@@ -1070,16 +1080,7 @@ impl VSpace<vspace_state::Imaged> {
                     // them back if we fail to map all of this
                     // region. I.e., something was previously mapped
                     // here.
-                    match mapped_pages.try_push(Cap {
-                        cptr: page.cptr,
-                        cap_data: Page {
-                            state: page_state::Mapped {
-                                vaddr: mapping_vaddr,
-                                asid: self.asid,
-                            },
-                        },
-                        _role: PhantomData,
-                    }) {
+                    match mapped_pages_cptrs.try_push(page.cptr) {
                         Err(_) => {
                             return Err((
                                 VSpaceError::TriedToMapTooManyPagesAtOnce,
@@ -1112,7 +1113,7 @@ impl VSpace<vspace_state::Imaged> {
 
         match self.specific_regions.add(&region) {
             Err(_) => {
-                let _ = mapped_pages.into_iter().map(|page| page.unmap());
+                let _ = unmap_mapped_page_cptrs(mapped_pages_cptrs);
                 Err((
                     VSpaceError::OutOfRegions,
                     UnmappedMemoryRegion {
