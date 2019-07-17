@@ -10,8 +10,7 @@ use crate::vspace::{MappingError, Maps};
 use super::super::{PageDirIndexBits, PageIndexBits, PageTableIndexBits, PageUpperDirIndexBits};
 use super::PageDirectory;
 
-const UD_MASK: usize = (((1 << PageUpperDirIndexBits::USIZE) - 1)
-    << PageIndexBits::USIZE + PageTableIndexBits::USIZE + PageDirIndexBits::USIZE);
+const UD_MASK: usize = !((1 << PageIndexBits::USIZE + PageTableIndexBits::USIZE) - 1);
 
 #[derive(Debug)]
 pub struct PageUpperDirectory {}

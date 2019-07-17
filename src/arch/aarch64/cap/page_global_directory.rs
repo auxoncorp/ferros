@@ -13,11 +13,8 @@ use super::super::{
 };
 use super::PageUpperDirectory;
 
-const GD_MASK: usize = (((1 << PageGlobalDirIndexBits::USIZE) - 1)
-    << PageIndexBits::USIZE
-        + PageTableIndexBits::USIZE
-        + PageDirIndexBits::USIZE
-        + PageUpperDirIndexBits::USIZE);
+const GD_MASK: usize =
+    !((1 << PageIndexBits::USIZE + PageTableIndexBits::USIZE + PageDirIndexBits::USIZE) - 1);
 
 #[derive(Debug)]
 pub struct PageGlobalDirectory {}
