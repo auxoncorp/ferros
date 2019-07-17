@@ -147,7 +147,7 @@ pub enum VSpaceError {
     TriedToMapTooManyPagesAtOnce,
 }
 
-const MAX_MAP_AT_ONCE: usize = 128;
+const MAX_MAP_AT_ONCE: usize = 512;
 
 impl From<RetypeError> for VSpaceError {
     fn from(e: RetypeError) -> VSpaceError {

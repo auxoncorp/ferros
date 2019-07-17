@@ -4,7 +4,7 @@ use selfe_sys::*;
 
 use crate::arch;
 use crate::cap::{
-    role, CNodeRole, CNodeSlot, Cap, ChildCNodeSlot, DirectRetype, Endpoint, LocalCNode,
+    role, CNode, CNodeRole, CNodeSlot, Cap, ChildCNodeSlot, DirectRetype, Endpoint, LocalCNode,
     LocalCNodeSlot, LocalCap, Untyped,
 };
 use crate::error::SeL4Error;
@@ -346,10 +346,12 @@ impl<Msg: Sized> Sender<Msg, role::Local> {
         }
         Ok(())
     }
+}
 
+impl<Msg: Sized, Role: CNodeRole> Sender<Msg, Role> {
     pub fn copy<DestRole: CNodeRole>(
         &self,
-        cnode: &LocalCap<LocalCNode>,
+        cnode: &LocalCap<CNode<Role>>,
         dest_slot: CNodeSlot<DestRole>,
     ) -> Result<Sender<Msg, DestRole>, SeL4Error> {
         Ok(Sender {

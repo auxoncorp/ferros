@@ -152,7 +152,7 @@ impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole, Slots: Unsigned>
 {
     pub fn copy(
         &self,
-        cnode: &LocalCap<LocalCNode>,
+        cnode: &LocalCap<CNode<Role>>,
         slots: LocalCNodeSlots<Slots>,
         rights: CapRights,
     ) -> Result<CapRange<CT, Role, Slots>, SeL4Error>
@@ -161,7 +161,7 @@ impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole, Slots: Unsigned>
     {
         let copied_to_start_cptr = slots.cap_data.offset;
         for (offset, slot) in (0..Slots::USIZE).zip(slots.iter()) {
-            let cap: Cap<CT, _> = Cap {
+            let cap: Cap<CT, Role> = Cap {
                 cptr: self.start_cptr + offset,
                 _role: PhantomData,
                 cap_data: PhantomCap::phantom_instance(),
@@ -177,11 +177,11 @@ impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole, Slots: Unsigned>
     }
 }
 
-impl<CT: CapType> LocalCap<CT> {
+impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
     /// Copy a capability from one CNode to another CNode
     pub fn copy<DestRole: CNodeRole>(
         &self,
-        src_cnode: &LocalCap<LocalCNode>,
+        src_cnode: &LocalCap<CNode<Role>>,
         dest_slot: CNodeSlot<DestRole>,
         rights: CapRights,
     ) -> Result<Cap<CT::CopyOutput, DestRole>, SeL4Error>
@@ -202,7 +202,7 @@ impl<CT: CapType> LocalCap<CT> {
     /// Returns the destination offset
     pub(crate) fn unchecked_copy<DestRole: CNodeRole>(
         &self,
-        src_cnode: &LocalCap<LocalCNode>,
+        src_cnode: &LocalCap<CNode<Role>>,
         dest_slot: CNodeSlot<DestRole>,
         rights: CapRights,
     ) -> Result<usize, SeL4Error> {
