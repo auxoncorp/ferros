@@ -22,20 +22,10 @@ use crate::cap::{
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
 use crate::userland::CapRights;
+mod region;
+pub use region::*;
 
 include!(concat!(env!("OUT_DIR"), "/KERNEL_RETYPE_FAN_OUT_LIMIT"));
-
-pub trait SharedStatus: private::SealedSharedStatus {}
-
-pub mod shared_status {
-    use super::SharedStatus;
-
-    pub struct Shared;
-    impl SharedStatus for Shared {}
-
-    pub struct Exclusive;
-    impl SharedStatus for Exclusive {}
-}
 
 pub trait VSpaceState: private::SealedVSpaceState {}
 
@@ -283,348 +273,6 @@ where
 // 2^12 / PageCount
 pub(crate) type NumPages<Size> = Pow<op!(Size - PageBits)>;
 
-/// A `1 << SizeBits` bytes region of unmapped memory. It can be
-/// shared or owned exclusively. The ramifications of its shared
-/// status are described more completely in the `mapped_shared_region`
-/// function description.
-pub struct UnmappedMemoryRegion<SizeBits: Unsigned, SS: SharedStatus>
-where
-    // Forces regions to be page-aligned.
-    SizeBits: IsGreaterOrEqual<PageBits>,
-    SizeBits: Sub<PageBits>,
-    <SizeBits as Sub<PageBits>>::Output: Unsigned,
-    <SizeBits as Sub<PageBits>>::Output: _Pow,
-    Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
-{
-    caps: CapRange<Page<page_state::Unmapped>, role::Local, NumPages<SizeBits>>,
-    _size_bits: PhantomData<SizeBits>,
-    _shared_status: PhantomData<SS>,
-}
-
-impl LocalCap<Page<page_state::Unmapped>> {
-    pub(crate) fn to_region(self) -> UnmappedMemoryRegion<PageBits, shared_status::Exclusive> {
-        let caps: CapRange<Page<page_state::Unmapped>, role::Local, U1> = CapRange::new(self.cptr);
-        UnmappedMemoryRegion {
-            caps,
-            _size_bits: PhantomData,
-            _shared_status: PhantomData,
-        }
-    }
-}
-
-impl<SizeBits: Unsigned, SS: SharedStatus> UnmappedMemoryRegion<SizeBits, SS>
-where
-    SizeBits: IsGreaterOrEqual<PageBits>,
-    SizeBits: Sub<PageBits>,
-    <SizeBits as Sub<PageBits>>::Output: Unsigned,
-    <SizeBits as Sub<PageBits>>::Output: _Pow,
-    Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
-{
-    /// The size of this region in bytes.
-    pub const SIZE_BYTES: usize = 1 << SizeBits::USIZE;
-
-    pub fn size(&self) -> usize {
-        Self::SIZE_BYTES
-    }
-}
-
-impl<SizeBits: Unsigned> UnmappedMemoryRegion<SizeBits, shared_status::Exclusive>
-where
-    SizeBits: IsGreaterOrEqual<PageBits>,
-    SizeBits: Sub<PageBits>,
-    <SizeBits as Sub<PageBits>>::Output: Unsigned,
-    <SizeBits as Sub<PageBits>>::Output: _Pow,
-    Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
-{
-    /// Retype the necessary number of granules into memory
-    /// capabilities and return the unmapped region.
-    pub fn new<Role: CNodeRole>(
-        ut: LocalCap<Untyped<SizeBits>>,
-        slots: CNodeSlots<NumPages<SizeBits>, Role>,
-    ) -> Result<Self, VSpaceError> {
-        let page_caps =
-            ut.retype_multi_runtime::<Page<page_state::Unmapped>, NumPages<SizeBits>, _>(slots)?;
-        Ok(UnmappedMemoryRegion {
-            caps: CapRange::new(page_caps.start_cptr),
-            _size_bits: PhantomData,
-            _shared_status: PhantomData,
-        })
-    }
-
-    pub fn new_device<Role: CNodeRole>(
-        ut: LocalCap<Untyped<SizeBits, memory_kind::Device>>,
-        slots: CNodeSlots<NumPages<SizeBits>, Role>,
-    ) -> Result<Self, VSpaceError>
-    where
-        Pow<<SizeBits as Sub<PageBits>>::Output>:
-            IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
-    {
-        let page_caps = ut.retype_device_pages(slots)?;
-        Ok(UnmappedMemoryRegion {
-            caps: CapRange::new(page_caps.start_cptr),
-            _size_bits: PhantomData,
-            _shared_status: PhantomData,
-        })
-    }
-
-    pub(crate) fn to_page(self) -> LocalCap<Page<page_state::Unmapped>>
-    where
-        SizeBits: IsEqual<PageBits, Output = True>,
-    {
-        Cap {
-            cptr: self.caps.start_cptr,
-            cap_data: Page {
-                state: page_state::Unmapped {},
-            },
-            _role: PhantomData,
-        }
-    }
-
-    /// A shared region of memory can be duplicated. When it is
-    /// mapped, it's _borrowed_ rather than consumed allowing for its
-    /// remapping into other address spaces.
-    pub fn to_shared(self) -> UnmappedMemoryRegion<SizeBits, shared_status::Shared> {
-        UnmappedMemoryRegion {
-            caps: self.caps,
-            _size_bits: PhantomData,
-            _shared_status: PhantomData,
-        }
-    }
-}
-
-struct MappedPageRange<Count: Unsigned> {
-    initial_cptr: usize,
-    initial_vaddr: usize,
-    asid: InternalASID,
-    _count: PhantomData<Count>,
-}
-
-impl<Count: Unsigned> MappedPageRange<Count> {
-    fn new(initial_cptr: usize, initial_vaddr: usize, asid: InternalASID) -> Self {
-        MappedPageRange {
-            initial_cptr,
-            initial_vaddr,
-            asid,
-            _count: PhantomData,
-        }
-    }
-
-    pub fn iter(self) -> impl Iterator<Item = Cap<Page<page_state::Mapped>, role::Local>> {
-        (0..Count::USIZE).map(move |idx| Cap {
-            cptr: self.initial_cptr + idx,
-            cap_data: Page {
-                state: page_state::Mapped {
-                    vaddr: self.initial_vaddr + (PageBytes::USIZE * idx),
-                    asid: self.asid,
-                },
-            },
-            _role: PhantomData,
-        })
-    }
-
-    pub fn count(&self) -> usize {
-        Count::USIZE
-    }
-}
-
-/// A memory region which is mapped into an address space, meaning it
-/// has a virtual address and an associated asid in which that virtual
-/// address is valid.
-///
-/// The distinction between its shared-or-not-shared status is to
-/// prevent an unwitting unmap into an `UnmappedMemoryRegion` which
-/// loses the sharededness context.
-pub struct MappedMemoryRegion<SizeBits: Unsigned, SS: SharedStatus>
-where
-    SizeBits: IsGreaterOrEqual<PageBits>,
-    SizeBits: Sub<PageBits>,
-    <SizeBits as Sub<PageBits>>::Output: Unsigned,
-    <SizeBits as Sub<PageBits>>::Output: _Pow,
-    Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
-{
-    vaddr: usize,
-    caps: MappedPageRange<NumPages<SizeBits>>,
-    asid: InternalASID,
-    _size_bits: PhantomData<SizeBits>,
-    _shared_status: PhantomData<SS>,
-}
-
-impl<SizeBits: Unsigned, SS: SharedStatus> MappedMemoryRegion<SizeBits, SS>
-where
-    SizeBits: IsGreaterOrEqual<PageBits>,
-    SizeBits: Sub<PageBits>,
-    <SizeBits as Sub<PageBits>>::Output: Unsigned,
-    <SizeBits as Sub<PageBits>>::Output: _Pow,
-    Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
-{
-    pub const SIZE_BYTES: usize = 1 << SizeBits::USIZE;
-
-    pub fn size(&self) -> usize {
-        Self::SIZE_BYTES
-    }
-
-    pub fn vaddr(&self) -> usize {
-        self.vaddr
-    }
-
-    /// In the Ok case, returns a shared, unmapped copy of the memory
-    /// region (backed by fresh page-caps) along with this self-same
-    /// mapped memory region, marked as shared.
-    pub fn share<CNodeSlotCount: Unsigned>(
-        self,
-        slots: LocalCNodeSlots<CNodeSlotCount>,
-        cnode: &LocalCap<LocalCNode>,
-        rights: CapRights,
-    ) -> Result<
-        (
-            UnmappedMemoryRegion<SizeBits, shared_status::Shared>,
-            MappedMemoryRegion<SizeBits, shared_status::Shared>,
-        ),
-        VSpaceError,
-    >
-    where
-        CNodeSlotCount: IsEqual<NumPages<SizeBits>, Output = True>,
-    {
-        let pages_offset = self.caps.initial_cptr;
-        let vaddr = self.vaddr;
-        let asid = self.asid;
-        let slots_offset = slots.cap_data.offset;
-
-        for (slot, page) in slots.iter().zip(self.caps.iter()) {
-            page.copy(cnode, slot, rights)?;
-        }
-
-        Ok((
-            UnmappedMemoryRegion {
-                caps: CapRange::new(slots_offset),
-                _size_bits: PhantomData,
-                _shared_status: PhantomData,
-            },
-            MappedMemoryRegion::unchecked_new(pages_offset, vaddr, asid),
-        ))
-    }
-
-    fn unchecked_new(
-        initial_cptr: usize,
-        initial_vaddr: usize,
-        asid: InternalASID,
-    ) -> MappedMemoryRegion<SizeBits, SS> {
-        MappedMemoryRegion {
-            caps: MappedPageRange::new(initial_cptr, initial_vaddr, asid),
-            vaddr: initial_vaddr,
-            asid,
-            _size_bits: PhantomData,
-            _shared_status: PhantomData,
-        }
-    }
-
-    #[cfg(feature = "test_support")]
-    /// Super dangerous copy-aliasing
-    pub(crate) unsafe fn dangerous_internal_alias(&mut self) -> Self {
-        MappedMemoryRegion::unchecked_new(self.caps.initial_cptr, self.vaddr, self.asid)
-    }
-
-    /// Halve a region into two regions.
-    pub fn split(
-        self,
-    ) -> Result<
-        (
-            MappedMemoryRegion<op!(SizeBits - U1), SS>,
-            MappedMemoryRegion<op!(SizeBits - U1), SS>,
-        ),
-        VSpaceError,
-    >
-    where
-        SizeBits: Sub<U1>,
-        <SizeBits as Sub<U1>>::Output: Unsigned,
-        <SizeBits as Sub<U1>>::Output: IsGreaterOrEqual<U12, Output = True>,
-        <SizeBits as Sub<U1>>::Output: Sub<PageBits>,
-        <<SizeBits as Sub<U1>>::Output as Sub<PageBits>>::Output: Unsigned,
-        <<SizeBits as Sub<U1>>::Output as Sub<PageBits>>::Output: _Pow,
-        Pow<<<SizeBits as Sub<U1>>::Output as Sub<PageBits>>::Output>: Unsigned,
-    {
-        let new_region_vaddr = if let Some(vaddr) = 2_usize
-            .checked_pow(SizeBits::U32 - 1)
-            .and_then(|v| v.checked_add(self.vaddr))
-        {
-            vaddr
-        } else {
-            return Err(VSpaceError::ExceededAvailableAddressSpace);
-        };
-
-        let new_offset = self.caps.initial_cptr + (self.caps.count() / 2);
-
-        Ok((
-            MappedMemoryRegion {
-                caps: MappedPageRange::new(self.caps.initial_cptr, self.vaddr, self.asid),
-                vaddr: self.vaddr,
-                asid: self.asid,
-                _size_bits: PhantomData,
-                _shared_status: PhantomData,
-            },
-            MappedMemoryRegion {
-                caps: MappedPageRange::new(new_offset, new_region_vaddr, self.asid),
-                vaddr: new_region_vaddr,
-                asid: self.asid,
-                _size_bits: PhantomData,
-                _shared_status: PhantomData,
-            },
-        ))
-    }
-
-    /// Splits a range into a specific size and a SizeBits-1 region.
-    ///
-    /// NB: This function drops on the floor the leftovers between
-    /// TargetSize and SizeBits-1 It's only meant to be used to set up
-    /// regions for supporting ferros-test.
-    ///
-    /// Something like:
-    /// ```not_rust
-    /// SizeBits = 20, TargetSize = 16
-    /// [                 20                   ]
-    /// [        19        |         19        ]
-    /// [        19        | 16 |   dropped    ]
-    /// ```
-    #[cfg(feature = "test_support")]
-    pub fn split_into<TargetSize: Unsigned>(
-        self,
-    ) -> Result<
-        (
-            MappedMemoryRegion<TargetSize, SS>,
-            MappedMemoryRegion<op!(SizeBits - U1), SS>,
-        ),
-        VSpaceError,
-    >
-    where
-        TargetSize: IsGreaterOrEqual<PageBits>,
-        TargetSize: Sub<PageBits>,
-        <TargetSize as Sub<PageBits>>::Output: Unsigned,
-        <TargetSize as Sub<PageBits>>::Output: _Pow,
-        Pow<<TargetSize as Sub<PageBits>>::Output>: Unsigned,
-
-        SizeBits: Sub<U1>,
-        <SizeBits as Sub<U1>>::Output: Unsigned,
-        <SizeBits as Sub<U1>>::Output: IsGreaterOrEqual<U12, Output = True>,
-        <SizeBits as Sub<U1>>::Output: Sub<PageBits>,
-        <<SizeBits as Sub<U1>>::Output as Sub<PageBits>>::Output: Unsigned,
-        <<SizeBits as Sub<U1>>::Output as Sub<PageBits>>::Output: _Pow,
-        Pow<<<SizeBits as Sub<U1>>::Output as Sub<PageBits>>::Output>: Unsigned,
-    {
-        let (a, b) = self.split()?;
-
-        Ok((
-            MappedMemoryRegion {
-                caps: MappedPageRange::new(a.caps.initial_cptr, a.vaddr, a.asid),
-                vaddr: a.vaddr,
-                asid: a.asid,
-                _size_bits: PhantomData,
-                _shared_status: PhantomData,
-            },
-            b,
-        ))
-    }
-}
-
 pub enum ProcessCodeImageConfig<'a, 'b, 'c> {
     ReadOnly,
     /// Use when you need to be able to write to statics in the child process
@@ -685,7 +333,7 @@ impl RegionLocations {
         if index == regions_len {
             return self
                 .regions
-                .try_push((region.vaddr, region.size()))
+                .try_push((region.vaddr(), region.size()))
                 .map_err(|_| VSpaceError::OutOfRegions);
         }
 
@@ -696,7 +344,7 @@ impl RegionLocations {
             return Err(VSpaceError::OutOfRegions);
         }
 
-        self.regions.insert(index, (region.vaddr, region.size()));
+        self.regions.insert(index, (region.vaddr(), region.size()));
 
         Ok(())
     }
@@ -1047,11 +695,7 @@ impl VSpace<vspace_state::Imaged> {
                     let _ = unmap_mapped_page_cptrs(mapped_pages_cptrs);
                     return Err((
                         VSpaceError::SeL4Error(e),
-                        UnmappedMemoryRegion {
-                            caps: CapRange::new(cptr),
-                            _size_bits: PhantomData,
-                            _shared_status: PhantomData,
-                        },
+                        UnmappedMemoryRegion::unchecked_new(cptr),
                     ));
                 }
                 Err(MappingError::IntermediateLayerFailure(e)) => {
@@ -1059,11 +703,7 @@ impl VSpace<vspace_state::Imaged> {
                     let _ = unmap_mapped_page_cptrs(mapped_pages_cptrs);
                     return Err((
                         VSpaceError::SeL4Error(e),
-                        UnmappedMemoryRegion {
-                            caps: CapRange::new(cptr),
-                            _size_bits: PhantomData,
-                            _shared_status: PhantomData,
-                        },
+                        UnmappedMemoryRegion::unchecked_new(cptr),
                     ));
                 }
                 Err(e) => {
@@ -1071,11 +711,7 @@ impl VSpace<vspace_state::Imaged> {
                     let _ = unmap_mapped_page_cptrs(mapped_pages_cptrs);
                     return Err((
                         VSpaceError::MappingError(e),
-                        UnmappedMemoryRegion {
-                            caps: CapRange::new(cptr),
-                            _size_bits: PhantomData,
-                            _shared_status: PhantomData,
-                        },
+                        UnmappedMemoryRegion::unchecked_new(cptr),
                     ));
                 }
                 Ok(_) => {
@@ -1087,11 +723,7 @@ impl VSpace<vspace_state::Imaged> {
                         Err(_) => {
                             return Err((
                                 VSpaceError::TriedToMapTooManyPagesAtOnce,
-                                UnmappedMemoryRegion {
-                                    caps: CapRange::new(cptr),
-                                    _shared_status: PhantomData,
-                                    _size_bits: PhantomData,
-                                },
+                                UnmappedMemoryRegion::unchecked_new(cptr),
                             ))
                         }
                         _ => (),
@@ -1101,29 +733,14 @@ impl VSpace<vspace_state::Imaged> {
             mapping_vaddr += PageBytes::USIZE;
         }
 
-        let region = MappedMemoryRegion {
-            caps: MappedPageRange {
-                initial_cptr: cptr,
-                initial_vaddr: vaddr,
-                _count: PhantomData,
-                asid: self.asid,
-            },
-            vaddr: vaddr,
-            asid: self.asid,
-            _size_bits: PhantomData,
-            _shared_status: PhantomData,
-        };
+        let region = MappedMemoryRegion::unchecked_new(cptr, vaddr, self.asid);
 
         match self.specific_regions.add(&region) {
             Err(_) => {
                 let _ = unmap_mapped_page_cptrs(mapped_pages_cptrs);
                 Err((
                     VSpaceError::OutOfRegions,
-                    UnmappedMemoryRegion {
-                        caps: CapRange::new(cptr),
-                        _size_bits: PhantomData,
-                        _shared_status: PhantomData,
-                    },
+                    UnmappedMemoryRegion::unchecked_new(cptr),
                 ))
             }
             Ok(_) => Ok(region),
@@ -1166,20 +783,18 @@ impl VSpace<vspace_state::Imaged> {
     {
         let mapped_region: MappedMemoryRegion<_, shared_status::Exclusive> =
             self.map_region_internal(region, rights, vm_attributes)?;
-        let vaddr = mapped_region.vaddr;
+        let vaddr = mapped_region.vaddr();
         let dest_init_cptr = dest_slots.cap_data.offset;
 
         for (page, slot) in mapped_region.caps.iter().zip(dest_slots.iter()) {
             let _ = page.move_to_slot(src_cnode, slot)?;
         }
 
-        Ok(MappedMemoryRegion {
-            caps: MappedPageRange::new(dest_init_cptr, vaddr, self.asid),
-            asid: self.asid,
-            _shared_status: PhantomData,
-            _size_bits: PhantomData,
+        Ok(MappedMemoryRegion::unchecked_new(
+            dest_init_cptr,
             vaddr,
-        })
+            self.asid,
+        ))
     }
 
     /// Map a _shared_ region of memory at some address, I don't care
@@ -1203,11 +818,8 @@ impl VSpace<vspace_state::Imaged> {
         <SizeBits as Sub<PageBits>>::Output: _Pow,
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
     {
-        let unmapped_sr: UnmappedMemoryRegion<_, shared_status::Shared> = UnmappedMemoryRegion {
-            caps: region.caps.copy(cnode, slots, rights)?,
-            _size_bits: PhantomData,
-            _shared_status: PhantomData,
-        };
+        let unmapped_sr: UnmappedMemoryRegion<_, shared_status::Shared> =
+            UnmappedMemoryRegion::from_caps(region.caps.copy(cnode, slots, rights)?);
         self.map_region_internal(unmapped_sr, rights, vm_attributes)
     }
 
@@ -1248,11 +860,7 @@ impl VSpace<vspace_state::Imaged> {
         for page_cap in region.caps.iter() {
             let _ = self.unmap_page(page_cap)?;
         }
-        Ok(UnmappedMemoryRegion {
-            caps: CapRange::new(start_cptr),
-            _size_bits: PhantomData,
-            _shared_status: PhantomData,
-        })
+        Ok(UnmappedMemoryRegion::unchecked_new(start_cptr))
     }
 
     pub(crate) fn root_cptr(&self) -> usize {
@@ -1289,13 +897,8 @@ impl VSpace<vspace_state::Imaged> {
         // create the mapped region first because we need to pluck out
         // the `start_cptr` before the iteration below consumes the
         // unmapped region.
-        let mapped_region = MappedMemoryRegion {
-            caps: MappedPageRange::new(region.caps.start_cptr, vaddr, self.asid()),
-            asid: self.asid(),
-            _size_bits: PhantomData,
-            _shared_status: PhantomData,
-            vaddr,
-        };
+        let mapped_region =
+            MappedMemoryRegion::unchecked_new(region.caps.start_cptr, vaddr, self.asid());
 
         for page_cap in region.caps.iter() {
             match self.layers.map_layer(
@@ -1533,11 +1136,7 @@ where
             }
         }
         let unmapped_region_copy: UnmappedMemoryRegion<SizeBits, shared_status::Exclusive> =
-            UnmappedMemoryRegion {
-                caps: CapRange::new(region.caps.start_cptr),
-                _size_bits: PhantomData,
-                _shared_status: PhantomData,
-            };
+            UnmappedMemoryRegion::unchecked_new(region.caps.start_cptr);
         let mut next_addr = start_vaddr;
         for page in unmapped_region_copy.caps.iter() {
             match self.vspace.layers.map_layer(
@@ -1563,17 +1162,11 @@ where
             next_addr += PageBytes::USIZE;
         }
         // map the pages at our predetermined/pre-allocated vaddr range
-        let mut mapped_region = MappedMemoryRegion {
-            caps: MappedPageRange::new(
-                region.caps.start_cptr,
-                start_vaddr,
-                self.reserved_region.asid,
-            ),
-            asid: self.reserved_region.asid,
-            _size_bits: PhantomData,
-            _shared_status: PhantomData,
-            vaddr: start_vaddr,
-        };
+        let mut mapped_region = MappedMemoryRegion::unchecked_new(
+            region.caps.start_cptr,
+            start_vaddr,
+            self.reserved_region.asid,
+        );
         let res = f(&mut mapped_region);
         let _ = self.vspace.unmap_region(mapped_region)?;
         Ok(res)
@@ -1581,11 +1174,6 @@ where
 }
 
 mod private {
-    use super::shared_status::{Exclusive, Shared};
-    pub trait SealedSharedStatus {}
-    impl SealedSharedStatus for Shared {}
-    impl SealedSharedStatus for Exclusive {}
-
     use super::vspace_state::{Empty, Imaged};
     pub trait SealedVSpaceState {}
     impl SealedVSpaceState for Empty {}

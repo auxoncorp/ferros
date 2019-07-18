@@ -44,6 +44,7 @@ pub enum TestSetupError {
     AllocError(AllocError),
     SeL4Error(SeL4Error),
     VSpaceError(VSpaceError),
+    RetypeError(RetypeError),
 }
 
 impl From<AllocError> for TestSetupError {
@@ -61,5 +62,11 @@ impl From<SeL4Error> for TestSetupError {
 impl From<VSpaceError> for TestSetupError {
     fn from(e: VSpaceError) -> Self {
         TestSetupError::VSpaceError(e)
+    }
+}
+
+impl From<RetypeError> for TestSetupError {
+    fn from(e: RetypeError) -> Self {
+        TestSetupError::RetypeError(e)
     }
 }

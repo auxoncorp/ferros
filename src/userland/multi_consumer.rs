@@ -49,7 +49,7 @@ use crate::arch::{self, PageBits, PageBytes};
 use crate::cap::{
     irq_state, role, Badge, CNodeRole, Cap, ChildCNodeSlot, ChildCNodeSlots, DirectRetype,
     IRQControl, IRQError, IRQHandler, InternalASID, LocalCNode, LocalCNodeSlot, LocalCNodeSlots,
-    LocalCap, MaxIRQCount, Notification, PhantomCap, Untyped,
+    LocalCap, MaxIRQCount, Notification, PhantomCap, RetypeError, Untyped,
 };
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
@@ -176,6 +176,7 @@ pub enum MultiConsumerError {
     ProduceToOwnQueueForbidden,
     SeL4Error(SeL4Error),
     VSpaceError(VSpaceError),
+    RetypeError(RetypeError),
 }
 
 impl From<SeL4Error> for MultiConsumerError {
@@ -187,6 +188,12 @@ impl From<SeL4Error> for MultiConsumerError {
 impl From<VSpaceError> for MultiConsumerError {
     fn from(e: VSpaceError) -> Self {
         MultiConsumerError::VSpaceError(e)
+    }
+}
+
+impl From<RetypeError> for MultiConsumerError {
+    fn from(e: RetypeError) -> Self {
+        MultiConsumerError::RetypeError(e)
     }
 }
 
