@@ -1,7 +1,6 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
 
-use arrayvec::{ArrayVec, CapacityError};
 use typenum::*;
 
 use super::{KernelRetypeFanOutLimit, NumPages, VSpaceError};
@@ -9,10 +8,9 @@ use crate::arch::cap::{page_state, Page};
 use crate::arch::{PageBits, PageBytes};
 use crate::cap::{
     memory_kind, role, CNodeRole, CNodeSlots, Cap, CapRange, InternalASID, LocalCNode,
-    LocalCNodeSlots, LocalCap, RetypeError, Untyped,
+    LocalCNodeSlots, LocalCap, Untyped,
 };
 
-use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
 use crate::userland::CapRights;
 
@@ -108,14 +106,15 @@ where
 {
     /// Retype the necessary number of granules into memory
     /// capabilities and return the unmapped region.
-    pub fn new<Role: CNodeRole>(
+    pub fn new(
         ut: LocalCap<Untyped<SizeBits>>,
-        slots: CNodeSlots<NumPages<SizeBits>, Role>,
-    ) -> Result<Self, RetypeError> {
-        // TODO - revisit why we need the _runtime variant here
-        // TODO - could this be resolved with another type param for CNodeSlots or by adding IsEqual checks?
-        let page_caps =
-            ut.retype_multi_runtime::<Page<page_state::Unmapped>, NumPages<SizeBits>, _>(slots)?;
+        slots: LocalCNodeSlots<NumPages<SizeBits>>,
+    ) -> Result<Self, crate::error::SeL4Error>
+    where
+        Pow<<SizeBits as Sub<PageBits>>::Output>:
+            IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
+    {
+        let page_caps = ut.retype_pages(slots)?;
         Ok(UnmappedMemoryRegion {
             caps: CapRange::new(page_caps.start_cptr),
             _size_bits: PhantomData,
@@ -126,7 +125,7 @@ where
     pub fn new_device<Role: CNodeRole>(
         ut: LocalCap<Untyped<SizeBits, memory_kind::Device>>,
         slots: CNodeSlots<NumPages<SizeBits>, Role>,
-    ) -> Result<Self, SeL4Error>
+    ) -> Result<Self, crate::error::SeL4Error>
     where
         Pow<<SizeBits as Sub<PageBits>>::Output>:
             IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,

@@ -5,7 +5,7 @@ use selfe_sys::*;
 use crate::arch;
 use crate::cap::{
     role, CNode, CNodeRole, CNodeSlot, Cap, ChildCNodeSlot, DirectRetype, Endpoint, LocalCNode,
-    LocalCNodeSlot, LocalCap, RetypeError, Untyped,
+    LocalCNodeSlot, LocalCap, Untyped,
 };
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
@@ -19,7 +19,6 @@ pub enum IPCError {
     RequestSizeMismatch,
     SeL4Error(SeL4Error),
     VSpaceError(VSpaceError),
-    RetypeError(RetypeError),
 }
 
 impl From<SeL4Error> for IPCError {
@@ -31,12 +30,6 @@ impl From<SeL4Error> for IPCError {
 impl From<VSpaceError> for IPCError {
     fn from(v: VSpaceError) -> Self {
         IPCError::VSpaceError(v)
-    }
-}
-
-impl From<RetypeError> for IPCError {
-    fn from(v: RetypeError) -> Self {
-        IPCError::RetypeError(v)
     }
 }
 
