@@ -68,9 +68,8 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
 
         // Map the stack to the target address space
         let stack_top = parent_mapped_region.vaddr() + parent_mapped_region.size();
-        let (page_slots, _slots) = stack_slots.alloc(); //LocalCNodeSlots::<_>::alloc(slots); // TODO - CLEANUP // ::<NumPages<StackBitSize>>
         let (unmapped_stack_pages, _): (UnmappedMemoryRegion<StackBitSize, _>, _) =
-            parent_mapped_region.share(page_slots, parent_cnode, CapRights::RW)?;
+            parent_mapped_region.share(stack_slots, parent_cnode, CapRights::RW)?;
         let mapped_stack_pages = vspace.map_shared_region_and_consume(
             unmapped_stack_pages,
             CapRights::RW,
