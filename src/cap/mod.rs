@@ -177,6 +177,35 @@ impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole, Slots: Unsigned>
     }
 }
 
+pub struct WeakCapRange<CT: CapType + PhantomCap, Role: CNodeRole> {
+    pub(crate) start_cptr: usize,
+    len: usize,
+    _cap_type: PhantomData<CT>,
+    _role: PhantomData<Role>,
+}
+impl<CT: CapType + PhantomCap, Role: CNodeRole> WeakCapRange<CT, Role> {
+    pub(crate) fn new(start_cptr: usize, len: usize) -> Self {
+        WeakCapRange {
+            start_cptr,
+            len,
+            _cap_type: PhantomData,
+            _role: PhantomData,
+        }
+    }
+
+    pub(crate) fn iter(self) -> impl Iterator<Item = Cap<CT, Role>> {
+        (0..self.len()).map(move |offset| Cap {
+            cptr: self.start_cptr + offset,
+            _role: PhantomData,
+            cap_data: PhantomCap::phantom_instance(),
+        })
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.len
+    }
+}
+
 impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
     /// Copy a capability from one CNode to another CNode
     pub fn copy<DestRole: CNodeRole>(

@@ -690,15 +690,8 @@ impl VSpace<vspace_state::Imaged> {
                 &mut self.untyped,
                 &mut self.slots,
             ) {
-                Err(MappingError::PageMapFailure(e)) => {
-                    // Rollback the pages we've mapped thus far.
-                    let _ = unmap_mapped_page_cptrs(mapped_pages_cptrs);
-                    return Err((
-                        VSpaceError::SeL4Error(e),
-                        UnmappedMemoryRegion::unchecked_new(cptr),
-                    ));
-                }
-                Err(MappingError::IntermediateLayerFailure(e)) => {
+                Err(MappingError::PageMapFailure(e))
+                | Err(MappingError::IntermediateLayerFailure(e)) => {
                     // Rollback the pages we've mapped thus far.
                     let _ = unmap_mapped_page_cptrs(mapped_pages_cptrs);
                     return Err((

@@ -8,7 +8,8 @@ use crate::arch::cap::{page_state, Page};
 use crate::arch::{PageBits, PageBytes};
 use crate::cap::{
     memory_kind, role, CNodeRole, CNodeSlots, Cap, CapRange, InternalASID, LocalCNode,
-    LocalCNodeSlots, LocalCap, Untyped,
+    LocalCNodeSlots, LocalCap, MemoryKind, RetypeError, Untyped, WCNodeSlots, WUntyped,
+    WeakCapRange, WeakMemoryKind,
 };
 
 use crate::pow::{Pow, _Pow};
@@ -389,5 +390,47 @@ where
             },
             b,
         ))
+    }
+}
+
+pub struct WeakUnmappedMemoryRegion<SS: SharedStatus> {
+    caps: WeakCapRange<Page<page_state::Unmapped>, role::Local>,
+    kind: WeakMemoryKind,
+    size_bits: u8,
+    _shared_status: PhantomData<SS>,
+}
+
+impl WeakUnmappedMemoryRegion<shared_status::Exclusive> {
+    pub fn new<MemKind: MemoryKind>(
+        untyped: LocalCap<WUntyped<MemKind>>,
+        slots: &mut WCNodeSlots,
+    ) -> Result<Self, RetypeError> {
+        //let num_pages = 1 << (untyped.size_bits() - PageBits::U8);
+        let kind = untyped.cap_data.kind.weaken();
+        let size_bits = untyped.size_bits();
+        let caps = untyped.retype_pages(slots)?;
+        Ok(WeakUnmappedMemoryRegion {
+            caps,
+            kind,
+            size_bits,
+            _shared_status: PhantomData,
+        })
+    }
+}
+impl<SS: SharedStatus> WeakUnmappedMemoryRegion<SS> {
+    pub fn size_bits(&self) -> u8 {
+        self.size_bits
+    }
+    pub fn size_bytes(&self) -> usize {
+        2usize.pow(u32::from(self.size_bits))
+    }
+
+    pub fn to_shared(self) -> WeakUnmappedMemoryRegion<shared_status::Shared> {
+        WeakUnmappedMemoryRegion {
+            caps: self.caps,
+            kind: self.kind,
+            size_bits: self.size_bits,
+            _shared_status: PhantomData,
+        }
     }
 }
