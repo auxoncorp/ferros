@@ -41,9 +41,6 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
         fault_source: Option<crate::userland::FaultSource<role::Child>>,
     ) -> Result<StandardProcess<StackBitSize>, ProcessSetupError>
     where
-        NumPages<StackBitSize>: Sub<NumPages<StackBitSize>>,
-        Diff<NumPages<StackBitSize>, NumPages<StackBitSize>>: Unsigned,
-
         NumPages<StackBitSize>: Add<U2>,
         Sum<NumPages<StackBitSize>, U2>: Unsigned,
 
@@ -61,9 +58,7 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
         // TODO - lift these checks to compile-time, as static assertions
         // Note - This comparison is conservative because technically
         // we can fit some of the params into available registers.
-        if core::mem::size_of::<SetupVer<T>>()
-            > (2usize.pow(StackBitSize::U32 - arch::PageBits::U32) * arch::PageBytes::USIZE)
-        {
+        if core::mem::size_of::<SetupVer<T>>() > 2usize.pow(StackBitSize::U32) {
             return Err(ProcessSetupError::ProcessParameterTooBigForStack);
         }
         if core::mem::size_of::<SetupVer<T>>() != core::mem::size_of::<T>() {

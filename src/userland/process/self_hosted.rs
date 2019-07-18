@@ -51,9 +51,6 @@ impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
         fault_source: Option<crate::userland::FaultSource<role::Child>>,
     ) -> Result<SelfHostedProcess<StackBitSize>, ProcessSetupError>
     where
-        NumPages<StackBitSize>: Sub<NumPages<StackBitSize>>,
-        Diff<NumPages<StackBitSize>, NumPages<StackBitSize>>: Unsigned,
-
         NumPages<StackBitSize>: Add<U2>,
         Sum<NumPages<StackBitSize>, U2>: Unsigned,
 
@@ -72,7 +69,7 @@ impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
         // Note - This comparison is conservative because technically
         // we can fit some of the params into available registers.
         if core::mem::size_of::<SelfHostedParams<SetupVer<T>, role::Child>>()
-            > (2usize.pow(StackBitSize::U32 - arch::PageBits::U32) * arch::PageBytes::USIZE)
+            > 2usize.pow(StackBitSize::U32)
         {
             return Err(ProcessSetupError::ProcessParameterTooBigForStack);
         }
