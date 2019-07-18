@@ -9,7 +9,7 @@ use ferros::userland::*;
 use ferros::vspace::*;
 use typenum::*;
 
-type U33768 = Sum<U32768, U1000>;
+type U33768 = op!(U32768 + U1000);
 
 #[ferros_test::ferros_test]
 pub fn call_and_response_loop(

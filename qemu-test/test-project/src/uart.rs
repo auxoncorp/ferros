@@ -9,7 +9,9 @@ use ferros::bootstrap::{root_cnode, BootInfo};
 use ferros::cap::{
     retype, retype_cnode, role, CNodeRole, LocalCNodeSlots, LocalCap, MaxIRQCount, Untyped,
 };
-use ferros::userland::{CapRights, InterruptConsumer, RetypeForSetup, StandardProcess};
+use ferros::userland::{
+    CapRights, DefaultStackBitSize, InterruptConsumer, RetypeForSetup, StandardProcess,
+};
 use ferros::vspace::*;
 
 use super::TopLevelError;
@@ -40,7 +42,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
     );
     let uts = alloc::ut_buddy(
         allocator
-            .get_untyped::<U20>()
+            .get_untyped::<U21>()
             .expect("initial alloc failure"),
     );
 
@@ -54,10 +56,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             .expect("find uart1 device memory")
             .as_strong::<arch::PageBits>()
             .expect("device untyped was not the right size!");
-
-        let unmapped_region = UnmappedMemoryRegion::new(ut, slots)?;
-        let mapped_region =
-            root_vspace.map_region(unmapped_region, CapRights::RW, arch::vm_attributes::DEFAULT)?;
 
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (uart1_asid, _asid_pool) = asid_pool.alloc();
@@ -92,6 +90,10 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             consumer: interrupt_consumer,
         };
 
+        let unmapped_region: UnmappedMemoryRegion<DefaultStackBitSize, _> =
+            UnmappedMemoryRegion::new(ut, slots)?;
+        let mapped_region =
+            root_vspace.map_region(unmapped_region, CapRights::RW, arch::vm_attributes::DEFAULT)?;
         let uart1_process = StandardProcess::new(
             &mut uart1_vspace,
             uart1_cnode,

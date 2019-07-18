@@ -13,7 +13,8 @@ pub struct Resources {
     pub(super) untyped: LocalCap<Untyped<super::types::MaxTestUntypedSize>>,
     pub(super) asid_pool: LocalCap<ASIDPool<super::types::MaxTestASIDPoolSize>>,
     pub(super) vspace: VSpace<vspace_state::Imaged>,
-    pub(super) reserved_for_scratch: ReservedRegion<crate::userland::process::StackPageCount>,
+    pub(super) reserved_for_scratch:
+        ReservedRegion<crate::userland::process::DefaultStackPageCount>,
     pub(super) mapped_memory_region: MappedMemoryRegion<
         super::types::MaxMappedMemoryRegionBitSize,
         crate::vspace::shared_status::Exclusive,
@@ -28,7 +29,7 @@ pub struct TestResourceRefs<'t> {
     pub(super) slots: &'t mut LocalCNodeSlots<super::types::MaxTestCNodeSlots>,
     pub(super) untyped: &'t mut LocalCap<Untyped<super::types::MaxTestUntypedSize>>,
     pub(super) asid_pool: &'t mut LocalCap<ASIDPool<super::types::MaxTestASIDPoolSize>>,
-    pub(super) scratch: ScratchRegion<'t, 't, crate::userland::process::StackPageCount>,
+    pub(super) scratch: ScratchRegion<'t, 't, crate::userland::process::DefaultStackPageCount>,
     pub(super) mapped_memory_region: &'t mut MappedMemoryRegion<
         super::types::MaxMappedMemoryRegionBitSize,
         crate::vspace::shared_status::Exclusive,

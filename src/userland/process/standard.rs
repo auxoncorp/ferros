@@ -1,7 +1,9 @@
 use crate::arch::{self, *};
 use crate::cap::*;
+use crate::pow::{Pow, _Pow};
 use crate::userland::rights::CapRights;
 use crate::vspace::*;
+use core::ops::{Add, Sub};
 
 use selfe_sys::*;
 use typenum::*;
@@ -19,16 +21,12 @@ use super::*;
 ///  * Said seL4_UserContext written into the TCB.
 ///  * An IPC buffer and CSpace and fault handler associated with that
 ///    TCB.
-pub struct StandardProcess {
+pub struct StandardProcess<StackBitSize: Unsigned = DefaultStackBitSize> {
     tcb: LocalCap<ThreadControlBlock>,
+    _stack_bit_size: PhantomData<StackBitSize>,
 }
 
-// TODO - Consider making this a parameter of ReadyProcess::new
-pub type StackBitSize = U17;
-pub type StackPageCount = U32; // this is 2^stackbitsize / 4k
-pub type PrepareThreadCNodeSlots = U64;
-
-impl StandardProcess {
+impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
     pub fn new<T: RetypeForSetup>(
         vspace: &mut VSpace,
         cspace: LocalCap<ChildCNode>,
@@ -38,14 +36,29 @@ impl StandardProcess {
         process_parameter: SetupVer<T>,
         ipc_buffer_ut: LocalCap<Untyped<PageBits>>,
         tcb_ut: LocalCap<Untyped<<ThreadControlBlock as DirectRetype>::SizeBits>>,
-        slots: LocalCNodeSlots<PrepareThreadCNodeSlots>,
+        slots: LocalCNodeSlots<Sum<NumPages<StackBitSize>, U2>>,
         priority_authority: &LocalCap<ThreadPriorityAuthority>,
         fault_source: Option<crate::userland::FaultSource<role::Child>>,
-    ) -> Result<Self, ProcessSetupError> {
+    ) -> Result<StandardProcess<StackBitSize>, ProcessSetupError>
+    where
+        NumPages<StackBitSize>: Add<U2>,
+        Sum<NumPages<StackBitSize>, U2>: Unsigned,
+
+        Sum<NumPages<StackBitSize>, U2>: Sub<U2>,
+        Diff<Sum<NumPages<StackBitSize>, U2>, U2>: Unsigned,
+        Diff<Sum<NumPages<StackBitSize>, U2>, U2>: IsEqual<NumPages<StackBitSize>, Output = True>,
+
+        StackBitSize: IsGreaterOrEqual<PageBits>,
+        StackBitSize: Sub<PageBits>,
+        <StackBitSize as Sub<PageBits>>::Output: Unsigned,
+        <StackBitSize as Sub<PageBits>>::Output: _Pow,
+        Pow<<StackBitSize as Sub<PageBits>>::Output>: Unsigned,
+    {
+        let (misc_slots, stack_slots) = slots.alloc::<U2>();
         // TODO - lift these checks to compile-time, as static assertions
         // Note - This comparison is conservative because technically
         // we can fit some of the params into available registers.
-        if core::mem::size_of::<SetupVer<T>>() > (StackPageCount::USIZE * arch::PageBytes::USIZE) {
+        if core::mem::size_of::<SetupVer<T>>() > 2usize.pow(StackBitSize::U32) {
             return Err(ProcessSetupError::ProcessParameterTooBigForStack);
         }
         if core::mem::size_of::<SetupVer<T>>() != core::mem::size_of::<T>() {
@@ -57,9 +70,8 @@ impl StandardProcess {
 
         // Map the stack to the target address space
         let stack_top = parent_mapped_region.vaddr() + parent_mapped_region.size();
-        let (page_slots, slots) = slots.alloc();
-        let (unmapped_stack_pages, _) =
-            parent_mapped_region.share(page_slots, parent_cnode, CapRights::RW)?;
+        let (unmapped_stack_pages, _): (UnmappedMemoryRegion<StackBitSize, _>, _) =
+            parent_mapped_region.share(stack_slots, parent_cnode, CapRights::RW)?;
         let mapped_stack_pages = vspace.map_shared_region_and_consume(
             unmapped_stack_pages,
             CapRights::RW,
@@ -90,7 +102,7 @@ impl StandardProcess {
         vspace.skip_pages(1)?;
 
         // Allocate and map the ipc buffer
-        let (ipc_slots, slots) = slots.alloc();
+        let (ipc_slots, misc_slots) = misc_slots.alloc();
         let ipc_buffer = ipc_buffer_ut.retype(ipc_slots)?;
         let ipc_buffer = vspace.map_given_page(
             ipc_buffer,
@@ -99,7 +111,7 @@ impl StandardProcess {
         )?;
 
         //// allocate the thread control block
-        let (tcb_slots, _slots) = slots.alloc();
+        let (tcb_slots, _slots) = misc_slots.alloc();
         let mut tcb = tcb_ut.retype(tcb_slots)?;
 
         tcb.configure(cspace, fault_source, &vspace, ipc_buffer)?;
@@ -120,7 +132,10 @@ impl StandardProcess {
                 .as_result()
                 .map_err(|e| ProcessSetupError::SeL4Error(SeL4Error::TCBSetPriority(e)))?;
         }
-        Ok(StandardProcess { tcb })
+        Ok(StandardProcess {
+            tcb,
+            _stack_bit_size: PhantomData,
+        })
     }
 
     pub fn start(self) -> Result<(), SeL4Error> {

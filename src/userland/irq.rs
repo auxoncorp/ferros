@@ -1,7 +1,6 @@
 use crate::cap::irq_handler::irq_state;
 use crate::cap::irq_handler::weak::{self, WIRQHandler};
 use crate::cap::{CNodeRole, Cap, IRQControl, IRQError, LocalCap, MaxIRQCount, WCNodeSlotsData};
-use crate::userland::*;
 use arrayvec::ArrayVec;
 use typenum::*;
 

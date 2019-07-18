@@ -363,8 +363,8 @@ impl DeviceAllocator {
             .untypeds
             .iter()
             .enumerate()
-            .find(|(pos, wut)| wut.cap_data.kind.paddr > paddr)
-            .map(|(pos, _)| pos)
+            .find(|(_pos, wut)| wut.cap_data.kind.paddr > paddr)
+            .map(|(pos, _wut)| pos)
         {
             self.untypeds.try_insert(pos, fresh)
         } else {
