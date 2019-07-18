@@ -98,6 +98,7 @@ pub fn shared_page_queue<'a, 'b, 'c>(
             ut,
             ut,
             slots,
+            slots,
             tpa,
             Some(consumer_fault_source),
         )?;
@@ -112,6 +113,7 @@ pub fn shared_page_queue<'a, 'b, 'c>(
             producer_params,
             ut,
             ut,
+            slots,
             slots,
             tpa,
             None, // fault handler

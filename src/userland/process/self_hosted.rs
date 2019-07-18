@@ -1,3 +1,5 @@
+use crate::pow::{Pow, _Pow};
+use core::ops::Sub;
 use typenum::*;
 
 use selfe_sys::*;
@@ -12,8 +14,9 @@ use crate::vspace::*;
 
 use super::*;
 
-pub struct SelfHostedProcess {
+pub struct SelfHostedProcess<StackBitSize: Unsigned = DefaultStackBitSize> {
     tcb: LocalCap<ThreadControlBlock>,
+    _stack_bit_size: PhantomData<StackBitSize>,
 }
 
 struct SelfHostedParams<T, Role: CNodeRole> {
@@ -31,7 +34,7 @@ extern "C" fn self_hosted_run<T>(sh_params: SelfHostedParams<T, role::Local>) {
     child_main(vspace, params);
 }
 
-impl SelfHostedProcess {
+impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
     pub fn new<T: RetypeForSetup>(
         mut vspace: VSpace<vspace_state::Imaged, role::Local>,
         cspace: LocalCap<ChildCNode>,
@@ -41,17 +44,28 @@ impl SelfHostedProcess {
         process_parameter: SetupVer<T>,
         ipc_buffer_ut: LocalCap<Untyped<PageBits>>,
         tcb_ut: LocalCap<Untyped<<ThreadControlBlock as DirectRetype>::SizeBits>>,
-        slots: LocalCNodeSlots<PrepareThreadCNodeSlots>,
+        stack_slots: LocalCNodeSlots<NumPages<StackBitSize>>,
+        misc_slots: LocalCNodeSlots<U2>,
         mut cap_transfer_slots: LocalCap<WCNodeSlotsData<role::Child>>,
         child_paging_slots: Cap<WCNodeSlotsData<role::Child>, role::Child>,
         priority_authority: &LocalCap<ThreadPriorityAuthority>,
         fault_source: Option<crate::userland::FaultSource<role::Child>>,
-    ) -> Result<Self, ProcessSetupError> {
+    ) -> Result<SelfHostedProcess<StackBitSize>, ProcessSetupError>
+    where
+        NumPages<StackBitSize>: Sub<NumPages<StackBitSize>>,
+        Diff<NumPages<StackBitSize>, NumPages<StackBitSize>>: Unsigned,
+
+        StackBitSize: IsGreaterOrEqual<PageBits>,
+        StackBitSize: Sub<PageBits>,
+        <StackBitSize as Sub<PageBits>>::Output: Unsigned,
+        <StackBitSize as Sub<PageBits>>::Output: _Pow,
+        Pow<<StackBitSize as Sub<PageBits>>::Output>: Unsigned,
+    {
         // TODO - lift these checks to compile-time, as static assertions
         // Note - This comparison is conservative because technically
         // we can fit some of the params into available registers.
         if core::mem::size_of::<SelfHostedParams<SetupVer<T>, role::Child>>()
-            > (StackPageCount::USIZE * arch::PageBytes::USIZE)
+            > (2usize.pow(StackBitSize::U32 - arch::PageBits::U32) * arch::PageBytes::USIZE)
         {
             return Err(ProcessSetupError::ProcessParameterTooBigForStack);
         }
@@ -62,7 +76,7 @@ impl SelfHostedProcess {
         }
 
         // Allocate and map the ipc buffer
-        let (ipc_slots, slots) = slots.alloc();
+        let (ipc_slots, misc_slots) = misc_slots.alloc();
         let ipc_buffer = ipc_buffer_ut.retype(ipc_slots)?;
         let ipc_buffer = vspace.map_given_page(
             ipc_buffer,
@@ -71,7 +85,7 @@ impl SelfHostedProcess {
         )?;
 
         // allocate the thread control block
-        let (tcb_slots, slots) = slots.alloc();
+        let (tcb_slots, _slots) = misc_slots.alloc();
         let mut tcb = tcb_ut.retype(tcb_slots)?;
 
         tcb.configure(cspace, fault_source, &vspace, ipc_buffer)?;
@@ -81,7 +95,7 @@ impl SelfHostedProcess {
 
         // Map the stack to the target address space
         let stack_top = parent_mapped_region.vaddr() + parent_mapped_region.size();
-        let (page_slots, _slots) = slots.alloc();
+        let (page_slots, _slots) = stack_slots.alloc();
         let (unmapped_stack_pages, _) =
             parent_mapped_region.share(page_slots, parent_cnode, CapRights::RW)?;
         let mapped_stack_pages = vspace.map_shared_region_and_consume(
@@ -148,7 +162,10 @@ impl SelfHostedProcess {
                 .as_result()
                 .map_err(|e| ProcessSetupError::SeL4Error(SeL4Error::TCBSetPriority(e)))?;
         }
-        Ok(SelfHostedProcess { tcb })
+        Ok(SelfHostedProcess {
+            tcb,
+            _stack_bit_size: PhantomData,
+        })
     }
 
     pub fn start(self) -> Result<(), SeL4Error> {

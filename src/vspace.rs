@@ -1409,7 +1409,7 @@ impl VSpace<vspace_state::Imaged> {
 /// Note that the type parameter regarding default size matches
 /// the currently defaulted number of pages allowed for a process
 /// stack.
-pub struct ReservedRegion<PageCount: Unsigned = crate::userland::process::StackPageCount> {
+pub struct ReservedRegion<PageCount: Unsigned = crate::userland::process::DefaultStackPageCount> {
     vaddr: usize,
     asid: InternalASID,
     _page_count: PhantomData<PageCount>,
@@ -1461,7 +1461,11 @@ where
 
 /// Borrow of a reserved region and its associated VSpace in order to support
 /// temporary mapping
-pub struct ScratchRegion<'a, 'b, PageCount: Unsigned = crate::userland::process::StackPageCount> {
+pub struct ScratchRegion<
+    'a,
+    'b,
+    PageCount: Unsigned = crate::userland::process::DefaultStackPageCount,
+> {
     reserved_region: &'a ReservedRegion<PageCount>,
     vspace: &'b mut VSpace,
 }

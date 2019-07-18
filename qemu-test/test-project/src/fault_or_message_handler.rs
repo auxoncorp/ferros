@@ -88,6 +88,7 @@ pub fn fault_or_message_handler(
                         ut,
                         ut,
                         slots,
+                        slots,
                         tpa,
                         Some(source),
                     )?;

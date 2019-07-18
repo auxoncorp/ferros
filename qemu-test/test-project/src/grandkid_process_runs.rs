@@ -94,6 +94,7 @@ pub fn grandkid_process_runs(
             ut,
             ut,
             slots,
+            slots,
             tpa,
             Some(fault_source),
         )?;
@@ -173,6 +174,7 @@ fn child_run(params: ChildParams<role::Local>) -> Result<(), TopLevelError> {
             params,
             ut,
             ut,
+            slots,
             slots,
             &thread_priority_authority,
             None,

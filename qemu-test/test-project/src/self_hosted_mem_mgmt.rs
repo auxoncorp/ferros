@@ -79,6 +79,7 @@ pub fn self_hosted_mem_mgmt(
             ut,
             ut,
             slots,
+            slots,
             cap_transfer_slots.weaken(),
             child_paging_slots.weaken(),
             tpa,

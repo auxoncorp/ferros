@@ -21,7 +21,7 @@ pub type RunTest = Fn(
     LocalCNodeSlots<MaxTestCNodeSlots>,
     LocalCap<Untyped<MaxTestUntypedSize>>,
     LocalCap<ASIDPool<MaxTestASIDPoolSize>>,
-    &mut ScratchRegion<crate::userland::process::StackPageCount>,
+    &mut ScratchRegion<crate::userland::process::DefaultStackPageCount>,
     crate::vspace::MappedMemoryRegion<
         MaxMappedMemoryRegionBitSize,
         crate::vspace::shared_status::Exclusive,

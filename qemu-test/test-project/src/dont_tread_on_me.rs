@@ -97,6 +97,7 @@ pub fn dont_tread_on_me<'a, 'b, 'c>(
             ut,
             ut,
             slots,
+            slots,
             tpa,
             None, // fault
         )?;
@@ -111,6 +112,7 @@ pub fn dont_tread_on_me<'a, 'b, 'c>(
             proc2_params,
             ut,
             ut,
+            slots,
             slots,
             tpa,
             None, // fault

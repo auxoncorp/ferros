@@ -58,6 +58,7 @@ pub fn child_process_runs(
             ut,
             ut,
             slots,
+            slots,
             tpa,
             None, // fault
         )?;

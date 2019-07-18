@@ -72,6 +72,7 @@ pub fn child_process_cap_management(
             ut,
             ut,
             slots,
+            slots,
             tpa,
             None, // fault
         )?;
