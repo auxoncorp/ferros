@@ -3,7 +3,7 @@ use crate::cap::*;
 use crate::pow::{Pow, _Pow};
 use crate::userland::rights::CapRights;
 use crate::vspace::*;
-use core::ops::Sub;
+use core::ops::{Add, Sub};
 
 use selfe_sys::*;
 use typenum::*;
@@ -36,8 +36,7 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
         process_parameter: SetupVer<T>,
         ipc_buffer_ut: LocalCap<Untyped<PageBits>>,
         tcb_ut: LocalCap<Untyped<<ThreadControlBlock as DirectRetype>::SizeBits>>,
-        stack_slots: LocalCNodeSlots<NumPages<StackBitSize>>,
-        misc_slots: LocalCNodeSlots<U2>,
+        slots: LocalCNodeSlots<Sum<NumPages<StackBitSize>, U2>>,
         priority_authority: &LocalCap<ThreadPriorityAuthority>,
         fault_source: Option<crate::userland::FaultSource<role::Child>>,
     ) -> Result<StandardProcess<StackBitSize>, ProcessSetupError>
@@ -45,12 +44,20 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
         NumPages<StackBitSize>: Sub<NumPages<StackBitSize>>,
         Diff<NumPages<StackBitSize>, NumPages<StackBitSize>>: Unsigned,
 
+        NumPages<StackBitSize>: Add<U2>,
+        Sum<NumPages<StackBitSize>, U2>: Unsigned,
+
+        Sum<NumPages<StackBitSize>, U2>: Sub<U2>,
+        Diff<Sum<NumPages<StackBitSize>, U2>, U2>: Unsigned,
+        Diff<Sum<NumPages<StackBitSize>, U2>, U2>: IsEqual<NumPages<StackBitSize>, Output = True>,
+
         StackBitSize: IsGreaterOrEqual<PageBits>,
         StackBitSize: Sub<PageBits>,
         <StackBitSize as Sub<PageBits>>::Output: Unsigned,
         <StackBitSize as Sub<PageBits>>::Output: _Pow,
         Pow<<StackBitSize as Sub<PageBits>>::Output>: Unsigned,
     {
+        let (misc_slots, stack_slots) = slots.alloc::<U2>();
         // TODO - lift these checks to compile-time, as static assertions
         // Note - This comparison is conservative because technically
         // we can fit some of the params into available registers.

@@ -57,7 +57,6 @@ pub fn memory_read_protection(
             ut,
             ut,
             slots,
-            slots,
             tpa,
             Some(fault_source),
         )?;

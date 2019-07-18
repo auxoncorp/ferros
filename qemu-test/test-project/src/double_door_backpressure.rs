@@ -164,7 +164,6 @@ pub fn double_door_backpressure(
             ut,
             ut,
             slots,
-            slots,
             tpa,
             None, // fault
         )?;
@@ -178,7 +177,6 @@ pub fn double_door_backpressure(
             producer_a_params,
             ut,
             ut,
-            slots,
             slots,
             tpa,
             None, // fault
@@ -194,7 +192,6 @@ pub fn double_door_backpressure(
             ut,
             ut,
             slots,
-            slots,
             tpa,
             None, // fault
         )?;
@@ -208,7 +205,6 @@ pub fn double_door_backpressure(
             waker_params,
             ut,
             ut,
-            slots,
             slots,
             tpa,
             None, // fault

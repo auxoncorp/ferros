@@ -83,7 +83,6 @@ pub fn call_and_response_loop(
             ut,
             ut,
             slots,
-            slots,
             tpa,
             None, // fault
         )?;
@@ -98,7 +97,6 @@ pub fn call_and_response_loop(
             responder_params,
             ut,
             ut,
-            slots,
             slots,
             tpa,
             None, // fault

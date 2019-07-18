@@ -470,9 +470,9 @@ where
     /// In the Ok case, returns a shared, unmapped copy of the memory
     /// region (backed by fresh page-caps) along with this self-same
     /// mapped memory region, marked as shared.
-    pub fn share(
+    pub fn share<CNodeSlotCount: Unsigned>(
         self,
-        slots: LocalCNodeSlots<NumPages<SizeBits>>,
+        slots: LocalCNodeSlots<CNodeSlotCount>,
         cnode: &LocalCap<LocalCNode>,
         rights: CapRights,
     ) -> Result<
@@ -481,7 +481,10 @@ where
             MappedMemoryRegion<SizeBits, shared_status::Shared>,
         ),
         VSpaceError,
-    > {
+    >
+    where
+        CNodeSlotCount: IsEqual<NumPages<SizeBits>, Output = True>,
+    {
         let pages_offset = self.caps.initial_cptr;
         let vaddr = self.vaddr;
         let asid = self.asid;

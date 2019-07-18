@@ -104,7 +104,6 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             ut,
             ut,
             slots,
-            slots,
             root_tcb.as_ref(),
             None,
         )?;

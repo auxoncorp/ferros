@@ -60,7 +60,6 @@ pub fn over_register_size_params<'a, 'b, 'c>(
             ut,
             ut,
             slots,
-            slots,
             tpa,
             None,
         )?;

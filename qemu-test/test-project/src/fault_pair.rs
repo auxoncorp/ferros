@@ -97,7 +97,6 @@ pub fn fault_pair(
             ut,
             ut,
             slots,
-            slots,
             tpa,
             Some(fault_source),
         )?;
@@ -112,7 +111,6 @@ pub fn fault_pair(
             fault_handler_params,
             ut,
             ut,
-            slots,
             slots,
             tpa,
             Some(fault_source_for_the_handler),

@@ -56,7 +56,6 @@ pub fn memory_write_protection<'a, 'b, 'c>(
             ut,
             ut,
             slots,
-            slots,
             tpa,
             Some(fault_source),
         )?;
