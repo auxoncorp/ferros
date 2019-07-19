@@ -96,6 +96,10 @@ where
             _shared_status: PhantomData,
         }
     }
+
+    pub fn weaken(self) -> WeakUnmappedMemoryRegion<SS> {
+        WeakUnmappedMemoryRegion::unchecked_new(self.caps.start_cptr, self.kind, SizeBits::U8)
+    }
 }
 
 impl<SizeBits: Unsigned> UnmappedMemoryRegion<SizeBits, shared_status::Exclusive>
@@ -186,7 +190,11 @@ where
 {
     pub const SIZE_BYTES: usize = 1 << SizeBits::USIZE;
 
-    pub fn size(&self) -> usize {
+    pub fn size_bits(&self) -> u8 {
+        SizeBits::U8
+    }
+
+    pub fn size_bytes(&self) -> usize {
         Self::SIZE_BYTES
     }
 
@@ -251,6 +259,11 @@ where
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         }
+    }
+
+    pub fn weaken(self) -> WeakMappedMemoryRegion<SS> {
+        WeakMappedMemoryRegion::try_from_caps(self.caps.weaken(), self.kind, SizeBits::U8)
+            .expect("Cap page slots to memory region size invariant maintained by type signature")
     }
 
     #[cfg(feature = "test_support")]
@@ -387,8 +400,8 @@ where
 }
 
 pub struct WeakUnmappedMemoryRegion<SS: SharedStatus> {
-    caps: WeakCapRange<Page<page_state::Unmapped>, role::Local>,
-    kind: WeakMemoryKind,
+    pub(super) caps: WeakCapRange<Page<page_state::Unmapped>, role::Local>,
+    pub(super) kind: WeakMemoryKind,
     size_bits: u8,
     _shared_status: PhantomData<SS>,
 }
@@ -417,6 +430,20 @@ impl<SS: SharedStatus> WeakUnmappedMemoryRegion<SS> {
         2usize.pow(u32::from(self.size_bits))
     }
 
+    pub(super) fn unchecked_new(
+        local_page_caps_offset_cptr: usize,
+        kind: WeakMemoryKind,
+        size_bits: u8,
+    ) -> Self {
+        let num_pages = 1 << usize::from(size_bits - PageBits::U8);
+        WeakUnmappedMemoryRegion {
+            caps: WeakCapRange::new_phantom(local_page_caps_offset_cptr, num_pages),
+            kind,
+            size_bits,
+            _shared_status: PhantomData,
+        }
+    }
+
     pub fn to_shared(self) -> WeakUnmappedMemoryRegion<shared_status::Shared> {
         WeakUnmappedMemoryRegion {
             caps: self.caps,
@@ -429,7 +456,7 @@ impl<SS: SharedStatus> WeakUnmappedMemoryRegion<SS> {
 
 pub struct WeakMappedMemoryRegion<SS: SharedStatus> {
     pub(super) caps: WeakCapRange<Page<page_state::Mapped>, role::Local>,
-    kind: WeakMemoryKind,
+    pub(super) kind: WeakMemoryKind,
     size_bits: u8,
     _shared_status: PhantomData<SS>,
 }
@@ -448,6 +475,22 @@ impl<SS: SharedStatus> WeakMappedMemoryRegion<SS> {
 
     pub(crate) fn asid(&self) -> InternalASID {
         self.caps.start_cap_data.state.asid
+    }
+
+    pub(super) fn try_from_caps(
+        caps: WeakCapRange<Page<page_state::Mapped>, role::Local>,
+        kind: WeakMemoryKind,
+        size_bits: u8,
+    ) -> Result<WeakMappedMemoryRegion<SS>, VSpaceError> {
+        if 2usize.pow(u32::from(size_bits) - PageBits::U32) != caps.len() {
+            return Err(VSpaceError::InvalidRegionSize);
+        }
+        Ok(WeakMappedMemoryRegion {
+            caps,
+            kind,
+            size_bits,
+            _shared_status: PhantomData,
+        })
     }
 
     pub(super) fn unchecked_new(

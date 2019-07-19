@@ -131,10 +131,11 @@ pub enum VSpaceError {
     OutOfRegions,
 
     /// This error is returned by `map_region_at_addr` its rollback
-    /// ArrayVec is not large enough to hold the number of pages, it's
+    /// collection is not large enough to hold the number of pages, it's
     /// arbitrary and we'll need to address this when we get to doing
     /// special-sized granules.
     TriedToMapTooManyPagesAtOnce,
+    InvalidRegionSize,
 }
 
 impl From<RetypeError> for VSpaceError {
@@ -294,17 +295,10 @@ impl RegionLocations {
         }
     }
 
-    fn add<SizeBits: Unsigned, SS: SharedStatus>(
+    fn add<SS: SharedStatus>(
         &mut self,
-        region: &MappedMemoryRegion<SizeBits, SS>,
-    ) -> Result<(), VSpaceError>
-    where
-        SizeBits: IsGreaterOrEqual<PageBits>,
-        SizeBits: Sub<PageBits>,
-        <SizeBits as Sub<PageBits>>::Output: Unsigned,
-        <SizeBits as Sub<PageBits>>::Output: _Pow,
-        Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
-    {
+        region: &WeakMappedMemoryRegion<SS>,
+    ) -> Result<(), VSpaceError> {
         let regions_len = self.regions.len();
         let index = {
             let mut idx = 0;
@@ -331,7 +325,7 @@ impl RegionLocations {
         if index == regions_len {
             return self
                 .regions
-                .try_push((region.vaddr(), region.size()))
+                .try_push((region.vaddr(), region.size_bytes()))
                 .map_err(|_| VSpaceError::OutOfRegions);
         }
 
@@ -342,7 +336,8 @@ impl RegionLocations {
             return Err(VSpaceError::OutOfRegions);
         }
 
-        self.regions.insert(index, (region.vaddr(), region.size()));
+        self.regions
+            .insert(index, (region.vaddr(), region.size_bytes()));
 
         Ok(())
     }
@@ -652,6 +647,30 @@ impl VSpace<vspace_state::Imaged> {
         <SizeBits as Sub<PageBits>>::Output: _Pow,
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
     {
+        match self.weak_map_region_at_addr(region.weaken(), vaddr, rights, vm_attributes) {
+            Ok(r) => Ok(MappedMemoryRegion::unchecked_new(
+                r.caps.start_cptr,
+                r.vaddr(),
+                r.asid(),
+                r.kind,
+            )),
+            Err((e, r)) => Err((
+                e,
+                UnmappedMemoryRegion::unchecked_new(r.caps.start_cptr, r.kind),
+            )),
+        }
+    }
+
+    pub fn weak_map_region_at_addr<SS: SharedStatus>(
+        &mut self,
+        region: WeakUnmappedMemoryRegion<SS>,
+        vaddr: usize,
+        rights: CapRights,
+        vm_attributes: arch::VMAttributes,
+    ) -> Result<WeakMappedMemoryRegion<SS>, (VSpaceError, WeakUnmappedMemoryRegion<SS>)> {
+        if region.size_bits() < PageBits::U8 {
+            return Err((VSpaceError::InvalidRegionSize, region));
+        }
         if self.specific_regions.is_overlap(vaddr) {
             return Err((VSpaceError::OverlappingRegion, region));
         }
@@ -664,6 +683,7 @@ impl VSpace<vspace_state::Imaged> {
 
         let mut mapping_vaddr = vaddr;
         let cptr = region.caps.start_cptr;
+        let size_bits = region.size_bits();
 
         let mut mapped_pages_cptrs = util::WeakCapRangeCollection::new();
 
@@ -703,7 +723,7 @@ impl VSpace<vspace_state::Imaged> {
                     let _ = unmap_mapped_page_cptrs(mapped_pages_cptrs);
                     return Err((
                         VSpaceError::SeL4Error(e),
-                        UnmappedMemoryRegion::unchecked_new(cptr, kind),
+                        WeakUnmappedMemoryRegion::unchecked_new(cptr, kind, size_bits),
                     ));
                 }
                 Err(e) => {
@@ -711,7 +731,7 @@ impl VSpace<vspace_state::Imaged> {
                     let _ = unmap_mapped_page_cptrs(mapped_pages_cptrs);
                     return Err((
                         VSpaceError::MappingError(e),
-                        UnmappedMemoryRegion::unchecked_new(cptr, kind),
+                        WeakUnmappedMemoryRegion::unchecked_new(cptr, kind, size_bits),
                     ));
                 }
                 Ok(_) => {
@@ -732,7 +752,7 @@ impl VSpace<vspace_state::Imaged> {
                         Err(_) => {
                             return Err((
                                 VSpaceError::TriedToMapTooManyPagesAtOnce,
-                                UnmappedMemoryRegion::unchecked_new(cptr, kind),
+                                WeakUnmappedMemoryRegion::unchecked_new(cptr, kind, size_bits),
                             ))
                         }
                         _ => (),
@@ -742,14 +762,14 @@ impl VSpace<vspace_state::Imaged> {
             mapping_vaddr += PageBytes::USIZE;
         }
 
-        let region = MappedMemoryRegion::unchecked_new(cptr, vaddr, self.asid, kind);
+        let region = WeakMappedMemoryRegion::unchecked_new(cptr, vaddr, self.asid, kind, size_bits);
 
         match self.specific_regions.add(&region) {
             Err(_) => {
                 let _ = unmap_mapped_page_cptrs(mapped_pages_cptrs);
                 Err((
                     VSpaceError::OutOfRegions,
-                    UnmappedMemoryRegion::unchecked_new(cptr, kind),
+                    WeakUnmappedMemoryRegion::unchecked_new(cptr, kind, size_bits),
                 ))
             }
             Ok(_) => Ok(region),

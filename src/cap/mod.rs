@@ -159,6 +159,11 @@ impl<CT: CapType, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Role, Slots> {
     pub(crate) fn len(&self) -> usize {
         Slots::USIZE
     }
+
+    pub fn weaken(self) -> WeakCapRange<CT, Role> {
+        let len = self.len();
+        WeakCapRange::new(self.start_cptr, self.start_cap_data, len)
+    }
 }
 
 impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole, Slots: Unsigned>

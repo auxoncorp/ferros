@@ -98,7 +98,7 @@ impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
         vspace.skip_pages(1)?;
 
         // Map the stack to the target address space
-        let stack_top = parent_mapped_region.vaddr() + parent_mapped_region.size();
+        let stack_top = parent_mapped_region.vaddr() + parent_mapped_region.size_bytes();
         let (unmapped_stack_pages, _) =
             parent_mapped_region.share(stack_slots, parent_cnode, CapRights::RW)?;
         let mapped_stack_pages = vspace.map_shared_region_and_consume(
@@ -133,12 +133,12 @@ impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
                 &sh_params as *const SelfHostedParams<SetupVer<T>, role::Child> as *const usize,
                 core::mem::size_of::<SelfHostedParams<SetupVer<T>, role::Child>>(),
                 stack_top as *mut usize,
-                mapped_stack_pages.vaddr() + mapped_stack_pages.size(),
+                mapped_stack_pages.vaddr() + mapped_stack_pages.size_bytes(),
             )
         };
 
         let stack_pointer =
-            mapped_stack_pages.vaddr() + mapped_stack_pages.size() - param_size_on_stack;
+            mapped_stack_pages.vaddr() + mapped_stack_pages.size_bytes() - param_size_on_stack;
 
         registers.sp = stack_pointer;
         registers.pc = self_hosted_run::<T> as usize;
