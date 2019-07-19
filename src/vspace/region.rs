@@ -405,7 +405,6 @@ impl WeakUnmappedMemoryRegion<shared_status::Exclusive> {
         untyped: LocalCap<WUntyped<MemKind>>,
         slots: &mut WCNodeSlots,
     ) -> Result<Self, RetypeError> {
-        //let num_pages = 1 << (untyped.size_bits() - PageBits::U8);
         let kind = untyped.cap_data.kind.weaken();
         let size_bits = untyped.size_bits();
         let caps = untyped.retype_pages(slots)?;

@@ -143,12 +143,10 @@ impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
             .map_err(|e| SeL4Error::UntypedRetype(e))?;
         }
 
-        Ok(WeakCapRange {
-            start_cptr: dest_slots.cap_data.offset,
-            len: num_pages,
-            _cap_type: PhantomData,
-            _role: PhantomData,
-        })
+        Ok(WeakCapRange::new_phantom(
+            dest_slots.cap_data.offset,
+            num_pages,
+        ))
     }
 }
 
@@ -229,12 +227,11 @@ pub mod memory_kind {
             super::WeakMemoryKind::General
         }
 
-        fn halve(&self, size_bytes: usize) -> (Self, Self) {
+        fn halve(&self, _size_bytes: usize) -> (Self, Self) {
             (General, General)
         }
 
-        fn quarter(&self, size_bytes: usize) -> (Self, Self, Self, Self) {
-            let subregion_size = size_bytes / 4;
+        fn quarter(&self, _size_bytes: usize) -> (Self, Self, Self, Self) {
             (General, General, General, General)
         }
     }

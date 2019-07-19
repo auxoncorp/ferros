@@ -177,32 +177,66 @@ impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole, Slots: Unsigned>
     }
 }
 
-pub struct WeakCapRange<CT: CapType + PhantomCap, Role: CNodeRole> {
+pub struct WeakCapRange<CT: CapType, Role: CNodeRole> {
     pub(crate) start_cptr: usize,
-    len: usize,
-    _cap_type: PhantomData<CT>,
+    pub(crate) start_cap_data: CT,
+    pub(crate) len: usize,
     _role: PhantomData<Role>,
 }
 impl<CT: CapType + PhantomCap, Role: CNodeRole> WeakCapRange<CT, Role> {
-    pub(crate) fn new(start_cptr: usize, len: usize) -> Self {
+    pub(crate) fn new_phantom(start_cptr: usize, len: usize) -> Self {
+        let start_cap_data = PhantomCap::phantom_instance();
         WeakCapRange {
             start_cptr,
+            start_cap_data,
             len,
-            _cap_type: PhantomData,
+            _role: PhantomData,
+        }
+    }
+}
+impl<CT: CapType, Role: CNodeRole> WeakCapRange<CT, Role> {
+    pub(crate) fn new(start_cptr: usize, start_cap_data: CT, len: usize) -> Self {
+        WeakCapRange {
+            start_cptr,
+            start_cap_data,
+            len,
             _role: PhantomData,
         }
     }
 
-    pub(crate) fn iter(self) -> impl Iterator<Item = Cap<CT, Role>> {
-        (0..self.len()).map(move |offset| Cap {
-            cptr: self.start_cptr + offset,
+    /// Uses a function that accepts a cap-index (the index in the cap-range's iteration, NOT a cptr)
+    /// and the seed (starting) cap_data to produce a new cap_data instance to produce the Cap item instances
+    pub(crate) fn into_iter(self) -> impl Iterator<Item = Cap<CT, Role>>
+    where
+        CT: CapRangeDataReconstruction,
+    {
+        (0..self.len()).map(move |index| Cap {
+            cptr: self.start_cptr + index,
             _role: PhantomData,
-            cap_data: PhantomCap::phantom_instance(),
+            cap_data: CT::reconstruct(index, &self.start_cap_data),
         })
     }
 
     pub(crate) fn len(&self) -> usize {
         self.len
+    }
+}
+
+/// A helper trait for CapRange and WeakCapRange to assist in iteration.
+///
+/// Represents a CapType for which instances in a collection
+/// can be reconstructed using only a single seed/starting instance reference
+/// and the index-of-iteration.
+pub trait CapRangeDataReconstruction {
+    fn reconstruct(index: usize, seed: &Self) -> Self;
+}
+
+impl<CT> CapRangeDataReconstruction for CT
+where
+    CT: PhantomCap,
+{
+    fn reconstruct(_index: usize, _seed: &Self) -> Self {
+        CT::phantom_instance()
     }
 }
 

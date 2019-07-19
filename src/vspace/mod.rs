@@ -15,9 +15,9 @@ use crate::arch::cap::{page_state, AssignedASID, Page, UnassignedASID};
 use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot};
 use crate::bootstrap::UserImage;
 use crate::cap::{
-    memory_kind, role, CNodeRole, CNodeSlots, Cap, CapRange, CapType, ChildCNodeSlot, DirectRetype,
-    InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, PhantomCap, RetypeError, Untyped,
-    WCNodeSlots, WCNodeSlotsData, WUntyped,
+    memory_kind, role, CNodeRole, CNodeSlots, Cap, CapRange, CapRangeDataReconstruction, CapType,
+    ChildCNodeSlot, DirectRetype, InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, PhantomCap,
+    RetypeError, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped, WeakCapRange,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
@@ -136,8 +136,6 @@ pub enum VSpaceError {
     /// special-sized granules.
     TriedToMapTooManyPagesAtOnce,
 }
-
-const MAX_MAP_AT_ONCE: usize = 1024;
 
 impl From<RetypeError> for VSpaceError {
     fn from(e: RetypeError) -> VSpaceError {
@@ -667,16 +665,24 @@ impl VSpace<vspace_state::Imaged> {
         let mut mapping_vaddr = vaddr;
         let cptr = region.caps.start_cptr;
 
-        let mut mapped_pages_cptrs: ArrayVec<[usize; MAX_MAP_AT_ONCE]> = ArrayVec::new();
+        let mut mapped_pages_cptrs = util::WeakCapRangeCollection::new();
 
+        impl CapRangeDataReconstruction for Page<page_state::Mapped> {
+            fn reconstruct(index: usize, seed_cap_data: &Self) -> Self {
+                Page {
+                    state: page_state::Mapped {
+                        vaddr: seed_cap_data.state.vaddr + index * PageBytes::USIZE,
+                        asid: seed_cap_data.state.asid,
+                    },
+                }
+            }
+        }
         fn unmap_mapped_page_cptrs(
-            mapped_pages: ArrayVec<[usize; MAX_MAP_AT_ONCE]>,
+            mapped_pages: util::WeakCapRangeCollection<Page<page_state::Mapped>>,
         ) -> Result<(), SeL4Error> {
             mapped_pages
                 .into_iter()
-                .map(|page_cptr| unsafe {
-                    LocalCap::<Page<page_state::Mapped>>::unmap_and_ignore_unchecked_cptr(page_cptr)
-                })
+                .map(|page| page.unmap().map(|_p| ()))
                 .collect()
         }
 
@@ -712,7 +718,16 @@ impl VSpace<vspace_state::Imaged> {
                     // them back if we fail to map all of this
                     // region. I.e., something was previously mapped
                     // here.
-                    match mapped_pages_cptrs.try_push(page.cptr) {
+                    match mapped_pages_cptrs.try_push(Cap {
+                        cptr: page.cptr,
+                        cap_data: Page {
+                            state: page_state::Mapped {
+                                vaddr: mapping_vaddr,
+                                asid: self.asid,
+                            },
+                        },
+                        _role: PhantomData,
+                    }) {
                         Err(_) => {
                             return Err((
                                 VSpaceError::TriedToMapTooManyPagesAtOnce,
@@ -1163,6 +1178,58 @@ where
         let res = f(&mut mapped_region);
         let _ = self.vspace.unmap_region(mapped_region)?;
         Ok(res)
+    }
+}
+
+mod util {
+    use super::*;
+
+    const MAX_DISCONTINUOUS_CPTR_RANGES: usize = 16;
+
+    /// A slightly dense collection of ranges of cptrs
+    /// Must only be used with cap-types that can be reconstructed from
+    /// nothing or from a single seed starting cap_data for a range
+    pub(super) struct WeakCapRangeCollection<CT: CapType> {
+        ranges: ArrayVec<[WeakCapRange<CT, role::Local>; MAX_DISCONTINUOUS_CPTR_RANGES]>,
+    }
+
+    impl<CT: CapType> WeakCapRangeCollection<CT> {
+        pub(super) fn new() -> Self {
+            WeakCapRangeCollection {
+                ranges: ArrayVec::new(),
+            }
+        }
+        /// Add a single cap to the collection
+        pub(super) fn try_push(
+            &mut self,
+            cap: LocalCap<CT>,
+        ) -> Result<(), arrayvec::CapacityError<LocalCap<CT>>> {
+            for r in self.ranges.iter_mut() {
+                if cap.cptr == r.start_cptr + r.len + 1 {
+                    r.len += 1;
+                    return Ok(());
+                }
+            }
+            self.ranges
+                .try_push(WeakCapRange::new(cap.cptr, cap.cap_data, 1))
+                .map_err(|e| {
+                    let wcr = e.element();
+                    arrayvec::CapacityError::new(Cap {
+                        cptr: wcr.start_cptr,
+                        cap_data: wcr.start_cap_data,
+                        _role: PhantomData,
+                    })
+                })
+        }
+
+        /// Uses a function that accepts a cap-index (the index in the cap-range's iteration, NOT a cptr)
+        /// and the seed (starting) cap_data to produce a new cap_data instance to produce the Cap item instances
+        pub(crate) fn into_iter(self) -> impl Iterator<Item = LocalCap<CT>>
+        where
+            CT: CapRangeDataReconstruction,
+        {
+            self.ranges.into_iter().flat_map(move |r| r.into_iter())
+        }
     }
 }
 

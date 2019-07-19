@@ -44,14 +44,6 @@ impl LocalCap<Page<page_state::Mapped>> {
             Err(e) => Err(SeL4Error::PageUnmap(e)),
         }
     }
-    /// Keeping this non-public in order to restrict mapping operations to owners
-    /// of a VSpace-related object
-    pub(crate) unsafe fn unmap_and_ignore_unchecked_cptr(cptr: usize) -> Result<(), SeL4Error> {
-        match unsafe { seL4_ARM_Page_Unmap(cptr) }.as_result() {
-            Ok(_) => Ok(()),
-            Err(e) => Err(SeL4Error::PageUnmap(e)),
-        }
-    }
 }
 
 impl<State: PageState> CapType for Page<State> {}
