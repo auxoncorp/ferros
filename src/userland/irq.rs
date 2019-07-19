@@ -72,4 +72,8 @@ impl<Role: CNodeRole> WIRQHandlerCollection<Role> {
     pub fn len(&self) -> usize {
         self.handlers.len()
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Cap<weak::WIRQHandler<irq_state::Unset>, Role>> {
+        self.handlers.iter()
+    }
 }
