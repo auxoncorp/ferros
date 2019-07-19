@@ -118,27 +118,41 @@ where
     }
 }
 
-pub struct CapRange<CT: CapType + PhantomCap, Role: CNodeRole, Slots: Unsigned> {
+pub struct CapRange<CT: CapType, Role: CNodeRole, Slots: Unsigned> {
     pub(crate) start_cptr: usize,
-    _cap_type: PhantomData<CT>,
+    pub(crate) start_cap_data: CT,
     _role: PhantomData<Role>,
     _slots: PhantomData<Slots>,
 }
 
 impl<CT: CapType + PhantomCap, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Role, Slots> {
-    pub(crate) fn new(start_cptr: usize) -> Self {
+    pub(crate) fn new_phantom(start_cptr: usize) -> Self {
         CapRange {
             start_cptr,
-            _cap_type: PhantomData,
+            start_cap_data: CT::phantom_instance(),
             _role: PhantomData,
             _slots: PhantomData,
         }
     }
-    pub fn iter(self) -> impl Iterator<Item = Cap<CT, Role>> {
-        (0..Slots::USIZE).map(move |offset| Cap {
-            cptr: self.start_cptr + offset,
+}
+impl<CT: CapType, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Role, Slots> {
+    pub(crate) fn new(start_cptr: usize, start_cap_data: CT) -> Self {
+        CapRange {
+            start_cptr,
+            start_cap_data,
             _role: PhantomData,
-            cap_data: PhantomCap::phantom_instance(),
+            _slots: PhantomData,
+        }
+    }
+
+    pub(crate) fn into_iter(self) -> impl Iterator<Item = Cap<CT, Role>>
+    where
+        CT: CapRangeDataReconstruction,
+    {
+        (0..self.len()).map(move |index| Cap {
+            cptr: self.start_cptr + index,
+            _role: PhantomData,
+            cap_data: CT::reconstruct(index, &self.start_cap_data),
         })
     }
 
@@ -170,7 +184,7 @@ impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole, Slots: Unsigned>
         }
         Ok(CapRange {
             start_cptr: copied_to_start_cptr,
-            _cap_type: PhantomData,
+            start_cap_data: CT::phantom_instance(),
             _role: PhantomData,
             _slots: PhantomData,
         })
@@ -183,6 +197,7 @@ pub struct WeakCapRange<CT: CapType, Role: CNodeRole> {
     pub(crate) len: usize,
     _role: PhantomData<Role>,
 }
+
 impl<CT: CapType + PhantomCap, Role: CNodeRole> WeakCapRange<CT, Role> {
     pub(crate) fn new_phantom(start_cptr: usize, len: usize) -> Self {
         let start_cap_data = PhantomCap::phantom_instance();
@@ -204,8 +219,6 @@ impl<CT: CapType, Role: CNodeRole> WeakCapRange<CT, Role> {
         }
     }
 
-    /// Uses a function that accepts a cap-index (the index in the cap-range's iteration, NOT a cptr)
-    /// and the seed (starting) cap_data to produce a new cap_data instance to produce the Cap item instances
     pub(crate) fn into_iter(self) -> impl Iterator<Item = Cap<CT, Role>>
     where
         CT: CapRangeDataReconstruction,

@@ -5,7 +5,7 @@ use typenum::*;
 
 use super::{KernelRetypeFanOutLimit, NumPages, VSpaceError};
 use crate::arch::cap::{page_state, Page};
-use crate::arch::{PageBits, PageBytes};
+use crate::arch::PageBits;
 use crate::cap::{
     memory_kind, role, CNodeRole, CNodeSlots, Cap, CapRange, InternalASID, LocalCNode,
     LocalCNodeSlots, LocalCap, MemoryKind, RetypeError, Untyped, WCNodeSlots, WUntyped,
@@ -54,12 +54,7 @@ where
 
 impl LocalCap<Page<page_state::Unmapped>> {
     pub(crate) fn to_region(self) -> UnmappedMemoryRegion<PageBits, shared_status::Exclusive> {
-        let caps: CapRange<Page<page_state::Unmapped>, role::Local, U1> = CapRange::new(self.cptr);
-        UnmappedMemoryRegion {
-            caps,
-            _size_bits: PhantomData,
-            _shared_status: PhantomData,
-        }
+        UnmappedMemoryRegion::unchecked_new(self.cptr)
     }
 }
 
@@ -80,7 +75,7 @@ where
 
     pub(super) fn unchecked_new(local_page_caps_offset_cptr: usize) -> Self {
         UnmappedMemoryRegion {
-            caps: CapRange::new(local_page_caps_offset_cptr),
+            caps: CapRange::new_phantom(local_page_caps_offset_cptr),
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         }
@@ -117,7 +112,7 @@ where
     {
         let page_caps = ut.retype_pages(slots)?;
         Ok(UnmappedMemoryRegion {
-            caps: CapRange::new(page_caps.start_cptr),
+            caps: CapRange::new_phantom(page_caps.start_cptr),
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         })
@@ -133,7 +128,7 @@ where
     {
         let page_caps = ut.retype_device_pages(slots)?;
         Ok(UnmappedMemoryRegion {
-            caps: CapRange::new(page_caps.start_cptr),
+            caps: CapRange::new_phantom(page_caps.start_cptr),
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         })
@@ -164,41 +159,6 @@ where
     }
 }
 
-pub(super) struct MappedPageRange<Count: Unsigned> {
-    pub(super) initial_cptr: usize,
-    initial_vaddr: usize,
-    asid: InternalASID,
-    _count: PhantomData<Count>,
-}
-
-impl<Count: Unsigned> MappedPageRange<Count> {
-    fn new(initial_cptr: usize, initial_vaddr: usize, asid: InternalASID) -> Self {
-        MappedPageRange {
-            initial_cptr,
-            initial_vaddr,
-            asid,
-            _count: PhantomData,
-        }
-    }
-
-    pub fn iter(self) -> impl Iterator<Item = Cap<Page<page_state::Mapped>, role::Local>> {
-        (0..Count::USIZE).map(move |idx| Cap {
-            cptr: self.initial_cptr + idx,
-            cap_data: Page {
-                state: page_state::Mapped {
-                    vaddr: self.initial_vaddr + (PageBytes::USIZE * idx),
-                    asid: self.asid,
-                },
-            },
-            _role: PhantomData,
-        })
-    }
-
-    pub fn count(&self) -> usize {
-        Count::USIZE
-    }
-}
-
 /// A memory region which is mapped into an address space, meaning it
 /// has a virtual address and an associated asid in which that virtual
 /// address is valid.
@@ -215,7 +175,7 @@ where
     Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
 {
     vaddr: usize,
-    pub(super) caps: MappedPageRange<NumPages<SizeBits>>,
+    pub(super) caps: CapRange<Page<page_state::Mapped>, role::Local, NumPages<SizeBits>>,
     asid: InternalASID,
     _size_bits: PhantomData<SizeBits>,
     _shared_status: PhantomData<SS>,
@@ -257,12 +217,12 @@ where
     where
         CNodeSlotCount: IsEqual<NumPages<SizeBits>, Output = True>,
     {
-        let pages_offset = self.caps.initial_cptr;
+        let pages_offset = self.caps.start_cptr;
         let vaddr = self.vaddr;
         let asid = self.asid;
         let slots_offset = slots.cap_data.offset;
 
-        for (slot, page) in slots.iter().zip(self.caps.iter()) {
+        for (slot, page) in slots.iter().zip(self.caps.into_iter()) {
             page.copy(cnode, slot, rights)?;
         }
 
@@ -278,7 +238,15 @@ where
         asid: InternalASID,
     ) -> MappedMemoryRegion<SizeBits, SS> {
         MappedMemoryRegion {
-            caps: MappedPageRange::new(initial_cptr, initial_vaddr, asid),
+            caps: CapRange::new(
+                initial_cptr,
+                Page {
+                    state: page_state::Mapped {
+                        vaddr: initial_vaddr,
+                        asid,
+                    },
+                },
+            ),
             vaddr: initial_vaddr,
             asid,
             _size_bits: PhantomData,
@@ -289,7 +257,7 @@ where
     #[cfg(feature = "test_support")]
     /// Super dangerous copy-aliasing
     pub(crate) unsafe fn dangerous_internal_alias(&mut self) -> Self {
-        MappedMemoryRegion::unchecked_new(self.caps.initial_cptr, self.vaddr, self.asid)
+        MappedMemoryRegion::unchecked_new(self.caps.start_cptr, self.vaddr, self.asid)
     }
 
     /// Halve a region into two regions.
@@ -320,18 +288,34 @@ where
             return Err(VSpaceError::ExceededAvailableAddressSpace);
         };
 
-        let new_offset = self.caps.initial_cptr + (self.caps.count() / 2);
+        let new_offset = self.caps.start_cptr + (self.caps.len() / 2);
 
         Ok((
             MappedMemoryRegion {
-                caps: MappedPageRange::new(self.caps.initial_cptr, self.vaddr, self.asid),
+                caps: CapRange::new(
+                    self.caps.start_cptr,
+                    Page {
+                        state: page_state::Mapped {
+                            vaddr: self.vaddr,
+                            asid: self.asid,
+                        },
+                    },
+                ),
                 vaddr: self.vaddr,
                 asid: self.asid,
                 _size_bits: PhantomData,
                 _shared_status: PhantomData,
             },
             MappedMemoryRegion {
-                caps: MappedPageRange::new(new_offset, new_region_vaddr, self.asid),
+                caps: CapRange::new(
+                    new_offset,
+                    Page {
+                        state: page_state::Mapped {
+                            vaddr: new_region_vaddr,
+                            asid: self.asid,
+                        },
+                    },
+                ),
                 vaddr: new_region_vaddr,
                 asid: self.asid,
                 _size_bits: PhantomData,
@@ -382,7 +366,15 @@ where
 
         Ok((
             MappedMemoryRegion {
-                caps: MappedPageRange::new(a.caps.initial_cptr, a.vaddr, a.asid),
+                caps: CapRange::new(
+                    a.caps.start_cptr,
+                    Page {
+                        state: page_state::Mapped {
+                            vaddr: a.vaddr,
+                            asid: a.asid,
+                        },
+                    },
+                ),
                 vaddr: a.vaddr,
                 asid: a.asid,
                 _size_bits: PhantomData,

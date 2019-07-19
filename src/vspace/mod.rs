@@ -569,7 +569,7 @@ impl VSpace<vspace_state::Imaged> {
                     arch::CodePageCount,
                 > = code_pages_ut.retype_multi(code_pages_slots)?;
                 // Then, zip up the pages with the user image pages
-                for (ui_page, fresh_page) in user_image.pages_iter().zip(fresh_pages.iter()) {
+                for (ui_page, fresh_page) in user_image.pages_iter().zip(fresh_pages.into_iter()) {
                     // Temporarily map the new page and copy the data
                     // from `user_image` to the new page.
                     let mut unmapped_region = fresh_page.to_region();
@@ -686,7 +686,7 @@ impl VSpace<vspace_state::Imaged> {
                 .collect()
         }
 
-        for page in region.caps.iter() {
+        for page in region.caps.into_iter() {
             match self.layers.map_layer(
                 &page,
                 mapping_vaddr,
@@ -794,7 +794,7 @@ impl VSpace<vspace_state::Imaged> {
         let vaddr = mapped_region.vaddr();
         let dest_init_cptr = dest_slots.cap_data.offset;
 
-        for (page, slot) in mapped_region.caps.iter().zip(dest_slots.iter()) {
+        for (page, slot) in mapped_region.caps.into_iter().zip(dest_slots.iter()) {
             let _ = page.move_to_slot(src_cnode, slot)?;
         }
 
@@ -864,8 +864,8 @@ impl VSpace<vspace_state::Imaged> {
         <SizeBits as Sub<PageBits>>::Output: _Pow,
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
     {
-        let start_cptr = region.caps.initial_cptr;
-        for page_cap in region.caps.iter() {
+        let start_cptr = region.caps.start_cptr;
+        for page_cap in region.caps.into_iter() {
             let _ = self.unmap_page(page_cap)?;
         }
         Ok(UnmappedMemoryRegion::unchecked_new(start_cptr))
@@ -908,7 +908,7 @@ impl VSpace<vspace_state::Imaged> {
         let mapped_region =
             MappedMemoryRegion::unchecked_new(region.caps.start_cptr, vaddr, self.asid());
 
-        for page_cap in region.caps.iter() {
+        for page_cap in region.caps.into_iter() {
             match self.layers.map_layer(
                 &page_cap,
                 vaddr,
@@ -1146,7 +1146,7 @@ where
         let unmapped_region_copy: UnmappedMemoryRegion<SizeBits, shared_status::Exclusive> =
             UnmappedMemoryRegion::unchecked_new(region.caps.start_cptr);
         let mut next_addr = start_vaddr;
-        for page in unmapped_region_copy.caps.iter() {
+        for page in unmapped_region_copy.caps.into_iter() {
             match self.vspace.layers.map_layer(
                 &page,
                 next_addr,

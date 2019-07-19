@@ -491,12 +491,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
             .map_err(|e| SeL4Error::UntypedRetype(e))?;
         }
 
-        Ok(CapRange {
-            start_cptr: dest_offset,
-            _cap_type: PhantomData,
-            _role: PhantomData,
-            _slots: PhantomData,
-        })
+        Ok(CapRange::new_phantom(dest_offset))
     }
 }
 
@@ -606,12 +601,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
                 dest_offset,
             )?;
         }
-        Ok(CapRange {
-            start_cptr: dest_offset,
-            _cap_type: PhantomData,
-            _role: PhantomData,
-            _slots: PhantomData,
-        })
+        Ok(CapRange::new_phantom(dest_offset))
     }
 
     pub(crate) fn retype_multi_runtime<TargetCapType: CapType, Count: Unsigned, CRole: CNodeRole>(
@@ -651,12 +641,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
             )?;
         }
 
-        Ok(CapRange {
-            start_cptr: dest_offset,
-            _cap_type: PhantomData,
-            _role: PhantomData,
-            _slots: PhantomData,
-        })
+        Ok(CapRange::new_phantom(dest_offset))
     }
 
     unsafe fn retype_multi_internal(
@@ -834,12 +819,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::Device>> {
             .map_err(|e| SeL4Error::UntypedRetype(e))?;
         }
 
-        Ok(CapRange {
-            start_cptr: dest_offset,
-            _cap_type: PhantomData,
-            _role: PhantomData,
-            _slots: PhantomData,
-        })
+        Ok(CapRange::new_phantom(dest_offset))
     }
 }
 
