@@ -297,6 +297,7 @@ where
     Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
 {
     caps: CapRange<Page<page_state::Unmapped>, role::Local, NumPages<SizeBits>>,
+    pub paddr: Option<usize>,
     _size_bits: PhantomData<SizeBits>,
     _shared_status: PhantomData<SS>,
 }
@@ -306,6 +307,7 @@ impl LocalCap<Page<page_state::Unmapped>> {
         let caps: CapRange<Page<page_state::Unmapped>, role::Local, U1> = CapRange::new(self.cptr);
         UnmappedMemoryRegion {
             caps,
+            paddr: None,
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         }
@@ -346,6 +348,7 @@ where
             ut.retype_multi_runtime::<Page<page_state::Unmapped>, NumPages<SizeBits>, _>(slots)?;
         Ok(UnmappedMemoryRegion {
             caps: CapRange::new(page_caps.start_cptr),
+            paddr: None,
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         })
@@ -359,9 +362,11 @@ where
         Pow<<SizeBits as Sub<PageBits>>::Output>:
             IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
     {
+        let paddr = ut.cap_data.kind.paddr;
         let page_caps = ut.retype_device_pages(slots)?;
         Ok(UnmappedMemoryRegion {
             caps: CapRange::new(page_caps.start_cptr),
+            paddr: Some(paddr),
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         })
@@ -386,6 +391,7 @@ where
     pub fn to_shared(self) -> UnmappedMemoryRegion<SizeBits, shared_status::Shared> {
         UnmappedMemoryRegion {
             caps: self.caps,
+            paddr: self.paddr,
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         }
@@ -494,6 +500,7 @@ where
         Ok((
             UnmappedMemoryRegion {
                 caps: CapRange::new(slots_offset),
+                paddr: None,
                 _size_bits: PhantomData,
                 _shared_status: PhantomData,
             },
@@ -1046,6 +1053,7 @@ impl VSpace<vspace_state::Imaged> {
                         VSpaceError::SeL4Error(e),
                         UnmappedMemoryRegion {
                             caps: CapRange::new(cptr),
+                            paddr: None,
                             _size_bits: PhantomData,
                             _shared_status: PhantomData,
                         },
@@ -1058,6 +1066,7 @@ impl VSpace<vspace_state::Imaged> {
                         VSpaceError::SeL4Error(e),
                         UnmappedMemoryRegion {
                             caps: CapRange::new(cptr),
+                            paddr: None,
                             _size_bits: PhantomData,
                             _shared_status: PhantomData,
                         },
@@ -1070,6 +1079,7 @@ impl VSpace<vspace_state::Imaged> {
                         VSpaceError::MappingError(e),
                         UnmappedMemoryRegion {
                             caps: CapRange::new(cptr),
+                            paddr: None,
                             _size_bits: PhantomData,
                             _shared_status: PhantomData,
                         },
@@ -1086,6 +1096,7 @@ impl VSpace<vspace_state::Imaged> {
                                 VSpaceError::TriedToMapTooManyPagesAtOnce,
                                 UnmappedMemoryRegion {
                                     caps: CapRange::new(cptr),
+                                    paddr: None,
                                     _shared_status: PhantomData,
                                     _size_bits: PhantomData,
                                 },
@@ -1205,6 +1216,7 @@ impl VSpace<vspace_state::Imaged> {
     {
         let unmapped_sr: UnmappedMemoryRegion<_, shared_status::Shared> = UnmappedMemoryRegion {
             caps: region.caps.copy(cnode, slots, rights)?,
+            paddr: None,
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         };
@@ -1250,6 +1262,7 @@ impl VSpace<vspace_state::Imaged> {
         }
         Ok(UnmappedMemoryRegion {
             caps: CapRange::new(start_cptr),
+            paddr: None,
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         })
@@ -1532,6 +1545,7 @@ where
         let unmapped_region_copy: UnmappedMemoryRegion<SizeBits, shared_status::Exclusive> =
             UnmappedMemoryRegion {
                 caps: CapRange::new(region.caps.start_cptr),
+                paddr: region.paddr,
                 _size_bits: PhantomData,
                 _shared_status: PhantomData,
             };
