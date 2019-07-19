@@ -435,13 +435,34 @@ impl<SS: SharedStatus> WeakUnmappedMemoryRegion<SS> {
         kind: WeakMemoryKind,
         size_bits: u8,
     ) -> Self {
-        let num_pages = 1 << usize::from(size_bits - PageBits::U8);
+        let num_pages = num_pages(size_bits)
+            .expect("Calling functions maintain the invariant that the size_bits is over the size of a page");
         WeakUnmappedMemoryRegion {
             caps: WeakCapRange::new_phantom(local_page_caps_offset_cptr, num_pages),
             kind,
             size_bits,
             _shared_status: PhantomData,
         }
+    }
+
+    pub(super) fn as_strong<SizeBits: Unsigned>(
+        self,
+    ) -> Result<UnmappedMemoryRegion<SizeBits, SS>, VSpaceError>
+    where
+        // Forces regions to be page-aligned.
+        SizeBits: IsGreaterOrEqual<PageBits>,
+        SizeBits: Sub<PageBits>,
+        <SizeBits as Sub<PageBits>>::Output: Unsigned,
+        <SizeBits as Sub<PageBits>>::Output: _Pow,
+        Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
+    {
+        if self.size_bits != SizeBits::U8 {
+            return Err(VSpaceError::InvalidRegionSize);
+        }
+        Ok(UnmappedMemoryRegion::unchecked_new(
+            self.caps.start_cptr,
+            self.kind,
+        ))
     }
 
     pub fn to_shared(self) -> WeakUnmappedMemoryRegion<shared_status::Shared> {
@@ -481,9 +502,9 @@ impl<SS: SharedStatus> WeakMappedMemoryRegion<SS> {
         caps: WeakCapRange<Page<page_state::Mapped>, role::Local>,
         kind: WeakMemoryKind,
         size_bits: u8,
-    ) -> Result<WeakMappedMemoryRegion<SS>, VSpaceError> {
-        if 2usize.pow(u32::from(size_bits) - PageBits::U32) != caps.len() {
-            return Err(VSpaceError::InvalidRegionSize);
+    ) -> Result<WeakMappedMemoryRegion<SS>, InvalidSizeBits> {
+        if num_pages(size_bits)? != caps.len() {
+            return Err(InvalidSizeBits::SizeBitsMismatchPageCapCount);
         }
         Ok(WeakMappedMemoryRegion {
             caps,
@@ -500,7 +521,8 @@ impl<SS: SharedStatus> WeakMappedMemoryRegion<SS> {
         kind: WeakMemoryKind,
         size_bits: u8,
     ) -> WeakMappedMemoryRegion<SS> {
-        let num_pages = 1 << usize::from(size_bits - PageBits::U8);
+        let num_pages = num_pages(size_bits)
+            .expect("Calling functions maintain the invariant that the size_bits is over the size of a page");
         WeakMappedMemoryRegion {
             caps: WeakCapRange::new(
                 initial_cptr,
@@ -517,4 +539,41 @@ impl<SS: SharedStatus> WeakMappedMemoryRegion<SS> {
             _shared_status: PhantomData,
         }
     }
+    pub(super) fn as_strong<SizeBits: Unsigned>(
+        self,
+    ) -> Result<MappedMemoryRegion<SizeBits, SS>, VSpaceError>
+    where
+        // Forces regions to be page-aligned.
+        SizeBits: IsGreaterOrEqual<PageBits>,
+        SizeBits: Sub<PageBits>,
+        <SizeBits as Sub<PageBits>>::Output: Unsigned,
+        <SizeBits as Sub<PageBits>>::Output: _Pow,
+        Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
+    {
+        if self.size_bits != SizeBits::U8 {
+            return Err(VSpaceError::InvalidRegionSize);
+        }
+        Ok(MappedMemoryRegion::unchecked_new(
+            self.caps.start_cptr,
+            self.vaddr(),
+            self.asid(),
+            self.kind,
+        ))
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub(super) enum InvalidSizeBits {
+    TooSmallToRepresentAPage,
+    SizeBitsMismatchPageCapCount,
+    SizeBitsTooBig,
+}
+
+fn num_pages(size_bits: u8) -> Result<usize, InvalidSizeBits> {
+    if size_bits < PageBits::U8 {
+        return Err(InvalidSizeBits::TooSmallToRepresentAPage);
+    }
+    Ok(2usize
+        .checked_pow(u32::from(size_bits) - PageBits::U32)
+        .ok_or_else(|| InvalidSizeBits::SizeBitsTooBig)?)
 }

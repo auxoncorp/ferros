@@ -351,18 +351,11 @@ impl RegionLocations {
         })
     }
 
-    fn find_first_fit<SizeBits: Unsigned, SS: SharedStatus>(
+    fn find_first_fit<SS: SharedStatus>(
         &self,
         current_addr: usize,
-        desired_region: &UnmappedMemoryRegion<SizeBits, SS>,
-    ) -> Result<usize, VSpaceError>
-    where
-        SizeBits: IsGreaterOrEqual<PageBits>,
-        SizeBits: Sub<PageBits>,
-        <SizeBits as Sub<PageBits>>::Output: Unsigned,
-        <SizeBits as Sub<PageBits>>::Output: _Pow,
-        Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
-    {
+        desired_region: &WeakUnmappedMemoryRegion<SS>,
+    ) -> Result<usize, VSpaceError> {
         struct FoldState {
             found: bool,
             current_addr: usize,
@@ -639,7 +632,10 @@ impl VSpace<vspace_state::Imaged> {
         vaddr: usize,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
-    ) -> Result<MappedMemoryRegion<SizeBits, SS>, (VSpaceError, UnmappedMemoryRegion<SizeBits, SS>)>
+    ) -> Result<
+        MappedMemoryRegion<SizeBits, SS>,
+        (VSpaceError, Option<UnmappedMemoryRegion<SizeBits, SS>>),
+    >
     where
         SizeBits: IsGreaterOrEqual<PageBits>,
         SizeBits: Sub<PageBits>,
@@ -648,16 +644,8 @@ impl VSpace<vspace_state::Imaged> {
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
     {
         match self.weak_map_region_at_addr(region.weaken(), vaddr, rights, vm_attributes) {
-            Ok(r) => Ok(MappedMemoryRegion::unchecked_new(
-                r.caps.start_cptr,
-                r.vaddr(),
-                r.asid(),
-                r.kind,
-            )),
-            Err((e, r)) => Err((
-                e,
-                UnmappedMemoryRegion::unchecked_new(r.caps.start_cptr, r.kind),
-            )),
+            Ok(r) => Ok(r.as_strong::<SizeBits>().map_err(|e| (e, None))?),
+            Err((e, r)) => Err((e, r.as_strong::<SizeBits>().ok())),
         }
     }
 
@@ -887,11 +875,24 @@ impl VSpace<vspace_state::Imaged> {
         <SizeBits as Sub<PageBits>>::Output: _Pow,
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
     {
+        self.weak_unmap_region(region.weaken())
+            .and_then(|r| r.as_strong::<SizeBits>())
+    }
+    /// Unmap a weak region.
+    pub fn weak_unmap_region<SS: SharedStatus>(
+        &mut self,
+        region: WeakMappedMemoryRegion<SS>,
+    ) -> Result<WeakUnmappedMemoryRegion<SS>, VSpaceError> {
         let start_cptr = region.caps.start_cptr;
+        let size_bits = region.size_bits();
         for page_cap in region.caps.into_iter() {
             let _ = self.unmap_page(page_cap)?;
         }
-        Ok(UnmappedMemoryRegion::unchecked_new(start_cptr, region.kind))
+        Ok(WeakUnmappedMemoryRegion::unchecked_new(
+            start_cptr,
+            region.kind,
+            size_bits,
+        ))
     }
 
     pub(crate) fn root_cptr(&self) -> usize {
@@ -918,6 +919,15 @@ impl VSpace<vspace_state::Imaged> {
         <SizeBits as Sub<PageBits>>::Output: _Pow,
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
     {
+        self.weak_map_region_internal(region.weaken(), rights, vm_attributes)
+            .and_then(|r| r.as_strong::<SizeBits>())
+    }
+    fn weak_map_region_internal<SSIn: SharedStatus, SSOut: SharedStatus>(
+        &mut self,
+        region: WeakUnmappedMemoryRegion<SSIn>,
+        rights: CapRights,
+        vm_attributes: arch::VMAttributes,
+    ) -> Result<WeakMappedMemoryRegion<SSOut>, VSpaceError> {
         let mut vaddr = self.find_next_vaddr(&region)?;
 
         let future_next_addr = match vaddr.checked_add(region.size_bytes()) {
@@ -928,11 +938,12 @@ impl VSpace<vspace_state::Imaged> {
         // create the mapped region first because we need to pluck out
         // the `start_cptr` before the iteration below consumes the
         // unmapped region.
-        let mapped_region = MappedMemoryRegion::unchecked_new(
+        let mapped_region = WeakMappedMemoryRegion::unchecked_new(
             region.caps.start_cptr,
             vaddr,
             self.asid(),
             region.kind,
+            region.size_bits(),
         );
 
         for page_cap in region.caps.into_iter() {
@@ -962,17 +973,10 @@ impl VSpace<vspace_state::Imaged> {
         Ok(mapped_region)
     }
 
-    fn find_next_vaddr<SizeBits: Unsigned, SS: SharedStatus>(
+    fn find_next_vaddr<SS: SharedStatus>(
         &self,
-        region: &UnmappedMemoryRegion<SizeBits, SS>,
-    ) -> Result<usize, VSpaceError>
-    where
-        SizeBits: IsGreaterOrEqual<PageBits>,
-        SizeBits: Sub<PageBits>,
-        <SizeBits as Sub<PageBits>>::Output: Unsigned,
-        <SizeBits as Sub<PageBits>>::Output: _Pow,
-        Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
-    {
+        region: &WeakUnmappedMemoryRegion<SS>,
+    ) -> Result<usize, VSpaceError> {
         self.specific_regions.find_first_fit(self.next_addr, region)
     }
 
