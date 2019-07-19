@@ -569,7 +569,7 @@ pub(super) enum InvalidSizeBits {
     SizeBitsTooBig,
 }
 
-fn num_pages(size_bits: u8) -> Result<usize, InvalidSizeBits> {
+pub(super) fn num_pages(size_bits: u8) -> Result<usize, InvalidSizeBits> {
     if size_bits < PageBits::U8 {
         return Err(InvalidSizeBits::TooSmallToRepresentAPage);
     }

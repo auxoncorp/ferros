@@ -781,6 +781,16 @@ impl VSpace<vspace_state::Imaged> {
         self.map_region_internal(region, rights, vm_attributes)
     }
 
+    /// Map a weak region of memory at some address, I don't care where.
+    pub fn weak_map_region(
+        &mut self,
+        region: WeakUnmappedMemoryRegion<shared_status::Exclusive>,
+        rights: CapRights,
+        vm_attributes: arch::VMAttributes,
+    ) -> Result<WeakMappedMemoryRegion<shared_status::Exclusive>, VSpaceError> {
+        self.weak_map_region_internal(region, rights, vm_attributes)
+    }
+
     /// Map a region of memory at some address, then move it to a
     /// different cspace.
     pub fn map_region_and_move<SizeBits: Unsigned, Role: CNodeRole>(
@@ -798,21 +808,51 @@ impl VSpace<vspace_state::Imaged> {
         <SizeBits as Sub<PageBits>>::Output: _Pow,
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
     {
+        self.weak_map_region_and_move(
+            region.weaken(),
+            rights,
+            vm_attributes,
+            src_cnode,
+            &mut dest_slots.weaken(),
+        )
+        .and_then(|r| r.as_strong::<SizeBits>())
+    }
+    /// Map a weak region of memory at some address, then move it to a
+    /// different cspace.
+    pub fn weak_map_region_and_move<Role: CNodeRole>(
+        &mut self,
+        region: WeakUnmappedMemoryRegion<shared_status::Exclusive>,
+        rights: CapRights,
+        vm_attributes: arch::VMAttributes,
+        src_cnode: &LocalCap<LocalCNode>,
+        dest_slots: &mut LocalCap<WCNodeSlotsData<Role>>,
+    ) -> Result<WeakMappedMemoryRegion<shared_status::Exclusive>, VSpaceError> {
+        if dest_slots.size()
+            < num_pages(region.size_bits()).map_err(|_| VSpaceError::InvalidRegionSize)?
+        {
+            return Err(VSpaceError::InsufficientCNodeSlots);
+        }
         let kind = region.kind;
-        let mapped_region: MappedMemoryRegion<_, shared_status::Exclusive> =
-            self.map_region_internal(region, rights, vm_attributes)?;
+        let size_bits = region.size_bits();
+        let mapped_region: WeakMappedMemoryRegion<shared_status::Exclusive> =
+            self.weak_map_region_internal(region, rights, vm_attributes)?;
         let vaddr = mapped_region.vaddr();
         let dest_init_cptr = dest_slots.cap_data.offset;
 
-        for (page, slot) in mapped_region.caps.into_iter().zip(dest_slots.iter()) {
+        for (page, slot) in mapped_region
+            .caps
+            .into_iter()
+            .zip(dest_slots.incrementally_consuming_iter())
+        {
             let _ = page.move_to_slot(src_cnode, slot)?;
         }
 
-        Ok(MappedMemoryRegion::unchecked_new(
+        Ok(WeakMappedMemoryRegion::unchecked_new(
             dest_init_cptr,
             vaddr,
             self.asid,
             kind,
+            size_bits,
         ))
     }
 
@@ -883,6 +923,9 @@ impl VSpace<vspace_state::Imaged> {
         &mut self,
         region: WeakMappedMemoryRegion<SS>,
     ) -> Result<WeakUnmappedMemoryRegion<SS>, VSpaceError> {
+        if self.asid != region.asid() {
+            return Err(VSpaceError::ASIDMismatch);
+        }
         let start_cptr = region.caps.start_cptr;
         let size_bits = region.size_bits();
         for page_cap in region.caps.into_iter() {
