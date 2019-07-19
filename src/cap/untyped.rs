@@ -212,7 +212,7 @@ pub trait MemoryKind: private::SealedMemoryKind + Clone + core::fmt::Debug + Siz
     fn quarter(&self, size_bytes: usize) -> (Self, Self, Self, Self);
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum WeakMemoryKind {
     General,
     Device { paddr: usize },

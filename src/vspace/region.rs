@@ -48,13 +48,16 @@ where
     Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
 {
     pub(super) caps: CapRange<Page<page_state::Unmapped>, role::Local, NumPages<SizeBits>>,
+    pub(super) kind: WeakMemoryKind,
     _size_bits: PhantomData<SizeBits>,
     _shared_status: PhantomData<SS>,
 }
 
 impl LocalCap<Page<page_state::Unmapped>> {
+    /// N.B. until MemoryKind tracking is added to Page, this is a lossy conversion
+    /// that will assume the Page was for General memory
     pub(crate) fn to_region(self) -> UnmappedMemoryRegion<PageBits, shared_status::Exclusive> {
-        UnmappedMemoryRegion::unchecked_new(self.cptr)
+        UnmappedMemoryRegion::unchecked_new(self.cptr, WeakMemoryKind::General)
     }
 }
 
@@ -69,13 +72,14 @@ where
     /// The size of this region in bytes.
     pub const SIZE_BYTES: usize = 1 << SizeBits::USIZE;
 
-    pub fn size(&self) -> usize {
+    pub fn size_bytes(&self) -> usize {
         Self::SIZE_BYTES
     }
 
-    pub(super) fn unchecked_new(local_page_caps_offset_cptr: usize) -> Self {
+    pub(super) fn unchecked_new(local_page_caps_offset_cptr: usize, kind: WeakMemoryKind) -> Self {
         UnmappedMemoryRegion {
             caps: CapRange::new_phantom(local_page_caps_offset_cptr),
+            kind,
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         }
@@ -83,9 +87,11 @@ where
 
     pub(super) fn from_caps(
         caps: CapRange<Page<page_state::Unmapped>, role::Local, NumPages<SizeBits>>,
-    ) -> Self {
+        kind: WeakMemoryKind,
+    ) -> UnmappedMemoryRegion<SizeBits, SS> {
         UnmappedMemoryRegion {
             caps,
+            kind,
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         }
@@ -110,12 +116,9 @@ where
         Pow<<SizeBits as Sub<PageBits>>::Output>:
             IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
     {
+        let kind = ut.cap_data.kind;
         let page_caps = ut.retype_pages(slots)?;
-        Ok(UnmappedMemoryRegion {
-            caps: CapRange::new_phantom(page_caps.start_cptr),
-            _size_bits: PhantomData,
-            _shared_status: PhantomData,
-        })
+        Ok(UnmappedMemoryRegion::from_caps(page_caps, kind.weaken()))
     }
 
     pub fn new_device<Role: CNodeRole>(
@@ -126,23 +129,20 @@ where
         Pow<<SizeBits as Sub<PageBits>>::Output>:
             IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
     {
+        let kind = ut.cap_data.kind;
         let page_caps = ut.retype_device_pages(slots)?;
-        Ok(UnmappedMemoryRegion {
-            caps: CapRange::new_phantom(page_caps.start_cptr),
-            _size_bits: PhantomData,
-            _shared_status: PhantomData,
-        })
+        Ok(UnmappedMemoryRegion::from_caps(page_caps, kind.weaken()))
     }
 
+    /// N.B. until MemoryKind tracking is added to Page, this is a lossy conversion
+    /// that will assume the Region was for General memory
     pub(crate) fn to_page(self) -> LocalCap<Page<page_state::Unmapped>>
     where
         SizeBits: IsEqual<PageBits, Output = True>,
     {
         Cap {
             cptr: self.caps.start_cptr,
-            cap_data: Page {
-                state: page_state::Unmapped {},
-            },
+            cap_data: crate::cap::PhantomCap::phantom_instance(),
             _role: PhantomData,
         }
     }
@@ -151,11 +151,7 @@ where
     /// mapped, it's _borrowed_ rather than consumed allowing for its
     /// remapping into other address spaces.
     pub fn to_shared(self) -> UnmappedMemoryRegion<SizeBits, shared_status::Shared> {
-        UnmappedMemoryRegion {
-            caps: self.caps,
-            _size_bits: PhantomData,
-            _shared_status: PhantomData,
-        }
+        UnmappedMemoryRegion::from_caps(self.caps, self.kind)
     }
 }
 
@@ -174,9 +170,8 @@ where
     <SizeBits as Sub<PageBits>>::Output: _Pow,
     Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
 {
-    vaddr: usize,
     pub(super) caps: CapRange<Page<page_state::Mapped>, role::Local, NumPages<SizeBits>>,
-    asid: InternalASID,
+    pub(super) kind: WeakMemoryKind,
     _size_bits: PhantomData<SizeBits>,
     _shared_status: PhantomData<SS>,
 }
@@ -196,7 +191,11 @@ where
     }
 
     pub fn vaddr(&self) -> usize {
-        self.vaddr
+        self.caps.start_cap_data.state.vaddr
+    }
+
+    pub(crate) fn asid(&self) -> InternalASID {
+        self.caps.start_cap_data.state.asid
     }
 
     /// In the Ok case, returns a shared, unmapped copy of the memory
@@ -218,8 +217,8 @@ where
         CNodeSlotCount: IsEqual<NumPages<SizeBits>, Output = True>,
     {
         let pages_offset = self.caps.start_cptr;
-        let vaddr = self.vaddr;
-        let asid = self.asid;
+        let vaddr = self.vaddr();
+        let asid = self.asid();
         let slots_offset = slots.cap_data.offset;
 
         for (slot, page) in slots.iter().zip(self.caps.into_iter()) {
@@ -227,8 +226,8 @@ where
         }
 
         Ok((
-            UnmappedMemoryRegion::unchecked_new(slots_offset),
-            MappedMemoryRegion::unchecked_new(pages_offset, vaddr, asid),
+            UnmappedMemoryRegion::unchecked_new(slots_offset, self.kind),
+            MappedMemoryRegion::unchecked_new(pages_offset, vaddr, asid, self.kind),
         ))
     }
 
@@ -236,6 +235,7 @@ where
         initial_cptr: usize,
         initial_vaddr: usize,
         asid: InternalASID,
+        kind: WeakMemoryKind,
     ) -> MappedMemoryRegion<SizeBits, SS> {
         MappedMemoryRegion {
             caps: CapRange::new(
@@ -247,8 +247,7 @@ where
                     },
                 },
             ),
-            vaddr: initial_vaddr,
-            asid,
+            kind,
             _size_bits: PhantomData,
             _shared_status: PhantomData,
         }
@@ -257,7 +256,12 @@ where
     #[cfg(feature = "test_support")]
     /// Super dangerous copy-aliasing
     pub(crate) unsafe fn dangerous_internal_alias(&mut self) -> Self {
-        MappedMemoryRegion::unchecked_new(self.caps.start_cptr, self.vaddr, self.asid)
+        MappedMemoryRegion::unchecked_new(
+            self.caps.start_cptr,
+            self.vaddr(),
+            self.asid(),
+            self.kind,
+        )
     }
 
     /// Halve a region into two regions.
@@ -281,7 +285,7 @@ where
     {
         let new_region_vaddr = if let Some(vaddr) = 2_usize
             .checked_pow(SizeBits::U32 - 1)
-            .and_then(|v| v.checked_add(self.vaddr))
+            .and_then(|v| v.checked_add(self.vaddr()))
         {
             vaddr
         } else {
@@ -296,13 +300,12 @@ where
                     self.caps.start_cptr,
                     Page {
                         state: page_state::Mapped {
-                            vaddr: self.vaddr,
-                            asid: self.asid,
+                            vaddr: self.vaddr(),
+                            asid: self.asid(),
                         },
                     },
                 ),
-                vaddr: self.vaddr,
-                asid: self.asid,
+                kind: self.kind,
                 _size_bits: PhantomData,
                 _shared_status: PhantomData,
             },
@@ -312,12 +315,11 @@ where
                     Page {
                         state: page_state::Mapped {
                             vaddr: new_region_vaddr,
-                            asid: self.asid,
+                            asid: self.asid(),
                         },
                     },
                 ),
-                vaddr: new_region_vaddr,
-                asid: self.asid,
+                kind: self.kind,
                 _size_bits: PhantomData,
                 _shared_status: PhantomData,
             },
@@ -370,13 +372,12 @@ where
                     a.caps.start_cptr,
                     Page {
                         state: page_state::Mapped {
-                            vaddr: a.vaddr,
-                            asid: a.asid,
+                            vaddr: a.vaddr(),
+                            asid: a.asid(),
                         },
                     },
                 ),
-                vaddr: a.vaddr,
-                asid: a.asid,
+                kind: a.kind,
                 _size_bits: PhantomData,
                 _shared_status: PhantomData,
             },
@@ -421,6 +422,55 @@ impl<SS: SharedStatus> WeakUnmappedMemoryRegion<SS> {
             caps: self.caps,
             kind: self.kind,
             size_bits: self.size_bits,
+            _shared_status: PhantomData,
+        }
+    }
+}
+
+pub struct WeakMappedMemoryRegion<SS: SharedStatus> {
+    pub(super) caps: WeakCapRange<Page<page_state::Mapped>, role::Local>,
+    kind: WeakMemoryKind,
+    size_bits: u8,
+    _shared_status: PhantomData<SS>,
+}
+
+impl<SS: SharedStatus> WeakMappedMemoryRegion<SS> {
+    pub fn size_bits(&self) -> u8 {
+        self.size_bits
+    }
+    pub fn size_bytes(&self) -> usize {
+        2usize.pow(u32::from(self.size_bits))
+    }
+
+    pub fn vaddr(&self) -> usize {
+        self.caps.start_cap_data.state.vaddr
+    }
+
+    pub(crate) fn asid(&self) -> InternalASID {
+        self.caps.start_cap_data.state.asid
+    }
+
+    pub(super) fn unchecked_new(
+        initial_cptr: usize,
+        initial_vaddr: usize,
+        asid: InternalASID,
+        kind: WeakMemoryKind,
+        size_bits: u8,
+    ) -> WeakMappedMemoryRegion<SS> {
+        let num_pages = 1 << usize::from(size_bits - PageBits::U8);
+        WeakMappedMemoryRegion {
+            caps: WeakCapRange::new(
+                initial_cptr,
+                Page {
+                    state: page_state::Mapped {
+                        vaddr: initial_vaddr,
+                        asid,
+                    },
+                },
+                num_pages,
+            ),
+            kind,
+            size_bits,
             _shared_status: PhantomData,
         }
     }

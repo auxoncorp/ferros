@@ -60,6 +60,10 @@ impl CopyAliasable for Page<page_state::Unmapped> {
 }
 
 impl CopyAliasable for Page<page_state::Mapped> {
+    // TODO - revisit whether CopyOutput here should have page_state::Mapped
+    // and if so, how do we adjust this idiom (or add a new one) to support CapType instance cloning
+    // for non-phantom CapTypes since there's a clear possibility for mismatch between visible
+    // runtime state and in-kernel state
     type CopyOutput = Page<page_state::Unmapped>;
 }
 impl<State: PageState> Movable for Page<State> {}
