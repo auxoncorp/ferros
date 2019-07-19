@@ -179,6 +179,7 @@ impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole, Slots: Unsigned>
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
         let copied_to_start_cptr = slots.cap_data.offset;
+        // N.B. Conside replacing with a general purpose CapRange::iter(&self) that returns references to constructed caps
         for (offset, slot) in (0..Slots::USIZE).zip(slots.iter()) {
             let cap: Cap<CT, Role> = Cap {
                 cptr: self.start_cptr + offset,
@@ -203,6 +204,18 @@ pub struct WeakCapRange<CT: CapType, Role: CNodeRole> {
     _role: PhantomData<Role>,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum WeakCopyError {
+    NotEnoughSlots,
+    SeL4Error(SeL4Error),
+}
+
+impl From<SeL4Error> for WeakCopyError {
+    fn from(e: SeL4Error) -> Self {
+        WeakCopyError::SeL4Error(e)
+    }
+}
+
 impl<CT: CapType + PhantomCap, Role: CNodeRole> WeakCapRange<CT, Role> {
     pub(crate) fn new_phantom(start_cptr: usize, len: usize) -> Self {
         let start_cap_data = PhantomCap::phantom_instance();
@@ -212,6 +225,32 @@ impl<CT: CapType + PhantomCap, Role: CNodeRole> WeakCapRange<CT, Role> {
             len,
             _role: PhantomData,
         }
+    }
+}
+impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole> WeakCapRange<CT, Role> {
+    pub fn copy_phantom(
+        &self,
+        cnode: &LocalCap<CNode<Role>>,
+        slots: &mut LocalCap<WCNodeSlotsData<role::Local>>,
+        rights: CapRights,
+    ) -> Result<WeakCapRange<CT, Role>, WeakCopyError>
+    where
+        <CT as CopyAliasable>::CopyOutput: PhantomCap,
+    {
+        if slots.size() < self.len() {
+            return Err(WeakCopyError::NotEnoughSlots);
+        }
+        let copied_to_start_cptr = slots.cap_data.offset;
+        // N.B. Conside replacing with a general purpose CapRange::iter(&self) that returns references to constructed caps
+        for (offset, slot) in (0..self.len()).zip(slots.incrementally_consuming_iter()) {
+            let cap: Cap<CT, Role> = Cap {
+                cptr: self.start_cptr + offset,
+                _role: PhantomData,
+                cap_data: PhantomCap::phantom_instance(),
+            };
+            cap.copy(cnode, slot, rights)?;
+        }
+        Ok(WeakCapRange::new_phantom(copied_to_start_cptr, self.len()))
     }
 }
 impl<CT: CapType, Role: CNodeRole> WeakCapRange<CT, Role> {

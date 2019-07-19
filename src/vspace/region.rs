@@ -430,6 +430,21 @@ impl<SS: SharedStatus> WeakUnmappedMemoryRegion<SS> {
         2usize.pow(u32::from(self.size_bits))
     }
 
+    pub(super) fn try_from_caps(
+        caps: WeakCapRange<Page<page_state::Unmapped>, role::Local>,
+        kind: WeakMemoryKind,
+        size_bits: u8,
+    ) -> Result<WeakUnmappedMemoryRegion<SS>, InvalidSizeBits> {
+        if num_pages(size_bits)? != caps.len() {
+            return Err(InvalidSizeBits::SizeBitsMismatchPageCapCount);
+        }
+        Ok(WeakUnmappedMemoryRegion {
+            caps,
+            kind,
+            size_bits,
+            _shared_status: PhantomData,
+        })
+    }
     pub(super) fn unchecked_new(
         local_page_caps_offset_cptr: usize,
         kind: WeakMemoryKind,

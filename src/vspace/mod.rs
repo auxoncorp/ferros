@@ -17,7 +17,7 @@ use crate::bootstrap::UserImage;
 use crate::cap::{
     memory_kind, role, CNodeRole, CNodeSlots, Cap, CapRange, CapRangeDataReconstruction, CapType,
     ChildCNodeSlot, DirectRetype, InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, PhantomCap,
-    RetypeError, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped, WeakCapRange,
+    RetypeError, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped, WeakCapRange, WeakCopyError,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
@@ -880,6 +880,32 @@ impl VSpace<vspace_state::Imaged> {
         let unmapped_sr: UnmappedMemoryRegion<_, shared_status::Shared> =
             UnmappedMemoryRegion::from_caps(region.caps.copy(cnode, slots, rights)?, region.kind);
         self.map_region_internal(unmapped_sr, rights, vm_attributes)
+    }
+    /// Map a _shared_ region of memory at some address, I don't care
+    /// where. When `map_shared_region` is called, the caps making up
+    /// this region are copied using the slots and cnode provided.
+    /// The incoming `UnmappedMemoryRegion` is only borrowed and one
+    /// also gets back a new `MappedMemoryRegion` indexed with the
+    /// status `Shared`.
+    pub fn weak_map_shared_region(
+        &mut self,
+        region: &WeakUnmappedMemoryRegion<shared_status::Shared>,
+        rights: CapRights,
+        vm_attributes: arch::VMAttributes,
+        slots: &mut LocalCap<WCNodeSlotsData<role::Local>>,
+        cnode: &LocalCap<LocalCNode>,
+    ) -> Result<WeakMappedMemoryRegion<shared_status::Shared>, VSpaceError> {
+        let caps_copy = region
+            .caps
+            .copy_phantom(cnode, slots, rights)
+            .map_err(|e| match e {
+                WeakCopyError::NotEnoughSlots => VSpaceError::InsufficientCNodeSlots,
+                WeakCopyError::SeL4Error(e) => VSpaceError::SeL4Error(e),
+            })?;
+        let unmapped_sr: WeakUnmappedMemoryRegion<shared_status::Shared> =
+            WeakUnmappedMemoryRegion::try_from_caps(caps_copy, region.kind, region.size_bits())
+                .map_err(|_| VSpaceError::InvalidRegionSize)?;
+        self.weak_map_region_internal(unmapped_sr, rights, vm_attributes)
     }
 
     /// For cases when one does not want to continue to duplicate the
