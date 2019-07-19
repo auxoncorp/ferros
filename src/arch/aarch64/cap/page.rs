@@ -44,14 +44,6 @@ impl LocalCap<Page<page_state::Mapped>> {
             Err(e) => Err(SeL4Error::PageUnmap(e)),
         }
     }
-    /// Keeping this non-public in order to restrict mapping operations to owners
-    /// of a VSpace-related object
-    pub(crate) unsafe fn unmap_and_ignore_unchecked_cptr(cptr: usize) -> Result<(), SeL4Error> {
-        match unsafe { seL4_ARM_Page_Unmap(cptr) }.as_result() {
-            Ok(_) => Ok(()),
-            Err(e) => Err(SeL4Error::PageUnmap(e)),
-        }
-    }
 }
 
 impl<State: PageState> CapType for Page<State> {}
@@ -68,6 +60,10 @@ impl CopyAliasable for Page<page_state::Unmapped> {
 }
 
 impl CopyAliasable for Page<page_state::Mapped> {
+    // TODO - revisit whether CopyOutput here should have page_state::Mapped
+    // and if so, how do we adjust this idiom (or add a new one) to support CapType instance cloning
+    // for non-phantom CapTypes since there's a clear possibility for mismatch between visible
+    // runtime state and in-kernel state
     type CopyOutput = Page<page_state::Unmapped>;
 }
 impl<State: PageState> Movable for Page<State> {}

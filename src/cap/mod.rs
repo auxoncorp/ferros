@@ -118,32 +118,51 @@ where
     }
 }
 
-pub struct CapRange<CT: CapType + PhantomCap, Role: CNodeRole, Slots: Unsigned> {
+pub struct CapRange<CT: CapType, Role: CNodeRole, Slots: Unsigned> {
     pub(crate) start_cptr: usize,
-    _cap_type: PhantomData<CT>,
+    pub(crate) start_cap_data: CT,
     _role: PhantomData<Role>,
     _slots: PhantomData<Slots>,
 }
 
 impl<CT: CapType + PhantomCap, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Role, Slots> {
-    pub(crate) fn new(start_cptr: usize) -> Self {
+    pub(crate) fn new_phantom(start_cptr: usize) -> Self {
         CapRange {
             start_cptr,
-            _cap_type: PhantomData,
+            start_cap_data: CT::phantom_instance(),
             _role: PhantomData,
             _slots: PhantomData,
         }
     }
-    pub fn iter(self) -> impl Iterator<Item = Cap<CT, Role>> {
-        (0..Slots::USIZE).map(move |offset| Cap {
-            cptr: self.start_cptr + offset,
+}
+impl<CT: CapType, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Role, Slots> {
+    pub(crate) fn new(start_cptr: usize, start_cap_data: CT) -> Self {
+        CapRange {
+            start_cptr,
+            start_cap_data,
             _role: PhantomData,
-            cap_data: PhantomCap::phantom_instance(),
+            _slots: PhantomData,
+        }
+    }
+
+    pub(crate) fn into_iter(self) -> impl Iterator<Item = Cap<CT, Role>>
+    where
+        CT: CapRangeDataReconstruction,
+    {
+        (0..self.len()).map(move |index| Cap {
+            cptr: self.start_cptr + index,
+            _role: PhantomData,
+            cap_data: CT::reconstruct(index, &self.start_cap_data),
         })
     }
 
     pub(crate) fn len(&self) -> usize {
         Slots::USIZE
+    }
+
+    pub fn weaken(self) -> WeakCapRange<CT, Role> {
+        let len = self.len();
+        WeakCapRange::new(self.start_cptr, self.start_cap_data, len)
     }
 }
 
@@ -160,6 +179,7 @@ impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole, Slots: Unsigned>
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
         let copied_to_start_cptr = slots.cap_data.offset;
+        // N.B. Conside replacing with a general purpose CapRange::iter(&self) that returns references to constructed caps
         for (offset, slot) in (0..Slots::USIZE).zip(slots.iter()) {
             let cap: Cap<CT, Role> = Cap {
                 cptr: self.start_cptr + offset,
@@ -170,10 +190,110 @@ impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole, Slots: Unsigned>
         }
         Ok(CapRange {
             start_cptr: copied_to_start_cptr,
-            _cap_type: PhantomData,
+            start_cap_data: CT::phantom_instance(),
             _role: PhantomData,
             _slots: PhantomData,
         })
+    }
+}
+
+pub struct WeakCapRange<CT: CapType, Role: CNodeRole> {
+    pub(crate) start_cptr: usize,
+    pub(crate) start_cap_data: CT,
+    pub(crate) len: usize,
+    _role: PhantomData<Role>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum WeakCopyError {
+    NotEnoughSlots,
+    SeL4Error(SeL4Error),
+}
+
+impl From<SeL4Error> for WeakCopyError {
+    fn from(e: SeL4Error) -> Self {
+        WeakCopyError::SeL4Error(e)
+    }
+}
+
+impl<CT: CapType + PhantomCap, Role: CNodeRole> WeakCapRange<CT, Role> {
+    pub(crate) fn new_phantom(start_cptr: usize, len: usize) -> Self {
+        let start_cap_data = PhantomCap::phantom_instance();
+        WeakCapRange {
+            start_cptr,
+            start_cap_data,
+            len,
+            _role: PhantomData,
+        }
+    }
+}
+impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole> WeakCapRange<CT, Role> {
+    pub fn copy_phantom(
+        &self,
+        cnode: &LocalCap<CNode<Role>>,
+        slots: &mut LocalCap<WCNodeSlotsData<role::Local>>,
+        rights: CapRights,
+    ) -> Result<WeakCapRange<CT, Role>, WeakCopyError>
+    where
+        <CT as CopyAliasable>::CopyOutput: PhantomCap,
+    {
+        if slots.size() < self.len() {
+            return Err(WeakCopyError::NotEnoughSlots);
+        }
+        let copied_to_start_cptr = slots.cap_data.offset;
+        // N.B. Conside replacing with a general purpose CapRange::iter(&self) that returns references to constructed caps
+        for (offset, slot) in (0..self.len()).zip(slots.incrementally_consuming_iter()) {
+            let cap: Cap<CT, Role> = Cap {
+                cptr: self.start_cptr + offset,
+                _role: PhantomData,
+                cap_data: PhantomCap::phantom_instance(),
+            };
+            cap.copy(cnode, slot, rights)?;
+        }
+        Ok(WeakCapRange::new_phantom(copied_to_start_cptr, self.len()))
+    }
+}
+impl<CT: CapType, Role: CNodeRole> WeakCapRange<CT, Role> {
+    pub(crate) fn new(start_cptr: usize, start_cap_data: CT, len: usize) -> Self {
+        WeakCapRange {
+            start_cptr,
+            start_cap_data,
+            len,
+            _role: PhantomData,
+        }
+    }
+
+    pub(crate) fn into_iter(self) -> impl Iterator<Item = Cap<CT, Role>>
+    where
+        CT: CapRangeDataReconstruction,
+    {
+        (0..self.len()).map(move |index| Cap {
+            cptr: self.start_cptr + index,
+            _role: PhantomData,
+            cap_data: CT::reconstruct(index, &self.start_cap_data),
+        })
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.len
+    }
+}
+
+/// A helper trait for CapRange and WeakCapRange to assist in iteration.
+///
+/// Represents a CapType for which instances in a collection
+/// can be reconstructed using only a single seed/starting instance reference
+/// and the index-of-iteration.
+pub trait CapRangeDataReconstruction {
+    fn reconstruct(index: usize, seed: &Self) -> Self;
+}
+
+impl<CT> CapRangeDataReconstruction for CT
+where
+    CT: PhantomCap,
+{
+    fn reconstruct(_index: usize, _seed: &Self) -> Self {
+        CT::phantom_instance()
     }
 }
 

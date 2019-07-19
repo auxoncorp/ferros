@@ -12,7 +12,7 @@ use crate::arch::{CNodeSlotBits, PageBits};
 use crate::cap::{
     role, CNode, CNodeRole, CNodeSlot, CNodeSlots, CNodeSlotsError, Cap, CapRange, CapType,
     ChildCNode, ChildCNodeSlots, Delible, DirectRetype, LocalCNode, LocalCNodeSlot,
-    LocalCNodeSlots, LocalCap, Movable, PhantomCap, WCNodeSlots,
+    LocalCNodeSlots, LocalCap, Movable, PhantomCap, WCNodeSlots, WCNodeSlotsData, WeakCapRange,
 };
 use crate::error::{ErrorExt, KernelError, SeL4Error};
 use crate::pow::{Pow, _Pow};
@@ -63,6 +63,91 @@ impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
         }
         None
     }
+    pub fn split(
+        self,
+        dest_slots: LocalCNodeSlots<U2>,
+    ) -> Result<(LocalCap<WUntyped<Kind>>, LocalCap<WUntyped<Kind>>), WUntypedSplitError> {
+        let output_size_bits = self.cap_data.size_bits - 1;
+        if output_size_bits < crate::arch::PageBits::U8 {
+            return Err(WUntypedSplitError::TooSmallToBeSplit);
+        }
+
+        let (dest_cptr, dest_offset, _) = dest_slots.elim();
+
+        unsafe {
+            seL4_Untyped_Retype(
+                self.cptr,                              // _service
+                api_object_seL4_UntypedObject as usize, // type
+                usize::from(output_size_bits),          // size_bits
+                dest_cptr,                              // root
+                0,                                      // index
+                0,                                      // depth
+                dest_offset,                            // offset
+                2,                                      // num_objects
+            )
+        }
+        .as_result()
+        .map_err(|e| WUntypedSplitError::UntypedRetypeError(e))?;
+
+        let (kind_a, kind_b) = self
+            .cap_data
+            .kind
+            .halve(2usize.pow(u32::from(self.cap_data.size_bits)));
+        Ok((
+            Cap {
+                cptr: dest_offset,
+                cap_data: WUntyped {
+                    kind: kind_a,
+                    size_bits: output_size_bits,
+                },
+                _role: PhantomData,
+            },
+            Cap {
+                cptr: dest_offset + 1,
+                cap_data: WUntyped {
+                    kind: kind_b,
+                    size_bits: output_size_bits,
+                },
+                _role: PhantomData,
+            },
+        ))
+    }
+
+    pub fn retype_pages<CRole: CNodeRole>(
+        self,
+        slots: &mut Cap<WCNodeSlotsData<CRole>, role::Local>,
+    ) -> Result<WeakCapRange<Page<page_state::Unmapped>, CRole>, RetypeError> {
+        if self.cap_data.size_bits < PageBits::U8 {
+            return Err(RetypeError::NotBigEnough);
+        }
+        let num_pages = 1 << usize::from(self.cap_data.size_bits - PageBits::U8);
+        if num_pages > KernelRetypeFanOutLimit::USIZE {
+            return Err(RetypeError::KernelRetypeFanOutLimit);
+        }
+        // TODO - REVIEW - Do we need more constraints on num_pages?
+        let dest_slots = slots
+            .alloc(num_pages)
+            .map_err(|e| RetypeError::CNodeSlotsError(e))?;
+        unsafe {
+            seL4_Untyped_Retype(
+                self.cptr,                  // _service
+                Page::sel4_type_id(),       // type
+                0,                          // size_bits
+                dest_slots.cptr,            // root
+                0,                          // index
+                0,                          // depth
+                dest_slots.cap_data.offset, // offset
+                num_pages,                  // num_objects
+            )
+            .as_result()
+            .map_err(|e| SeL4Error::UntypedRetype(e))?;
+        }
+
+        Ok(WeakCapRange::new_phantom(
+            dest_slots.cap_data.offset,
+            num_pages,
+        ))
+    }
 }
 
 impl LocalCap<WUntyped<memory_kind::General>> {
@@ -104,64 +189,6 @@ impl LocalCap<WUntyped<memory_kind::Device>> {
     pub fn paddr(&self) -> usize {
         self.cap_data.kind.paddr
     }
-
-    pub fn split(
-        self,
-        dest_slots: LocalCNodeSlots<U2>,
-    ) -> Result<
-        (
-            LocalCap<WUntyped<memory_kind::Device>>,
-            LocalCap<WUntyped<memory_kind::Device>>,
-        ),
-        WUntypedSplitError,
-    > {
-        let output_size_bits = self.cap_data.size_bits - 1;
-        if output_size_bits < crate::arch::PageBits::U8 {
-            return Err(WUntypedSplitError::TooSmallToBeSplit);
-        }
-
-        let (dest_cptr, dest_offset, _) = dest_slots.elim();
-
-        unsafe {
-            seL4_Untyped_Retype(
-                self.cptr,                              // _service
-                api_object_seL4_UntypedObject as usize, // type
-                usize::from(output_size_bits),          // size_bits
-                dest_cptr,                              // root
-                0,                                      // index
-                0,                                      // depth
-                dest_offset,                            // offset
-                2,                                      // num_objects
-            )
-        }
-        .as_result()
-        .map_err(|e| WUntypedSplitError::UntypedRetypeError(e))?;
-
-        let original_paddr = self.cap_data.kind.paddr;
-        let original_size_bytes = 2usize.pow(u32::from(self.cap_data.size_bits));
-        Ok((
-            Cap {
-                cptr: dest_offset,
-                cap_data: WUntyped {
-                    kind: memory_kind::Device {
-                        paddr: original_paddr,
-                    },
-                    size_bits: output_size_bits,
-                },
-                _role: PhantomData,
-            },
-            Cap {
-                cptr: dest_offset + 1,
-                cap_data: WUntyped {
-                    kind: memory_kind::Device {
-                        paddr: original_paddr + original_size_bytes / 2,
-                    },
-                    size_bits: output_size_bits,
-                },
-                _role: PhantomData,
-            },
-        ))
-    }
 }
 
 impl<BitSize: Unsigned> PhantomCap for Untyped<BitSize, memory_kind::General> {
@@ -179,27 +206,77 @@ impl<Kind: MemoryKind> Movable for WUntyped<Kind> {}
 
 impl<BitSize: Unsigned, Kind: MemoryKind> Delible for Untyped<BitSize, Kind> {}
 
-pub trait MemoryKind: private::SealedMemoryKind + Clone + core::fmt::Debug {}
+pub trait MemoryKind: private::SealedMemoryKind + Clone + core::fmt::Debug + Sized {
+    fn weaken(&self) -> WeakMemoryKind;
+    fn halve(&self, size_bytes: usize) -> (Self, Self);
+    fn quarter(&self, size_bytes: usize) -> (Self, Self, Self, Self);
+}
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum WeakMemoryKind {
+    General,
+    Device { paddr: usize },
+}
 pub mod memory_kind {
     use super::MemoryKind;
 
     #[derive(Clone, Copy, Debug, PartialEq)]
     pub struct General;
-    impl MemoryKind for General {}
+    impl MemoryKind for General {
+        fn weaken(&self) -> super::WeakMemoryKind {
+            super::WeakMemoryKind::General
+        }
+
+        fn halve(&self, _size_bytes: usize) -> (Self, Self) {
+            (General, General)
+        }
+
+        fn quarter(&self, _size_bytes: usize) -> (Self, Self, Self, Self) {
+            (General, General, General, General)
+        }
+    }
 
     #[derive(Clone, Copy, Debug, PartialEq)]
     pub struct Device {
         /// Physical address at the start of the memory this untyped represents
         pub(crate) paddr: usize,
     }
-    impl MemoryKind for Device {}
+    impl MemoryKind for Device {
+        fn weaken(&self) -> super::WeakMemoryKind {
+            super::WeakMemoryKind::Device { paddr: self.paddr }
+        }
+        fn halve(&self, size_bytes: usize) -> (Self, Self) {
+            (
+                Device { paddr: self.paddr },
+                Device {
+                    paddr: self.paddr + size_bytes / 2,
+                },
+            )
+        }
+
+        fn quarter(&self, size_bytes: usize) -> (Self, Self, Self, Self) {
+            let subregion_size = size_bytes / 4;
+            (
+                Device { paddr: self.paddr },
+                Device {
+                    paddr: self.paddr + subregion_size,
+                },
+                Device {
+                    paddr: self.paddr + subregion_size * 2,
+                },
+                Device {
+                    paddr: self.paddr + subregion_size * 3,
+                },
+            )
+        }
+    }
 }
 
 #[derive(Debug)]
 pub enum RetypeError {
     CapSizeOverflow,
     BitSizeOverflow,
+    KernelRetypeFanOutLimit,
     NotBigEnough,
     SeL4RetypeError(SeL4Error),
     CNodeSlotsError(CNodeSlotsError),
@@ -265,6 +342,157 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
             _role: PhantomData,
         }
     }
+    pub fn split(
+        self,
+        dest_slots: LocalCNodeSlots<U2>,
+    ) -> Result<
+        (
+            LocalCap<Untyped<Diff<BitSize, U1>, Kind>>,
+            LocalCap<Untyped<Diff<BitSize, U1>, Kind>>,
+        ),
+        SeL4Error,
+    >
+    where
+        BitSize: Sub<U1>,
+        Diff<BitSize, U1>: Unsigned,
+    {
+        let (dest_cptr, dest_offset, _) = dest_slots.elim();
+
+        unsafe {
+            seL4_Untyped_Retype(
+                self.cptr,                              // _service
+                api_object_seL4_UntypedObject as usize, // type
+                BitSize::to_usize() - 1,                // size_bits
+                dest_cptr,                              // root
+                0,                                      // index
+                0,                                      // depth
+                dest_offset,                            // offset
+                2,                                      // num_objects
+            )
+        }
+        .as_result()
+        .map_err(|e| SeL4Error::UntypedRetype(e))?;
+        let (kind_a, kind_b) = self.cap_data.kind.halve(2usize.pow(BitSize::U32));
+        Ok((
+            Cap {
+                cptr: dest_offset,
+                cap_data: Untyped {
+                    kind: kind_a,
+                    _bit_size: PhantomData,
+                },
+                _role: PhantomData,
+            },
+            Cap {
+                cptr: dest_offset + 1,
+                cap_data: Untyped {
+                    kind: kind_b,
+                    _bit_size: PhantomData,
+                },
+                _role: PhantomData,
+            },
+        ))
+    }
+
+    pub fn quarter(
+        self,
+        dest_slots: LocalCNodeSlots<U4>,
+    ) -> Result<
+        (
+            LocalCap<Untyped<Diff<BitSize, U2>, Kind>>,
+            LocalCap<Untyped<Diff<BitSize, U2>, Kind>>,
+            LocalCap<Untyped<Diff<BitSize, U2>, Kind>>,
+            LocalCap<Untyped<Diff<BitSize, U2>, Kind>>,
+        ),
+        SeL4Error,
+    >
+    where
+        BitSize: Sub<U2>,
+        Diff<BitSize, U2>: Unsigned,
+    {
+        let (dest_cptr, dest_offset, _) = dest_slots.elim();
+        unsafe {
+            seL4_Untyped_Retype(
+                self.cptr,                              // _service
+                api_object_seL4_UntypedObject as usize, // type
+                BitSize::to_usize() - 2,                // size_bits
+                dest_cptr,                              // root
+                0,                                      // index
+                0,                                      // depth
+                dest_offset,                            // offset
+                4,                                      // num_objects
+            )
+        }
+        .as_result()
+        .map_err(|e| SeL4Error::UntypedRetype(e))?;
+
+        let (kind_a, kind_b, kind_c, kind_d) = self.cap_data.kind.quarter(2usize.pow(BitSize::U32));
+        Ok((
+            Cap {
+                cptr: dest_offset,
+                cap_data: Untyped {
+                    kind: kind_a,
+                    _bit_size: PhantomData,
+                },
+                _role: PhantomData,
+            },
+            Cap {
+                cptr: dest_offset + 1,
+                cap_data: Untyped {
+                    kind: kind_b,
+                    _bit_size: PhantomData,
+                },
+                _role: PhantomData,
+            },
+            Cap {
+                cptr: dest_offset + 2,
+                cap_data: Untyped {
+                    kind: kind_c,
+                    _bit_size: PhantomData,
+                },
+                _role: PhantomData,
+            },
+            Cap {
+                cptr: dest_offset + 3,
+                cap_data: Untyped {
+                    kind: kind_d,
+                    _bit_size: PhantomData,
+                },
+                _role: PhantomData,
+            },
+        ))
+    }
+
+    pub fn retype_pages<CRole: CNodeRole>(
+        self,
+        dest_slots: CNodeSlots<NumPages<BitSize>, CRole>,
+    ) -> Result<CapRange<Page<page_state::Unmapped>, role::Local, NumPages<BitSize>>, SeL4Error>
+    where
+        BitSize: IsGreaterOrEqual<PageBits>,
+        BitSize: Sub<PageBits>,
+        <BitSize as Sub<PageBits>>::Output: Unsigned,
+        <BitSize as Sub<PageBits>>::Output: _Pow,
+        Pow<<BitSize as Sub<PageBits>>::Output>: Unsigned,
+        Pow<<BitSize as Sub<PageBits>>::Output>:
+            IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
+    {
+        let (dest_cptr, dest_offset, _) = dest_slots.elim();
+        unsafe {
+            seL4_Untyped_Retype(
+                self.cptr,                               // _service
+                Page::sel4_type_id(),                    // type
+                0,                                       // size_bits
+                dest_cptr,                               // root
+                0,                                       // index
+                0,                                       // depth
+                dest_offset,                             // offset
+                1 << (BitSize::USIZE - PageBits::USIZE), // num_objects
+            )
+            .as_result()
+            .map_err(|e| SeL4Error::UntypedRetype(e))?;
+        }
+
+        Ok(CapRange::new_phantom(dest_offset))
+    }
 }
 
 /// A version of retype that concretely specifies the required untyped size,
@@ -308,107 +536,6 @@ where
 }
 
 impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
-    pub fn split(
-        self,
-        dest_slots: LocalCNodeSlots<U2>,
-    ) -> Result<
-        (
-            LocalCap<Untyped<Diff<BitSize, U1>, memory_kind::General>>,
-            LocalCap<Untyped<Diff<BitSize, U1>, memory_kind::General>>,
-        ),
-        SeL4Error,
-    >
-    where
-        BitSize: Sub<U1>,
-        Diff<BitSize, U1>: Unsigned,
-    {
-        let (dest_cptr, dest_offset, _) = dest_slots.elim();
-
-        unsafe {
-            seL4_Untyped_Retype(
-                self.cptr,                              // _service
-                api_object_seL4_UntypedObject as usize, // type
-                BitSize::to_usize() - 1,                // size_bits
-                dest_cptr,                              // root
-                0,                                      // index
-                0,                                      // depth
-                dest_offset,                            // offset
-                2,                                      // num_objects
-            )
-        }
-        .as_result()
-        .map_err(|e| SeL4Error::UntypedRetype(e))?;
-
-        Ok((
-            Cap {
-                cptr: dest_offset,
-                cap_data: PhantomCap::phantom_instance(),
-                _role: PhantomData,
-            },
-            Cap {
-                cptr: dest_offset + 1,
-                cap_data: PhantomCap::phantom_instance(),
-                _role: PhantomData,
-            },
-        ))
-    }
-
-    pub fn quarter(
-        self,
-        dest_slots: LocalCNodeSlots<U4>,
-    ) -> Result<
-        (
-            LocalCap<Untyped<Diff<BitSize, U2>, memory_kind::General>>,
-            LocalCap<Untyped<Diff<BitSize, U2>, memory_kind::General>>,
-            LocalCap<Untyped<Diff<BitSize, U2>, memory_kind::General>>,
-            LocalCap<Untyped<Diff<BitSize, U2>, memory_kind::General>>,
-        ),
-        SeL4Error,
-    >
-    where
-        BitSize: Sub<U2>,
-        Diff<BitSize, U2>: Unsigned,
-    {
-        let (dest_cptr, dest_offset, _) = dest_slots.elim();
-        unsafe {
-            seL4_Untyped_Retype(
-                self.cptr,                              // _service
-                api_object_seL4_UntypedObject as usize, // type
-                BitSize::to_usize() - 2,                // size_bits
-                dest_cptr,                              // root
-                0,                                      // index
-                0,                                      // depth
-                dest_offset,                            // offset
-                4,                                      // num_objects
-            )
-        }
-        .as_result()
-        .map_err(|e| SeL4Error::UntypedRetype(e))?;
-
-        Ok((
-            Cap {
-                cptr: dest_offset,
-                cap_data: PhantomCap::phantom_instance(),
-                _role: PhantomData,
-            },
-            Cap {
-                cptr: dest_offset + 1,
-                cap_data: PhantomCap::phantom_instance(),
-                _role: PhantomData,
-            },
-            Cap {
-                cptr: dest_offset + 2,
-                cap_data: PhantomCap::phantom_instance(),
-                _role: PhantomData,
-            },
-            Cap {
-                cptr: dest_offset + 3,
-                cap_data: PhantomCap::phantom_instance(),
-                _role: PhantomData,
-            },
-        ))
-    }
-
     pub fn retype<TargetCapType: CapType, TargetRole: CNodeRole>(
         self,
         dest_slot: CNodeSlot<TargetRole>,
@@ -474,12 +601,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
                 dest_offset,
             )?;
         }
-        Ok(CapRange {
-            start_cptr: dest_offset,
-            _cap_type: PhantomData,
-            _role: PhantomData,
-            _slots: PhantomData,
-        })
+        Ok(CapRange::new_phantom(dest_offset))
     }
 
     pub(crate) fn retype_multi_runtime<TargetCapType: CapType, Count: Unsigned, CRole: CNodeRole>(
@@ -519,12 +641,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
             )?;
         }
 
-        Ok(CapRange {
-            start_cptr: dest_offset,
-            _cap_type: PhantomData,
-            _role: PhantomData,
-            _slots: PhantomData,
-        })
+        Ok(CapRange::new_phantom(dest_offset))
     }
 
     unsafe fn retype_multi_internal(
@@ -673,143 +790,6 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::Device>> {
         self.cap_data.kind.paddr
     }
 
-    pub fn split(
-        self,
-        dest_slots: LocalCNodeSlots<U2>,
-    ) -> Result<
-        (
-            LocalCap<Untyped<Diff<BitSize, U1>, memory_kind::Device>>,
-            LocalCap<Untyped<Diff<BitSize, U1>, memory_kind::Device>>,
-        ),
-        SeL4Error,
-    >
-    where
-        BitSize: Sub<U1>,
-        Diff<BitSize, U1>: Unsigned,
-        // Device Untypeds can only be turned into paging leaf structures, so their minimum size is that of a page
-        Diff<BitSize, U1>: IsGreaterOrEqual<crate::arch::PageBits, Output = True>,
-    {
-        let (dest_cptr, dest_offset, _) = dest_slots.elim();
-
-        unsafe {
-            seL4_Untyped_Retype(
-                self.cptr,                              // _service
-                api_object_seL4_UntypedObject as usize, // type
-                BitSize::to_usize() - 1,                // size_bits
-                dest_cptr,                              // root
-                0,                                      // index
-                0,                                      // depth
-                dest_offset,                            // offset
-                2,                                      // num_objects
-            )
-        }
-        .as_result()
-        .map_err(|e| SeL4Error::UntypedRetype(e))?;
-
-        let original_paddr = self.cap_data.kind.paddr;
-        let size_bytes = 2usize.pow(BitSize::U32);
-        Ok((
-            Cap {
-                cptr: dest_offset,
-                cap_data: Untyped {
-                    kind: memory_kind::Device {
-                        paddr: original_paddr,
-                    },
-                    _bit_size: PhantomData,
-                },
-                _role: PhantomData,
-            },
-            Cap {
-                cptr: dest_offset + 1,
-                cap_data: Untyped {
-                    kind: memory_kind::Device {
-                        paddr: original_paddr + size_bytes / 2,
-                    },
-                    _bit_size: PhantomData,
-                },
-                _role: PhantomData,
-            },
-        ))
-    }
-
-    pub fn quarter(
-        self,
-        dest_slots: LocalCNodeSlots<U4>,
-    ) -> Result<
-        (
-            LocalCap<Untyped<Diff<BitSize, U2>, memory_kind::Device>>,
-            LocalCap<Untyped<Diff<BitSize, U2>, memory_kind::Device>>,
-            LocalCap<Untyped<Diff<BitSize, U2>, memory_kind::Device>>,
-            LocalCap<Untyped<Diff<BitSize, U2>, memory_kind::Device>>,
-        ),
-        SeL4Error,
-    >
-    where
-        BitSize: Sub<U2>,
-        Diff<BitSize, U2>: Unsigned,
-    {
-        let (dest_cptr, dest_offset, _) = dest_slots.elim();
-        unsafe {
-            seL4_Untyped_Retype(
-                self.cptr,                              // _service
-                api_object_seL4_UntypedObject as usize, // type
-                BitSize::to_usize() - 2,                // size_bits
-                dest_cptr,                              // root
-                0,                                      // index
-                0,                                      // depth
-                dest_offset,                            // offset
-                4,                                      // num_objects
-            )
-        }
-        .as_result()
-        .map_err(|e| SeL4Error::UntypedRetype(e))?;
-
-        let original_paddr = self.cap_data.kind.paddr;
-        let size_bytes = 2usize.pow(BitSize::U32);
-        Ok((
-            Cap {
-                cptr: dest_offset,
-                cap_data: Untyped {
-                    kind: memory_kind::Device {
-                        paddr: original_paddr,
-                    },
-                    _bit_size: PhantomData,
-                },
-                _role: PhantomData,
-            },
-            Cap {
-                cptr: dest_offset + 1,
-                cap_data: Untyped {
-                    kind: memory_kind::Device {
-                        paddr: original_paddr + size_bytes / 4,
-                    },
-                    _bit_size: PhantomData,
-                },
-                _role: PhantomData,
-            },
-            Cap {
-                cptr: dest_offset + 2,
-                cap_data: Untyped {
-                    kind: memory_kind::Device {
-                        paddr: original_paddr + size_bytes / 2,
-                    },
-                    _bit_size: PhantomData,
-                },
-                _role: PhantomData,
-            },
-            Cap {
-                cptr: dest_offset + 3,
-                cap_data: Untyped {
-                    kind: memory_kind::Device {
-                        paddr: original_paddr + (3 * size_bytes) / 4,
-                    },
-                    _bit_size: PhantomData,
-                },
-                _role: PhantomData,
-            },
-        ))
-    }
-
     pub fn retype_device_pages<CRole: CNodeRole>(
         self,
         dest_slots: CNodeSlots<NumPages<BitSize>, CRole>,
@@ -839,12 +819,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::Device>> {
             .map_err(|e| SeL4Error::UntypedRetype(e))?;
         }
 
-        Ok(CapRange {
-            start_cptr: dest_offset,
-            _cap_type: PhantomData,
-            _role: PhantomData,
-            _slots: PhantomData,
-        })
+        Ok(CapRange::new_phantom(dest_offset))
     }
 }
 
