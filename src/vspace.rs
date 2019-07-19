@@ -632,143 +632,143 @@ pub enum ProcessCodeImageConfig<'a, 'b, 'c> {
     },
 }
 
-const NUM_SPECIFIC_REGIONS: usize = 128;
+// const NUM_SPECIFIC_REGIONS: usize = 128;
 
-struct RegionLocations {
-    regions: ArrayVec<[(usize, usize); NUM_SPECIFIC_REGIONS]>,
-}
+// struct RegionLocations {
+//     regions: ArrayVec<[(usize, usize); NUM_SPECIFIC_REGIONS]>,
+// }
 
-impl RegionLocations {
-    fn new() -> Self {
-        RegionLocations {
-            regions: ArrayVec::new(),
-        }
-    }
+// impl RegionLocations {
+//     fn new() -> Self {
+//         RegionLocations {
+//             regions: ArrayVec::new(),
+//         }
+//     }
 
-    fn add<SizeBits: Unsigned, SS: SharedStatus>(
-        &mut self,
-        region: &MappedMemoryRegion<SizeBits, SS>,
-    ) -> Result<(), VSpaceError>
-    where
-        SizeBits: IsGreaterOrEqual<PageBits>,
-        SizeBits: Sub<PageBits>,
-        <SizeBits as Sub<PageBits>>::Output: Unsigned,
-        <SizeBits as Sub<PageBits>>::Output: _Pow,
-        Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
-    {
-        let regions_len = self.regions.len();
-        let index = {
-            let mut idx = 0;
-            for i in 0..regions_len {
-                // We've reached the tail (len - 1), or this is the
-                // initial insertion (len == i == 0).
-                if i == regions_len - 1 || i == regions_len {
-                    idx = regions_len;
-                    break;
-                }
+//     fn add<SizeBits: Unsigned, SS: SharedStatus>(
+//         &mut self,
+//         region: &MappedMemoryRegion<SizeBits, SS>,
+//     ) -> Result<(), VSpaceError>
+//     where
+//         SizeBits: IsGreaterOrEqual<PageBits>,
+//         SizeBits: Sub<PageBits>,
+//         <SizeBits as Sub<PageBits>>::Output: Unsigned,
+//         <SizeBits as Sub<PageBits>>::Output: _Pow,
+//         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
+//     {
+//         let regions_len = self.regions.len();
+//         let index = {
+//             let mut idx = 0;
+//             for i in 0..regions_len {
+//                 // We've reached the tail (len - 1), or this is the
+//                 // initial insertion (len == i == 0).
+//                 if i == regions_len - 1 || i == regions_len {
+//                     idx = regions_len;
+//                     break;
+//                 }
 
-                let (addr, _) = self.regions[i];
-                if region.vaddr() < addr {
-                    idx = i;
-                    break;
-                }
-            }
-            idx
-        };
+//                 let (addr, _) = self.regions[i];
+//                 if region.vaddr() < addr {
+//                     idx = i;
+//                     break;
+//                 }
+//             }
+//             idx
+//         };
 
-        // This new region is either greater than all the others or is
-        // the first to be added so we'll just push it at the
-        // tail.
-        if index == regions_len {
-            return self
-                .regions
-                .try_push((region.vaddr, region.size()))
-                .map_err(|_| VSpaceError::OutOfRegions);
-        }
+//         // This new region is either greater than all the others or is
+//         // the first to be added so we'll just push it at the
+//         // tail.
+//         if index == regions_len {
+//             return self
+//                 .regions
+//                 .try_push((region.vaddr, region.size()))
+//                 .map_err(|_| VSpaceError::OutOfRegions);
+//         }
 
-        // We want to check beforehand whether or not we can do the
-        // insert, otherwise we're stuck with a mutated `self.regions`
-        // and are left to put the peices back as we found them.
-        if self.regions.len() == self.regions.capacity() {
-            return Err(VSpaceError::OutOfRegions);
-        }
+//         // We want to check beforehand whether or not we can do the
+//         // insert, otherwise we're stuck with a mutated `self.regions`
+//         // and are left to put the peices back as we found them.
+//         if self.regions.len() == self.regions.capacity() {
+//             return Err(VSpaceError::OutOfRegions);
+//         }
 
-        self.regions.insert(index, (region.vaddr, region.size()));
+//         self.regions.insert(index, (region.vaddr, region.size()));
 
-        Ok(())
-    }
+//         Ok(())
+//     }
 
-    fn is_overlap(&self, desired_vaddr: usize) -> bool {
-        self.regions.iter().any(|(addr, size)| {
-            if desired_vaddr >= *addr && desired_vaddr < (*addr + size) {
-                return true;
-            }
-            false
-        })
-    }
+//     fn is_overlap(&self, desired_vaddr: usize) -> bool {
+//         self.regions.iter().any(|(addr, size)| {
+//             if desired_vaddr >= *addr && desired_vaddr < (*addr + size) {
+//                 return true;
+//             }
+//             false
+//         })
+//     }
 
-    fn find_first_fit<SizeBits: Unsigned, SS: SharedStatus>(
-        &self,
-        current_addr: usize,
-        desired_region: &UnmappedMemoryRegion<SizeBits, SS>,
-    ) -> Result<usize, VSpaceError>
-    where
-        SizeBits: IsGreaterOrEqual<PageBits>,
-        SizeBits: Sub<PageBits>,
-        <SizeBits as Sub<PageBits>>::Output: Unsigned,
-        <SizeBits as Sub<PageBits>>::Output: _Pow,
-        Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
-    {
-        struct FoldState {
-            found: bool,
-            current_addr: usize,
-        }
+//     fn find_first_fit<SizeBits: Unsigned, SS: SharedStatus>(
+//         &self,
+//         current_addr: usize,
+//         desired_region: &UnmappedMemoryRegion<SizeBits, SS>,
+//     ) -> Result<usize, VSpaceError>
+//     where
+//         SizeBits: IsGreaterOrEqual<PageBits>,
+//         SizeBits: Sub<PageBits>,
+//         <SizeBits as Sub<PageBits>>::Output: Unsigned,
+//         <SizeBits as Sub<PageBits>>::Output: _Pow,
+//         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
+//     {
+//         struct FoldState {
+//             found: bool,
+//             current_addr: usize,
+//         }
 
-        let fit = self.regions.iter().fold(
-            Ok(FoldState {
-                found: false,
-                current_addr,
-            }),
-            |fold_state, (region_addr, region_size)| {
-                if let Ok(fs) = fold_state {
-                    // We've found a chunk of address space that can
-                    // fit this region. Just carry through our result.
-                    if fs.found {
-                        return Ok(fs);
-                    }
+//         let fit = self.regions.iter().fold(
+//             Ok(FoldState {
+//                 found: false,
+//                 current_addr,
+//             }),
+//             |fold_state, (region_addr, region_size)| {
+//                 if let Ok(fs) = fold_state {
+//                     // We've found a chunk of address space that can
+//                     // fit this region. Just carry through our result.
+//                     if fs.found {
+//                         return Ok(fs);
+//                     }
 
-                    // If our cursor + the desired_region's size is
-                    // less than the this region's address then we can
-                    // fit this region in this chunk. Set `found` to
-                    // true and retain the current address.
-                    if fs.current_addr + desired_region.size() < *region_addr {
-                        return Ok(FoldState {
-                            found: true,
-                            current_addr: fs.current_addr,
-                        });
-                    }
+//                     // If our cursor + the desired_region's size is
+//                     // less than the this region's address then we can
+//                     // fit this region in this chunk. Set `found` to
+//                     // true and retain the current address.
+//                     if fs.current_addr + desired_region.size() < *region_addr {
+//                         return Ok(FoldState {
+//                             found: true,
+//                             current_addr: fs.current_addr,
+//                         });
+//                     }
 
-                    // Otherwise, skip forward to the end of the
-                    // region at hand. If we run out of address space,
-                    // say so.
-                    let next_addr = match region_addr.checked_add(*region_size) {
-                        Some(n) => n,
-                        None => return Err(VSpaceError::ExceededAvailableAddressSpace),
-                    };
-                    return Ok(FoldState {
-                        found: false,
-                        current_addr: next_addr,
-                    });
-                }
+//                     // Otherwise, skip forward to the end of the
+//                     // region at hand. If we run out of address space,
+//                     // say so.
+//                     let next_addr = match region_addr.checked_add(*region_size) {
+//                         Some(n) => n,
+//                         None => return Err(VSpaceError::ExceededAvailableAddressSpace),
+//                     };
+//                     return Ok(FoldState {
+//                         found: false,
+//                         current_addr: next_addr,
+//                     });
+//                 }
 
-                // We've encountered an error! Do no further
-                // processing and just return the error.
-                fold_state
-            },
-        )?;
-        Ok(fit.current_addr)
-    }
-}
+//                 // We've encountered an error! Do no further
+//                 // processing and just return the error.
+//                 fold_state
+//             },
+//         )?;
+//         Ok(fit.current_addr)
+//     }
+// }
 
 /// A virtual address space manager.
 ///
@@ -791,7 +791,7 @@ pub struct VSpace<State: VSpaceState = vspace_state::Imaged, CapRole: CNodeRole 
     /// when building out intermediate layers.
     untyped: WUTBuddy<CapRole>,
     slots: Cap<WCNodeSlotsData<CapRole>, CapRole>,
-    specific_regions: RegionLocations,
+    // specific_regions: RegionLocations,
     _state: PhantomData<State>,
 }
 
@@ -810,7 +810,7 @@ impl VSpace<vspace_state::Empty> {
             next_addr: 0,
             untyped: ut_buddy::weak_ut_buddy(untyped),
             slots,
-            specific_regions: RegionLocations::new(),
+            // specific_regions: RegionLocations::new(),
             _state: PhantomData,
         })
     }
@@ -960,7 +960,7 @@ impl VSpace<vspace_state::Imaged> {
             next_addr: vspace.next_addr,
             untyped: vspace.untyped,
             slots: vspace.slots,
-            specific_regions: RegionLocations::new(),
+            // specific_regions: RegionLocations::new(),
             _state: PhantomData,
         })
     }
@@ -982,7 +982,7 @@ impl VSpace<vspace_state::Imaged> {
             },
             untyped: ut_buddy::weak_ut_buddy(ut),
             slots: cslots,
-            specific_regions: RegionLocations::new(),
+            // specific_regions: RegionLocations::new(),
             next_addr,
             asid: asid.cap_data.asid,
             _state: PhantomData,
@@ -1003,9 +1003,9 @@ impl VSpace<vspace_state::Imaged> {
         <SizeBits as Sub<PageBits>>::Output: _Pow,
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
     {
-        if self.specific_regions.is_overlap(vaddr) {
-            return Err((VSpaceError::OverlappingRegion, region));
-        }
+        // if self.specific_regions.is_overlap(vaddr) {
+        //     return Err((VSpaceError::OverlappingRegion, region));
+        // }
 
         // Verify that we can fit this region into the address space.
         match vaddr.checked_add(region.size()) {
@@ -1111,20 +1111,23 @@ impl VSpace<vspace_state::Imaged> {
             _shared_status: PhantomData,
         };
 
-        match self.specific_regions.add(&region) {
-            Err(_) => {
-                let _ = unmap_mapped_page_cptrs(mapped_pages_cptrs);
-                Err((
-                    VSpaceError::OutOfRegions,
-                    UnmappedMemoryRegion {
-                        caps: CapRange::new(cptr),
-                        _size_bits: PhantomData,
-                        _shared_status: PhantomData,
-                    },
-                ))
-            }
-            Ok(_) => Ok(region),
-        }
+        // match self.specific_regions.add(&region) {
+        //     Err(_) => {
+        //         let _ = unmap_mapped_page_cptrs(mapped_pages_cptrs);
+        //         Err((
+        //             VSpaceError::OutOfRegions,
+        //             UnmappedMemoryRegion {
+        //                 caps: CapRange::new(cptr),
+        //                 paddr: None,
+        //                 _size_bits: PhantomData,
+        //                 _shared_status: PhantomData,
+        //             },
+        //         ))
+        //     }
+        //     Ok(_) => Ok(region),
+        // }
+
+        Ok(region)
     }
 
     /// Map a region of memory at some address, I don't care where.
@@ -1332,7 +1335,8 @@ impl VSpace<vspace_state::Imaged> {
         <SizeBits as Sub<PageBits>>::Output: _Pow,
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
     {
-        self.specific_regions.find_first_fit(self.next_addr, region)
+        Ok(self.next_addr)
+        // self.specific_regions.find_first_fit(self.next_addr, region)
     }
 
     pub(crate) fn skip_pages(&mut self, count: usize) -> Result<(), VSpaceError> {
@@ -1373,7 +1377,7 @@ impl VSpace<vspace_state::Imaged> {
             next_addr,
             untyped,
             slots: _,
-            specific_regions,
+            // specific_regions,
             ..
         } = self;
         let child_root = root.move_to_slot(src_cnode, child_root_slot)?;
@@ -1393,7 +1397,7 @@ impl VSpace<vspace_state::Imaged> {
             next_addr,
             untyped: child_untyped,
             slots: child_paging_slots,
-            specific_regions,
+            // specific_regions,
             _state: PhantomData,
         })
     }
