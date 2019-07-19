@@ -37,6 +37,8 @@ pub struct WUntyped<Kind: MemoryKind> {
     pub(crate) size_bits: u8,
 }
 
+pub type WDeviceUntyped = WUntyped<memory_kind::Device>;
+
 impl<BitSize: Unsigned, Kind: MemoryKind> CapType for Untyped<BitSize, Kind> {}
 
 impl<Kind: MemoryKind> CapType for WUntyped<Kind> {}
