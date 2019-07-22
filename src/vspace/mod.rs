@@ -639,11 +639,10 @@ impl VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Manual> {
 
         // N.B. Currently expect a single continuous cap range of all pages.
         // Revisit this size if heterogenous granule types / ranges begin to back memory regions.
-        let mut mapped_pages: util::WeakCapRangeCollection<_, U1> =
-            util::WeakCapRangeCollection::new();
+        let mut mapped_pages: Option<WeakCapRange<Page<page_state::Mapped>, role::Local>> = None;
 
         fn unmap_mapped_page_cptrs(
-            mapped_pages: util::WeakCapRangeCollection<Page<page_state::Mapped>, U1>,
+            mapped_pages: Option<WeakCapRange<Page<page_state::Mapped>, role::Local>>,
         ) -> Result<(), SeL4Error> {
             impl CapRangeDataReconstruction for Page<page_state::Mapped> {
                 fn reconstruct(index: usize, seed_cap_data: &Self) -> Self {
@@ -655,10 +654,14 @@ impl VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Manual> {
                     }
                 }
             }
-            mapped_pages
-                .into_iter()
-                .map(|page| page.unmap().map(|_p| ()))
-                .collect()
+            if let Some(mapped_pages) = mapped_pages {
+                mapped_pages
+                    .into_iter()
+                    .map(|page| page.unmap().map(|_p| ()))
+                    .collect()
+            } else {
+                Ok(())
+            }
         }
         let kind = region.kind;
 
@@ -694,23 +697,23 @@ impl VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Manual> {
                     // them back if we fail to map all of this
                     // region. I.e., something was previously mapped
                     // here.
-                    match mapped_pages.try_push(Cap {
-                        cptr: page.cptr,
-                        cap_data: Page {
-                            state: page_state::Mapped {
-                                vaddr: mapping_vaddr,
-                                asid: self.asid,
-                            },
-                        },
-                        _role: PhantomData,
-                    }) {
-                        Err(_) => {
-                            return Err((
-                                VSpaceError::TriedToMapTooManyPagesAtOnce,
-                                WeakUnmappedMemoryRegion::unchecked_new(cptr, kind, size_bits),
-                            ))
+                    match mapped_pages {
+                        None => {
+                            mapped_pages = Some(WeakCapRange::new(
+                                page.cptr,
+                                Page {
+                                    state: page_state::Mapped {
+                                        vaddr: mapping_vaddr,
+                                        asid: self.asid(),
+                                    },
+                                },
+                                1,
+                            ));
                         }
-                        _ => (),
+                        Some(mut already_mapped_pages) => {
+                            already_mapped_pages.len += 1;
+                            mapped_pages = Some(already_mapped_pages)
+                        }
                     }
                 }
             };
@@ -1174,58 +1177,6 @@ where
         let res = f(&mut mapped_region);
         let _ = self.vspace.unmap_region(mapped_region)?;
         Ok(res)
-    }
-}
-
-mod util {
-    use super::*;
-
-    pub(super) struct WeakCapRangeCollectionCapacityError;
-
-    /// A slightly dense collection of ranges of cptrs
-    /// Must only be used with cap-types that can be reconstructed from
-    /// nothing or from a single seed starting cap_data for a range
-    pub(super) struct WeakCapRangeCollection<CT: CapType, MaxDiscontinuousRanges: Unsigned>
-    where
-        MaxDiscontinuousRanges: heapless::ArrayLength<WeakCapRange<CT, role::Local>>,
-    {
-        ranges: heapless::Vec<WeakCapRange<CT, role::Local>, MaxDiscontinuousRanges>,
-    }
-
-    impl<CT: CapType, MaxDiscontinuousRanges: Unsigned>
-        WeakCapRangeCollection<CT, MaxDiscontinuousRanges>
-    where
-        MaxDiscontinuousRanges: heapless::ArrayLength<WeakCapRange<CT, role::Local>>,
-    {
-        pub(super) fn new() -> Self {
-            WeakCapRangeCollection {
-                ranges: heapless::Vec::new(),
-            }
-        }
-        /// Add a single cap to the collection
-        pub(super) fn try_push(
-            &mut self,
-            cap: LocalCap<CT>,
-        ) -> Result<(), WeakCapRangeCollectionCapacityError> {
-            for r in self.ranges.iter_mut() {
-                if cap.cptr == r.start_cptr + r.len + 1 {
-                    r.len += 1;
-                    return Ok(());
-                }
-            }
-            self.ranges
-                .push(WeakCapRange::new(cap.cptr, cap.cap_data, 1))
-                .map_err(|_| WeakCapRangeCollectionCapacityError)
-        }
-
-        /// Uses a function that accepts a cap-index (the index in the cap-range's iteration, NOT a cptr)
-        /// and the seed (starting) cap_data to produce a new cap_data instance to produce the Cap item instances
-        pub(crate) fn into_iter(self) -> impl Iterator<Item = LocalCap<CT>>
-        where
-            CT: CapRangeDataReconstruction,
-        {
-            self.ranges.into_iter().flat_map(move |r| r.into_iter())
-        }
     }
 }
 

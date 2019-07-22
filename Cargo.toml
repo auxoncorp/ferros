@@ -16,7 +16,6 @@ generic-array = { git = "ssh://github.com/auxoncorp/generic-array", branch = "au
 cross_queue = { path = "./cross_queue" }
 smart_alloc = { path = "./smart_alloc" }
 pdqsort = "1"
-heapless = "0.4.4"
 
 [dependencies.arrayvec]
 version = "0.4.10"
@@ -24,7 +23,6 @@ default-features = false
 
 [patch.crates-io]
 typenum = { git = "ssh://github.com/auxoncorp/typenum" }
-hash32 = { git = "ssh://github.com/auxoncorp/hash32", branch = "no-std" }
 generic-array = { git = "ssh://github.com/auxoncorp/generic-array", branch = "auxon-typenum" }
 
 [build-dependencies]
