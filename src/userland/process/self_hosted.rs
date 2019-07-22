@@ -82,7 +82,6 @@ impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
         // Allocate and map the ipc buffer
         let (ipc_slots, misc_slots) = misc_slots.alloc();
         let ipc_buffer = ipc_buffer_ut.retype(ipc_slots)?;
-        // TODO - can we really let the mapping mode be either and also do some auto-allocation for the IPC buffer and stack?
         let ipc_buffer = vspace.map_region(
             ipc_buffer.to_region(),
             CapRights::RW,

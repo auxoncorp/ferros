@@ -331,7 +331,7 @@ impl<State: VSpaceState, CapRole: CNodeRole> VSpace<State, CapRole> {
 
 impl<State: VSpaceState> VSpace<State, role::Local> {
     /// A thin wrapper around self.layers.map_layer that reduces the amount
-    /// of repetitive, visible, repetitive self-reference
+    /// of repetitive, visible self-reference
     fn map_page_at_addr_without_watermarking(
         &mut self,
         page: LocalCap<Page<page_state::Unmapped>>,
