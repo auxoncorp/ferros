@@ -56,7 +56,7 @@ where
 impl LocalCap<Page<page_state::Unmapped>> {
     /// N.B. until MemoryKind tracking is added to Page, this is a lossy conversion
     /// that will assume the Page was for General memory
-    pub(crate) fn to_region(self) -> UnmappedMemoryRegion<PageBits, shared_status::Exclusive> {
+    pub fn to_region(self) -> UnmappedMemoryRegion<PageBits, shared_status::Exclusive> {
         UnmappedMemoryRegion::unchecked_new(self.cptr, WeakMemoryKind::General)
     }
 }
@@ -140,7 +140,7 @@ where
 
     /// N.B. until MemoryKind tracking is added to Page, this is a lossy conversion
     /// that will assume the Region was for General memory
-    pub(crate) fn to_page(self) -> LocalCap<Page<page_state::Unmapped>>
+    pub fn to_page(self) -> LocalCap<Page<page_state::Unmapped>>
     where
         SizeBits: IsEqual<PageBits, Output = True>,
     {
@@ -267,7 +267,7 @@ where
     }
     /// N.B. until MemoryKind tracking is added to Page, this is a lossy conversion
     /// that will assume the Region was for General memory
-    pub(crate) fn to_page(self) -> LocalCap<Page<page_state::Mapped>>
+    pub fn to_page(self) -> LocalCap<Page<page_state::Mapped>>
     where
         SizeBits: IsEqual<PageBits, Output = True>,
     {
