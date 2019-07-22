@@ -4,7 +4,7 @@ use crate::arch::cap::{page_state, Page};
 use crate::cap::{role, CapType, ChildCNode, CopyAliasable, DirectRetype, LocalCap, PhantomCap};
 use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::FaultSource;
-use crate::vspace::VSpace;
+use crate::vspace::{self, VSpace};
 
 #[derive(Debug)]
 pub struct ThreadControlBlock {}
@@ -57,11 +57,11 @@ impl LocalCap<ThreadControlBlock> {
         unsafe { core::mem::transmute(self) }
     }
 
-    pub fn configure(
+    pub fn configure<VSpaceState: vspace::VSpaceState>(
         &mut self,
         cspace_root: LocalCap<ChildCNode>,
         fault_source: Option<FaultSource<role::Child>>,
-        vspace: &VSpace, // vspace_root,
+        vspace: &VSpace<VSpaceState, role::Local>, // vspace_root,
         ipc_buffer: LocalCap<Page<page_state::Mapped>>,
     ) -> Result<(), SeL4Error> {
         // Set up the cspace's guard to take the part of the cptr that's not

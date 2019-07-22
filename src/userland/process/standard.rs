@@ -104,8 +104,8 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
         // Allocate and map the ipc buffer
         let (ipc_slots, misc_slots) = misc_slots.alloc();
         let ipc_buffer = ipc_buffer_ut.retype(ipc_slots)?;
-        let ipc_buffer = vspace.map_given_page(
-            ipc_buffer,
+        let ipc_buffer = vspace.map_region(
+            ipc_buffer.to_region(),
             CapRights::RW,
             arch::vm_attributes::DEFAULT & arch::vm_attributes::EXECUTE_NEVER,
         )?;
@@ -114,7 +114,7 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
         let (tcb_slots, _slots) = misc_slots.alloc();
         let mut tcb = tcb_ut.retype(tcb_slots)?;
 
-        tcb.configure(cspace, fault_source, &vspace, ipc_buffer)?;
+        tcb.configure(cspace, fault_source, &vspace, ipc_buffer.to_page())?;
         unsafe {
             seL4_TCB_WriteRegisters(
                 tcb.cptr,

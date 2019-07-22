@@ -36,7 +36,7 @@ extern "C" fn self_hosted_run<T>(sh_params: SelfHostedParams<T, role::Local>) {
 
 impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
     pub fn new<T: RetypeForSetup>(
-        mut vspace: VSpace<vspace_state::Imaged, role::Local>,
+        mut vspace: VSpace,
         cspace: LocalCap<ChildCNode>,
         parent_mapped_region: MappedMemoryRegion<StackBitSize, shared_status::Exclusive>,
         parent_cnode: &LocalCap<LocalCNode>,
@@ -82,8 +82,8 @@ impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
         // Allocate and map the ipc buffer
         let (ipc_slots, misc_slots) = misc_slots.alloc();
         let ipc_buffer = ipc_buffer_ut.retype(ipc_slots)?;
-        let ipc_buffer = vspace.map_given_page(
-            ipc_buffer,
+        let ipc_buffer = vspace.map_region(
+            ipc_buffer.to_region(),
             CapRights::RW,
             arch::vm_attributes::DEFAULT & arch::vm_attributes::EXECUTE_NEVER,
         )?;
@@ -92,7 +92,7 @@ impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
         let (tcb_slots, _slots) = misc_slots.alloc();
         let mut tcb = tcb_ut.retype(tcb_slots)?;
 
-        tcb.configure(cspace, fault_source, &vspace, ipc_buffer)?;
+        tcb.configure(cspace, fault_source, &vspace, ipc_buffer.to_page())?;
 
         // Reserve a guard page before the stack
         vspace.skip_pages(1)?;
