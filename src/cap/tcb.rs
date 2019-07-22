@@ -57,14 +57,11 @@ impl LocalCap<ThreadControlBlock> {
         unsafe { core::mem::transmute(self) }
     }
 
-    pub fn configure<
-        VSpaceState: vspace::VSpaceState,
-        VSpaceMappingMode: vspace::VSpaceMappingMode,
-    >(
+    pub fn configure<VSpaceState: vspace::VSpaceState>(
         &mut self,
         cspace_root: LocalCap<ChildCNode>,
         fault_source: Option<FaultSource<role::Child>>,
-        vspace: &VSpace<VSpaceState, role::Local, VSpaceMappingMode>, // vspace_root,
+        vspace: &VSpace<VSpaceState, role::Local>, // vspace_root,
         ipc_buffer: LocalCap<Page<page_state::Mapped>>,
     ) -> Result<(), SeL4Error> {
         // Set up the cspace's guard to take the part of the cptr that's not

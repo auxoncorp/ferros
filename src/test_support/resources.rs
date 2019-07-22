@@ -12,7 +12,7 @@ pub struct Resources {
     pub(super) slots: LocalCNodeSlots<super::types::MaxTestCNodeSlots>,
     pub(super) untyped: LocalCap<Untyped<super::types::MaxTestUntypedSize>>,
     pub(super) asid_pool: LocalCap<ASIDPool<super::types::MaxTestASIDPoolSize>>,
-    pub(super) vspace: VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Auto>,
+    pub(super) vspace: VSpace<vspace_state::Imaged, role::Local>,
     pub(super) reserved_for_scratch:
         ReservedRegion<crate::userland::process::DefaultStackPageCount>,
     pub(super) mapped_memory_region: MappedMemoryRegion<
@@ -53,7 +53,7 @@ impl Resources {
         let (vspace_slots, local_slots): (crate::cap::LocalCNodeSlots<U4096>, _) =
             local_slots.alloc();
         let BootInfo {
-            root_vspace,
+            mut root_vspace,
             asid_control,
             user_image,
             root_tcb,
@@ -66,7 +66,6 @@ impl Resources {
                 .ok_or_else(|| super::TestSetupError::InitialUntypedNotFound { bit_size: 14 })?,
             vspace_slots,
         );
-        let mut root_vspace = root_vspace.to_auto();
         let (extra_scratch_slots, local_slots) = local_slots.alloc();
         let ut_for_scratch = {
             match allocator.get_untyped::<<Page<page_state::Unmapped> as DirectRetype>::SizeBits>()

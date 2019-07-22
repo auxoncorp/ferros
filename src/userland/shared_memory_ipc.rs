@@ -11,7 +11,7 @@ use crate::cap::{
     LocalCap, Notification, Untyped,
 };
 use crate::userland::{CapRights, IPCError};
-use crate::vspace::{vspace_mapping_mode, vspace_state, UnmappedMemoryRegion, VSpace};
+use crate::vspace::{UnmappedMemoryRegion, VSpace};
 
 pub mod sync {
     use super::*;
@@ -29,8 +29,8 @@ pub mod sync {
         shared_region_ut: LocalCap<Untyped<PageBits>>,
         call_notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
         response_notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
-        caller_vspace: &mut VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Auto>,
-        responder_vspace: &mut VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Auto>,
+        caller_vspace: &mut VSpace,
+        responder_vspace: &mut VSpace,
         caller_slots: ChildCNodeSlots<U2>,
         responder_slots: ChildCNodeSlots<U2>,
     ) -> Result<

@@ -28,7 +28,7 @@ pub struct StandardProcess<StackBitSize: Unsigned = DefaultStackBitSize> {
 
 impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
     pub fn new<T: RetypeForSetup>(
-        vspace: &mut VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Auto>,
+        vspace: &mut VSpace,
         cspace: LocalCap<ChildCNode>,
         parent_mapped_region: MappedMemoryRegion<StackBitSize, shared_status::Exclusive>,
         parent_cnode: &LocalCap<LocalCNode>,

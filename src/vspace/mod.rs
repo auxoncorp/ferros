@@ -46,20 +46,6 @@ pub mod vspace_state {
     impl VSpaceState for Imaged {}
 }
 
-/// Represents what set of mapping operations are available for the VSpace
-pub trait VSpaceMappingMode: private::SealedVSpaceMappingMode {}
-pub mod vspace_mapping_mode {
-    use super::VSpaceMappingMode;
-
-    /// Allows mapping at user-specified and managed address ranges
-    pub struct Manual;
-    impl VSpaceMappingMode for Manual {}
-
-    /// Allows mapping at VSpace-internally-determined address ranges
-    pub struct Auto;
-    impl VSpaceMappingMode for Auto {}
-}
-
 /// A `Maps` implementor is a paging layer that maps granules of type
 /// `LowerLevel`. If this layer isn't present for the incoming address,
 /// `MappingError::Overflow` should be returned, as this signals to
@@ -295,11 +281,7 @@ pub enum ProcessCodeImageConfig<'a, 'b, 'c> {
 ///
 /// CapRole indicates whether the capabilities related to manipulating this VSpace
 /// are accessible from the current thread's CSpace, or from a child's CSpace
-pub struct VSpace<
-    State: VSpaceState = vspace_state::Imaged,
-    CapRole: CNodeRole = role::Local,
-    MappingMode: VSpaceMappingMode = vspace_mapping_mode::Manual,
-> {
+pub struct VSpace<State: VSpaceState = vspace_state::Imaged, CapRole: CNodeRole = role::Local> {
     /// The cap to this address space's root-of-the-tree item.
     root: Cap<PagingRoot, CapRole>,
     /// The id of this address space.
@@ -314,10 +296,9 @@ pub struct VSpace<
     slots: Cap<WCNodeSlotsData<CapRole>, CapRole>,
     available_address_range: AvailableAddressRange,
     _state: PhantomData<State>,
-    _mapping_mode: PhantomData<MappingMode>,
 }
 
-impl VSpace<vspace_state::Empty, role::Local, vspace_mapping_mode::Manual> {
+impl VSpace<vspace_state::Empty, role::Local> {
     pub(crate) fn new(
         mut root_cap: LocalCap<PagingRoot>,
         asid: LocalCap<UnassignedASID>,
@@ -333,14 +314,11 @@ impl VSpace<vspace_state::Empty, role::Local, vspace_mapping_mode::Manual> {
             slots,
             available_address_range: AvailableAddressRange::default(),
             _state: PhantomData,
-            _mapping_mode: PhantomData,
         })
     }
 }
 
-impl<State: VSpaceState, CapRole: CNodeRole, MappingMode: VSpaceMappingMode>
-    VSpace<State, CapRole, MappingMode>
-{
+impl<State: VSpaceState, CapRole: CNodeRole> VSpace<State, CapRole> {
     /// This address space's id.
     pub(crate) fn asid(&self) -> InternalASID {
         self.asid
@@ -351,7 +329,7 @@ impl<State: VSpaceState, CapRole: CNodeRole, MappingMode: VSpaceMappingMode>
     }
 }
 
-impl<State: VSpaceState> VSpace<State, role::Local, vspace_mapping_mode::Manual> {
+impl<State: VSpaceState> VSpace<State, role::Local> {
     /// A thin wrapper around self.layers.map_layer that reduces the amount
     /// of repetitive, visible, repetitive self-reference
     fn map_page_at_addr_without_watermarking(
@@ -390,7 +368,7 @@ impl<State: VSpaceState> VSpace<State, role::Local, vspace_mapping_mode::Manual>
     }
 }
 
-impl<MappingMode: VSpaceMappingMode> VSpace<vspace_state::Imaged, role::Local, MappingMode> {
+impl VSpace<vspace_state::Imaged, role::Local> {
     /// Unmap a region.
     pub fn unmap_region<SizeBits: Unsigned, SS: SharedStatus>(
         &mut self,
@@ -441,7 +419,7 @@ impl<MappingMode: VSpaceMappingMode> VSpace<vspace_state::Imaged, role::Local, M
         child_root_slot: ChildCNodeSlot,
         mut ut_transfer_slots: LocalCap<WCNodeSlotsData<role::Child>>,
         child_paging_slots: Cap<WCNodeSlotsData<role::Child>, role::Child>,
-    ) -> Result<VSpace<vspace_state::Imaged, role::Child, MappingMode>, VSpaceError> {
+    ) -> Result<VSpace<vspace_state::Imaged, role::Child>, VSpaceError> {
         let VSpace {
             root,
             asid,
@@ -469,12 +447,9 @@ impl<MappingMode: VSpaceMappingMode> VSpace<vspace_state::Imaged, role::Local, M
             slots: child_paging_slots,
             available_address_range,
             _state: PhantomData,
-            _mapping_mode: PhantomData,
         })
     }
-}
 
-impl VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Manual> {
     pub fn new(
         paging_root: LocalCap<PagingRoot>,
         asid: LocalCap<UnassignedASID>,
@@ -563,7 +538,6 @@ impl VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Manual> {
             slots: vspace.slots,
             available_address_range: vspace.available_address_range,
             _state: PhantomData,
-            _mapping_mode: PhantomData,
         })
     }
 
@@ -589,7 +563,6 @@ impl VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Manual> {
             available_address_range,
             asid: asid.cap_data.asid,
             _state: PhantomData,
-            _mapping_mode: PhantomData,
         }
     }
 
@@ -724,8 +697,7 @@ impl VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Manual> {
             cptr, vaddr, self.asid, kind, size_bits,
         ))
     }
-}
-impl VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Auto> {
+
     /// Map a region of memory at some address, I don't care where.
     pub fn map_region<SizeBits: Unsigned>(
         &mut self,
@@ -980,31 +952,6 @@ impl VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Auto> {
     }
 }
 
-impl<CapRole: CNodeRole> VSpace<vspace_state::Imaged, CapRole, vspace_mapping_mode::Manual> {
-    pub fn to_auto(self) -> VSpace<vspace_state::Imaged, CapRole, vspace_mapping_mode::Auto> {
-        let VSpace {
-            root,
-            asid,
-            layers,
-            untyped,
-            slots,
-            available_address_range,
-            _state,
-            ..
-        } = self;
-        VSpace {
-            root,
-            asid,
-            layers,
-            untyped,
-            slots,
-            available_address_range,
-            _state,
-            _mapping_mode: PhantomData,
-        }
-    }
-}
-
 /// A region of memory in a VSpace that has been reserved
 /// for future scratch-style/temporary usage.
 ///
@@ -1030,7 +977,7 @@ where
     }
 
     pub fn new(
-        vspace: &mut VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Auto>,
+        vspace: &mut VSpace,
         sacrificial_page: LocalCap<Page<page_state::Unmapped>>,
     ) -> Result<Self, VSpaceError> {
         let mut unmapped_region = sacrificial_page.to_region();
@@ -1065,7 +1012,7 @@ where
 
     pub fn as_scratch<'a, 'b>(
         &'a self,
-        vspace: &'b mut VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Auto>,
+        vspace: &'b mut VSpace,
     ) -> Result<ScratchRegion<'a, 'b, PageCount>, VSpaceError> {
         ScratchRegion::new(self, vspace)
     }
@@ -1079,7 +1026,7 @@ pub struct ScratchRegion<
     PageCount: Unsigned = crate::userland::process::DefaultStackPageCount,
 > {
     reserved_region: &'a ReservedRegion<PageCount>,
-    vspace: &'b mut VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Auto>,
+    vspace: &'b mut VSpace,
 }
 
 impl<'a, 'b, PageCount: Unsigned> ScratchRegion<'a, 'b, PageCount>
@@ -1088,7 +1035,7 @@ where
 {
     pub fn new(
         region: &'a ReservedRegion<PageCount>,
-        vspace: &'b mut VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Auto>,
+        vspace: &'b mut VSpace,
     ) -> Result<Self, VSpaceError> {
         if region.asid == vspace.asid() {
             Ok(ScratchRegion {
@@ -1242,12 +1189,8 @@ fn bytes_from_size_bits(size_bits: u8) -> usize {
 }
 
 mod private {
-    use super::vspace_mapping_mode::{Auto, Manual};
     use super::vspace_state::{Empty, Imaged};
     pub trait SealedVSpaceState {}
     impl SealedVSpaceState for Empty {}
     impl SealedVSpaceState for Imaged {}
-    pub trait SealedVSpaceMappingMode {}
-    impl SealedVSpaceMappingMode for Auto {}
-    impl SealedVSpaceMappingMode for Manual {}
 }

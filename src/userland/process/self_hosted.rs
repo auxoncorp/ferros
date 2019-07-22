@@ -21,11 +21,8 @@ pub struct SelfHostedProcess<StackBitSize: Unsigned = DefaultStackBitSize> {
 
 struct SelfHostedParams<T, Role: CNodeRole> {
     params: T,
-    vspace: VSpace<vspace_state::Imaged, Role, vspace_mapping_mode::Auto>,
-    child_main: extern "C" fn(
-        VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Auto>,
-        T,
-    ) -> (),
+    vspace: VSpace<vspace_state::Imaged, Role>,
+    child_main: extern "C" fn(VSpace<vspace_state::Imaged, role::Local>, T) -> (),
 }
 
 extern "C" fn self_hosted_run<T>(sh_params: SelfHostedParams<T, role::Local>) {
@@ -39,7 +36,7 @@ extern "C" fn self_hosted_run<T>(sh_params: SelfHostedParams<T, role::Local>) {
 
 impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
     pub fn new<T: RetypeForSetup>(
-        mut vspace: VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Auto>,
+        mut vspace: VSpace,
         cspace: LocalCap<ChildCNode>,
         parent_mapped_region: MappedMemoryRegion<StackBitSize, shared_status::Exclusive>,
         parent_cnode: &LocalCap<LocalCNode>,

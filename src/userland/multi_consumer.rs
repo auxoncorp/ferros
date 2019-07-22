@@ -54,8 +54,7 @@ use crate::cap::{
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
 use crate::vspace::{
-    shared_status, vspace_mapping_mode, vspace_state, MappedMemoryRegion, ScratchRegion,
-    UnmappedMemoryRegion, VSpace, VSpaceError,
+    shared_status, MappedMemoryRegion, ScratchRegion, UnmappedMemoryRegion, VSpace, VSpaceError,
 };
 
 /// A multi-consumer that consumes interrupt-style notifications
@@ -276,7 +275,7 @@ where
         consumer_token: &mut ConsumerToken,
         shared_region_ut: LocalCap<Untyped<PageBits>>,
         local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
-        consumer_vspace: &mut VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Auto>,
+        consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
     ) -> Result<(Consumer1<role::Child, E, ELen, IRQ>, ProducerSetup<E, ELen>), MultiConsumerError>
@@ -345,7 +344,7 @@ where
         notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
         shared_region_ut: LocalCap<Untyped<PageBits>>,
         local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
-        consumer_vspace: &mut VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Auto>,
+        consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         local_slots: LocalCNodeSlots<U3>,
         consumer_slot: ChildCNodeSlots<U1>,
@@ -441,7 +440,7 @@ where
         consumer_token: &ConsumerToken,
         shared_region_ut: LocalCap<Untyped<PageBits>>,
         local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
-        consumer_vspace: &mut VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Auto>,
+        consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
     ) -> Result<
@@ -539,7 +538,7 @@ where
         consumer_token: &ConsumerToken,
         shared_region_ut: LocalCap<Untyped<PageBits>>,
         local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
-        consumer_vspace: &mut VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Auto>,
+        consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
     ) -> Result<
@@ -623,7 +622,7 @@ fn create_region_filled_with_array_queue<
 >(
     shared_region_ut: LocalCap<Untyped<PageBits>>,
     local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
-    consumer_vspace: &mut VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Auto>,
+    consumer_vspace: &mut VSpace,
     local_cnode: &LocalCap<LocalCNode>,
     dest_slots: LocalCNodeSlots<U2>,
 ) -> Result<
@@ -1000,7 +999,7 @@ where
     pub fn new(
         setup: &ProducerSetup<T, QLen>,
         dest_slot: ChildCNodeSlot,
-        child_vspace: &mut VSpace<vspace_state::Imaged, role::Local, vspace_mapping_mode::Auto>,
+        child_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         local_slot: LocalCNodeSlot,
     ) -> Result<Self, MultiConsumerError> {
