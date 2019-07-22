@@ -265,6 +265,18 @@ where
         WeakMappedMemoryRegion::try_from_caps(self.caps.weaken(), self.kind, SizeBits::U8)
             .expect("Cap page slots to memory region size invariant maintained by type signature")
     }
+    /// N.B. until MemoryKind tracking is added to Page, this is a lossy conversion
+    /// that will assume the Region was for General memory
+    pub(crate) fn to_page(self) -> LocalCap<Page<page_state::Mapped>>
+    where
+        SizeBits: IsEqual<PageBits, Output = True>,
+    {
+        Cap {
+            cptr: self.caps.start_cptr,
+            cap_data: self.caps.start_cap_data,
+            _role: PhantomData,
+        }
+    }
 
     #[cfg(feature = "test_support")]
     /// Super dangerous copy-aliasing
@@ -302,7 +314,7 @@ where
         {
             vaddr
         } else {
-            return Err(VSpaceError::ExceededAvailableAddressSpace);
+            return Err(VSpaceError::ExceededAddressableSpace);
         };
 
         let new_offset = self.caps.start_cptr + (self.caps.len() / 2);

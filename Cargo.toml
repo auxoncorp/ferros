@@ -9,8 +9,6 @@ default = []
 test_support = []
 
 [dependencies]
-# NOTE: We use a git dependency directly since the git submodules
-# don't currently work when pulled down from crates.io
 selfe-sys = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
 typenum = { git = "ssh://github.com/auxoncorp/typenum" }
 registers = { git = "ssh://github.com/auxoncorp/registers" }
@@ -18,10 +16,16 @@ generic-array = { git = "ssh://github.com/auxoncorp/generic-array", branch = "au
 cross_queue = { path = "./cross_queue" }
 smart_alloc = { path = "./smart_alloc" }
 pdqsort = "1"
+heapless = "0.4.4"
 
 [dependencies.arrayvec]
 version = "0.4.10"
 default-features = false
+
+[patch.crates-io]
+typenum = { git = "ssh://github.com/auxoncorp/typenum" }
+hash32 = { git = "ssh://github.com/auxoncorp/hash32", branch = "no-std" }
+generic-array = { git = "ssh://github.com/auxoncorp/generic-array", branch = "auxon-typenum" }
 
 [build-dependencies]
 selfe-config = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
