@@ -76,7 +76,7 @@ pub fn self_hosted_mem_mgmt(
             root_cnode,
             sh_main,
             params,
-            ut,
+            Some(ut),
             ut,
             slots,
             cap_transfer_slots.weaken(),

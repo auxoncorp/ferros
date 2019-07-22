@@ -85,7 +85,7 @@ pub fn fault_or_message_handler(
                         root_cnode,
                         proc_main,
                         params,
-                        ut,
+                        Some(ut),
                         ut,
                         slots,
                         tpa,

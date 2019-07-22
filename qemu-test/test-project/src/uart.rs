@@ -101,7 +101,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             &root_cnode,
             uart::run,
             uart1_params,
-            ut,
+            Some(ut),
             ut,
             slots,
             root_tcb.as_ref(),

@@ -54,7 +54,7 @@ pub fn memory_read_protection(
             root_cnode,
             proc_main,
             params,
-            ut,
+            Some(ut),
             ut,
             slots,
             tpa,

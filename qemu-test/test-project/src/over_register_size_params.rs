@@ -57,7 +57,7 @@ pub fn over_register_size_params<'a, 'b, 'c>(
             root_cnode,
             proc_main,
             params,
-            ut,
+            Some(ut),
             ut,
             slots,
             tpa,

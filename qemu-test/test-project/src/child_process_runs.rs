@@ -55,7 +55,7 @@ pub fn child_process_runs(
             root_cnode,
             proc_main,
             params,
-            ut,
+            Some(ut),
             ut,
             slots,
             tpa,
