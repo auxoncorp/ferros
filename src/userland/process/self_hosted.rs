@@ -42,7 +42,7 @@ impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
         parent_cnode: &LocalCap<LocalCNode>,
         function_descriptor: extern "C" fn(VSpace<vspace_state::Imaged, role::Local>, T) -> (),
         process_parameter: SetupVer<T>,
-        ipc_buffer_ut: LocalCap<Untyped<PageBits>>,
+        ipc_buffer_ut: Option<LocalCap<Untyped<PageBits>>>,
         tcb_ut: LocalCap<Untyped<<ThreadControlBlock as DirectRetype>::SizeBits>>,
         slots: LocalCNodeSlots<Sum<NumPages<StackBitSize>, U2>>,
         mut cap_transfer_slots: LocalCap<WCNodeSlotsData<role::Child>>,
@@ -80,20 +80,25 @@ impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
         }
 
         // Allocate and map the ipc buffer
-        let (ipc_slots, misc_slots) = misc_slots.alloc();
-        let ipc_buffer = ipc_buffer_ut.retype(ipc_slots)?;
-        // TODO - can we really let the mapping mode be either and also do some auto-allocation for the IPC buffer and stack?
-        let ipc_buffer = vspace.map_region(
-            ipc_buffer.to_region(),
-            CapRights::RW,
-            arch::vm_attributes::DEFAULT & arch::vm_attributes::EXECUTE_NEVER,
-        )?;
+        let (ipc_buffer, mut tcb): (_, LocalCap<ThreadControlBlock>) =
+            if let Some(ipc_buffer_ut) = ipc_buffer_ut {
+                let (ipc_slots, misc_slots) = misc_slots.alloc();
+                let ipc_buffer = ipc_buffer_ut.retype(ipc_slots)?;
+                let ipc_buffer = vspace.map_region(
+                    ipc_buffer.to_region(),
+                    CapRights::RW,
+                    arch::vm_attributes::DEFAULT & arch::vm_attributes::EXECUTE_NEVER,
+                )?;
+                let (tcb_slots, _slots) = misc_slots.alloc();
+                let tcb = tcb_ut.retype(tcb_slots)?;
+                (Some(ipc_buffer.to_page()), tcb)
+            } else {
+                let (tcb_slots, _slots) = misc_slots.alloc();
+                let tcb = tcb_ut.retype(tcb_slots)?;
+                (None, tcb)
+            };
 
-        // allocate the thread control block
-        let (tcb_slots, _slots) = misc_slots.alloc();
-        let mut tcb = tcb_ut.retype(tcb_slots)?;
-
-        tcb.configure(cspace, fault_source, &vspace, ipc_buffer.to_page())?;
+        tcb.configure(cspace, fault_source, &vspace, ipc_buffer)?;
 
         // Reserve a guard page before the stack
         vspace.skip_pages(1)?;
