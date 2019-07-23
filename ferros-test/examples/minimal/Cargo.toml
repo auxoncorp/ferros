@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 ferros = { path = "../../.." , features = ["test_support"] }
 ferros-test = { path = "../.." }
-typenum = { git = "ssh://github.com/auxoncorp/typenum.git" }
+typenum = "1.10"
 
 [profile.dev]
 panic = "abort"

@@ -4,7 +4,6 @@
 
 extern crate arrayvec;
 extern crate generic_array;
-extern crate registers;
 extern crate selfe_sys;
 extern crate typenum;
 

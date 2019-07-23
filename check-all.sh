@@ -87,6 +87,12 @@ echo "====================== ./smart_alloc ==========================="
     cargo test
 )
 
+echo "====================== ./cross_queue ==========================="
+(
+    cd cross_queue
+    cargo test
+)
+
 echo "============================= ./qemu-test ===================================="
 (
     export PATH="${armv7_toolchain_dir}/bin:${armv8_toolchain_dir}/bin:${PATH}"
