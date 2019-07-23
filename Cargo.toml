@@ -10,9 +10,8 @@ test_support = []
 
 [dependencies]
 selfe-sys = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
-typenum = { git = "ssh://github.com/auxoncorp/typenum" }
-registers = { git = "ssh://github.com/auxoncorp/registers" }
-generic-array = { git = "ssh://github.com/auxoncorp/generic-array", branch = "auxon-typenum" }
+typenum = "1.10"
+generic-array = "0.13.2"
 cross_queue = { path = "./cross_queue" }
 smart_alloc = { path = "./smart_alloc" }
 pdqsort = "1"
@@ -20,10 +19,6 @@ pdqsort = "1"
 [dependencies.arrayvec]
 version = "0.4.10"
 default-features = false
-
-[patch.crates-io]
-typenum = { git = "ssh://github.com/auxoncorp/typenum" }
-generic-array = { git = "ssh://github.com/auxoncorp/generic-array", branch = "auxon-typenum" }
 
 [build-dependencies]
 selfe-config = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }

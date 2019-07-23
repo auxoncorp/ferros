@@ -13,7 +13,7 @@ sel4-start = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
 ferros = { path = "../.." , features = ["test_support"]}
 ferros-test = { path = "../../ferros-test"}
 cross_queue = { path = "../../cross_queue" }
-typenum = { git = "ssh://github.com/auxoncorp/typenum.git" }
+typenum = "1.10"
 registers = { git = "ssh://github.com/auxoncorp/registers.git" }
 
 [profile.dev]

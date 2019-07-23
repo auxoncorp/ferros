@@ -6,5 +6,5 @@ edition = "2018"
 
 [dependencies]
 ferros-test = { path = "../.." , default-features = false }
-typenum = { git = "ssh://github.com/auxoncorp/typenum.git" }
+typenum = "1.10"
 ferros = { path = "mock-ferros" }
