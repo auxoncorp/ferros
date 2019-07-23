@@ -53,7 +53,7 @@ pub fn memory_write_protection<'a, 'b, 'c>(
             root_cnode,
             proc_main,
             params,
-            Some(ut),
+            ut,
             ut,
             slots,
             tpa,
