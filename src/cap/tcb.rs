@@ -62,7 +62,7 @@ impl LocalCap<ThreadControlBlock> {
         cspace_root: LocalCap<ChildCNode>,
         fault_source: Option<FaultSource<role::Child>>,
         vspace: &VSpace<VSpaceState, role::Local>, // vspace_root,
-        ipc_buffer: Option<LocalCap<Page<page_state::Mapped>>>,
+        ipc_buffer: LocalCap<Page<page_state::Mapped>>,
     ) -> Result<(), SeL4Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
         // used by the radix.
@@ -74,12 +74,6 @@ impl LocalCap<ThreadControlBlock> {
         }
         .words[0] as usize;
 
-        let (vaddr, cptr) = if let Some(ipc_buffer) = ipc_buffer {
-            (ipc_buffer.vaddr(), ipc_buffer.cptr)
-        } else {
-            (0, seL4_CapNull as usize)
-        };
-
         unsafe {
             seL4_TCB_Configure(
                 self.cptr,
@@ -88,8 +82,8 @@ impl LocalCap<ThreadControlBlock> {
                 cspace_root_data,
                 vspace.root_cptr(),
                 seL4_NilData as usize, // vspace_root_data, always 0, reserved by kernel?
-                vaddr,
-                cptr,
+                ipc_buffer.vaddr(),    // buffer address
+                ipc_buffer.cptr,       // bufferFrame capability
             )
         }
         .as_result()
