@@ -74,10 +74,10 @@ impl LocalCap<ThreadControlBlock> {
         }
         .words[0] as usize;
 
-        let (vaddr, cptr) = if let Some(ipc_buffer) = ipc_buffer {
-            (ipc_buffer.vaddr(), ipc_buffer.cptr)
+        let (buffer_cap, buffer_vaddr) = if let Some(ipc_buffer) = ipc_buffer {
+            (ipc_buffer.cptr, ipc_buffer.vaddr())
         } else {
-            (0, seL4_CapNull as usize)
+            (seL4_CapNull as usize, 0)
         };
 
         unsafe {
@@ -88,8 +88,8 @@ impl LocalCap<ThreadControlBlock> {
                 cspace_root_data,
                 vspace.root_cptr(),
                 seL4_NilData as usize, // vspace_root_data, always 0, reserved by kernel?
-                vaddr,
-                cptr,
+                buffer_vaddr,          // buffer address
+                buffer_cap,            // bufferFrame capability
             )
         }
         .as_result()

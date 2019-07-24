@@ -69,7 +69,7 @@ pub fn child_process_cap_management(
             root_cnode,
             proc_main,
             params,
-            Some(ut),
+            ut,
             ut,
             slots,
             tpa,
