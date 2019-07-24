@@ -100,6 +100,34 @@ where
     pub fn weaken(self) -> WeakUnmappedMemoryRegion<SS> {
         WeakUnmappedMemoryRegion::unchecked_new(self.caps.start_cptr, self.kind, SizeBits::U8)
     }
+
+    /// In the Ok case, returns a shared, unmapped copy of the memory
+    /// region (backed by fresh page-caps) along with this self-same
+    /// unmapped memory region, marked as shared.
+    pub fn share(
+        self,
+        slots: LocalCNodeSlots<NumPages<SizeBits>>,
+        cnode: &LocalCap<LocalCNode>,
+        rights: CapRights,
+    ) -> Result<
+        (
+            UnmappedMemoryRegion<SizeBits, shared_status::Shared>,
+            UnmappedMemoryRegion<SizeBits, shared_status::Shared>,
+        ),
+        VSpaceError,
+    > {
+        let pages_offset = self.caps.start_cptr;
+        let slots_offset = slots.cap_data.offset;
+
+        for (slot, page) in slots.iter().zip(self.caps.into_iter()) {
+            page.copy(cnode, slot, rights)?;
+        }
+
+        Ok((
+            UnmappedMemoryRegion::unchecked_new(slots_offset, self.kind),
+            UnmappedMemoryRegion::unchecked_new(pages_offset, self.kind),
+        ))
+    }
 }
 
 impl<SizeBits: Unsigned> UnmappedMemoryRegion<SizeBits, shared_status::Exclusive>
