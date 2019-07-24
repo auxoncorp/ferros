@@ -2,7 +2,6 @@ use selfe_sys::seL4_BootInfo;
 use typenum::*;
 
 use crate::arch;
-use crate::arch::cap::*;
 use crate::bootstrap::*;
 use crate::cap::*;
 use crate::test_support::MaxMappedMemoryRegionBitSize;
@@ -18,6 +17,8 @@ pub struct Resources {
     pub(super) mapped_memory_region: MappedMemoryRegion<
         super::types::MaxMappedMemoryRegionBitSize,
         crate::vspace::shared_status::Exclusive,
+        crate::cap::role::Local,
+        crate::cap::memory_kind::General,
     >,
     pub(super) cnode: LocalCap<LocalCNode>,
     pub(super) thread_authority: LocalCap<ThreadPriorityAuthority>,
@@ -33,6 +34,8 @@ pub struct TestResourceRefs<'t> {
     pub(super) mapped_memory_region: &'t mut MappedMemoryRegion<
         super::types::MaxMappedMemoryRegionBitSize,
         crate::vspace::shared_status::Exclusive,
+        crate::cap::role::Local,
+        crate::cap::memory_kind::General,
     >,
     pub(super) cnode: &'t LocalCap<LocalCNode>,
     pub(super) thread_authority: &'t LocalCap<ThreadPriorityAuthority>,
@@ -40,7 +43,8 @@ pub struct TestResourceRefs<'t> {
     pub(super) irq_control: &'t mut LocalCap<IRQControl>,
 }
 
-type PageFallbackNextSize = Sum<U1, <Page<page_state::Unmapped> as DirectRetype>::SizeBits>;
+type PageFallbackNextSize =
+    Sum<U1, <Page<page_state::Unmapped, memory_kind::General> as DirectRetype>::SizeBits>;
 type MappedMemoryRegionFallbackNextSize = Sum<U1, MaxMappedMemoryRegionBitSize>;
 
 impl Resources {
@@ -68,7 +72,7 @@ impl Resources {
         );
         let (extra_scratch_slots, local_slots) = local_slots.alloc();
         let ut_for_scratch = {
-            match allocator.get_untyped::<<Page<page_state::Unmapped> as DirectRetype>::SizeBits>()
+            match allocator.get_untyped::<<Page<page_state::Unmapped, memory_kind::General> as DirectRetype>::SizeBits>()
             {
                 Some(v) => v,
                 None => {
@@ -121,6 +125,8 @@ impl Resources {
         let unmapped_region: UnmappedMemoryRegion<
             MaxMappedMemoryRegionBitSize,
             shared_status::Exclusive,
+            role::Local,
+            memory_kind::General,
         > = UnmappedMemoryRegion::new(memory_region_ut, memory_region_slots)?;
         let mapped_memory_region = root_vspace.map_region(
             unmapped_region,

@@ -6,8 +6,9 @@ use selfe_sys::*;
 
 use crate::arch::{self, PageBits};
 use crate::cap::{
-    role, CNodeRole, CNodeSlotsError, Cap, ChildCNode, DirectRetype, LocalCNode, LocalCNodeSlots,
-    LocalCap, ThreadControlBlock, ThreadPriorityAuthority, Untyped, WCNodeSlotsData,
+    memory_kind, role, CNodeRole, CNodeSlotsError, Cap, ChildCNode, DirectRetype, LocalCNode,
+    LocalCNodeSlots, LocalCap, ThreadControlBlock, ThreadPriorityAuthority, Untyped,
+    WCNodeSlotsData,
 };
 use crate::userland::CapRights;
 use crate::vspace::*;
@@ -38,7 +39,12 @@ impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
     pub fn new<T: RetypeForSetup>(
         mut vspace: VSpace,
         cspace: LocalCap<ChildCNode>,
-        parent_mapped_region: MappedMemoryRegion<StackBitSize, shared_status::Exclusive>,
+        parent_mapped_region: MappedMemoryRegion<
+            StackBitSize,
+            shared_status::Exclusive,
+            role::Local,
+            memory_kind::General,
+        >,
         parent_cnode: &LocalCap<LocalCNode>,
         function_descriptor: extern "C" fn(VSpace<vspace_state::Imaged, role::Local>, T) -> (),
         process_parameter: SetupVer<T>,

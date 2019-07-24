@@ -128,6 +128,8 @@ pub fn with_temporary_resources<
     mapped_memory_region: &mut MappedMemoryRegion<
         MappedBitSize,
         crate::vspace::shared_status::Exclusive,
+        crate::cap::role::Local,
+        crate::cap::memory_kind::General,
     >,
     irq_control: &mut LocalCap<IRQControl>,
     f: Func,
@@ -137,7 +139,12 @@ where
         LocalCNodeSlots<SlotCount>,
         LocalCap<Untyped<UntypedBitSize>>,
         LocalCap<ASIDPool<arch::ASIDPoolSize>>,
-        MappedMemoryRegion<MappedBitSize, crate::vspace::shared_status::Exclusive>,
+        MappedMemoryRegion<
+            MappedBitSize,
+            crate::vspace::shared_status::Exclusive,
+            crate::cap::role::Local,
+            crate::cap::memory_kind::General,
+        >,
         LocalCap<IRQControl>,
     ) -> Result<(), InnerError>,
 

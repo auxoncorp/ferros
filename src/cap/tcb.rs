@@ -1,7 +1,9 @@
 use selfe_sys::*;
 
-use crate::arch::cap::{page_state, Page};
-use crate::cap::{role, CapType, ChildCNode, CopyAliasable, DirectRetype, LocalCap, PhantomCap};
+use crate::cap::{
+    memory_kind, page_state, role, CapType, ChildCNode, CopyAliasable, DirectRetype, LocalCap,
+    Page, PhantomCap,
+};
 use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::FaultSource;
 use crate::vspace::{self, VSpace};
@@ -27,6 +29,11 @@ impl DirectRetype for ThreadControlBlock {
 impl CopyAliasable for ThreadControlBlock {
     type CopyOutput = Self;
 }
+impl<'a> From<&'a ThreadControlBlock> for ThreadControlBlock {
+    fn from(_val: &'a ThreadControlBlock) -> Self {
+        PhantomCap::phantom_instance()
+    }
+}
 
 /// A limited view on a ThreadControlBlock capability
 /// that is only intended for use in establishing
@@ -46,6 +53,12 @@ impl CopyAliasable for ThreadPriorityAuthority {
     type CopyOutput = Self;
 }
 
+impl<'a> From<&'a ThreadPriorityAuthority> for ThreadPriorityAuthority {
+    fn from(_val: &'a ThreadPriorityAuthority) -> Self {
+        PhantomCap::phantom_instance()
+    }
+}
+
 impl AsRef<LocalCap<ThreadPriorityAuthority>> for LocalCap<ThreadControlBlock> {
     fn as_ref(&self) -> &LocalCap<ThreadPriorityAuthority> {
         unsafe { core::mem::transmute(self) }
@@ -62,7 +75,7 @@ impl LocalCap<ThreadControlBlock> {
         cspace_root: LocalCap<ChildCNode>,
         fault_source: Option<FaultSource<role::Child>>,
         vspace: &VSpace<VSpaceState, role::Local>, // vspace_root,
-        ipc_buffer: LocalCap<Page<page_state::Mapped>>,
+        ipc_buffer: LocalCap<Page<page_state::Mapped, memory_kind::General>>,
     ) -> Result<(), SeL4Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
         // used by the radix.

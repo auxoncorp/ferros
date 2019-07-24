@@ -1,54 +1,47 @@
-use core::marker::PhantomData;
-
-use typenum::*;
-
 use selfe_sys::*;
+use typenum::U20;
 
 use crate::cap::{
-    memory_kind, CNodeRole, CapType, CopyAliasable, DirectRetype, LocalCap, MemoryKind, PhantomCap,
+    memory_kind, page_state, CapType, CopyAliasable, DirectRetype, MemoryKind, PageState,
 };
 
-#[derive(Debug)]
-pub struct UnmappedSection<Kind: MemoryKind> {
-    _kind: PhantomData<Kind>,
+#[derive(Debug, Clone)]
+pub struct Section<State: PageState, Kind: MemoryKind> {
+    pub(crate) state: State,
+    pub(crate) memory_kind: Kind,
 }
 
-impl<Kind: MemoryKind> CapType for UnmappedSection<Kind> {}
+impl<State: PageState, Kind: MemoryKind> CapType for Section<State, Kind> {}
 
-impl<Kind: MemoryKind> PhantomCap for UnmappedSection<Kind> {
-    fn phantom_instance() -> Self {
-        UnmappedSection {
-            _kind: PhantomData::<Kind>,
-        }
-    }
-}
-
-impl DirectRetype for UnmappedSection<memory_kind::General> {
+impl DirectRetype for Section<page_state::Unmapped, memory_kind::General> {
     type SizeBits = U20;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_SectionObject as usize
     }
 }
 
-impl<Kind: MemoryKind> CopyAliasable for UnmappedSection<Kind> {
+impl<Kind: MemoryKind> CopyAliasable for Section<page_state::Unmapped, Kind> {
     type CopyOutput = Self;
 }
 
-#[derive(Debug)]
-pub struct MappedSection<Role: CNodeRole, Kind: MemoryKind> {
-    pub(crate) vaddr: usize,
-    pub(crate) _role: PhantomData<Role>,
-    pub(crate) _kind: PhantomData<Kind>,
+impl<Kind: MemoryKind> CopyAliasable for Section<page_state::Mapped, Kind> {
+    type CopyOutput = Section<page_state::Unmapped, Kind>;
 }
 
-impl<Role: CNodeRole, Kind: MemoryKind> LocalCap<MappedSection<Role, Kind>> {
-    pub fn vaddr(&self) -> usize {
-        self.cap_data.vaddr
+impl<'a, State: PageState, Kind: MemoryKind> From<&'a Section<State, Kind>>
+    for Section<State, Kind>
+{
+    fn from(val: &'a Section<State, Kind>) -> Self {
+        val.clone()
     }
 }
-
-impl<Role: CNodeRole, Kind: MemoryKind> CapType for MappedSection<Role, Kind> {}
-
-impl<Role: CNodeRole, Kind: MemoryKind> CopyAliasable for MappedSection<Role, Kind> {
-    type CopyOutput = UnmappedSection<Kind>;
+impl<'a, Kind: MemoryKind> From<&'a Section<page_state::Mapped, Kind>>
+    for Section<page_state::Unmapped, Kind>
+{
+    fn from(val: &'a Section<page_state::Mapped, Kind>) -> Self {
+        Section {
+            state: page_state::Unmapped {},
+            memory_kind: val.memory_kind.clone(),
+        }
+    }
 }

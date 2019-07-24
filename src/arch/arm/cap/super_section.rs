@@ -1,56 +1,47 @@
-use core::marker::PhantomData;
-
 use selfe_sys::*;
-
-use typenum::*;
+use typenum::U24;
 
 use crate::cap::{
-    memory_kind, role, CNodeRole, Cap, CapType, CopyAliasable, DirectRetype, MemoryKind, PhantomCap,
+    memory_kind, page_state, CapType, CopyAliasable, DirectRetype, MemoryKind, PageState,
 };
 
-#[derive(Debug)]
-pub struct UnmappedSuperSection<Kind: MemoryKind> {
-    _kind: PhantomData<Kind>,
+#[derive(Debug, Clone)]
+pub struct SuperSection<State: PageState, Kind: MemoryKind> {
+    pub(crate) state: State,
+    pub(crate) memory_kind: Kind,
 }
 
-impl<Kind: MemoryKind> CapType for UnmappedSuperSection<Kind> {}
+impl<State: PageState, Kind: MemoryKind> CapType for SuperSection<State, Kind> {}
 
-impl<Kind: MemoryKind> PhantomCap for UnmappedSuperSection<Kind> {
-    fn phantom_instance() -> Self {
-        UnmappedSuperSection {
-            _kind: PhantomData::<Kind>,
-        }
-    }
-}
-
-impl DirectRetype for UnmappedSuperSection<memory_kind::General> {
+impl DirectRetype for SuperSection<page_state::Unmapped, memory_kind::General> {
     type SizeBits = U24;
     fn sel4_type_id() -> usize {
         _object_seL4_ARM_SuperSectionObject as usize
     }
 }
 
-impl<Kind: MemoryKind> CopyAliasable for UnmappedSuperSection<Kind> {
+impl<Kind: MemoryKind> CopyAliasable for SuperSection<page_state::Unmapped, Kind> {
     type CopyOutput = Self;
 }
 
-#[derive(Debug)]
-pub struct MappedSuperSection<Role: CNodeRole, Kind: MemoryKind> {
-    pub(crate) vaddr: usize,
-    pub(crate) _role: PhantomData<Role>,
-    pub(crate) _kind: PhantomData<Kind>,
+impl<Kind: MemoryKind> CopyAliasable for SuperSection<page_state::Mapped, Kind> {
+    type CopyOutput = SuperSection<page_state::Unmapped, Kind>;
 }
 
-impl Cap<MappedSuperSection<role::Child, memory_kind::Device>, role::Local> {
-    /// `vaddr` allows a parent process to extract the vaddr of a
-    /// device page mapped into a child's VSpace.
-    pub fn vaddr(&self) -> usize {
-        self.cap_data.vaddr
+impl<'a, State: PageState, Kind: MemoryKind> From<&'a SuperSection<State, Kind>>
+    for SuperSection<State, Kind>
+{
+    fn from(val: &'a SuperSection<State, Kind>) -> Self {
+        val.clone()
     }
 }
-
-impl<Role: CNodeRole, Kind: MemoryKind> CapType for MappedSuperSection<Role, Kind> {}
-
-impl<Role: CNodeRole, Kind: MemoryKind> CopyAliasable for MappedSuperSection<Role, Kind> {
-    type CopyOutput = UnmappedSuperSection<Kind>;
+impl<'a, Kind: MemoryKind> From<&'a SuperSection<page_state::Mapped, Kind>>
+    for SuperSection<page_state::Unmapped, Kind>
+{
+    fn from(val: &'a SuperSection<page_state::Mapped, Kind>) -> Self {
+        SuperSection {
+            state: page_state::Unmapped {},
+            memory_kind: val.memory_kind.clone(),
+        }
+    }
 }

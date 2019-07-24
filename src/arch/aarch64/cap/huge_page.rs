@@ -5,52 +5,47 @@ use selfe_sys::*;
 use crate::arch::HugePageBits;
 
 use crate::cap::{
-    memory_kind, role, CNodeRole, Cap, CapType, CopyAliasable, DirectRetype, MemoryKind, PhantomCap,
+    memory_kind, page_state, role, CNodeRole, Cap, CapType, CopyAliasable, DirectRetype,
+    MemoryKind, PageState, PhantomCap,
 };
 
-#[derive(Debug)]
-pub struct UnmappedHugePage<Kind: MemoryKind> {
-    _kind: PhantomData<Kind>,
+#[derive(Debug, Clone)]
+pub struct HugePage<State: PageState, Kind: MemoryKind> {
+    pub(crate) state: State,
+    pub(crate) memory_kind: Kind,
 }
 
-impl<Kind: MemoryKind> CapType for UnmappedHugePage<Kind> {}
+impl<State: PageState, Kind: MemoryKind> CapType for HugePage<State, Kind> {}
 
-impl<Kind: MemoryKind> PhantomCap for UnmappedHugePage<Kind> {
-    fn phantom_instance() -> Self {
-        UnmappedHugePage {
-            _kind: PhantomData::<Kind>,
-        }
-    }
-}
-
-impl DirectRetype for UnmappedHugePage<memory_kind::General> {
+impl DirectRetype for HugePage<page_state::Unmapped, memory_kind::General> {
     type SizeBits = HugePageBits;
     fn sel4_type_id() -> usize {
         _mode_object_seL4_ARM_HugePageObject as usize
     }
 }
 
-impl<Kind: MemoryKind> CopyAliasable for UnmappedHugePage<Kind> {
+impl<Kind: MemoryKind> CopyAliasable for HugePage<page_state::Unmapped, Kind> {
     type CopyOutput = Self;
 }
 
-#[derive(Debug)]
-pub struct MappedHugePage<Role: CNodeRole, Kind: MemoryKind> {
-    pub(crate) vaddr: usize,
-    pub(crate) _role: PhantomData<Role>,
-    pub(crate) _kind: PhantomData<Kind>,
+impl<Kind: MemoryKind> CopyAliasable for HugePage<page_state::Mapped, Kind> {
+    type CopyOutput = HugePage<page_state::Unmapped, Kind>;
 }
 
-impl Cap<MappedHugePage<role::Child, memory_kind::Device>, role::Local> {
-    /// `vaddr` allows a parent process to extract the vaddr of a
-    /// device page mapped into a child's VSpace.
-    pub fn vaddr(&self) -> usize {
-        self.cap_data.vaddr
+impl<'a, State: PageState, Kind: MemoryKind> From<&'a HugePage<State, Kind>>
+    for HugePage<State, Kind>
+{
+    fn from(val: &'a HugePage<State, Kind>) -> Self {
+        val.clone()
     }
 }
-
-impl<Role: CNodeRole, Kind: MemoryKind> CapType for MappedHugePage<Role, Kind> {}
-
-impl<Role: CNodeRole, Kind: MemoryKind> CopyAliasable for MappedHugePage<Role, Kind> {
-    type CopyOutput = UnmappedHugePage<Kind>;
+impl<'a, Kind: MemoryKind> From<&'a HugePage<page_state::Mapped, Kind>>
+    for HugePage<page_state::Unmapped, Kind>
+{
+    fn from(val: &'a HugePage<page_state::Mapped, Kind>) -> Self {
+        HugePage {
+            state: page_state::Unmapped {},
+            memory_kind: val.memory_kind.clone(),
+        }
+    }
 }

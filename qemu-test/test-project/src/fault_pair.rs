@@ -9,7 +9,7 @@ use ferros::alloc::{smart_alloc, ut_buddy};
 use ferros::arch::fault::Fault;
 use ferros::bootstrap::UserImage;
 use ferros::cap::{
-    retype, retype_cnode, role, ASIDPool, CNodeRole, CNodeSlotsData, Cap, FaultReplyEndpoint,
+    memory_kind, retype, retype_cnode, role, ASIDPool, CNodeRole, CNodeSlotsData, Cap, FaultReplyEndpoint,
     LocalCNode, LocalCNodeSlots, LocalCap, ThreadPriorityAuthority, Untyped,
 };
 use ferros::userland::{
@@ -27,7 +27,7 @@ pub fn fault_pair(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U2>>,
-    local_mapped_region: MappedMemoryRegion<U18, shared_status::Exclusive>,
+    local_mapped_region: MappedMemoryRegion<U18, shared_status::Exclusive, role::Local, memory_kind::General>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -69,12 +69,14 @@ pub fn fault_pair(
         let (slots_sink, fault_handler_slots) = fault_handler_slots.alloc();
         let (fault_source, fault_sink) =
             setup_fault_endpoint_pair(&root_cnode, ut, slots, slots_source, slots_sink)?;
+        debug_println!("Made fault_source: {:?} and fault_sink: {:?}", fault_source, fault_sink);
 
         let mischief_maker_params = MischiefMakerParams { _role: PhantomData };
 
         let (outcome_sender_slots, fault_handler_slots) = fault_handler_slots.alloc();
         let (fault_source_for_the_handler, outcome_sender, handler) =
             fault_or_message_channel(&root_cnode, ut, slots, outcome_sender_slots, slots)?;
+        debug_println!("Made fault_source_for_the_handler and outcome_sender: {:?} and fault_sink: {:?}", fault_source_for_the_handler, outcome_sender);
 
         smart_alloc! {|slots_fh: fault_handler_slots| {
             let (_fh_cnode_for_child, slots_for_fh) = fault_handler_cnode.generate_self_reference(&root_cnode, slots_fh)?;
@@ -100,7 +102,7 @@ pub fn fault_pair(
             tpa,
             Some(fault_source),
         )?;
-        mischief_maker_process.start()?;
+        //mischief_maker_process.start()?;
 
         let fault_handler_process = StandardProcess::new(
             &mut fault_handler_vspace,
@@ -113,16 +115,20 @@ pub fn fault_pair(
             ut,
             slots,
             tpa,
-            Some(fault_source_for_the_handler),
+            None, //Some(fault_source_for_the_handler),
         )?;
         fault_handler_process.start()?;
     });
 
+    debug_println!("About to await message or fault in fault_pair main");
     match handler.await_message()? {
         FaultOrMessage::Message(true) => Ok(()),
-        _ => Err(TopLevelError::TestAssertionFailure(
-            "Child process should have reported success",
-        )),
+        x => {
+            debug_println!("Unexpected fault or message: {:?}", x);
+            Err(TopLevelError::TestAssertionFailure(
+                "Child process should have reported success",
+            ))
+        },
     }
 }
 
@@ -147,45 +153,51 @@ impl RetypeForSetup for MischiefDetectorParams<role::Local> {
 }
 
 pub extern "C" fn mischief_maker_proc(_p: MischiefMakerParams<role::Local>) {
+    debug_println!("In mischief_maker proc");
     unsafe { seL4_Send(314159, seL4_MessageInfo_new(0, 0, 0, 0)) }
 
     debug_println!("This is after the capability fault inducing code, and should not be printed.");
 }
 
 pub extern "C" fn fault_handler_proc(p: MischiefDetectorParams<role::Local>) {
-    let fault = p.fault_sink.wait_for_fault();
+    debug_println!("In fault_handler_proc, with params:\n{:?}", p);
+    //let fault = p.fault_sink.wait_for_fault();
+    //debug_println!("Caught some sort of fault signal in fault_handler_proc");
 
-    match fault {
-        Fault::CapFault(_) => (),
-        f => {
-            debug_println!("Received fault {:?}, which is not the expected CapFault", f);
-            p.outcome_sender
-                .blocking_send(&false)
-                .expect("Failed to send test outcome");
-            return;
-        }
-    }
+    //match fault {
+    //    Fault::CapFault(cf) => {
+    //        debug_println!("Caught a CapFault, as expected, in fault_handler proc: {:?}", cf);
+    //        ()
+    //    } ,
+    //    f => {
+    //        debug_println!("Received fault {:?}, which is not the expected CapFault", f);
+    //        p.outcome_sender
+    //            .blocking_send(&false)
+    //            .expect("Failed to send test outcome");
+    //        return;
+    //    }
+    //}
 
-    let reply = LocalCap::<FaultReplyEndpoint>::save_caller_and_create(p.local_slots)
-        .expect("Failed to save caller");
+    //let reply = LocalCap::<FaultReplyEndpoint>::save_caller_and_create(p.local_slots)
+    //    .expect("Failed to save caller");
 
-    // resume the thread, which will try to do the same thing as becore and fault again
-    let slot = reply.resume_faulted_thread();
-    let fault = p.fault_sink.wait_for_fault();
+    //// resume the thread, which will try to do the same thing as before and fault again
+    //let slot = reply.resume_faulted_thread();
+    //let fault = p.fault_sink.wait_for_fault();
 
-    match fault {
-        Fault::CapFault(_) => (),
-        f => {
-            debug_println!("Received fault {:?}, which is not the expected CapFault", f);
-            p.outcome_sender
-                .blocking_send(&false)
-                .expect("Failed to send test outcome");
-            return;
-        }
-    }
+    //match fault {
+    //    Fault::CapFault(_) => (),
+    //    f => {
+    //        debug_println!("Received fault {:?}, which is not the expected CapFault", f);
+    //        p.outcome_sender
+    //            .blocking_send(&false)
+    //            .expect("Failed to send test outcome");
+    //        return;
+    //    }
+    //}
 
-    // Make sure we can reuse the slot a second time, and manually
-    let reply = LocalCap::<FaultReplyEndpoint>::save_caller_and_create(slot);
+    //// Make sure we can reuse the slot a second time, and manually
+    //let reply = LocalCap::<FaultReplyEndpoint>::save_caller_and_create(slot);
 
     p.outcome_sender
         .blocking_send(&true)

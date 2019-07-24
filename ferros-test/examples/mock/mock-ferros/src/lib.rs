@@ -34,7 +34,7 @@ pub mod userland {
 pub mod vspace {
     use core::marker::PhantomData;
     pub struct ScratchRegion<'a, 'b, T = ()>(pub PhantomData<&'a T>, pub PhantomData<&'b T>);
-    pub struct MappedMemoryRegion<T, SS: SharedStatus>(PhantomData<T>, PhantomData<SS>);
+    pub struct MappedMemoryRegion<T, SS: SharedStatus, CapRole: super::cap::CNodeRole, MemKind: super::cap::MemoryKind>(PhantomData<T>, PhantomData<SS>, PhantomData<CapRole>, PhantomData<MemKind>);
     pub trait SharedStatus {}
     pub mod shared_status {
         pub struct Exclusive;
@@ -52,12 +52,19 @@ pub mod cap {
     pub struct IRQControl;
     pub struct LocalCNode;
     pub struct ThreadPriorityAuthority;
+    pub trait CNodeRole {}
+    pub trait MemoryKind {}
 
     #[derive(Debug)]
     pub struct SeL4Error;
 
     pub mod role {
         pub struct Local;
+        impl super::CNodeRole for Local {}
+    }
+    pub mod memory_kind {
+        pub struct General;
+        impl super::MemoryKind for General {}
     }
 
     impl<Size: Unsigned> LocalCNodeSlots<Size> {

@@ -23,7 +23,7 @@ pub fn dont_tread_on_me<'a, 'b, 'c>(
     local_slots: LocalCNodeSlots<U42768>,
     local_ut: LocalCap<Untyped<U27>>,
     asid_pool: LocalCap<ASIDPool<U2>>,
-    local_mapped_region: MappedMemoryRegion<U18, shared_status::Exclusive>,
+    local_mapped_region: MappedMemoryRegion<U18, shared_status::Exclusive, role::Local, memory_kind::General>,
     local_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,

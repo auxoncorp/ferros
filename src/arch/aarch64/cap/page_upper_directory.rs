@@ -17,7 +17,7 @@ pub struct PageUpperDirectory {}
 
 impl Maps<PageDirectory> for PageUpperDirectory {
     fn map_granule<RootLowerLevel, Root>(
-        &mut self,
+        &self,
         dir: &LocalCap<PageDirectory>,
         addr: usize,
         root: &mut LocalCap<Root>,

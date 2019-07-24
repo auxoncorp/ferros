@@ -47,9 +47,9 @@ use typenum::*;
 
 use crate::arch::{self, PageBits, PageBytes};
 use crate::cap::{
-    irq_state, role, Badge, CNodeRole, Cap, ChildCNodeSlot, ChildCNodeSlots, DirectRetype,
-    IRQControl, IRQError, IRQHandler, InternalASID, LocalCNode, LocalCNodeSlot, LocalCNodeSlots,
-    LocalCap, MaxIRQCount, Notification, PhantomCap, Untyped,
+    irq_state, memory_kind, role, Badge, CNodeRole, Cap, ChildCNodeSlot, ChildCNodeSlots,
+    DirectRetype, IRQControl, IRQError, IRQHandler, InternalASID, LocalCNode, LocalCNodeSlot,
+    LocalCNodeSlots, LocalCap, MaxIRQCount, Notification, PhantomCap, Untyped,
 };
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
@@ -194,7 +194,8 @@ impl From<VSpaceError> for MultiConsumerError {
 /// to add a new producer to a given queue
 /// ingested by a multi-consumer (e.g. `Consumer1`)
 pub struct ProducerSetup<T, QLen: Unsigned> {
-    shared_region: UnmappedMemoryRegion<PageBits, shared_status::Shared>,
+    shared_region:
+        UnmappedMemoryRegion<PageBits, shared_status::Shared, role::Local, memory_kind::General>,
     queue_badge: Badge,
     // User-concealed alias'ing happening here.
     // Don't mutate this Cap. Copying/minting is okay.
@@ -627,8 +628,8 @@ fn create_region_filled_with_array_queue<
     dest_slots: LocalCNodeSlots<U2>,
 ) -> Result<
     (
-        UnmappedMemoryRegion<PageBits, shared_status::Shared>,
-        MappedMemoryRegion<PageBits, shared_status::Shared>,
+        UnmappedMemoryRegion<PageBits, shared_status::Shared, role::Local, memory_kind::General>,
+        MappedMemoryRegion<PageBits, shared_status::Shared, role::Local, memory_kind::General>,
     ),
     MultiConsumerError,
 >

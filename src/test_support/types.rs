@@ -25,6 +25,8 @@ pub type RunTest = Fn(
     crate::vspace::MappedMemoryRegion<
         MaxMappedMemoryRegionBitSize,
         crate::vspace::shared_status::Exclusive,
+        crate::cap::role::Local,
+        crate::cap::memory_kind::General,
     >,
     &LocalCap<LocalCNode>,
     &LocalCap<ThreadPriorityAuthority>,

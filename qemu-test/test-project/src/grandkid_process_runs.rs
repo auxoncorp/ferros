@@ -20,7 +20,7 @@ pub fn grandkid_process_runs(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U27>>,
     asid_pool: LocalCap<ASIDPool<U6>>,
-    local_mapped_region: MappedMemoryRegion<U17, shared_status::Exclusive>,
+    local_mapped_region: MappedMemoryRegion<U17, shared_status::Exclusive, role::Local, memory_kind::General>,
     cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -62,7 +62,7 @@ pub fn grandkid_process_runs(
                 slots,
             )?;
 
-            let child_unmapped_region: UnmappedMemoryRegion<U17, shared_status::Exclusive> =
+            let child_unmapped_region: UnmappedMemoryRegion<U17, shared_status::Exclusive, _, _> =
                 UnmappedMemoryRegion::new(ut, slots)?;
             let child_mapped_region = child_vspace.map_region_and_move(
                 child_unmapped_region,
@@ -115,7 +115,7 @@ pub struct ChildParams<Role: CNodeRole> {
     untyped: Cap<Untyped<U25>, Role>,
     asid_pool: Cap<ASIDPool<U2>, Role>,
     user_image: UserImage<Role>,
-    mapped_region: MappedMemoryRegion<U17, shared_status::Exclusive>,
+    mapped_region: MappedMemoryRegion<U17, shared_status::Exclusive, Role, memory_kind::General>,
     thread_priority_authority: Cap<ThreadPriorityAuthority, Role>,
     outcome_sender: Sender<bool, Role>,
 }

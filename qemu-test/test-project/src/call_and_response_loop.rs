@@ -2,7 +2,7 @@ use super::TopLevelError;
 use ferros::alloc::{smart_alloc, ut_buddy};
 use ferros::bootstrap::UserImage;
 use ferros::cap::{
-    retype, retype_cnode, role, ASIDPool, CNodeRole, LocalCNode, LocalCNodeSlots, LocalCap,
+    memory_kind, retype, retype_cnode, role, ASIDPool, CNodeRole, LocalCNode, LocalCNodeSlots, LocalCap,
     ThreadPriorityAuthority, Untyped,
 };
 use ferros::userland::*;
@@ -16,7 +16,7 @@ pub fn call_and_response_loop(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U2>>,
-    local_mapped_region: MappedMemoryRegion<U18, shared_status::Exclusive>,
+    local_mapped_region: MappedMemoryRegion<U18, shared_status::Exclusive, role::Local, memory_kind::General>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,

@@ -20,7 +20,7 @@ pub fn double_door_backpressure(
     local_slots: LocalCNodeSlots<U66536>,
     local_ut: LocalCap<Untyped<U27>>,
     asid_pool: LocalCap<ASIDPool<U4>>,
-    local_mapped_region: MappedMemoryRegion<U19, shared_status::Exclusive>,
+    local_mapped_region: MappedMemoryRegion<U19, shared_status::Exclusive, role::Local, memory_kind::General>,
     local_vspace_scratch: &mut ScratchRegion,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,

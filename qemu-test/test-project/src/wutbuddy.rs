@@ -3,7 +3,6 @@ use super::TopLevelError;
 use typenum::*;
 
 use ferros::alloc::ut_buddy::weak_ut_buddy;
-use ferros::arch::cap::{page_state, Page};
 use ferros::cap::*;
 
 #[ferros_test::ferros_test]
@@ -20,11 +19,11 @@ pub fn wutbuddy(
     assert_eq!(weak_12.size_bits(), 12);
 
     // Can we actually use it as that size?
-    let _ = weak_12.retype::<Page<page_state::Unmapped>>(&mut weak_slots)?;
+    let _ = weak_12.retype::<Page<page_state::Unmapped, memory_kind::General>>(&mut weak_slots)?;
 
     let ut12 = wut.alloc_strong::<U12>(&mut weak_slots)?;
 
     // Same story with the strong untyped.
-    let _ = ut12.retype::<Page<page_state::Unmapped>, role::Local>(strong_slot)?;
+    let _ = ut12.retype::<Page<page_state::Unmapped, memory_kind::General>, role::Local>(strong_slot)?;
     Ok(())
 }

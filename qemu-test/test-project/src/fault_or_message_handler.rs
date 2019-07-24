@@ -17,7 +17,7 @@ pub fn fault_or_message_handler(
     mut outer_ut: LocalCap<Untyped<U21>>,
     mut asid_pool: LocalCap<ASIDPool<U512>>,
     mut irq_control: LocalCap<IRQControl>,
-    mut local_mapped_region: MappedMemoryRegion<U17, shared_status::Exclusive>,
+    mut local_mapped_region: MappedMemoryRegion<U17, shared_status::Exclusive, role::Local, memory_kind::General>,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,

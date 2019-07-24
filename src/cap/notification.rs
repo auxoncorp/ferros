@@ -16,6 +16,11 @@ impl PhantomCap for Notification {
 impl CopyAliasable for Notification {
     type CopyOutput = Self;
 }
+impl<'a> From<&'a Notification> for Notification {
+    fn from(_val: &'a Notification) -> Self {
+        PhantomCap::phantom_instance()
+    }
+}
 
 impl Mintable for Notification {}
 

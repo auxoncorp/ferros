@@ -19,6 +19,12 @@ impl CopyAliasable for Endpoint {
     type CopyOutput = Self;
 }
 
+impl<'a> From<&'a Endpoint> for Endpoint {
+    fn from(_val: &'a Endpoint) -> Self {
+        PhantomCap::phantom_instance()
+    }
+}
+
 impl Mintable for Endpoint {}
 
 impl DirectRetype for Endpoint {

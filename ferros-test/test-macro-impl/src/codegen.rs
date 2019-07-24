@@ -269,6 +269,8 @@ fn run_test_decl() -> FnDecl {
             ferros::vspace::MappedMemoryRegion<
                 ferros::test_support::MaxMappedMemoryRegionBitSize,
                 ferros::vspace::shared_status::Exclusive,
+                ferros::cap::role::Local,
+                ferros::cap::memory_kind::General,
             >
     ));
     run_test_inputs.push(parse_quote!(
@@ -345,7 +347,8 @@ mod tests {
                     ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>>,
                 scratch: &mut ferros::vspace::ScratchRegion,
                 mapped_memory_region: ferros::vspace::MappedMemoryRegion<
-                    ferros::test_support::MaxMappedMemoryRegionBitSize, ferros::vspace::shared_status::Exclusive,>,
+                    ferros::test_support::MaxMappedMemoryRegionBitSize, ferros::vspace::shared_status::Exclusive,
+                    ferros::cap::role::Local,ferros::cap::memory_kind::General,>,
                 local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
                 thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
                 user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>,
@@ -407,7 +410,8 @@ mod tests {
                     ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>>,
                 scratch: &mut ferros::vspace::ScratchRegion,
                 mapped_memory_region: ferros::vspace::MappedMemoryRegion<
-                    ferros::test_support::MaxMappedMemoryRegionBitSize, ferros::vspace::shared_status::Exclusive,>,
+                    ferros::test_support::MaxMappedMemoryRegionBitSize, ferros::vspace::shared_status::Exclusive,
+                    ferros::cap::role::Local,ferros::cap::memory_kind::General,>,
                 local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
                 thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
                 user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>,
@@ -473,7 +477,9 @@ mod tests {
                     ferros::cap::ASIDPool<ferros::test_support::MaxTestASIDPoolSize>>,
                 scratch: &mut ferros::vspace::ScratchRegion,
                 mapped_memory_region: ferros::vspace::MappedMemoryRegion<
-                    ferros::test_support::MaxMappedMemoryRegionBitSize, ferros::vspace::shared_status::Exclusive,>,
+                    ferros::test_support::MaxMappedMemoryRegionBitSize, ferros::vspace::shared_status::Exclusive,
+                    ferros::cap::role::Local, ferros::cap::memory_kind::General,
+                >,
                 local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
                 thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
                 user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>,
