@@ -213,6 +213,23 @@ pub struct WUTBuddy<Role: CNodeRole = role::Local> {
     _role: PhantomData<Role>,
 }
 
+impl<Role: CNodeRole> core::fmt::Debug for WUTBuddy<Role> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.write_str("WUTBuddy { pool:\n")?;
+        let mut bit_size = MinUntypedSize::USIZE;
+        for bucket in self.pool.iter() {
+            write!(f, "\n  {{\n bucket_size_bits: {}, cptrs: [", bit_size)?;
+            for cptr in bucket {
+                write!(f, "{},", cptr)?;
+            }
+            f.write_str("]")?;
+            f.write_str(" }}")?;
+            bit_size += 1;
+        }
+        f.write_str("\n}")
+    }
+}
+
 impl WUTBuddy<role::Local> {
     /// Allocate a strong untyped from the pool.
     pub fn alloc_strong<Size: Unsigned>(

@@ -30,7 +30,7 @@ pub use region::{
 
 include!(concat!(env!("OUT_DIR"), "/KERNEL_RETYPE_FAN_OUT_LIMIT"));
 
-pub trait VSpaceState: private::SealedVSpaceState {}
+pub trait VSpaceState: private::SealedVSpaceState + core::fmt::Debug {}
 
 pub mod vspace_state {
     use super::VSpaceState;
@@ -39,6 +39,7 @@ pub mod vspace_state {
     /// capability to do some mapping, but no awareness of the
     /// user image or mappings. The root vspace should never be in this
     /// state in user-land code.
+    #[derive(Debug)]
     pub struct Empty;
     impl VSpaceState for Empty {}
 
@@ -46,6 +47,7 @@ pub mod vspace_state {
     /// the presence of the user image and reserved regions of
     /// the address space. All unclaimed address space is fair game
     /// for the VSpace to use.
+    #[derive(Debug)]
     pub struct Imaged;
     impl VSpaceState for Imaged {}
 }
@@ -182,6 +184,7 @@ pub trait PagingLayer {
 }
 
 /// `PagingTop` represents the root of an address space structure.
+#[derive(Debug)]
 pub struct PagingTop<LowerLevel, CurrentLevel: Maps<LowerLevel>>
 where
     CurrentLevel: CapType,
@@ -218,6 +221,7 @@ where
 
 /// `PagingRec` represents an intermediate layer. It is of type `CurrentLevel`,
 /// while it maps `LowerLevel`s. The layer above it is `UpperLevel`.
+#[derive(Debug)]
 pub struct PagingRec<LowerLevel: CapType, CurrentLevel: Maps<LowerLevel>, UpperLevel: PagingLayer> {
     pub(crate) layer: CurrentLevel,
     pub(crate) next: UpperLevel,
@@ -285,6 +289,7 @@ pub enum ProcessCodeImageConfig<'a, 'b, 'c> {
 ///
 /// CapRole indicates whether the capabilities related to manipulating this VSpace
 /// are accessible from the current thread's CSpace, or from a child's CSpace
+#[derive(Debug)]
 pub struct VSpace<State: VSpaceState = vspace_state::Imaged, CapRole: CNodeRole = role::Local> {
     /// The cap to this address space's root-of-the-tree item.
     root: Cap<PagingRoot, CapRole>,

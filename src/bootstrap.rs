@@ -151,7 +151,7 @@ impl UserImage<role::Local> {
         // Iterate over the entire address space's page addresses, starting at
         // ProgramStart. This is truncated to the number of actual pages in the
         // user image by zipping it with the range of frame cptrs below.
-        let vaddr_iter = (ProgramStart::USIZE..core::usize::MAX).step_by(1 << PageBits::USIZE);
+        let vaddr_iter = (ProgramStart::USIZE..core::usize::MAX).step_by(PageBytes::USIZE);
 
         (self.frames_start_cptr..(self.frames_start_cptr + self.frames_count))
             .zip(vaddr_iter)
@@ -173,7 +173,7 @@ impl UserImage<role::Local> {
     }
 
     pub fn pages_count(&self) -> usize {
-        let vaddr_count = (core::usize::MAX - ProgramStart::USIZE) / (1 << PageBits::USIZE);
+        let vaddr_count = (core::usize::MAX - ProgramStart::USIZE) / (PageBytes::USIZE);
         core::cmp::min(self.frames_count, vaddr_count)
     }
 

@@ -60,5 +60,5 @@ impl DirectRetype for PageTable {
 
 fn is_aligned(addr: usize) -> bool {
     use typenum::Unsigned;
-    addr % (1 << crate::arch::PageBits::U32) == 0
+    addr % crate::arch::PageBytes::USIZE == 0
 }

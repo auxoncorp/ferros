@@ -63,6 +63,7 @@ pub fn fault_pair(
             user_image,
             root_cnode,
         )?;
+        debug_println!("Imaged handler vspace:\n{:?}", fault_handler_vspace);
         let (fault_handler_cnode, fault_handler_slots) = retype_cnode::<U12>(ut, slots)?;
 
         let (slots_source, _mischief_maker_slots) = mischief_maker_slots.alloc();
@@ -83,9 +84,10 @@ pub fn fault_pair(
             let fault_handler_params = MischiefDetectorParams::<role::Child> {
                 fault_sink,
                 outcome_sender,
-                local_slots: slots_for_fh
+                local_slots: slots_for_fh,
             };
         }}
+        debug_println!("\nIn main, with fault_handler_params:\n{:?}\nwith size:{}\n", fault_handler_params, core::mem::size_of_val(&fault_handler_params));
 
         let (mischief_region, fault_region) = local_mapped_region.split()?;
 
@@ -102,7 +104,7 @@ pub fn fault_pair(
             tpa,
             Some(fault_source),
         )?;
-        //mischief_maker_process.start()?;
+        mischief_maker_process.start()?;
 
         let fault_handler_process = StandardProcess::new(
             &mut fault_handler_vspace,
@@ -115,8 +117,9 @@ pub fn fault_pair(
             ut,
             slots,
             tpa,
-            None, //Some(fault_source_for_the_handler),
+            Some(fault_source_for_the_handler),
         )?;
+        debug_println!("Imaged handler vspace after process creation:\n{:?}", fault_handler_vspace);
         fault_handler_process.start()?;
     });
 
@@ -160,44 +163,44 @@ pub extern "C" fn mischief_maker_proc(_p: MischiefMakerParams<role::Local>) {
 }
 
 pub extern "C" fn fault_handler_proc(p: MischiefDetectorParams<role::Local>) {
-    debug_println!("In fault_handler_proc, with params:\n{:?}", p);
-    //let fault = p.fault_sink.wait_for_fault();
-    //debug_println!("Caught some sort of fault signal in fault_handler_proc");
+    debug_println!("\nIn fault_handler_proc, with fault_handler_params:\n{:?}\nwith size:{}\n", p, core::mem::size_of_val(&p));
+    let fault = p.fault_sink.wait_for_fault();
+    debug_println!("Caught some sort of fault signal in fault_handler_proc");
 
-    //match fault {
-    //    Fault::CapFault(cf) => {
-    //        debug_println!("Caught a CapFault, as expected, in fault_handler proc: {:?}", cf);
-    //        ()
-    //    } ,
-    //    f => {
-    //        debug_println!("Received fault {:?}, which is not the expected CapFault", f);
-    //        p.outcome_sender
-    //            .blocking_send(&false)
-    //            .expect("Failed to send test outcome");
-    //        return;
-    //    }
-    //}
+    match fault {
+        Fault::CapFault(cf) => {
+            debug_println!("Caught a CapFault, as expected, in fault_handler proc: {:?}", cf);
+            ()
+        } ,
+        f => {
+            debug_println!("Received fault {:?}, which is not the expected CapFault", f);
+            p.outcome_sender
+                .blocking_send(&false)
+                .expect("Failed to send test outcome");
+            return;
+        }
+    }
 
-    //let reply = LocalCap::<FaultReplyEndpoint>::save_caller_and_create(p.local_slots)
-    //    .expect("Failed to save caller");
+    let reply = LocalCap::<FaultReplyEndpoint>::save_caller_and_create(p.local_slots)
+        .expect("Failed to save caller");
 
-    //// resume the thread, which will try to do the same thing as before and fault again
-    //let slot = reply.resume_faulted_thread();
-    //let fault = p.fault_sink.wait_for_fault();
+    // resume the thread, which will try to do the same thing as before and fault again
+    let slot = reply.resume_faulted_thread();
+    let fault = p.fault_sink.wait_for_fault();
 
-    //match fault {
-    //    Fault::CapFault(_) => (),
-    //    f => {
-    //        debug_println!("Received fault {:?}, which is not the expected CapFault", f);
-    //        p.outcome_sender
-    //            .blocking_send(&false)
-    //            .expect("Failed to send test outcome");
-    //        return;
-    //    }
-    //}
+    match fault {
+        Fault::CapFault(_) => (),
+        f => {
+            debug_println!("Received fault {:?}, which is not the expected CapFault", f);
+            p.outcome_sender
+                .blocking_send(&false)
+                .expect("Failed to send test outcome");
+            return;
+        }
+    }
 
-    //// Make sure we can reuse the slot a second time, and manually
-    //let reply = LocalCap::<FaultReplyEndpoint>::save_caller_and_create(slot);
+    // Make sure we can reuse the slot a second time, and manually
+    let reply = LocalCap::<FaultReplyEndpoint>::save_caller_and_create(slot);
 
     p.outcome_sender
         .blocking_send(&true)
