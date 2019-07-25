@@ -62,7 +62,7 @@ impl LocalCap<ThreadControlBlock> {
         cspace_root: LocalCap<ChildCNode>,
         fault_source: Option<FaultSource<role::Child>>,
         vspace: &VSpace<VSpaceState, role::Local>, // vspace_root,
-        ipc_buffer: LocalCap<Page<page_state::Mapped>>,
+        ipc_buffer: Option<LocalCap<Page<page_state::Mapped>>>,
     ) -> Result<(), SeL4Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
         // used by the radix.
@@ -74,6 +74,12 @@ impl LocalCap<ThreadControlBlock> {
         }
         .words[0] as usize;
 
+        let (buffer_cap, buffer_vaddr) = if let Some(ipc_buffer) = ipc_buffer {
+            (ipc_buffer.cptr, ipc_buffer.vaddr())
+        } else {
+            (seL4_CapNull as usize, 0)
+        };
+
         unsafe {
             seL4_TCB_Configure(
                 self.cptr,
@@ -82,11 +88,22 @@ impl LocalCap<ThreadControlBlock> {
                 cspace_root_data,
                 vspace.root_cptr(),
                 seL4_NilData as usize, // vspace_root_data, always 0, reserved by kernel?
-                ipc_buffer.vaddr(),    // buffer address
-                ipc_buffer.cptr,       // bufferFrame capability
+                buffer_vaddr,          // buffer address
+                buffer_cap,            // bufferFrame capability
             )
         }
         .as_result()
         .map_err(|e| SeL4Error::TCBConfigure(e))
+    }
+
+    /// Set this TCB's priority.
+    pub fn set_priority(
+        &mut self,
+        tpa: &LocalCap<ThreadPriorityAuthority>,
+        prio: usize,
+    ) -> Result<(), SeL4Error> {
+        unsafe { seL4_TCB_SetPriority(self.cptr, tpa.cptr, prio) }
+            .as_result()
+            .map_err(|e| SeL4Error::TCBSetPriority(e))
     }
 }

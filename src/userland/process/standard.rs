@@ -114,7 +114,7 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
         let (tcb_slots, _slots) = misc_slots.alloc();
         let mut tcb = tcb_ut.retype(tcb_slots)?;
 
-        tcb.configure(cspace, fault_source, &vspace, ipc_buffer.to_page())?;
+        tcb.configure(cspace, fault_source, &vspace, Some(ipc_buffer.to_page()))?;
         unsafe {
             seL4_TCB_WriteRegisters(
                 tcb.cptr,
@@ -127,10 +127,9 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
             .as_result()
             .map_err(|e| ProcessSetupError::SeL4Error(SeL4Error::TCBWriteRegisters(e)))?;
 
-            // TODO - priority management could be exposed once we plan on actually using it
-            seL4_TCB_SetPriority(tcb.cptr, priority_authority.cptr, 255)
-                .as_result()
-                .map_err(|e| ProcessSetupError::SeL4Error(SeL4Error::TCBSetPriority(e)))?;
+            // TODO - priority management could be exposed once we
+            // plan on actually using it
+            tcb.set_priority(priority_authority, 255)?;
         }
         Ok(StandardProcess {
             tcb,
