@@ -133,7 +133,7 @@ where
             IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
     {
         let kind = ut.cap_data.kind;
-        let page_caps = ut.retype_device_pages(slots)?;
+        let page_caps = ut.retype_pages(slots)?;
         Ok(UnmappedMemoryRegion::from_caps(page_caps, kind.weaken()))
     }
 
