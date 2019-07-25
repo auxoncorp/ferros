@@ -127,10 +127,9 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
             .as_result()
             .map_err(|e| ProcessSetupError::SeL4Error(SeL4Error::TCBWriteRegisters(e)))?;
 
-            // TODO - priority management could be exposed once we plan on actually using it
-            seL4_TCB_SetPriority(tcb.cptr, priority_authority.cptr, 255)
-                .as_result()
-                .map_err(|e| ProcessSetupError::SeL4Error(SeL4Error::TCBSetPriority(e)))?;
+            // TODO - priority management could be exposed once we
+            // plan on actually using it
+            tcb.set_priority(priority_authority, 255)?;
         }
         Ok(StandardProcess {
             tcb,

@@ -95,4 +95,15 @@ impl LocalCap<ThreadControlBlock> {
         .as_result()
         .map_err(|e| SeL4Error::TCBConfigure(e))
     }
+
+    /// Set this TCB's priority.
+    pub fn set_priority(
+        &mut self,
+        tpa: &LocalCap<ThreadPriorityAuthority>,
+        prio: usize,
+    ) -> Result<(), SeL4Error> {
+        unsafe { seL4_TCB_SetPriority(self.cptr, tpa.cptr, prio) }
+            .as_result()
+            .map_err(|e| SeL4Error::TCBSetPriority(e))
+    }
 }
