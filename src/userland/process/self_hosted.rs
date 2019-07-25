@@ -92,7 +92,7 @@ impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
         let (tcb_slots, _slots) = misc_slots.alloc();
         let mut tcb = tcb_ut.retype(tcb_slots)?;
 
-        tcb.configure(cspace, fault_source, &vspace, ipc_buffer.to_page())?;
+        tcb.configure(cspace, fault_source, &vspace, Some(ipc_buffer.to_page()))?;
 
         // Reserve a guard page before the stack
         vspace.skip_pages(1)?;
