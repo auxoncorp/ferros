@@ -1,7 +1,8 @@
 use selfe_sys::*;
 
-use crate::arch::cap::{page_state, Page};
-use crate::cap::{role, CapType, ChildCNode, CopyAliasable, DirectRetype, LocalCap, PhantomCap};
+use crate::cap::{
+    page_state, role, CapType, ChildCNode, CopyAliasable, DirectRetype, LocalCap, Page, PhantomCap,
+};
 use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::FaultSource;
 use crate::vspace::{self, VSpace};
@@ -27,6 +28,11 @@ impl DirectRetype for ThreadControlBlock {
 impl CopyAliasable for ThreadControlBlock {
     type CopyOutput = Self;
 }
+impl<'a> From<&'a ThreadControlBlock> for ThreadControlBlock {
+    fn from(_val: &'a ThreadControlBlock) -> Self {
+        PhantomCap::phantom_instance()
+    }
+}
 
 /// A limited view on a ThreadControlBlock capability
 /// that is only intended for use in establishing
@@ -44,6 +50,11 @@ impl PhantomCap for ThreadPriorityAuthority {
 
 impl CopyAliasable for ThreadPriorityAuthority {
     type CopyOutput = Self;
+}
+impl<'a> From<&'a ThreadPriorityAuthority> for ThreadPriorityAuthority {
+    fn from(_val: &'a ThreadPriorityAuthority) -> Self {
+        PhantomCap::phantom_instance()
+    }
 }
 
 impl AsRef<LocalCap<ThreadPriorityAuthority>> for LocalCap<ThreadControlBlock> {

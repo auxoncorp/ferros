@@ -7,12 +7,12 @@ use typenum::operator_aliases::{Diff, Prod, Sum};
 
 use typenum::*;
 
-use crate::arch::cap::{page_state, Page};
 use crate::arch::{CNodeSlotBits, PageBits};
 use crate::cap::{
-    role, CNode, CNodeRole, CNodeSlot, CNodeSlots, CNodeSlotsError, Cap, CapRange, CapType,
-    ChildCNode, ChildCNodeSlots, Delible, DirectRetype, LocalCNode, LocalCNodeSlot,
-    LocalCNodeSlots, LocalCap, Movable, PhantomCap, WCNodeSlots, WCNodeSlotsData, WeakCapRange,
+    page_state, role, CNode, CNodeRole, CNodeSlot, CNodeSlots, CNodeSlotsError, Cap, CapRange,
+    CapType, ChildCNode, ChildCNodeSlots, Delible, DirectRetype, LocalCNode, LocalCNodeSlot,
+    LocalCNodeSlots, LocalCap, Movable, Page, PhantomCap, WCNodeSlots, WCNodeSlotsData,
+    WeakCapRange,
 };
 use crate::error::{ErrorExt, KernelError, SeL4Error};
 use crate::pow::{Pow, _Pow};
@@ -143,8 +143,11 @@ impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
             .map_err(|e| SeL4Error::UntypedRetype(e))?;
         }
 
-        Ok(WeakCapRange::new_phantom(
+        Ok(WeakCapRange::new(
             dest_slots.cap_data.offset,
+            Page {
+                state: page_state::Unmapped {},
+            },
             num_pages,
         ))
     }

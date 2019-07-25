@@ -14,6 +14,7 @@ mod fault_reply_endpoint;
 mod irq_control;
 pub mod irq_handler;
 mod notification;
+mod page;
 mod tcb;
 mod untyped;
 
@@ -25,6 +26,7 @@ pub use fault_reply_endpoint::*;
 pub use irq_control::*;
 pub use irq_handler::*;
 pub use notification::*;
+pub use page::*;
 pub use tcb::*;
 pub use untyped::*;
 
@@ -49,11 +51,6 @@ pub mod role {
 /// from retyping an Untyped
 pub trait DirectRetype {
     type SizeBits: Unsigned;
-    // TODO - find out where the actual size of the fixed-size objects are specified in seL4-land
-    // and pipe them through to the implementations of this trait as an associated type parameter,
-    // selected either through `cfg` attributes or reference to `build.rs` generated code that inspects
-    // feature flags.
-    //type SizeBits: Unsigned;
     fn sel4_type_id() -> usize;
 }
 
@@ -61,7 +58,7 @@ pub trait DirectRetype {
 /// instances of this type of capability can be copied and aliased safely
 /// when done through the use of this API
 pub trait CopyAliasable {
-    type CopyOutput: CapType;
+    type CopyOutput: CapType + for<'a> From<&'a Self>;
 }
 
 /// Marker trait for CapType implementing structs to indicate that
@@ -166,17 +163,15 @@ impl<CT: CapType, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Role, Slots> {
     }
 }
 
-impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole, Slots: Unsigned>
-    CapRange<CT, Role, Slots>
-{
+impl<CT: CapType + CopyAliasable, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Role, Slots> {
     pub fn copy(
         &self,
         cnode: &LocalCap<CNode<Role>>,
         slots: LocalCNodeSlots<Slots>,
         rights: CapRights,
-    ) -> Result<CapRange<CT, Role, Slots>, SeL4Error>
+    ) -> Result<CapRange<CT::CopyOutput, Role, Slots>, SeL4Error>
     where
-        <CT as CopyAliasable>::CopyOutput: PhantomCap,
+        CT: CapRangeDataReconstruction,
     {
         let copied_to_start_cptr = slots.cap_data.offset;
         // N.B. Conside replacing with a general purpose CapRange::iter(&self) that returns references to constructed caps
@@ -184,13 +179,13 @@ impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole, Slots: Unsigned>
             let cap: Cap<CT, Role> = Cap {
                 cptr: self.start_cptr + offset,
                 _role: PhantomData,
-                cap_data: PhantomCap::phantom_instance(),
+                cap_data: CapRangeDataReconstruction::reconstruct(offset, &self.start_cap_data),
             };
             cap.copy(cnode, slot, rights)?;
         }
         Ok(CapRange {
             start_cptr: copied_to_start_cptr,
-            start_cap_data: CT::phantom_instance(),
+            start_cap_data: From::from(&self.start_cap_data),
             _role: PhantomData,
             _slots: PhantomData,
         })
@@ -216,26 +211,15 @@ impl From<SeL4Error> for WeakCopyError {
     }
 }
 
-impl<CT: CapType + PhantomCap, Role: CNodeRole> WeakCapRange<CT, Role> {
-    pub(crate) fn new_phantom(start_cptr: usize, len: usize) -> Self {
-        let start_cap_data = PhantomCap::phantom_instance();
-        WeakCapRange {
-            start_cptr,
-            start_cap_data,
-            len,
-            _role: PhantomData,
-        }
-    }
-}
-impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole> WeakCapRange<CT, Role> {
-    pub fn copy_phantom(
+impl<CT: CapType + CopyAliasable, Role: CNodeRole> WeakCapRange<CT, Role> {
+    pub fn copy(
         &self,
         cnode: &LocalCap<CNode<Role>>,
         slots: &mut LocalCap<WCNodeSlotsData<role::Local>>,
         rights: CapRights,
-    ) -> Result<WeakCapRange<CT, Role>, WeakCopyError>
+    ) -> Result<WeakCapRange<<CT as CopyAliasable>::CopyOutput, Role>, WeakCopyError>
     where
-        <CT as CopyAliasable>::CopyOutput: PhantomCap,
+        CT: CapRangeDataReconstruction,
     {
         if slots.size() < self.len() {
             return Err(WeakCopyError::NotEnoughSlots);
@@ -246,11 +230,15 @@ impl<CT: CapType + PhantomCap + CopyAliasable, Role: CNodeRole> WeakCapRange<CT,
             let cap: Cap<CT, Role> = Cap {
                 cptr: self.start_cptr + offset,
                 _role: PhantomData,
-                cap_data: PhantomCap::phantom_instance(),
+                cap_data: CapRangeDataReconstruction::reconstruct(offset, &self.start_cap_data),
             };
             cap.copy(cnode, slot, rights)?;
         }
-        Ok(WeakCapRange::new_phantom(copied_to_start_cptr, self.len()))
+        Ok(WeakCapRange::new(
+            copied_to_start_cptr,
+            From::from(&self.start_cap_data),
+            self.len(),
+        ))
     }
 }
 impl<CT: CapType, Role: CNodeRole> WeakCapRange<CT, Role> {
@@ -288,15 +276,6 @@ pub trait CapRangeDataReconstruction {
     fn reconstruct(index: usize, seed: &Self) -> Self;
 }
 
-impl<CT> CapRangeDataReconstruction for CT
-where
-    CT: PhantomCap,
-{
-    fn reconstruct(_index: usize, _seed: &Self) -> Self {
-        CT::phantom_instance()
-    }
-}
-
 impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
     /// Copy a capability from one CNode to another CNode
     pub fn copy<DestRole: CNodeRole>(
@@ -307,12 +286,11 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
     ) -> Result<Cap<CT::CopyOutput, DestRole>, SeL4Error>
     where
         CT: CopyAliasable,
-        <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
         let dest_offset = self.unchecked_copy(src_cnode, dest_slot, rights)?;
         Ok(Cap {
             cptr: dest_offset,
-            cap_data: PhantomCap::phantom_instance(),
+            cap_data: From::from(&self.cap_data),
             _role: PhantomData,
         })
     }
@@ -529,6 +507,7 @@ mod private {
         IRQ: IsLess<MaxIRQCount, Output = True>
     {
     }
+    impl<State: PageState> SealedCapType for Page<State> {}
 
     /*
     Cross Arch things:
@@ -569,24 +548,25 @@ mod private {
         use crate::arch::cap::*;
         impl super::SealedCapType for PageDirectory {}
         impl super::SealedCapType for PageTable {}
-        impl<State: PageState> super::SealedCapType for Page<State> {}
-
-        impl<Kind: MemoryKind> super::SealedCapType for UnmappedLargePage<Kind> {}
-        impl<Role: CNodeRole, Kind: MemoryKind> super::SealedCapType for MappedLargePage<Role, Kind> {}
         impl<FreePools: Unsigned> super::SealedCapType for ASIDControl<FreePools> {}
         impl super::SealedCapType for UnassignedASID {}
         impl super::SealedCapType for AssignedASID {}
 
     }
 
-    #[cfg(target_arch = "arm")]
-    mod arm {
-        use super::super::*;
-        use crate::arch::cap::*;
-        impl<Kind: MemoryKind> super::SealedCapType for UnmappedSection<Kind> {}
-        impl<Role: CNodeRole, Kind: MemoryKind> super::SealedCapType for MappedSection<Role, Kind> {}
+    //#[cfg(target_arch = "arm")]
+    //mod arm {
+    //    use super::super::*;
+    //    use crate::arch::cap::*;
+    //    impl<State: PageState, MemKind: MemoryKind> super::SealedCapType for Section<State, MemKind> {}
+    //    impl<State: PageState, MemKind: MemoryKind> super::SealedCapType for SuperSection<State, MemKind> {}
+    //}
 
-        impl<Kind: MemoryKind> super::SealedCapType for UnmappedSuperSection<Kind> {}
-        impl<Role: CNodeRole, Kind: MemoryKind> super::SealedCapType for MappedSuperSection<Role, Kind> {}
-    }
+    //#[cfg(target_arch = "aarch64")]
+    //mod aarch64 {
+    //    use super::super::*;
+    //    use crate::arch::cap::*;
+    //    impl<State: PageState, MemKind: MemoryKind> super::SealedCapType for LargePage<State, MemKind> {}
+    //    impl<State: PageState, MemKind: MemoryKind> super::SealedCapType for HugePage<State, MemKind> {}
+    //}
 }

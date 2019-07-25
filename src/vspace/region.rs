@@ -4,11 +4,10 @@ use core::ops::Sub;
 use typenum::*;
 
 use super::{KernelRetypeFanOutLimit, NumPages, VSpaceError};
-use crate::arch::cap::{page_state, Page};
 use crate::arch::PageBits;
 use crate::cap::{
-    memory_kind, role, CNodeRole, CNodeSlots, Cap, CapRange, InternalASID, LocalCNode,
-    LocalCNodeSlots, LocalCap, MemoryKind, RetypeError, Untyped, WCNodeSlots, WUntyped,
+    memory_kind, page_state, role, CNodeRole, CNodeSlots, Cap, CapRange, InternalASID, LocalCNode,
+    LocalCNodeSlots, LocalCap, MemoryKind, Page, RetypeError, Untyped, WCNodeSlots, WUntyped,
     WeakCapRange, WeakMemoryKind,
 };
 
@@ -465,7 +464,13 @@ impl<SS: SharedStatus> WeakUnmappedMemoryRegion<SS> {
         let num_pages = num_pages(size_bits)
             .expect("Calling functions maintain the invariant that the size_bits is over the size of a page");
         WeakUnmappedMemoryRegion {
-            caps: WeakCapRange::new_phantom(local_page_caps_offset_cptr, num_pages),
+            caps: WeakCapRange::new(
+                local_page_caps_offset_cptr,
+                Page {
+                    state: page_state::Unmapped,
+                },
+                num_pages,
+            ),
             kind,
             size_bits,
             _shared_status: PhantomData,
