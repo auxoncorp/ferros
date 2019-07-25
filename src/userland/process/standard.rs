@@ -54,6 +54,11 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
         <StackBitSize as Sub<PageBits>>::Output: _Pow,
         Pow<<StackBitSize as Sub<PageBits>>::Output>: Unsigned,
     {
+        if parent_mapped_region.asid() == vspace.asid() {
+            return Err(
+                ProcessSetupError::ParentMappedMemoryRegionASIDShouldNotMatchChildVSpaceASID,
+            );
+        }
         let (misc_slots, stack_slots) = slots.alloc::<U2>();
         // TODO - lift these checks to compile-time, as static assertions
         // Note - This comparison is conservative because technically

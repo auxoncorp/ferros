@@ -684,6 +684,18 @@ impl VSpace<vspace_state::Imaged, role::Local> {
             mapping_vaddr += PageBytes::USIZE;
         }
 
+        if let Err(e) = self
+            .available_address_range
+            .observe_mapping(vaddr, size_bits)
+        {
+            // Rollback the pages we've mapped thus far.
+            let _ = unmap_mapped_page_cptrs(mapped_pages);
+            return Err((
+                e,
+                WeakUnmappedMemoryRegion::unchecked_new(cptr, kind, size_bits),
+            ));
+        }
+
         Ok(WeakMappedMemoryRegion::unchecked_new(
             cptr, vaddr, self.asid, kind, size_bits,
         ))
