@@ -1,7 +1,7 @@
 use selfe_sys::*;
 
 use crate::arch;
-use crate::cap::{page_state, CapType, DirectRetype, LocalCap, Page, PhantomCap};
+use crate::cap::{page_state, CapType, DirectRetype, LocalCap, MemoryKind, Page, PhantomCap};
 use crate::error::{ErrorExt, KernelError, SeL4Error};
 use crate::userland::CapRights;
 use crate::vspace::{MappingError, Maps};
@@ -9,10 +9,10 @@ use crate::vspace::{MappingError, Maps};
 #[derive(Debug)]
 pub struct PageTable {}
 
-impl Maps<Page<page_state::Unmapped>> for PageTable {
+impl<MemKind: MemoryKind> Maps<Page<page_state::Unmapped, MemKind>> for PageTable {
     fn map_granule<RootLowerLevel, Root>(
         &mut self,
-        page: &LocalCap<Page<page_state::Unmapped>>,
+        page: &LocalCap<Page<page_state::Unmapped, MemKind>>,
         addr: usize,
         root: &mut LocalCap<Root>,
         rights: CapRights,

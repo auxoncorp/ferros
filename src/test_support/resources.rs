@@ -40,7 +40,8 @@ pub struct TestResourceRefs<'t> {
     pub(super) irq_control: &'t mut LocalCap<IRQControl>,
 }
 
-type PageFallbackNextSize = Sum<U1, <Page<page_state::Unmapped> as DirectRetype>::SizeBits>;
+type PageFallbackNextSize =
+    Sum<U1, <Page<page_state::Unmapped, memory_kind::General> as DirectRetype>::SizeBits>;
 type MappedMemoryRegionFallbackNextSize = Sum<U1, MaxMappedMemoryRegionBitSize>;
 
 impl Resources {
@@ -68,7 +69,7 @@ impl Resources {
         );
         let (extra_scratch_slots, local_slots) = local_slots.alloc();
         let ut_for_scratch = {
-            match allocator.get_untyped::<<Page<page_state::Unmapped> as DirectRetype>::SizeBits>()
+            match allocator.get_untyped::<<Page<page_state::Unmapped, memory_kind::General> as DirectRetype>::SizeBits>()
             {
                 Some(v) => v,
                 None => {

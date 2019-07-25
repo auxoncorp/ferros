@@ -16,7 +16,7 @@ use crate::bootstrap::UserImage;
 use crate::cap::{
     memory_kind, page_state, role, CNodeRole, CNodeSlots, Cap, CapRange,
     CapRangeDataReconstruction, CapType, ChildCNodeSlot, DirectRetype, InternalASID, LocalCNode,
-    LocalCNodeSlots, LocalCap, Page, PhantomCap, RetypeError, Untyped, WCNodeSlots,
+    LocalCNodeSlots, LocalCap, MemoryKind, Page, PhantomCap, RetypeError, Untyped, WCNodeSlots,
     WCNodeSlotsData, WUntyped, WeakCapRange, WeakCopyError,
 };
 use crate::error::SeL4Error;
@@ -333,16 +333,27 @@ impl<State: VSpaceState, CapRole: CNodeRole> VSpace<State, CapRole> {
 impl<State: VSpaceState> VSpace<State, role::Local> {
     /// A thin wrapper around self.layers.map_layer that reduces the amount
     /// of repetitive, visible self-reference
-    fn map_page_at_addr_without_watermarking(
+    fn map_page_at_addr_without_watermarking<MemKind: MemoryKind>(
         &mut self,
-        page: LocalCap<Page<page_state::Unmapped>>,
+        page: LocalCap<Page<page_state::Unmapped, MemKind>>,
         address: usize,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
-    ) -> Result<LocalCap<Page<page_state::Mapped>>, VSpaceError> {
+    ) -> Result<LocalCap<Page<page_state::Mapped, MemKind>>, VSpaceError> {
+        // Since the layers::AddressSpace is defined in terms of Pages with memory_kind::General,
+        // despite the fact that it does nothing with that piece of information, we must
+        // provide page instances that match that type.
+        let kind_elided_page: LocalCap<Page<page_state::Unmapped, memory_kind::General>> = Cap {
+            cptr: page.cptr,
+            _role: PhantomData,
+            cap_data: Page {
+                state: page_state::Unmapped,
+                kind: memory_kind::General,
+            },
+        };
         self.layers
             .map_layer(
-                &page,
+                &kind_elided_page,
                 address,
                 &mut self.root,
                 rights,
@@ -358,6 +369,7 @@ impl<State: VSpaceState> VSpace<State, role::Local> {
                         asid: self.asid,
                         vaddr: address,
                     },
+                    kind: page.cap_data.kind,
                 },
             })
             .map_err(|e| match e {
@@ -386,30 +398,22 @@ impl VSpace<vspace_state::Imaged, role::Local> {
             .and_then(|r| r.as_strong::<SizeBits>())
     }
     /// Unmap a weak region.
-    pub fn weak_unmap_region<SS: SharedStatus>(
+    pub fn weak_unmap_region<SS: SharedStatus, MemKind: MemoryKind>(
         &mut self,
-        region: WeakMappedMemoryRegion<SS>,
-    ) -> Result<WeakUnmappedMemoryRegion<SS>, VSpaceError> {
+        region: WeakMappedMemoryRegion<SS, role::Local, MemKind>,
+    ) -> Result<WeakUnmappedMemoryRegion<SS, role::Local, MemKind>, VSpaceError> {
         if self.asid != region.asid() {
             return Err(VSpaceError::ASIDMismatch);
         }
         let start_cptr = region.caps.start_cptr;
+        let kind = region.caps.start_cap_data.kind;
         let size_bits = region.size_bits();
         for page_cap in region.caps.into_iter() {
-            let _ = self.unmap_page(page_cap)?;
+            let _ = page_cap.unmap()?;
         }
         Ok(WeakUnmappedMemoryRegion::unchecked_new(
-            start_cptr,
-            region.kind,
-            size_bits,
+            start_cptr, kind, size_bits,
         ))
-    }
-
-    fn unmap_page(
-        &mut self,
-        page: LocalCap<Page<page_state::Mapped>>,
-    ) -> Result<LocalCap<Page<page_state::Unmapped>>, SeL4Error> {
-        page.unmap()
     }
 
     // This function will move the caps into the child's CSpace so
@@ -493,7 +497,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                 // First, retype the untyped into `CodePageCount`
                 // pages.
                 let fresh_pages: CapRange<
-                    Page<page_state::Unmapped>,
+                    Page<page_state::Unmapped, _>,
                     role::Local,
                     arch::CodePageCount,
                 > = code_pages_ut.retype_multi(code_pages_slots)?;
@@ -590,13 +594,19 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         }
     }
 
-    pub fn weak_map_region_at_addr<SS: SharedStatus>(
+    pub fn weak_map_region_at_addr<SS: SharedStatus, MemKind: MemoryKind>(
         &mut self,
-        region: WeakUnmappedMemoryRegion<SS>,
+        region: WeakUnmappedMemoryRegion<SS, role::Local, MemKind>,
         vaddr: usize,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
-    ) -> Result<WeakMappedMemoryRegion<SS>, (VSpaceError, WeakUnmappedMemoryRegion<SS>)> {
+    ) -> Result<
+        WeakMappedMemoryRegion<SS, role::Local, MemKind>,
+        (
+            VSpaceError,
+            WeakUnmappedMemoryRegion<SS, role::Local, MemKind>,
+        ),
+    > {
         if region.size_bits() < PageBits::U8 {
             return Err((VSpaceError::InvalidRegionSize, region));
         }
@@ -607,16 +617,19 @@ impl VSpace<vspace_state::Imaged, role::Local> {
             _ => (),
         };
 
+        let starting_region_kind = region.caps.start_cap_data.kind;
         let mut mapping_vaddr = vaddr;
+        let mut mapping_kind = starting_region_kind.clone();
         let cptr = region.caps.start_cptr;
         let size_bits = region.size_bits();
 
         // N.B. Currently expect a single continuous cap range of all pages.
         // Revisit this size if heterogenous granule types / ranges begin to back memory regions.
-        let mut mapped_pages: Option<WeakCapRange<Page<page_state::Mapped>, role::Local>> = None;
+        let mut mapped_pages: Option<WeakCapRange<Page<page_state::Mapped, MemKind>, role::Local>> =
+            None;
 
-        fn unmap_mapped_page_cptrs(
-            mapped_pages: Option<WeakCapRange<Page<page_state::Mapped>, role::Local>>,
+        fn unmap_mapped_page_cptrs<Kind: MemoryKind>(
+            mapped_pages: Option<WeakCapRange<Page<page_state::Mapped, Kind>, role::Local>>,
         ) -> Result<(), SeL4Error> {
             if let Some(mapped_pages) = mapped_pages {
                 mapped_pages
@@ -627,11 +640,22 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                 Ok(())
             }
         }
-        let kind = region.kind;
 
         for page in region.caps.into_iter() {
+            // Since the layers::AddressSpace is defined in terms of Pages with memory_kind::General,
+            // despite the fact that it does nothing with that piece of information, we must
+            // provide page instances that match that type.
+            let kind_elided_page: LocalCap<Page<page_state::Unmapped, memory_kind::General>> =
+                Cap {
+                    cptr: page.cptr,
+                    _role: PhantomData,
+                    cap_data: Page {
+                        state: page_state::Unmapped,
+                        kind: memory_kind::General,
+                    },
+                };
             match self.layers.map_layer(
-                &page,
+                &kind_elided_page,
                 mapping_vaddr,
                 &mut self.root,
                 rights,
@@ -645,7 +669,11 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                     let _ = unmap_mapped_page_cptrs(mapped_pages);
                     return Err((
                         VSpaceError::SeL4Error(e),
-                        WeakUnmappedMemoryRegion::unchecked_new(cptr, kind, size_bits),
+                        WeakUnmappedMemoryRegion::unchecked_new(
+                            cptr,
+                            starting_region_kind,
+                            size_bits,
+                        ),
                     ));
                 }
                 Err(e) => {
@@ -653,7 +681,11 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                     let _ = unmap_mapped_page_cptrs(mapped_pages);
                     return Err((
                         VSpaceError::MappingError(e),
-                        WeakUnmappedMemoryRegion::unchecked_new(cptr, kind, size_bits),
+                        WeakUnmappedMemoryRegion::unchecked_new(
+                            cptr,
+                            starting_region_kind,
+                            size_bits,
+                        ),
                     ));
                 }
                 Ok(_) => {
@@ -670,6 +702,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                                         vaddr: mapping_vaddr,
                                         asid: self.asid(),
                                     },
+                                    kind: mapping_kind,
                                 },
                                 1,
                             ));
@@ -681,6 +714,8 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                     }
                 }
             };
+            mapping_kind = mapping_kind.offset_by(PageBytes::USIZE)
+                .expect("Since the underlying physical address of the total region already exists, assert we cannot exceed memory bounds here");
             mapping_vaddr += PageBytes::USIZE;
         }
 
@@ -692,22 +727,29 @@ impl VSpace<vspace_state::Imaged, role::Local> {
             let _ = unmap_mapped_page_cptrs(mapped_pages);
             return Err((
                 e,
-                WeakUnmappedMemoryRegion::unchecked_new(cptr, kind, size_bits),
+                WeakUnmappedMemoryRegion::unchecked_new(cptr, starting_region_kind, size_bits),
             ));
         }
 
         Ok(WeakMappedMemoryRegion::unchecked_new(
-            cptr, vaddr, self.asid, kind, size_bits,
+            cptr,
+            vaddr,
+            self.asid,
+            starting_region_kind,
+            size_bits,
         ))
     }
 
     /// Map a region of memory at some address, I don't care where.
-    pub fn map_region<SizeBits: Unsigned>(
+    pub fn map_region<SizeBits: Unsigned, MemKind: MemoryKind>(
         &mut self,
-        region: UnmappedMemoryRegion<SizeBits, shared_status::Exclusive>,
+        region: UnmappedMemoryRegion<SizeBits, shared_status::Exclusive, role::Local, MemKind>,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
-    ) -> Result<MappedMemoryRegion<SizeBits, shared_status::Exclusive>, VSpaceError>
+    ) -> Result<
+        MappedMemoryRegion<SizeBits, shared_status::Exclusive, role::Local, MemKind>,
+        VSpaceError,
+    >
     where
         SizeBits: IsGreaterOrEqual<PageBits>,
         SizeBits: Sub<PageBits>,
@@ -769,11 +811,11 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         {
             return Err(VSpaceError::InsufficientCNodeSlots);
         }
-        let kind = region.kind;
         let size_bits = region.size_bits();
         let mapped_region: WeakMappedMemoryRegion<shared_status::Exclusive> =
             self.weak_map_region_internal(region, rights, vm_attributes)?;
         let vaddr = mapped_region.vaddr();
+        let kind = mapped_region.caps.start_cap_data.kind;
         let dest_init_cptr = dest_slots.cap_data.offset;
 
         for (page, slot) in mapped_region
@@ -815,7 +857,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
     {
         let unmapped_sr: UnmappedMemoryRegion<_, shared_status::Shared> =
-            UnmappedMemoryRegion::from_caps(region.caps.copy(cnode, slots, rights)?, region.kind);
+            UnmappedMemoryRegion::from_caps(region.caps.copy(cnode, slots, rights)?);
         self.map_region_internal(unmapped_sr, rights, vm_attributes)
     }
     /// Map a _shared_ region of memory at some address, I don't care
@@ -840,7 +882,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                 WeakCopyError::SeL4Error(e) => VSpaceError::SeL4Error(e),
             })?;
         let unmapped_sr: WeakUnmappedMemoryRegion<shared_status::Shared> =
-            WeakUnmappedMemoryRegion::try_from_caps(caps_copy, region.kind, region.size_bits())
+            WeakUnmappedMemoryRegion::try_from_caps(caps_copy, region.size_bits())
                 .map_err(|_| VSpaceError::InvalidRegionSize)?;
         self.weak_map_region_internal(unmapped_sr, rights, vm_attributes)
     }
@@ -866,12 +908,17 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         self.map_region_internal(region, rights, vm_attributes)
     }
 
-    fn map_region_internal<SizeBits: Unsigned, SSIn: SharedStatus, SSOut: SharedStatus>(
+    fn map_region_internal<
+        SizeBits: Unsigned,
+        SSIn: SharedStatus,
+        SSOut: SharedStatus,
+        MemKind: MemoryKind,
+    >(
         &mut self,
-        region: UnmappedMemoryRegion<SizeBits, SSIn>,
+        region: UnmappedMemoryRegion<SizeBits, SSIn, role::Local, MemKind>,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
-    ) -> Result<MappedMemoryRegion<SizeBits, SSOut>, VSpaceError>
+    ) -> Result<MappedMemoryRegion<SizeBits, SSOut, role::Local, MemKind>, VSpaceError>
     where
         SizeBits: IsGreaterOrEqual<PageBits>,
         SizeBits: Sub<PageBits>,
@@ -882,12 +929,12 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         self.weak_map_region_internal(region.weaken(), rights, vm_attributes)
             .and_then(|r| r.as_strong::<SizeBits>())
     }
-    fn weak_map_region_internal<SSIn: SharedStatus, SSOut: SharedStatus>(
+    fn weak_map_region_internal<SSIn: SharedStatus, SSOut: SharedStatus, MemKind: MemoryKind>(
         &mut self,
-        region: WeakUnmappedMemoryRegion<SSIn>,
+        region: WeakUnmappedMemoryRegion<SSIn, role::Local, MemKind>,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
-    ) -> Result<WeakMappedMemoryRegion<SSOut>, VSpaceError> {
+    ) -> Result<WeakMappedMemoryRegion<SSOut, role::Local, MemKind>, VSpaceError> {
         let starting_address = self
             .available_address_range
             .auto_propose_region_start(region.size_bits())
@@ -900,14 +947,26 @@ impl VSpace<vspace_state::Imaged, role::Local> {
             region.caps.start_cptr,
             starting_address,
             self.asid(),
-            region.kind,
+            region.caps.start_cap_data.kind,
             region.size_bits(),
         );
 
         let mut vaddr = starting_address;
         for page_cap in region.caps.into_iter() {
+            // Since the layers::AddressSpace is defined in terms of Pages with memory_kind::General,
+            // despite the fact that it does nothing with that piece of information, we must
+            // provide page instances that match that type.
+            let kind_elided_page: LocalCap<Page<page_state::Unmapped, memory_kind::General>> =
+                Cap {
+                    cptr: page_cap.cptr,
+                    _role: PhantomData,
+                    cap_data: Page {
+                        state: page_state::Unmapped,
+                        kind: memory_kind::General,
+                    },
+                };
             match self.layers.map_layer(
-                &page_cap,
+                &kind_elided_page,
                 vaddr,
                 &mut self.root,
                 rights,
@@ -946,7 +1005,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
 
     pub fn reserve<PageCount: Unsigned>(
         &mut self,
-        sacrificial_page: LocalCap<Page<page_state::Unmapped>>,
+        sacrificial_page: LocalCap<Page<page_state::Unmapped, memory_kind::General>>,
     ) -> Result<ReservedRegion<PageCount>, VSpaceError>
     where
         PageCount: IsGreaterOrEqual<U1, Output = True>,
@@ -981,7 +1040,7 @@ where
 
     pub fn new(
         vspace: &mut VSpace,
-        sacrificial_page: LocalCap<Page<page_state::Unmapped>>,
+        sacrificial_page: LocalCap<Page<page_state::Unmapped, memory_kind::General>>,
     ) -> Result<Self, VSpaceError> {
         let mut unmapped_region = sacrificial_page.to_region();
         let mut first_vaddr = None;
@@ -1092,7 +1151,10 @@ where
             }
         }
         let unmapped_region_copy: UnmappedMemoryRegion<SizeBits, shared_status::Exclusive> =
-            UnmappedMemoryRegion::unchecked_new(region.caps.start_cptr, region.kind);
+            UnmappedMemoryRegion::unchecked_new(
+                region.caps.start_cptr,
+                region.caps.start_cap_data.kind,
+            );
         let mut next_addr = start_vaddr;
         for page in unmapped_region_copy.caps.into_iter() {
             match self.vspace.layers.map_layer(
@@ -1122,7 +1184,7 @@ where
             region.caps.start_cptr,
             start_vaddr,
             self.reserved_region.asid,
-            region.kind,
+            region.caps.start_cap_data.kind,
         );
         let res = f(&mut mapped_region);
         let _ = self.vspace.unmap_region(mapped_region)?;

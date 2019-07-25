@@ -78,7 +78,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
         let (interrupt_consumer, _) =
             InterruptConsumer::new(ut, &mut irq_control, &root_cnode, slots, slots_u)?;
 
-        let unmapped_uart1_page1 = UnmappedMemoryRegion::new_device(uart1_page_1_untyped, slots)?;
+        let unmapped_uart1_page1 = UnmappedMemoryRegion::new(uart1_page_1_untyped, slots)?;
         let uart1_page_1 = uart1_vspace.map_region(
             unmapped_uart1_page1,
             CapRights::RW,

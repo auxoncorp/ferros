@@ -19,11 +19,11 @@ pub fn wutbuddy(
     assert_eq!(weak_12.size_bits(), 12);
 
     // Can we actually use it as that size?
-    let _ = weak_12.retype::<Page<page_state::Unmapped>>(&mut weak_slots)?;
+    let _ = weak_12.retype::<Page<page_state::Unmapped, _>>(&mut weak_slots)?;
 
     let ut12 = wut.alloc_strong::<U12>(&mut weak_slots)?;
 
     // Same story with the strong untyped.
-    let _ = ut12.retype::<Page<page_state::Unmapped>, role::Local>(strong_slot)?;
+    let _ = ut12.retype::<Page<page_state::Unmapped, _>, role::Local>(strong_slot)?;
     Ok(())
 }

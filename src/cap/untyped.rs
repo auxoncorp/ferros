@@ -117,7 +117,7 @@ impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
     pub fn retype_pages<CRole: CNodeRole>(
         self,
         slots: &mut Cap<WCNodeSlotsData<CRole>, role::Local>,
-    ) -> Result<WeakCapRange<Page<page_state::Unmapped>, CRole>, RetypeError> {
+    ) -> Result<WeakCapRange<Page<page_state::Unmapped, Kind>, CRole>, RetypeError> {
         if self.cap_data.size_bits < PageBits::U8 {
             return Err(RetypeError::NotBigEnough);
         }
@@ -148,8 +148,7 @@ impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
             dest_slots.cap_data.offset,
             Page {
                 state: page_state::Unmapped,
-                // TODO - kind piping
-                //memory_kind: self.cap_data.kind,
+                kind: self.cap_data.kind,
             },
             num_pages,
         ))
@@ -499,7 +498,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
     pub fn retype_pages<CRole: CNodeRole>(
         self,
         dest_slots: CNodeSlots<NumPages<BitSize>, CRole>,
-    ) -> Result<CapRange<Page<page_state::Unmapped>, role::Local, NumPages<BitSize>>, SeL4Error>
+    ) -> Result<CapRange<Page<page_state::Unmapped, Kind>, role::Local, NumPages<BitSize>>, SeL4Error>
     where
         BitSize: IsGreaterOrEqual<PageBits>,
         BitSize: Sub<PageBits>,
@@ -529,8 +528,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
             dest_offset,
             Page {
                 state: page_state::Unmapped,
-                // TODO - implement kind piping
-                //memory_kind: self.cap_data.kind,
+                kind: self.cap_data.kind,
             },
         ))
     }
@@ -754,7 +752,7 @@ impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
     pub fn retype_device_page(
         self,
         dest_slot: LocalCNodeSlot,
-    ) -> Result<LocalCap<Page<page_state::Unmapped>>, SeL4Error> {
+    ) -> Result<LocalCap<Page<page_state::Unmapped, memory_kind::Device>>, SeL4Error> {
         // Note that we special case introduce a device page creation function
         // because the most likely alternative would be complicating the DirectRetype
         // trait to allow some sort of associated-type matching between the allowable
@@ -781,8 +779,7 @@ impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
             cptr: dest_offset,
             cap_data: Page {
                 state: page_state::Unmapped,
-                // TODO - reinstate kind piping
-                //memory_kind: self.cap_data.kind,
+                kind: self.cap_data.kind,
             },
             _role: PhantomData,
         })

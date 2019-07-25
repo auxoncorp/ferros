@@ -1,7 +1,8 @@
 use selfe_sys::*;
 
 use crate::cap::{
-    page_state, role, CapType, ChildCNode, CopyAliasable, DirectRetype, LocalCap, Page, PhantomCap,
+    memory_kind, page_state, role, CapType, ChildCNode, CopyAliasable, DirectRetype, LocalCap,
+    Page, PhantomCap,
 };
 use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::FaultSource;
@@ -73,7 +74,7 @@ impl LocalCap<ThreadControlBlock> {
         cspace_root: LocalCap<ChildCNode>,
         fault_source: Option<FaultSource<role::Child>>,
         vspace: &VSpace<VSpaceState, role::Local>, // vspace_root,
-        ipc_buffer: LocalCap<Page<page_state::Mapped>>,
+        ipc_buffer: LocalCap<Page<page_state::Mapped, memory_kind::General>>,
     ) -> Result<(), SeL4Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
         // used by the radix.

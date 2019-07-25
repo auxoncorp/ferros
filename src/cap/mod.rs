@@ -507,7 +507,7 @@ mod private {
         IRQ: IsLess<MaxIRQCount, Output = True>
     {
     }
-    impl<State: PageState> SealedCapType for Page<State> {}
+    impl<State: PageState, MemKind: MemoryKind> SealedCapType for Page<State, MemKind> {}
 
     /*
     Cross Arch things:
