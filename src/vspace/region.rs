@@ -32,6 +32,13 @@ mod private {
     impl SealedSharedStatus for Shared {}
     impl SealedSharedStatus for Exclusive {}
 }
+
+struct Granule {
+    size: usize,
+    vaddr: usize,
+    asid: InternalASID,
+}
+
 /// A `1 << SizeBits` bytes region of unmapped memory. It can be
 /// shared or owned exclusively. The ramifications of its shared
 /// status are described more completely in the `mapped_shared_region`

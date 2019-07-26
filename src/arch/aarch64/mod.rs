@@ -1,5 +1,7 @@
 use core::marker::PhantomData;
 
+use arrayvec::ArrayVec;
+
 use typenum::*;
 
 use crate::cap::{page_state, Page, PhantomCap};
@@ -44,12 +46,16 @@ pub type PageDirectoryBits = U12;
 pub type PageDirIndexBits = U9;
 pub type PageTableBits = U12; // How big is the kernel object for a PageTable
 pub type PageTableIndexBits = U9; // How many slots are there, in addressable bit space?
+
 pub type PageBits = U12;
 pub type PageIndexBits = U12;
-
 pub type PageBytes = op!(U1 << U12);
+
 pub type LargePageBits = U21;
+pub type LargePageBytes = op!(U1 << LargePageBits);
+
 pub type HugePageBits = U30;
+pub type HugePageBytes = op!(U1 << HugePageBits);
 
 pub type AddressSpace = PagingRec<
     Page<page_state::Unmapped>,
@@ -142,4 +148,44 @@ pub mod vm_attributes {
         selfe_sys::seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled;
 
     pub const EXECUTE_NEVER: VMAttributes = selfe_sys::seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever;
+}
+
+#[derive(Debug)]
+pub enum Granules {
+    Page,
+    LargePage,
+    HugePage,
+}
+
+// This is effectively a fold from usize -> [Granules] so we may be
+// able to implement at the type-level. However, doing so may
+// introduce insane constraints that we can't live with when it
+// pollutes any thing downstream.
+//
+/// Fold over `region_size` and spit out the granule configuration
+/// that one ought to use to map a region of that size.
+pub(crate) fn determine_best_granule_fit(region_size: usize) -> ArrayVec<[Granules; 256]> {
+    let mut size = region_size;
+    let mut granules = ArrayVec::new();
+
+    while size >= HugePageBytes::USIZE {
+        granules.push(Granules::HugePage);
+        size -= HugePageBytes::USIZE;
+    }
+
+    while size >= LargePageBytes::USIZE {
+        granules.push(Granules::LargePage);
+        size -= LargePageBytes::USIZE;
+    }
+
+    while size >= PageBytes::USIZE {
+        granules.push(Granules::Page);
+        size -= PageBytes::USIZE;
+    }
+
+    // If the size is page aligned, we should always end up with 0
+    // left over.
+    assert_eq!(size, 0);
+
+    granules
 }
