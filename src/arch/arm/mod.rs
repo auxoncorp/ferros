@@ -42,6 +42,7 @@ mod hyp_dependent_constants {
 mod hyp_dependent_constants {
     use core::marker::PhantomData;
 
+    use crate::cap::{page_state, Page};
     use crate::vspace::{PagingRec, PagingTop};
 
     use typenum::*;
@@ -55,7 +56,7 @@ mod hyp_dependent_constants {
     pub type SuperSectionBits = U24;
 
     pub type AddressSpace = PagingRec<
-        cap::Page<cap::page_state::Unmapped>,
+        Page<page_state::Unmapped>,
         cap::PageTable,
         PagingTop<cap::PageTable, cap::PageDirectory>,
     >;

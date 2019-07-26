@@ -3,7 +3,6 @@ use super::TopLevelError;
 use typenum::*;
 
 use ferros::alloc::ut_buddy::weak_ut_buddy;
-use ferros::arch::cap::{page_state, Page};
 use ferros::cap::*;
 
 #[ferros_test::ferros_test]

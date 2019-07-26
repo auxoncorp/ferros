@@ -4,12 +4,11 @@ use core::ops::Sub;
 use typenum::*;
 
 use super::{KernelRetypeFanOutLimit, NumPages, VSpaceError};
-use crate::arch::cap::{page_state, Page};
 use crate::arch::PageBits;
 use crate::cap::{
-    memory_kind, role, CNodeRole, CNodeSlots, Cap, CapRange, InternalASID, LocalCNode,
-    LocalCNodeSlots, LocalCap, MemoryKind, RetypeError, Untyped, WCNodeSlots, WUntyped,
-    WeakCapRange, WeakMemoryKind,
+    memory_kind, page_state, role, CNode, CNodeRole, CNodeSlots, Cap, CapRange, InternalASID,
+    LocalCNode, LocalCNodeSlots, LocalCap, MemoryKind, Page, RetypeError, Untyped, WCNodeSlots,
+    WUntyped, WeakCapRange, WeakMemoryKind,
 };
 
 use crate::pow::{Pow, _Pow};
@@ -38,8 +37,11 @@ mod private {
 /// shared or owned exclusively. The ramifications of its shared
 /// status are described more completely in the `mapped_shared_region`
 /// function description.
-pub struct UnmappedMemoryRegion<SizeBits: Unsigned, SS: SharedStatus>
-where
+pub struct UnmappedMemoryRegion<
+    SizeBits: Unsigned,
+    SS: SharedStatus,
+    CapRole: CNodeRole = role::Local,
+> where
     // Forces regions to be page-aligned.
     SizeBits: IsGreaterOrEqual<PageBits>,
     SizeBits: Sub<PageBits>,
@@ -47,7 +49,7 @@ where
     <SizeBits as Sub<PageBits>>::Output: _Pow,
     Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
 {
-    pub(super) caps: CapRange<Page<page_state::Unmapped>, role::Local, NumPages<SizeBits>>,
+    pub(super) caps: CapRange<Page<page_state::Unmapped>, CapRole, NumPages<SizeBits>>,
     pub(super) kind: WeakMemoryKind,
     _size_bits: PhantomData<SizeBits>,
     _shared_status: PhantomData<SS>,
@@ -61,7 +63,8 @@ impl LocalCap<Page<page_state::Unmapped>> {
     }
 }
 
-impl<SizeBits: Unsigned, SS: SharedStatus> UnmappedMemoryRegion<SizeBits, SS>
+impl<SizeBits: Unsigned, SS: SharedStatus, CapRole: CNodeRole>
+    UnmappedMemoryRegion<SizeBits, SS, CapRole>
 where
     SizeBits: IsGreaterOrEqual<PageBits>,
     SizeBits: Sub<PageBits>,
@@ -86,9 +89,9 @@ where
     }
 
     pub(super) fn from_caps(
-        caps: CapRange<Page<page_state::Unmapped>, role::Local, NumPages<SizeBits>>,
+        caps: CapRange<Page<page_state::Unmapped>, CapRole, NumPages<SizeBits>>,
         kind: WeakMemoryKind,
-    ) -> UnmappedMemoryRegion<SizeBits, SS> {
+    ) -> UnmappedMemoryRegion<SizeBits, SS, CapRole> {
         UnmappedMemoryRegion {
             caps,
             kind,
@@ -104,23 +107,22 @@ where
     /// In the Ok case, returns a shared, unmapped copy of the memory
     /// region (backed by fresh page-caps) along with this self-same
     /// unmapped memory region, marked as shared.
-    pub fn share(
+    pub fn share<DestRole: CNodeRole>(
         self,
-        slots: LocalCNodeSlots<NumPages<SizeBits>>,
-        cnode: &LocalCap<LocalCNode>,
+        slots: CNodeSlots<NumPages<SizeBits>, DestRole>,
+        cnode: &LocalCap<CNode<CapRole>>,
         rights: CapRights,
     ) -> Result<
         (
-            UnmappedMemoryRegion<SizeBits, shared_status::Shared>,
-            UnmappedMemoryRegion<SizeBits, shared_status::Shared>,
+            UnmappedMemoryRegion<SizeBits, shared_status::Shared, DestRole>,
+            UnmappedMemoryRegion<SizeBits, shared_status::Shared, CapRole>,
         ),
         VSpaceError,
     > {
         let pages_offset = self.caps.start_cptr;
         let slots_offset = slots.cap_data.offset;
-
         for (slot, page) in slots.iter().zip(self.caps.into_iter()) {
-            page.copy(cnode, slot, rights)?;
+            let _ = page.copy(cnode, slot, rights)?;
         }
 
         Ok((
@@ -162,7 +164,7 @@ where
             IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
     {
         let kind = ut.cap_data.kind;
-        let page_caps = ut.retype_device_pages(slots)?;
+        let page_caps = ut.retype_pages(slots)?;
         Ok(UnmappedMemoryRegion::from_caps(page_caps, kind.weaken()))
     }
 
@@ -194,15 +196,18 @@ where
 /// The distinction between its shared-or-not-shared status is to
 /// prevent an unwitting unmap into an `UnmappedMemoryRegion` which
 /// loses the sharededness context.
-pub struct MappedMemoryRegion<SizeBits: Unsigned, SS: SharedStatus>
-where
+pub struct MappedMemoryRegion<
+    SizeBits: Unsigned,
+    SS: SharedStatus,
+    CapRole: CNodeRole = role::Local,
+> where
     SizeBits: IsGreaterOrEqual<PageBits>,
     SizeBits: Sub<PageBits>,
     <SizeBits as Sub<PageBits>>::Output: Unsigned,
     <SizeBits as Sub<PageBits>>::Output: _Pow,
     Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
 {
-    pub(super) caps: CapRange<Page<page_state::Mapped>, role::Local, NumPages<SizeBits>>,
+    pub(super) caps: CapRange<Page<page_state::Mapped>, CapRole, NumPages<SizeBits>>,
     pub(super) kind: WeakMemoryKind,
     _size_bits: PhantomData<SizeBits>,
     _shared_status: PhantomData<SS>,
@@ -237,14 +242,14 @@ where
     /// In the Ok case, returns a shared, unmapped copy of the memory
     /// region (backed by fresh page-caps) along with this self-same
     /// mapped memory region, marked as shared.
-    pub fn share<CNodeSlotCount: Unsigned>(
+    pub fn share<CNodeSlotCount: Unsigned, DestRole: CNodeRole>(
         self,
-        slots: LocalCNodeSlots<CNodeSlotCount>,
+        slots: CNodeSlots<CNodeSlotCount, DestRole>,
         cnode: &LocalCap<LocalCNode>,
         rights: CapRights,
     ) -> Result<
         (
-            UnmappedMemoryRegion<SizeBits, shared_status::Shared>,
+            UnmappedMemoryRegion<SizeBits, shared_status::Shared, DestRole>,
             MappedMemoryRegion<SizeBits, shared_status::Shared>,
         ),
         VSpaceError,
@@ -258,7 +263,7 @@ where
         let slots_offset = slots.cap_data.offset;
 
         for (slot, page) in slots.iter().zip(self.caps.into_iter()) {
-            page.copy(cnode, slot, rights)?;
+            let _ = page.copy(cnode, slot, rights)?;
         }
 
         Ok((
@@ -439,8 +444,8 @@ where
     }
 }
 
-pub struct WeakUnmappedMemoryRegion<SS: SharedStatus> {
-    pub(super) caps: WeakCapRange<Page<page_state::Unmapped>, role::Local>,
+pub struct WeakUnmappedMemoryRegion<SS: SharedStatus, CapRole: CNodeRole = role::Local> {
+    pub(super) caps: WeakCapRange<Page<page_state::Unmapped>, CapRole>,
     pub(super) kind: WeakMemoryKind,
     size_bits: u8,
     _shared_status: PhantomData<SS>,
@@ -462,7 +467,29 @@ impl WeakUnmappedMemoryRegion<shared_status::Exclusive> {
         })
     }
 }
-impl<SS: SharedStatus> WeakUnmappedMemoryRegion<SS> {
+impl<SS: SharedStatus> WeakUnmappedMemoryRegion<SS, role::Local> {
+    pub(super) fn unchecked_new(
+        local_page_caps_offset_cptr: usize,
+        kind: WeakMemoryKind,
+        size_bits: u8,
+    ) -> Self {
+        let num_pages = num_pages(size_bits)
+            .expect("Calling functions maintain the invariant that the size_bits is over the size of a page");
+        WeakUnmappedMemoryRegion {
+            caps: WeakCapRange::new(
+                local_page_caps_offset_cptr,
+                Page {
+                    state: page_state::Unmapped,
+                },
+                num_pages,
+            ),
+            kind,
+            size_bits,
+            _shared_status: PhantomData,
+        }
+    }
+}
+impl<SS: SharedStatus, CapRole: CNodeRole> WeakUnmappedMemoryRegion<SS, CapRole> {
     pub fn size_bits(&self) -> u8 {
         self.size_bits
     }
@@ -471,10 +498,10 @@ impl<SS: SharedStatus> WeakUnmappedMemoryRegion<SS> {
     }
 
     pub(super) fn try_from_caps(
-        caps: WeakCapRange<Page<page_state::Unmapped>, role::Local>,
+        caps: WeakCapRange<Page<page_state::Unmapped>, CapRole>,
         kind: WeakMemoryKind,
         size_bits: u8,
-    ) -> Result<WeakUnmappedMemoryRegion<SS>, InvalidSizeBits> {
+    ) -> Result<WeakUnmappedMemoryRegion<SS, CapRole>, InvalidSizeBits> {
         if num_pages(size_bits)? != caps.len() {
             return Err(InvalidSizeBits::SizeBitsMismatchPageCapCount);
         }
@@ -485,24 +512,10 @@ impl<SS: SharedStatus> WeakUnmappedMemoryRegion<SS> {
             _shared_status: PhantomData,
         })
     }
-    pub(super) fn unchecked_new(
-        local_page_caps_offset_cptr: usize,
-        kind: WeakMemoryKind,
-        size_bits: u8,
-    ) -> Self {
-        let num_pages = num_pages(size_bits)
-            .expect("Calling functions maintain the invariant that the size_bits is over the size of a page");
-        WeakUnmappedMemoryRegion {
-            caps: WeakCapRange::new_phantom(local_page_caps_offset_cptr, num_pages),
-            kind,
-            size_bits,
-            _shared_status: PhantomData,
-        }
-    }
 
     pub(super) fn as_strong<SizeBits: Unsigned>(
         self,
-    ) -> Result<UnmappedMemoryRegion<SizeBits, SS>, VSpaceError>
+    ) -> Result<UnmappedMemoryRegion<SizeBits, SS, CapRole>, VSpaceError>
     where
         // Forces regions to be page-aligned.
         SizeBits: IsGreaterOrEqual<PageBits>,
@@ -520,7 +533,7 @@ impl<SS: SharedStatus> WeakUnmappedMemoryRegion<SS> {
         ))
     }
 
-    pub fn to_shared(self) -> WeakUnmappedMemoryRegion<shared_status::Shared> {
+    pub fn to_shared(self) -> WeakUnmappedMemoryRegion<shared_status::Shared, CapRole> {
         WeakUnmappedMemoryRegion {
             caps: self.caps,
             kind: self.kind,
@@ -530,45 +543,14 @@ impl<SS: SharedStatus> WeakUnmappedMemoryRegion<SS> {
     }
 }
 
-pub struct WeakMappedMemoryRegion<SS: SharedStatus> {
-    pub(super) caps: WeakCapRange<Page<page_state::Mapped>, role::Local>,
+pub struct WeakMappedMemoryRegion<SS: SharedStatus, CapRole: CNodeRole = role::Local> {
+    pub(super) caps: WeakCapRange<Page<page_state::Mapped>, CapRole>,
     pub(super) kind: WeakMemoryKind,
     size_bits: u8,
     _shared_status: PhantomData<SS>,
 }
 
-impl<SS: SharedStatus> WeakMappedMemoryRegion<SS> {
-    pub fn size_bits(&self) -> u8 {
-        self.size_bits
-    }
-    pub fn size_bytes(&self) -> usize {
-        2usize.pow(u32::from(self.size_bits))
-    }
-
-    pub fn vaddr(&self) -> usize {
-        self.caps.start_cap_data.state.vaddr
-    }
-
-    pub(crate) fn asid(&self) -> InternalASID {
-        self.caps.start_cap_data.state.asid
-    }
-
-    pub(super) fn try_from_caps(
-        caps: WeakCapRange<Page<page_state::Mapped>, role::Local>,
-        kind: WeakMemoryKind,
-        size_bits: u8,
-    ) -> Result<WeakMappedMemoryRegion<SS>, InvalidSizeBits> {
-        if num_pages(size_bits)? != caps.len() {
-            return Err(InvalidSizeBits::SizeBitsMismatchPageCapCount);
-        }
-        Ok(WeakMappedMemoryRegion {
-            caps,
-            kind,
-            size_bits,
-            _shared_status: PhantomData,
-        })
-    }
-
+impl<SS: SharedStatus> WeakMappedMemoryRegion<SS, role::Local> {
     pub(super) fn unchecked_new(
         initial_cptr: usize,
         initial_vaddr: usize,
@@ -594,6 +576,39 @@ impl<SS: SharedStatus> WeakMappedMemoryRegion<SS> {
             _shared_status: PhantomData,
         }
     }
+}
+impl<SS: SharedStatus, CapRole: CNodeRole> WeakMappedMemoryRegion<SS, CapRole> {
+    pub fn size_bits(&self) -> u8 {
+        self.size_bits
+    }
+    pub fn size_bytes(&self) -> usize {
+        2usize.pow(u32::from(self.size_bits))
+    }
+
+    pub fn vaddr(&self) -> usize {
+        self.caps.start_cap_data.state.vaddr
+    }
+
+    pub(crate) fn asid(&self) -> InternalASID {
+        self.caps.start_cap_data.state.asid
+    }
+
+    pub(super) fn try_from_caps(
+        caps: WeakCapRange<Page<page_state::Mapped>, CapRole>,
+        kind: WeakMemoryKind,
+        size_bits: u8,
+    ) -> Result<WeakMappedMemoryRegion<SS, CapRole>, InvalidSizeBits> {
+        if num_pages(size_bits)? != caps.len() {
+            return Err(InvalidSizeBits::SizeBitsMismatchPageCapCount);
+        }
+        Ok(WeakMappedMemoryRegion {
+            caps,
+            kind,
+            size_bits,
+            _shared_status: PhantomData,
+        })
+    }
+
     pub(super) fn as_strong<SizeBits: Unsigned>(
         self,
     ) -> Result<MappedMemoryRegion<SizeBits, SS>, VSpaceError>

@@ -1,12 +1,10 @@
 use selfe_sys::*;
 
 use crate::arch;
-use crate::cap::{CapType, DirectRetype, LocalCap, PhantomCap};
+use crate::cap::{page_state, CapType, DirectRetype, LocalCap, Page, PhantomCap};
 use crate::error::{ErrorExt, KernelError, SeL4Error};
 use crate::userland::CapRights;
 use crate::vspace::{MappingError, Maps};
-
-use super::{page_state, Page};
 
 #[derive(Debug)]
 pub struct PageTable {}

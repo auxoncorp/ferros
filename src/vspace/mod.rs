@@ -10,12 +10,12 @@ use core::ops::Sub;
 use typenum::*;
 
 use crate::alloc::ut_buddy::{self, UTBuddyError, WUTBuddy};
-use crate::arch::cap::{page_state, AssignedASID, Page, UnassignedASID};
+use crate::arch::cap::{AssignedASID, UnassignedASID};
 use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot};
 use crate::bootstrap::UserImage;
 use crate::cap::{
-    memory_kind, role, CNodeRole, CNodeSlots, Cap, CapRange, CapRangeDataReconstruction, CapType,
-    ChildCNodeSlot, DirectRetype, InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, PhantomCap,
+    memory_kind, page_state, role, CNodeRole, CNodeSlots, Cap, CapRange, CapType, ChildCNodeSlot,
+    DirectRetype, InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, Page, PhantomCap,
     RetypeError, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped, WeakCapRange, WeakCopyError,
 };
 use crate::error::SeL4Error;
@@ -617,16 +617,6 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         fn unmap_mapped_page_cptrs(
             mapped_pages: Option<WeakCapRange<Page<page_state::Mapped>, role::Local>>,
         ) -> Result<(), SeL4Error> {
-            impl CapRangeDataReconstruction for Page<page_state::Mapped> {
-                fn reconstruct(index: usize, seed_cap_data: &Self) -> Self {
-                    Page {
-                        state: page_state::Mapped {
-                            vaddr: seed_cap_data.state.vaddr + index * PageBytes::USIZE,
-                            asid: seed_cap_data.state.asid,
-                        },
-                    }
-                }
-            }
             if let Some(mapped_pages) = mapped_pages {
                 mapped_pages
                     .into_iter()
@@ -691,6 +681,18 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                 }
             };
             mapping_vaddr += PageBytes::USIZE;
+        }
+
+        if let Err(e) = self
+            .available_address_range
+            .observe_mapping(vaddr, size_bits)
+        {
+            // Rollback the pages we've mapped thus far.
+            let _ = unmap_mapped_page_cptrs(mapped_pages);
+            return Err((
+                e,
+                WeakUnmappedMemoryRegion::unchecked_new(cptr, kind, size_bits),
+            ));
         }
 
         Ok(WeakMappedMemoryRegion::unchecked_new(
@@ -831,7 +833,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
     ) -> Result<WeakMappedMemoryRegion<shared_status::Shared>, VSpaceError> {
         let caps_copy = region
             .caps
-            .copy_phantom(cnode, slots, rights)
+            .copy(cnode, slots, rights)
             .map_err(|e| match e {
                 WeakCopyError::NotEnoughSlots => VSpaceError::InsufficientCNodeSlots,
                 WeakCopyError::SeL4Error(e) => VSpaceError::SeL4Error(e),

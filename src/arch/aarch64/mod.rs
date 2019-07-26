@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 
 use typenum::*;
 
-use crate::cap::PhantomCap;
+use crate::cap::{page_state, Page, PageState, PhantomCap};
 use crate::vspace::{PagingRec, PagingTop};
 
 pub mod cap;
@@ -52,7 +52,7 @@ pub type LargePageBits = U21;
 pub type HugePageBits = U30;
 
 pub type AddressSpace = PagingRec<
-    cap::Page<cap::page_state::Unmapped>,
+    Page<page_state::Unmapped>,
     cap::PageTable,
     PagingRec<
         cap::PageTable,
