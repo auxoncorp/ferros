@@ -1,0 +1,19 @@
+[package]
+name = "example"
+version = "0.1.0"
+authors = ["Russell Mull <russell@auxon.io>"]
+edition = "2018"
+
+[dependencies]
+selfe-sys = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
+sel4-start = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
+ferros = { path = ".." }
+# cross_queue = { path = "../cross_queue" }
+typenum = "1.10"
+registers = { git = "ssh://github.com/auxoncorp/registers.git" }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
