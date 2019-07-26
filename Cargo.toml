@@ -9,7 +9,7 @@ default = []
 test_support = []
 
 [dependencies]
-selfe-sys = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
+selfe-sys = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git", branch = "factor-out-runtime-lib" }
 typenum = "1.10"
 generic-array = "0.13.2"
 cross_queue = { path = "./cross_queue" }

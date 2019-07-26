@@ -5,9 +5,11 @@ authors = ["Russell Mull <russell@auxon.io>"]
 edition = "2018"
 
 [dependencies]
-selfe-sys = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
-sel4-start = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
+selfe-sys = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git", branch = "factor-out-runtime-lib"}
+sel4-start = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git", branch = "factor-out-runtime-lib", features = [ "panic_handler" ]  }
 ferros = { path = ".." }
+
+hello-printer = { path = "hello-printer" }
 
 [profile.dev]
 panic = "abort"
