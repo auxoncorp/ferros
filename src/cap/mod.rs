@@ -164,12 +164,12 @@ impl<CT: CapType, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Role, Slots> {
 }
 
 impl<CT: CapType + CopyAliasable, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Role, Slots> {
-    pub fn copy(
+    pub fn copy<DestRole: CNodeRole>(
         &self,
         cnode: &LocalCap<CNode<Role>>,
-        slots: LocalCNodeSlots<Slots>,
+        slots: CNodeSlots<Slots, DestRole>,
         rights: CapRights,
-    ) -> Result<CapRange<CT::CopyOutput, Role, Slots>, SeL4Error>
+    ) -> Result<CapRange<CT::CopyOutput, DestRole, Slots>, SeL4Error>
     where
         CT: CapRangeDataReconstruction,
     {
@@ -212,12 +212,12 @@ impl From<SeL4Error> for WeakCopyError {
 }
 
 impl<CT: CapType + CopyAliasable, Role: CNodeRole> WeakCapRange<CT, Role> {
-    pub fn copy(
+    pub fn copy<DestRole: CNodeRole>(
         &self,
         cnode: &LocalCap<CNode<Role>>,
-        slots: &mut LocalCap<WCNodeSlotsData<role::Local>>,
+        slots: &mut LocalCap<WCNodeSlotsData<DestRole>>,
         rights: CapRights,
-    ) -> Result<WeakCapRange<<CT as CopyAliasable>::CopyOutput, Role>, WeakCopyError>
+    ) -> Result<WeakCapRange<<CT as CopyAliasable>::CopyOutput, DestRole>, WeakCopyError>
     where
         CT: CapRangeDataReconstruction,
     {

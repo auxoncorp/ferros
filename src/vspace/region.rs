@@ -6,9 +6,9 @@ use typenum::*;
 use super::{KernelRetypeFanOutLimit, NumPages, VSpaceError};
 use crate::arch::PageBits;
 use crate::cap::{
-    memory_kind, page_state, role, CNodeRole, CNodeSlots, Cap, CapRange, InternalASID, LocalCNode,
-    LocalCNodeSlots, LocalCap, MemoryKind, Page, RetypeError, Untyped, WCNodeSlots, WUntyped,
-    WeakCapRange, WeakMemoryKind,
+    memory_kind, page_state, role, CNode, CNodeRole, CNodeSlots, Cap, CapRange, InternalASID,
+    LocalCNode, LocalCNodeSlots, LocalCap, MemoryKind, Page, RetypeError, Untyped, WCNodeSlots,
+    WUntyped, WeakCapRange, WeakMemoryKind,
 };
 
 use crate::pow::{Pow, _Pow};
@@ -107,28 +107,28 @@ where
     /// In the Ok case, returns a shared, unmapped copy of the memory
     /// region (backed by fresh page-caps) along with this self-same
     /// unmapped memory region, marked as shared.
-    pub fn share(
+    pub fn share<DestRole: CNodeRole>(
         self,
-        slots: LocalCNodeSlots<NumPages<SizeBits>>,
-        cnode: &LocalCap<LocalCNode>,
+        slots: CNodeSlots<NumPages<SizeBits>, DestRole>,
+        cnode: &LocalCap<CNode<CapRole>>,
         rights: CapRights,
     ) -> Result<
         (
-            UnmappedMemoryRegion<SizeBits, shared_status::Shared>,
-            UnmappedMemoryRegion<SizeBits, shared_status::Shared>,
+            UnmappedMemoryRegion<SizeBits, shared_status::Shared, DestRole>,
+            UnmappedMemoryRegion<SizeBits, shared_status::Shared, CapRole>,
         ),
         VSpaceError,
     > {
+        let kind_copy = self.kind;
         let pages_offset = self.caps.start_cptr;
         let slots_offset = slots.cap_data.offset;
-
         for (slot, page) in slots.iter().zip(self.caps.into_iter()) {
-            page.copy(cnode, slot, rights)?;
+            let _ = page.copy(cnode, slot, rights)?;
         }
 
         Ok((
-            UnmappedMemoryRegion::unchecked_new(slots_offset, self.kind),
-            UnmappedMemoryRegion::unchecked_new(pages_offset, self.kind),
+            UnmappedMemoryRegion::unchecked_new(slots_offset, kind_copy),
+            UnmappedMemoryRegion::unchecked_new(pages_offset, kind_copy),
         ))
     }
 }
@@ -243,14 +243,14 @@ where
     /// In the Ok case, returns a shared, unmapped copy of the memory
     /// region (backed by fresh page-caps) along with this self-same
     /// mapped memory region, marked as shared.
-    pub fn share<CNodeSlotCount: Unsigned>(
+    pub fn share<CNodeSlotCount: Unsigned, DestRole: CNodeRole>(
         self,
-        slots: LocalCNodeSlots<CNodeSlotCount>,
+        slots: CNodeSlots<CNodeSlotCount, DestRole>,
         cnode: &LocalCap<LocalCNode>,
         rights: CapRights,
     ) -> Result<
         (
-            UnmappedMemoryRegion<SizeBits, shared_status::Shared>,
+            UnmappedMemoryRegion<SizeBits, shared_status::Shared, DestRole>,
             MappedMemoryRegion<SizeBits, shared_status::Shared>,
         ),
         VSpaceError,
@@ -264,7 +264,7 @@ where
         let slots_offset = slots.cap_data.offset;
 
         for (slot, page) in slots.iter().zip(self.caps.into_iter()) {
-            page.copy(cnode, slot, rights)?;
+            let _ = page.copy(cnode, slot, rights)?;
         }
 
         Ok((

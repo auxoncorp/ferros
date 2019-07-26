@@ -1,8 +1,5 @@
 use crate::arch::PageBytes;
-use crate::cap::{
-    memory_kind, CapRangeDataReconstruction, CapType, CopyAliasable, InternalASID, LocalCap,
-    MemoryKind, Movable, PhantomCap,
-};
+use crate::cap::{CapRangeDataReconstruction, InternalASID};
 use typenum::Unsigned;
 
 #[derive(Clone, Debug)]

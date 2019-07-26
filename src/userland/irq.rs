@@ -85,7 +85,7 @@ impl<Role: CNodeRole> WIRQHandlerCollection<Role> {
                 match irq_control.create_weak_handler(slot, irq) {
                     Ok(h) => handlers.push(h),
                     // Swallow the error
-                    Err(e) => (),
+                    Err(_) => (),
                 }
             }
         }

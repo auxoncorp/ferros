@@ -14,10 +14,9 @@ use crate::arch::cap::{AssignedASID, UnassignedASID};
 use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot};
 use crate::bootstrap::UserImage;
 use crate::cap::{
-    memory_kind, page_state, role, CNodeRole, CNodeSlots, Cap, CapRange,
-    CapRangeDataReconstruction, CapType, ChildCNodeSlot, DirectRetype, InternalASID, LocalCNode,
-    LocalCNodeSlots, LocalCap, Page, PhantomCap, RetypeError, Untyped, WCNodeSlots,
-    WCNodeSlotsData, WUntyped, WeakCapRange, WeakCopyError,
+    memory_kind, page_state, role, CNodeRole, CNodeSlots, Cap, CapRange, CapType, ChildCNodeSlot,
+    DirectRetype, InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, Page, PhantomCap,
+    RetypeError, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped, WeakCapRange, WeakCopyError,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
