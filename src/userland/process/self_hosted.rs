@@ -97,7 +97,7 @@ impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
         let (tcb_slots, _slots) = misc_slots.alloc();
         let mut tcb = tcb_ut.retype(tcb_slots)?;
 
-        tcb.configure(cspace, fault_source, &vspace, ipc_buffer.to_page())?;
+        tcb.configure(cspace, fault_source, &vspace, Some(ipc_buffer.to_page()))?;
 
         // Reserve a guard page before the stack
         vspace.skip_pages(1)?;
@@ -166,9 +166,7 @@ impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
 
             // TODO - priority management could be exposed once we
             // plan on actually using it
-            seL4_TCB_SetPriority(tcb.cptr, priority_authority.cptr, 255)
-                .as_result()
-                .map_err(|e| ProcessSetupError::SeL4Error(SeL4Error::TCBSetPriority(e)))?;
+            tcb.set_priority(priority_authority, 255)?;
         }
         Ok(SelfHostedProcess {
             tcb,

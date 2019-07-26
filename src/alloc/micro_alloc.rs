@@ -81,7 +81,7 @@ pub fn bootstrap_allocators(
 
 /// An allocator for general purpose memory.
 pub struct Allocator {
-    items: ArrayVec<[LocalCap<WUntyped<memory_kind::General>>; MAX_INIT_UNTYPED_ITEMS]>,
+    pub(super) items: ArrayVec<[LocalCap<WUntyped<memory_kind::General>>; MAX_INIT_UNTYPED_ITEMS]>,
 }
 
 impl Debug for Allocator {

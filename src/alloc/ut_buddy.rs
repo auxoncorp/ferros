@@ -1,8 +1,11 @@
 /// UTBuddy is a type-safe static buddy allocator for Untyped capabilites.
-use arrayvec::ArrayVec;
 use core::marker::PhantomData;
 use core::ops::{Add, Mul, Sub};
+
+use arrayvec::ArrayVec;
+
 use selfe_sys::*;
+
 use typenum::*;
 
 use crate::arch::{MaxUntypedSize, MinUntypedSize};
@@ -391,6 +394,22 @@ fn alloc(
         },
         _role: PhantomData,
     })
+}
+
+impl From<super::micro_alloc::Allocator> for WUTBuddy<role::Local> {
+    fn from(alloc: super::micro_alloc::Allocator) -> Self {
+        let mut pool = make_pool();
+
+        for ut in alloc.items {
+            let ut_idx = ut.cap_data.size_bits as usize - MinUntypedSize::USIZE;
+            pool[ut_idx].push(ut.cptr);
+        }
+
+        WUTBuddy {
+            pool,
+            _role: PhantomData,
+        }
+    }
 }
 
 fn make_pool() -> [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE] {
