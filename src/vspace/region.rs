@@ -119,7 +119,6 @@ where
         ),
         VSpaceError,
     > {
-        let kind_copy = self.kind;
         let pages_offset = self.caps.start_cptr;
         let slots_offset = slots.cap_data.offset;
         for (slot, page) in slots.iter().zip(self.caps.into_iter()) {
@@ -127,8 +126,8 @@ where
         }
 
         Ok((
-            UnmappedMemoryRegion::unchecked_new(slots_offset, kind_copy),
-            UnmappedMemoryRegion::unchecked_new(pages_offset, kind_copy),
+            UnmappedMemoryRegion::unchecked_new(slots_offset, self.kind),
+            UnmappedMemoryRegion::unchecked_new(pages_offset, self.kind),
         ))
     }
 }

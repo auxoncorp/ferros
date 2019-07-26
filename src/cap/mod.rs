@@ -548,25 +548,10 @@ mod private {
         use crate::arch::cap::*;
         impl super::SealedCapType for PageDirectory {}
         impl super::SealedCapType for PageTable {}
+
         impl<FreePools: Unsigned> super::SealedCapType for ASIDControl<FreePools> {}
         impl super::SealedCapType for UnassignedASID {}
         impl super::SealedCapType for AssignedASID {}
 
     }
-
-    //#[cfg(target_arch = "arm")]
-    //mod arm {
-    //    use super::super::*;
-    //    use crate::arch::cap::*;
-    //    impl<State: PageState, MemKind: MemoryKind> super::SealedCapType for Section<State, MemKind> {}
-    //    impl<State: PageState, MemKind: MemoryKind> super::SealedCapType for SuperSection<State, MemKind> {}
-    //}
-
-    //#[cfg(target_arch = "aarch64")]
-    //mod aarch64 {
-    //    use super::super::*;
-    //    use crate::arch::cap::*;
-    //    impl<State: PageState, MemKind: MemoryKind> super::SealedCapType for LargePage<State, MemKind> {}
-    //    impl<State: PageState, MemKind: MemoryKind> super::SealedCapType for HugePage<State, MemKind> {}
-    //}
 }
