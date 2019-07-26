@@ -1,19 +1,9 @@
 #![no_std]
-#![recursion_limit = "128"]
-
-#[macro_use]
-extern crate ferros;
-#[macro_use]
-extern crate registers;
-extern crate selfe_sys;
-#[macro_use]
-extern crate typenum;
-
-use ferros::*;
-use ferros::alloc::*;
 
 mod error;
 
+use ferros::*;
+use ferros::alloc::*;
 use error::TopLevelError;
 
 fn main() {
