@@ -1,0 +1,102 @@
+Running root task build command:
+    SEL4_CONFIG_PATH=/home/mullr/devel/ferros/example/sel4.toml SEL4_PLATFORM=virt cargo xbuild --target=aarch64-unknown-linux-gnu -vv
++ "rustc" "--print" "sysroot"
++ "rustc" "--print" "target-list"
++ RUSTFLAGS="-C link-arg=-no-pie -C link-arg=-nostdlib --sysroot /home/mullr/devel/ferros/example/target/sysroot"
++ "/home/mullr/.rustup/toolchains/nightly-2019-04-11-x86_64-unknown-linux-gnu/bin/cargo" "build" "--target=aarch64-unknown-linux-gnu" "-vv"
+       Fresh cc v1.0.38
+       Fresh version_check v0.1.5
+       Fresh rustc-demangle v0.1.15
+       Fresh cfg-if v0.1.9
+       Fresh glob v0.2.11
+       Fresh unicode-xid v0.1.0
+       Fresh ucd-util v0.1.5
+       Fresh lazy_static v1.3.0
+       Fresh unicode-width v0.1.5
+       Fresh utf8-ranges v1.0.3
+       Fresh ansi_term v0.11.0
+       Fresh vec_map v0.8.1
+       Fresh autocfg v0.1.5
+       Fresh strsim v0.8.0
+       Fresh either v1.5.2
+       Fresh peeking_take_while v0.1.2
+       Fresh rand_core v0.4.0
+       Fresh shlex v0.1.1
+       Fresh nodrop v0.1.13
+       Fresh cargo-5730 v0.1.0
+       Fresh pdqsort v1.0.3
+       Fresh regex-syntax v0.6.10
+       Fresh thread_local v0.3.6
+       Fresh textwrap v0.11.0
+       Fresh itertools v0.8.0
+       Fresh rand_core v0.3.1
+       Fresh rand_jitter v0.1.4
+       Fresh libc v0.2.60
+       Fresh memchr v2.2.1
+       Fresh bitflags v1.1.0
+       Fresh byteorder v1.3.2
+       Fresh serde v1.0.97
+       Fresh proc-macro2 v0.4.30
+       Fresh rand_hc v0.1.0
+       Fresh rand_xorshift v0.1.1
+       Fresh rand_isaac v0.1.1
+       Fresh typenum v1.10.0
+       Fresh backtrace-sys v0.1.31
+       Fresh libloading v0.5.2
+       Fresh atty v0.2.13
+       Fresh nom v4.2.3
+       Fresh aho-corasick v0.7.4
+       Fresh quote v0.6.13
+       Fresh fxhash v0.2.1
+       Fresh toml v0.5.1
+       Fresh rand_os v0.1.3
+       Fresh byteorder v1.3.1 (ssh://git@github.com/auxoncorp/byteorder.git?branch=no-std#23e237b2)
+       Fresh arrayvec v0.4.11
+       Fresh backtrace v0.3.33
+       Fresh cexpr v0.3.5
+       Fresh regex v1.2.0
+       Fresh clang-sys v0.28.0
+       Fresh clap v2.33.0
+       Fresh rand_chacha v0.1.1
+       Fresh rand_pcg v0.1.2
+       Fresh generic-array v0.13.2
+       Fresh syn v0.15.42
+       Fresh failure v0.1.5
+       Fresh selfe-config v0.2.0 (ssh://git@github.com/auxoncorp/selfe-sys.git?branch=factor-out-runtime-lib#ed61b1b0)
+       Fresh selfe-config v0.2.0 (ssh://git@github.com/auxoncorp/selfe-sys.git#25cbde67)
+       Fresh selfe-arc v0.1.0 (ssh://git@github.com/auxoncorp/selfe-sys.git?branch=factor-out-runtime-lib#ed61b1b0)
+       Fresh which v2.0.1
+       Fresh rand v0.6.5
+       Fresh cross_queue v0.1.0 (/home/mullr/devel/ferros/cross_queue)
+       Fresh bindgen v0.49.2
+       Fresh uuid v0.7.4
+       Fresh selfe-sys v0.1.0 (ssh://git@github.com/auxoncorp/selfe-sys.git?branch=factor-out-runtime-lib#ed61b1b0)
+       Fresh smart_alloc v0.1.0 (/home/mullr/devel/ferros/smart_alloc)
+       Fresh selfe-runtime v0.1.0 (ssh://git@github.com/auxoncorp/selfe-sys.git?branch=factor-out-runtime-lib#ed61b1b0)
+       Fresh sel4-start v0.0.28 (ssh://git@github.com/auxoncorp/selfe-sys.git?branch=factor-out-runtime-lib#ed61b1b0)
+       Fresh ferros v0.1.0 (/home/mullr/devel/ferros)
+   Compiling example v0.1.0 (/home/mullr/devel/ferros/example)
+     Running `CARGO_PKG_NAME=example CARGO=/home/mullr/.rustup/toolchains/nightly-2019-04-11-x86_64-unknown-linux-gnu/bin/cargo OUT_DIR=/home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/build/example-c8cdffa6e178b8f2/out CARGO_PKG_VERSION_PRE= CARGO_PKG_VERSION_MINOR=1 CARGO_PKG_DESCRIPTION= CARGO_PKG_VERSION=0.1.0 CARGO_PRIMARY_PACKAGE=1 CARGO_MANIFEST_DIR=/home/mullr/devel/ferros/example CARGO_PKG_HOMEPAGE= LD_LIBRARY_PATH='/home/mullr/devel/ferros/example/target/debug/deps:/home/mullr/.rustup/toolchains/nightly-2019-04-11-x86_64-unknown-linux-gnu/lib:/home/mullr/.rustup/toolchains/nightly-2019-04-11-x86_64-unknown-linux-gnu/lib' CARGO_PKG_VERSION_PATCH=0 CARGO_PKG_AUTHORS='Russell Mull <russell@auxon.io>' CARGO_PKG_VERSION_MAJOR=0 CARGO_PKG_REPOSITORY= rustc --edition=2018 --crate-name example src/main.rs --color never --crate-type bin --emit=dep-info,link -C panic=abort -C debuginfo=2 -C metadata=eacce07f85ebffbe -C extra-filename=-eacce07f85ebffbe --out-dir /home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/deps --target aarch64-unknown-linux-gnu -C linker=aarch64-linux-gnu-gcc -C incremental=/home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/incremental -L dependency=/home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/deps -L dependency=/home/mullr/devel/ferros/example/target/debug/deps --extern ferros=/home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/deps/libferros-8a53bb731dd0e744.rlib --extern sel4_start=/home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/deps/libsel4_start-abbc063420c8e219.rlib --extern selfe_arc=/home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/deps/libselfe_arc-3b9c7d00b8778a03.rlib --extern selfe_sys=/home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/deps/libselfe_sys-df2e791c8027fbee.rlib --extern typenum=/home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/deps/libtypenum-f4f65f167736e74e.rlib -C link-arg=-no-pie -C link-arg=-nostdlib --sysroot /home/mullr/devel/ferros/example/target/sysroot -L native=/home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/build/selfe-sys-de3241eb47ee0041/out/sel4-build/9d61164a8cc9c139/libsel4`
+error[E0432]: unresolved import `hello_printer`
+  --> src/main.rs:11:5
+   |
+11 | use hello_printer;
+   |     ^^^^^^^^^^^^^ no `hello_printer` external crate
+
+warning: unused import: `hello_printer`
+  --> src/main.rs:11:5
+   |
+11 | use hello_printer;
+   |     ^^^^^^^^^^^^^
+   |
+   = note: #[warn(unused_imports)] on by default
+
+error: aborting due to previous error
+
+For more information about this error, try `rustc --explain E0432`.
+error: Could not compile `example`.
+
+Caused by:
+  process didn't exit successfully: `CARGO_PKG_NAME=example CARGO=/home/mullr/.rustup/toolchains/nightly-2019-04-11-x86_64-unknown-linux-gnu/bin/cargo OUT_DIR=/home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/build/example-c8cdffa6e178b8f2/out CARGO_PKG_VERSION_PRE= CARGO_PKG_VERSION_MINOR=1 CARGO_PKG_DESCRIPTION= CARGO_PKG_VERSION=0.1.0 CARGO_PRIMARY_PACKAGE=1 CARGO_MANIFEST_DIR=/home/mullr/devel/ferros/example CARGO_PKG_HOMEPAGE= LD_LIBRARY_PATH='/home/mullr/devel/ferros/example/target/debug/deps:/home/mullr/.rustup/toolchains/nightly-2019-04-11-x86_64-unknown-linux-gnu/lib:/home/mullr/.rustup/toolchains/nightly-2019-04-11-x86_64-unknown-linux-gnu/lib' CARGO_PKG_VERSION_PATCH=0 CARGO_PKG_AUTHORS='Russell Mull <russell@auxon.io>' CARGO_PKG_VERSION_MAJOR=0 CARGO_PKG_REPOSITORY= rustc --edition=2018 --crate-name example src/main.rs --color never --crate-type bin --emit=dep-info,link -C panic=abort -C debuginfo=2 -C metadata=eacce07f85ebffbe -C extra-filename=-eacce07f85ebffbe --out-dir /home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/deps --target aarch64-unknown-linux-gnu -C linker=aarch64-linux-gnu-gcc -C incremental=/home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/incremental -L dependency=/home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/deps -L dependency=/home/mullr/devel/ferros/example/target/debug/deps --extern ferros=/home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/deps/libferros-8a53bb731dd0e744.rlib --extern sel4_start=/home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/deps/libsel4_start-abbc063420c8e219.rlib --extern selfe_arc=/home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/deps/libselfe_arc-3b9c7d00b8778a03.rlib --extern selfe_sys=/home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/deps/libselfe_sys-df2e791c8027fbee.rlib --extern typenum=/home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/deps/libtypenum-f4f65f167736e74e.rlib -C link-arg=-no-pie -C link-arg=-nostdlib --sysroot /home/mullr/devel/ferros/example/target/sysroot -L native=/home/mullr/devel/ferros/example/target/aarch64-unknown-linux-gnu/debug/build/selfe-sys-de3241eb47ee0041/out/sel4-build/9d61164a8cc9c139/libsel4` (exit code: 1)
+thread 'main' panicked at 'assertion failed: output.status.success()', /home/mullr/.cargo/git/checkouts/selfe-sys-9724aecbc2372908/25cbde6/selfe-config/src/main.rs:288:9
+note: Run with `RUST_BACKTRACE=1` environment variable to display a backtrace.

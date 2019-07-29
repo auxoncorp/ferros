@@ -1,72 +1,0 @@
-Running root task build command:
-    SEL4_CONFIG_PATH=/home/mullr/devel/ferros/qemu-test/test-project/sel4.toml SEL4_PLATFORM=virt cargo xbuild --target=aarch64-unknown-linux-gnu
-   Compiling test-project v0.2.0 (/home/mullr/devel/ferros/qemu-test/test-project)
-warning: unused `#[macro_use]` import
- --> src/main.rs:9:1
-  |
-9 | #[macro_use]
-  | ^^^^^^^^^^^^
-  |
-  = note: #[warn(unused_imports)] on by default
-
-warning: unused `#[macro_use]` import
-  --> src/main.rs:12:1
-   |
-12 | #[macro_use]
-   | ^^^^^^^^^^^^
-
-    Finished dev [unoptimized + debuginfo] target(s) in 5.90s
-Using build_dir=/home/mullr/devel/ferros/qemu-test/test-project/target/sel4/build/sel4-build/85abf7d63bb6bfd0
-ROOT_TASK_PATH=/home/mullr/devel/ferros/qemu-test/test-project/target/aarch64-unknown-linux-gnu/debug/test-project
-Running cmake: "cmake" "-DCMAKE_TOOLCHAIN_FILE=/home/mullr/devel/ferros/qemu-test/test-project/target/sel4/source/kernel-branch-add-virt-platform/gcc.cmake" "-DCROSS_COMPILER_PREFIX=aarch64-linux-gnu-" "-DElfloaderImage=elf" "-DHardwareDebugAPI=false" "-DKERNEL_PATH=/home/mullr/devel/ferros/qemu-test/test-project/target/sel4/source/kernel-branch-add-virt-platform" "-DKernelARMPlatform=virt" "-DKernelArch=arm" "-DKernelArmHypervisorSupport=true" "-DKernelArmSel4Arch=aarch64" "-DKernelBenchmarks=none" "-DKernelColourPrinting=true" "-DKernelDebugBuild=true" "-DKernelDebugDisablePrefetchers=false" "-DKernelExportPMCUser=false" "-DKernelFPU=FXSAVE" "-DKernelFPUMaxRestoresSinceSwitch=64" "-DKernelFSGSBase=msr" "-DKernelFWholeProgram=false" "-DKernelFastpath=true" "-DKernelHaveFPU=true" "-DKernelHugePage=true" "-DKernelIOMMU=false" "-DKernelIPCBufferLocation=threadID_register" "-DKernelIRQController=IOAPIC" "-DKernelIRQReporting=true" "-DKernelLAPICMode=XAPIC" "-DKernelMaxNumBootinfoUntypedCaps=230" "-DKernelMaxNumIOAPIC=1" "-DKernelMaxNumNodes=1" "-DKernelMaxNumWorkUnitsPerPreemption=100" "-DKernelMultiboot1Header=true" "-DKernelMultiboot2Header=true" "-DKernelMultibootGFXMode=none" "-DKernelNumDomains=1" "-DKernelNumPriorities=256" "-DKernelPrinting=true" "-DKernelResetChunkBits=8" "-DKernelRetypeFanOutLimit=16384" "-DKernelRootCNodeSizeBits=19" "-DKernelSel4Arch=aarch64" "-DKernelSkimWindow=true" "-DKernelStackBits=12" "-DKernelSupportPCID=false" "-DKernelSyscall=syscall" "-DKernelTimeSlice=5" "-DKernelTimerTickMS=2" "-DKernelUserStackTraceLength=16" "-DKernelVerificationBuild=false" "-DKernelXSaveSize=576" "-DLibSel4FunctionAttributes=public" "-DLinkPageSize=4096" "-G" "Ninja" "."
--- Configuring done
--- Generating done
--- Build files have been written to: /home/mullr/devel/ferros/qemu-test/test-project/target/sel4/build/sel4-build/85abf7d63bb6bfd0
-Running ninja: "ninja" "all"
-[1/3] Generate CPIO archive archive.o
-[2/3] Linking C executable elfloader-tool/elfloader
-[3/3] Generating images/root_task-image-arm-virt
-
-ELF-loader started on CPU: ARM Ltd. Cortex-A57 r1p0
-  paddr=[41000000..419e906f]
-No DTB found!
-Looking for DTB in CPIO archive...
-Found dtb at 410f9478
-Loaded dtb from 410f9478
-   paddr=[40239000..40239fff]
-ELF-loading image 'kernel'
-  paddr=[40000000..40238fff]
-  vaddr=[ff8000000000..ff8000238fff]
-  virt_entry=ff8000000000
-ELF-loading image 'test-project'
-  paddr=[4023a000..404aafff]
-  vaddr=[400000..670fff]
-  virt_entry=422ef0
-ELF loader relocated, continuing boot...
-Enabling hypervisor MMU and paging
-Jumping to kernel-image entry point...
-
-Bootstrapping kernel
-Warning: Could not infer GIC interrupt target ID, assuming 0.
-Booting all finished, dropped to user space
-[0m[30;1m<<[0m[32mseL4(CPU 0)[0m[30;1m [decodeInvocation/532 T0xff800dffe400 "child of: 'rootserver'" @44ac1c]: Attempted to invoke a null cap #0.>>[0m
-*** Panic: PanicInfo {
-    payload: Any,
-    message: Some(
-        Error in child process: SeL4Error(UntypedRetype(InvalidCapability)),
-    ),
-    location: Location {
-        file: "/home/mullr/.rustup/toolchains/nightly-2019-04-11-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/src/libcore/result.rs",
-        line: 997,
-        col: 5,
-    },
-}
-Test failed:
- TestAssertionFailure(
-    "Child process should have reported success",
-)
-
-test test_project::grandkid_process_runs::grandkid_process_runs ... FAILED
-
-test result: FAILED. 0 passed; 1 failed;
-

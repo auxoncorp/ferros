@@ -8,9 +8,3 @@ edition = "2018"
 selfe-sys = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git", branch = "factor-out-runtime-lib" } 
 selfe-runtime = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git", branch = "factor-out-runtime-lib", features = [ "panic_handler"  ]} 
 ferros = { path = "../.." }
-
-[profile.dev]
-panic = "abort"
-
-[profile.release]
-panic = "abort"
