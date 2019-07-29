@@ -15,7 +15,7 @@ root_task_image = "target/armv7-unknown-linux-gnueabihf/release/example"
 cross_compiler_prefix = "aarch64-linux-gnu-"
 
 [build.virt.debug]
-make_root_task = "cargo xbuild --target=aarch64-unknown-linux-gnu"
+make_root_task = "cargo xbuild --target=aarch64-unknown-linux-gnu -vv"
 root_task_image = "target/aarch64-unknown-linux-gnu/debug/example"
 
 [build.virt.release]
