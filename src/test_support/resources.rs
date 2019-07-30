@@ -20,6 +20,7 @@ pub struct Resources {
     >,
     pub(super) cnode: LocalCap<LocalCNode>,
     pub(super) thread_authority: LocalCap<ThreadPriorityAuthority>,
+    pub(super) vspace_paging_root: LocalCap<crate::arch::PagingRoot>,
     pub(super) user_image: UserImage<role::Local>,
     pub(super) irq_control: LocalCap<IRQControl>,
 }
@@ -35,6 +36,7 @@ pub struct TestResourceRefs<'t> {
     >,
     pub(super) cnode: &'t LocalCap<LocalCNode>,
     pub(super) thread_authority: &'t LocalCap<ThreadPriorityAuthority>,
+    pub(super) vspace_paging_root: &'t LocalCap<crate::arch::PagingRoot>,
     pub(super) user_image: &'t UserImage<role::Local>,
     pub(super) irq_control: &'t mut LocalCap<IRQControl>,
 }
@@ -141,6 +143,11 @@ impl Resources {
                 mapped_memory_region,
                 cnode,
                 thread_authority: root_tcb.downgrade_to_thread_priority_authority(),
+                vspace_paging_root: Cap {
+                    cptr: selfe_sys::seL4_CapInitThreadVSpace as usize,
+                    cap_data: crate::arch::PagingRoot {},
+                    _role: core::marker::PhantomData,
+                },
                 user_image,
                 irq_control,
             },
@@ -160,6 +167,7 @@ impl Resources {
             mapped_memory_region: &mut self.mapped_memory_region,
             cnode: &self.cnode,
             thread_authority: &self.thread_authority,
+            vspace_paging_root: &self.vspace_paging_root,
             user_image: &self.user_image,
             irq_control: &mut self.irq_control
         }

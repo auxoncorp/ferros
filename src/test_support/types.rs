@@ -28,6 +28,7 @@ pub type RunTest = Fn(
     >,
     &LocalCap<LocalCNode>,
     &LocalCap<ThreadPriorityAuthority>,
+    &LocalCap<crate::arch::PagingRoot>,
     &UserImage<role::Local>,
     LocalCap<IRQControl>,
 ) -> (&'static str, TestOutcome);

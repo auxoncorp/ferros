@@ -9,11 +9,14 @@ use crate::vspace::VSpaceError;
 
 pub(crate) use crate::arch::userland::process::*;
 
+mod thread;
+pub use thread::{Thread, ThreadSetupError};
+
 mod standard;
-pub use standard::*;
+pub use standard::StandardProcess;
 
 mod self_hosted;
-pub use self_hosted::*;
+pub use self_hosted::SelfHostedProcess;
 
 pub type DefaultStackBitSize = U20;
 pub type DefaultStackPageCount = op!((U1 << U20) / U4096);

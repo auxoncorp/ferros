@@ -252,6 +252,14 @@ fn parse_localcap_param_kind(
                 span: segment.span() })
             }
         }
+        "PagingRoot" | "PageGlobalDirectory" => {
+            if arg_kind == ArgKind::Ref {
+                Ok(ParamKind::PagingRoot)
+            } else {
+                Err(ParseError::InvalidArgumentType {msg: format!("{} is only available as a type parameter of &LocalCap<>, not an owned or mutable LocalCap<>", &type_name),
+                    span: segment.span() })
+            }
+        }
         _ => Err(ParseError::InvalidArgumentType {
             msg: format!(
                 "Found an unsupported LocalCap type parameter, {}",

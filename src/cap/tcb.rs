@@ -5,7 +5,6 @@ use crate::cap::{
 };
 use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::FaultSource;
-use crate::vspace::{self, VSpace};
 
 #[derive(Debug)]
 pub struct ThreadControlBlock {}
@@ -68,11 +67,11 @@ impl LocalCap<ThreadControlBlock> {
         unsafe { core::mem::transmute(self) }
     }
 
-    pub fn configure<VSpaceState: vspace::VSpaceState>(
+    pub fn configure(
         &mut self,
         cspace_root: LocalCap<ChildCNode>,
         fault_source: Option<FaultSource<role::Child>>,
-        vspace: &VSpace<VSpaceState, role::Local>, // vspace_root,
+        virtual_address_space_root: &LocalCap<crate::arch::PagingRoot>, // vspace_root,
         ipc_buffer: Option<LocalCap<Page<page_state::Mapped>>>,
     ) -> Result<(), SeL4Error> {
         // Set up the cspace's guard to take the part of the cptr that's not
@@ -97,7 +96,7 @@ impl LocalCap<ThreadControlBlock> {
                 fault_source.map_or(seL4_CapNull as usize, |source| source.endpoint.cptr), // fault_ep.cptr,
                 cspace_root.cptr,
                 cspace_root_data,
-                vspace.root_cptr(),
+                virtual_address_space_root.cptr,
                 seL4_NilData as usize, // vspace_root_data, always 0, reserved by kernel?
                 buffer_vaddr,          // buffer address
                 buffer_cap,            // bufferFrame capability

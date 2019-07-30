@@ -15,6 +15,7 @@ extern crate typenum;
 mod call_and_response_loop;
 mod child_process_cap_management;
 mod child_process_runs;
+mod child_thread_runs;
 mod dont_tread_on_me;
 mod double_door_backpressure;
 mod fault_or_message_handler;
@@ -38,7 +39,9 @@ use ferros::alloc::ut_buddy::UTBuddyError;
 use ferros::cap::IRQError;
 use ferros::cap::RetypeError;
 use ferros::error::SeL4Error;
-use ferros::userland::{FaultManagementError, IPCError, MultiConsumerError, ProcessSetupError};
+use ferros::userland::{
+    FaultManagementError, IPCError, MultiConsumerError, ProcessSetupError, ThreadSetupError,
+};
 use ferros::vspace::VSpaceError;
 use ferros_test::ferros_test_main;
 
@@ -47,6 +50,7 @@ ferros_test_main!(&[
     &call_and_response_loop::call_and_response_loop,
     &child_process_cap_management::child_process_cap_management,
     &child_process_runs::child_process_runs,
+    &child_thread_runs::child_thread_runs,
     &dont_tread_on_me::dont_tread_on_me,
     &double_door_backpressure::double_door_backpressure,
     &fault_or_message_handler::fault_or_message_handler,
@@ -98,6 +102,7 @@ pub enum TopLevelError {
     IRQError(IRQError),
     FaultManagementError(FaultManagementError),
     ProcessSetupError(ProcessSetupError),
+    ThreadSetupError(ThreadSetupError),
     UTBuddyError(UTBuddyError),
     RetypeError(RetypeError),
     TestAssertionFailure(&'static str),
@@ -148,6 +153,12 @@ impl From<FaultManagementError> for TopLevelError {
 impl From<ProcessSetupError> for TopLevelError {
     fn from(e: ProcessSetupError) -> Self {
         TopLevelError::ProcessSetupError(e)
+    }
+}
+
+impl From<ThreadSetupError> for TopLevelError {
+    fn from(e: ThreadSetupError) -> Self {
+        TopLevelError::ThreadSetupError(e)
     }
 }
 

@@ -45,6 +45,7 @@ pub(crate) enum ParamKind {
     ThreadPriorityAuthority,
     UserImage,
     IRQControl,
+    PagingRoot,
 }
 
 #[derive(Debug, Clone)]

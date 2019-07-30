@@ -324,8 +324,8 @@ impl<State: VSpaceState, CapRole: CNodeRole> VSpace<State, CapRole> {
         self.asid
     }
 
-    pub(crate) fn root_cptr(&self) -> usize {
-        self.root.cptr
+    pub(crate) fn root(&self) -> &Cap<PagingRoot, CapRole> {
+        &self.root
     }
 }
 

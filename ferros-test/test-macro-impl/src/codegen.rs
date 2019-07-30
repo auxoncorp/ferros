@@ -144,6 +144,7 @@ fn local_allocations<G: IdGenerator>(
     let scratch = Ident::new("scratch", Span::call_site());
     let local_cnode = Ident::new("local_cnode", Span::call_site());
     let thread_authority = Ident::new("thread_authority", Span::call_site());
+    let vspace_paging_root = Ident::new("vspace_paging_root", Span::call_site());
     let user_image = Ident::new("user_image", Span::call_site());
     let ut_buddy_instance = Ident::new("ut_buddy_instance", Span::call_site());
     let mapped_memory_region = Ident::new("mapped_memory_region", Span::call_site());
@@ -211,6 +212,7 @@ fn local_allocations<G: IdGenerator>(
             }
             ParamKind::CNode => (parse_quote!({}), local_cnode.clone()),
             ParamKind::ThreadPriorityAuthority => (parse_quote!({}), thread_authority.clone()),
+            ParamKind::PagingRoot => (parse_quote!({}), vspace_paging_root.clone()),
             ParamKind::UserImage => (parse_quote!({}), user_image.clone()),
         };
         stmts.extend(p_block.stmts);
@@ -276,6 +278,9 @@ fn run_test_decl() -> FnDecl {
     ));
     run_test_inputs.push(parse_quote!(
         thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>
+    ));
+    run_test_inputs.push(parse_quote!(
+        vspace_paging_root: &ferros::cap::LocalCap<ferros::arch::PagingRoot>
     ));
     run_test_inputs.push(parse_quote!(
         user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>
@@ -348,6 +353,7 @@ mod tests {
                     ferros::test_support::MaxMappedMemoryRegionBitSize, ferros::vspace::shared_status::Exclusive,>,
                 local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
                 thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
+                vspace_paging_root: &ferros::cap::LocalCap<ferros::arch::PagingRoot>,
                 user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>,
                 irq_control: ferros::cap::LocalCap<ferros::cap::IRQControl>
             ) -> (&'static str, ferros::test_support::TestOutcome) {
@@ -410,6 +416,7 @@ mod tests {
                     ferros::test_support::MaxMappedMemoryRegionBitSize, ferros::vspace::shared_status::Exclusive,>,
                 local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
                 thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
+                vspace_paging_root: &ferros::cap::LocalCap<ferros::arch::PagingRoot>,
                 user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>,
                 irq_control: ferros::cap::LocalCap<ferros::cap::IRQControl>
             ) -> (&'static str, ferros::test_support::TestOutcome) {
@@ -476,6 +483,7 @@ mod tests {
                     ferros::test_support::MaxMappedMemoryRegionBitSize, ferros::vspace::shared_status::Exclusive,>,
                 local_cnode: &ferros::cap::LocalCap<ferros::cap::LocalCNode>,
                 thread_authority: &ferros::cap::LocalCap<ferros::cap::ThreadPriorityAuthority>,
+                vspace_paging_root: &ferros::cap::LocalCap<ferros::arch::PagingRoot>,
                 user_image: &ferros::bootstrap::UserImage<ferros::cap::role::Local>,
                 irq_control: ferros::cap::LocalCap<ferros::cap::IRQControl>
             ) -> (&'static str, ferros::test_support::TestOutcome) {
