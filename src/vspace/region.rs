@@ -510,3 +510,67 @@ pub(super) fn num_pages(size_bits: u8) -> Result<usize, InvalidSizeBits> {
         .checked_pow(u32::from(size_bits) - PageBits::U32)
         .ok_or_else(|| InvalidSizeBits::SizeBitsTooBig)?)
 }
+
+struct MemoryRegion<Size: Unsigned, State: RegionState, Kind: MemoryKind, Role: CNodeRole> {
+    granules: WeakCapRange<Granule<State>, Role>,
+    kind: WeakMemoryKind,
+    _size_bits: PhantomData<Size>,
+}
+
+impl<Size: Unsigned, Role: CNodeRole>
+    MemoryRegion<Size, region_state::Unmapped, memory_kind::General, Role>
+{
+    /// construct a stronly typed (size indexed) unmapped memory region.
+    fn new(slots: &mut WNodeSlots, ut: Untyped<Size, memory_kind::General>) -> Self {
+        let caps = match arch::determine_best_granule_fit(Size::USIZE) {
+            (Granules::HugePage, count) => ut
+                .weaken()
+                .retype_multi::<HugePage>(slots)?
+                .into_iter()
+                .map(|cap| Cap {
+                    cptr: cap.cptr,
+                    cap_data: Granule {
+                        size: HugePageBits::U8,
+                        kind: memory_kind::General {},
+                        _size_bits: PhantomData,
+                    },
+                    _role: PhantomData,
+                })
+                .collect(),
+            (Granules::LargePage, count) => ut
+                .weaken()
+                .retype_multi::<LargePage>(slots)?
+                .into_iter()
+                .map(|cap| Cap {
+                    cptr: cap.cptr,
+                    cap_data: Granule {
+                        size: LargePageBits::U8,
+                        kind: memory_kind::General {},
+                        _size_bits: PhantomData,
+                    },
+                    _role: PhantomData,
+                })
+                .collect(),
+            (Granules::Page, count) => ut
+                .weaken()
+                .retype_multi::<Page>(slots)?
+                .into_iter()
+                .map(|cap| Cap {
+                    cptr: cap.cptr,
+                    cap_data: Granule {
+                        size: PageBits::U8,
+                        kind: memory_kind::General {},
+                        _size_bits: PhantomData,
+                    },
+                    _role: PhantomData,
+                })
+                .collect(),
+        };
+
+        MemoryRegion {
+            granules: caps,
+            kind: memory_kind::General {},
+            _size_bits: PhantomData,
+        }
+    }
+}

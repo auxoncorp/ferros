@@ -157,35 +157,20 @@ pub enum Granules {
     HugePage,
 }
 
-// This is effectively a fold from usize -> [Granules] so we may be
-// able to implement at the type-level. However, doing so may
-// introduce insane constraints that we can't live with when it
-// pollutes any thing downstream.
-//
-/// Fold over `region_size` and spit out the granule configuration
-/// that one ought to use to map a region of that size.
-pub(crate) fn determine_best_granule_fit(region_size: usize) -> ArrayVec<[Granules; 256]> {
-    let mut size = region_size;
-    let mut granules = ArrayVec::new();
-
-    while size >= HugePageBytes::USIZE {
-        granules.push(Granules::HugePage);
-        size -= HugePageBytes::USIZE;
+fn determine_best_granule_fit(region_size_bits: u8) -> (Granules, u8) {
+    match region_size_bits {
+        _ if region_size_bits >= <cap::HugePage as DirectRetype>::SizeBits::U8 => (
+            Granules::HugePage,
+            (1 << region_size_bits) / <HugePage as DirectRetype>::SizeBits::U8,
+        ),
+        _ if region_size_bits >= <LargePage as DirectRetype>::SizeBits::U8 => (
+            Granules::LargePage,
+            (1 << region_size_bits) / <LargePage as DirectRetype>::SizeBits::U8,
+        ),
+        _ if region_size_bits >= <Page as DirectRetype>::SizeBits::U8 => (
+            Granules::Page,
+            (1 << region_size_bits) / <Page as DirectRetype>::SizeBits::U8,
+        ),
+        _ => unreachable!(),
     }
-
-    while size >= LargePageBytes::USIZE {
-        granules.push(Granules::LargePage);
-        size -= LargePageBytes::USIZE;
-    }
-
-    while size >= PageBytes::USIZE {
-        granules.push(Granules::Page);
-        size -= PageBytes::USIZE;
-    }
-
-    // If the size is page aligned, we should always end up with 0
-    // left over.
-    assert_eq!(size, 0);
-
-    granules
 }

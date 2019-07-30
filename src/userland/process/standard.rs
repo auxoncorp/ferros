@@ -115,7 +115,7 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
             arch::vm_attributes::DEFAULT & arch::vm_attributes::EXECUTE_NEVER,
         )?;
 
-        //// allocate the thread control block
+        // allocate the thread control block
         let (tcb_slots, _slots) = misc_slots.alloc();
         let mut tcb = tcb_ut.retype(tcb_slots)?;
 
