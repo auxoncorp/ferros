@@ -397,8 +397,9 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         for page_cap in region.caps.into_iter() {
             let _ = self.unmap_page(page_cap)?;
         }
-        Ok(WeakUnmappedMemoryRegion::unchecked_new(
+        Ok(WeakMemoryRegion::unchecked_new(
             start_cptr,
+            page_state::Unmapped,
             region.kind,
             size_bits,
         ))
@@ -644,7 +645,12 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                     let _ = unmap_mapped_page_cptrs(mapped_pages);
                     return Err((
                         VSpaceError::SeL4Error(e),
-                        WeakUnmappedMemoryRegion::unchecked_new(cptr, kind, size_bits),
+                        WeakMemoryRegion::unchecked_new(
+                            cptr,
+                            page_state::Unmapped,
+                            kind,
+                            size_bits,
+                        ),
                     ));
                 }
                 Err(e) => {
@@ -652,7 +658,12 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                     let _ = unmap_mapped_page_cptrs(mapped_pages);
                     return Err((
                         VSpaceError::MappingError(e),
-                        WeakUnmappedMemoryRegion::unchecked_new(cptr, kind, size_bits),
+                        WeakMemoryRegion::unchecked_new(
+                            cptr,
+                            page_state::Unmapped,
+                            kind,
+                            size_bits,
+                        ),
                     ));
                 }
                 Ok(_) => {
@@ -691,12 +702,18 @@ impl VSpace<vspace_state::Imaged, role::Local> {
             let _ = unmap_mapped_page_cptrs(mapped_pages);
             return Err((
                 e,
-                WeakUnmappedMemoryRegion::unchecked_new(cptr, kind, size_bits),
+                WeakMemoryRegion::unchecked_new(cptr, page_state::Unmapped, kind, size_bits),
             ));
         }
 
         Ok(WeakMappedMemoryRegion::unchecked_new(
-            cptr, vaddr, self.asid, kind, size_bits,
+            cptr,
+            page_state::Mapped {
+                vaddr,
+                asid: self.asid,
+            },
+            kind,
+            size_bits,
         ))
     }
 
@@ -785,8 +802,10 @@ impl VSpace<vspace_state::Imaged, role::Local> {
 
         Ok(WeakMappedMemoryRegion::unchecked_new(
             dest_init_cptr,
-            vaddr,
-            self.asid,
+            page_state::Mapped {
+                vaddr,
+                asid: self.asid,
+            },
             kind,
             size_bits,
         ))
@@ -839,7 +858,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                 WeakCopyError::SeL4Error(e) => VSpaceError::SeL4Error(e),
             })?;
         let unmapped_sr: WeakUnmappedMemoryRegion<shared_status::Shared> =
-            WeakUnmappedMemoryRegion::try_from_caps(caps_copy, region.kind, region.size_bits())
+            WeakMemoryRegion::try_from_caps(caps_copy, region.kind, region.size_bits())
                 .map_err(|_| VSpaceError::InvalidRegionSize)?;
         self.weak_map_region_internal(unmapped_sr, rights, vm_attributes)
     }
@@ -897,8 +916,10 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         // unmapped region.
         let mapped_region = WeakMappedMemoryRegion::unchecked_new(
             region.caps.start_cptr,
-            starting_address,
-            self.asid(),
+            page_state::Mapped {
+                vaddr: starting_address,
+                asid: self.asid(),
+            },
             region.kind,
             region.size_bits(),
         );
@@ -1091,7 +1112,11 @@ where
             }
         }
         let unmapped_region_copy: UnmappedMemoryRegion<SizeBits, shared_status::Exclusive> =
-            UnmappedMemoryRegion::unchecked_new(region.caps.start_cptr, region.kind);
+            UnmappedMemoryRegion::unchecked_new(
+                region.caps.start_cptr,
+                page_state::Unmapped,
+                region.kind,
+            );
         let mut next_addr = start_vaddr;
         for page in unmapped_region_copy.caps.into_iter() {
             match self.vspace.layers.map_layer(
@@ -1117,10 +1142,12 @@ where
             next_addr += PageBytes::USIZE;
         }
         // map the pages at our predetermined/pre-allocated vaddr range
-        let mut mapped_region = MappedMemoryRegion::unchecked_new(
+        let mut mapped_region = MemoryRegion::unchecked_new(
             region.caps.start_cptr,
-            start_vaddr,
-            self.reserved_region.asid,
+            page_state::Mapped {
+                vaddr: start_vaddr,
+                asid: self.reserved_region.asid,
+            },
             region.kind,
         );
         let res = f(&mut mapped_region);

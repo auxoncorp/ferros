@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 
 use typenum::*;
 
-use crate::cap::{page_state, Page, PageState, PhantomCap};
+use crate::cap::{page_state, Page, PhantomCap};
 use crate::vspace::{PagingRec, PagingTop};
 
 pub mod cap;
