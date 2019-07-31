@@ -81,9 +81,6 @@ fn run(raw_bootinfo: &'static selfe_sys::seL4_BootInfo) -> Result<(), TopLevelEr
     debug_println!("Binary found, size is {}", hello_printer_elf_data.len());
     debug_println!("\n\n\n");
 
-    let elf = xmas_elf::ElfFile::new(hello_printer_elf_data).expect("Error parsing elf file");
-    let entry_point = elf.header.pt2.entry_point() as usize;
-
     let uts = alloc::ut_buddy(allocator.alloc_strong::<U20>(&mut ut_slots)?);
     smart_alloc!(|slots: local_slots, ut: uts| {
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
@@ -119,17 +116,17 @@ fn run(raw_bootinfo: &'static selfe_sys::seL4_BootInfo) -> Result<(), TopLevelEr
         let stack_mem =
             root_vspace.map_region(stack_mem, CapRights::RW, arch::vm_attributes::DEFAULT)?;
 
-        let hello_process = StandardProcess::new::<hello_printer::ProcParams>(
+        let hello_process = StandardProcess::new::<hello_printer::ProcParams, _>(
             &mut hello_vspace,
             hello_cnode,
             stack_mem,
             &root_cnode,
-            unsafe { core::mem::transmute(entry_point) }, // proc_main
+            hello_printer_elf_data,
             params,
-            ut,
-            ut,
+            ut, // ipc_buffer_ut
+            ut, // tcb_ut
             slots,
-            &tpa,
+            &tpa, // priority_authority
             None, // fault
         )?;
     });

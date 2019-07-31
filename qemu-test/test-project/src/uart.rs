@@ -99,7 +99,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             uart1_cnode,
             mapped_region,
             &root_cnode,
-            uart::run,
+            uart::run as extern "C" fn(_) -> (),
             uart1_params,
             ut,
             ut,

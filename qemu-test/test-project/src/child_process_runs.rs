@@ -53,7 +53,7 @@ pub fn child_process_runs(
             child_cnode,
             local_mapped_region,
             root_cnode,
-            proc_main,
+            proc_main as extern "C" fn(_) -> (),
             params,
             ut,
             ut,
