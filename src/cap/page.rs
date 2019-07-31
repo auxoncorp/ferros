@@ -1,5 +1,7 @@
 use crate::arch::PageBytes;
-use crate::cap::{CapRangeDataReconstruction, InternalASID};
+use crate::cap::{
+    CNodeRole, Cap, CapRangeDataReconstruction, CapType, CopyAliasable, InternalASID, Movable,
+};
 use typenum::Unsigned;
 
 #[derive(Clone, Debug)]
@@ -8,7 +10,7 @@ pub struct Page<State: PageState> {
 }
 
 pub trait PageState:
-    private::SealedPageState + core::fmt::Debug + Clone + Sized + PartialEq
+    private::SealedPageState + Copy + Clone + core::fmt::Debug + Sized + PartialEq
 {
     fn offset_by(&self, bytes: usize) -> Option<Self>;
 }
@@ -16,7 +18,7 @@ pub trait PageState:
 pub mod page_state {
     use super::*;
 
-    #[derive(Clone, Debug, PartialEq)]
+    #[derive(Clone, Copy, Debug, PartialEq)]
     pub struct Mapped {
         pub(crate) vaddr: usize,
         pub(crate) asid: InternalASID,
@@ -34,7 +36,7 @@ pub mod page_state {
         }
     }
 
-    #[derive(Clone, Debug, PartialEq)]
+    #[derive(Clone, Copy, Debug, PartialEq)]
     pub struct Unmapped;
     impl super::PageState for Unmapped {
         fn offset_by(&self, _bytes: usize) -> Option<Self> {
@@ -42,18 +44,21 @@ pub mod page_state {
         }
     }
 }
-impl<'a, State: PageState> From<&'a Page<State>> for Page<State> {
-    fn from(val: &'a Page<State>) -> Self {
-        val.clone()
-    }
+impl<State: PageState> CapType for Page<State> {}
+
+impl<State: PageState> CopyAliasable for Page<State> {
+    type CopyOutput = Page<page_state::Unmapped>;
 }
-impl<'a> From<&'a Page<page_state::Mapped>> for Page<page_state::Unmapped> {
-    fn from(_val: &'a Page<page_state::Mapped>) -> Self {
+impl<State: PageState> Movable for Page<State> {}
+
+impl<'a, State: PageState> From<&'a Page<State>> for Page<page_state::Unmapped> {
+    fn from(_val: &'a Page<State>) -> Self {
         Page {
             state: page_state::Unmapped {},
         }
     }
 }
+
 impl<State: PageState> CapRangeDataReconstruction for Page<State> {
     fn reconstruct(index: usize, seed_cap_data: &Self) -> Self {
         Page {
@@ -63,6 +68,15 @@ impl<State: PageState> CapRangeDataReconstruction for Page<State> {
                 // TODO - consider making reconstruct fallible
                 .expect("Earlier checks confirm the memory fits into available space"),
         }
+    }
+}
+
+impl<CapRole: CNodeRole> Cap<Page<page_state::Mapped>, CapRole> {
+    pub fn vaddr(&self) -> usize {
+        self.cap_data.state.vaddr
+    }
+    pub(crate) fn asid(&self) -> InternalASID {
+        self.cap_data.state.asid
     }
 }
 
