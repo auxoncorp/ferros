@@ -10,6 +10,7 @@ sel4-start = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git", branch = "f
 selfe-arc = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git", branch = "factor-out-runtime-lib", default-features = false }
 ferros = { path = "../.." }
 typenum = "1.10"
+xmas-elf = "0.7"
 
 hello-printer = { path = "../hello-printer" }
 

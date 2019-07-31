@@ -96,6 +96,7 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
         registers.pc = function_descriptor as usize;
 
         // TODO - Probably ought to suspend or destroy the thread instead of endlessly yielding
+        // TODO This doesn't work for elf procs, since yield_forever isn't there
         set_thread_link_register(&mut registers, yield_forever);
 
         // Reserve a guard page after the stack

@@ -1,4 +1,5 @@
 # build all packages in the right order, so binary packaging works as expected.
+set -e
 
 if [ -z ${SEL4_CONFIG_PATH+x} ]; then
     echo "SEL4_CONFIG_PATH is unset; set it, or build with 'selfe'";

@@ -234,6 +234,14 @@ where
         self.caps.start_cap_data.state.asid
     }
 
+    pub fn as_slice(&self) -> &[u8] {
+        unsafe { core::slice::from_raw_parts(self.vaddr() as *const u8, self.size_bytes()) }
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        unsafe { core::slice::from_raw_parts_mut(self.vaddr() as *mut u8, self.size_bytes()) }
+    }
+
     /// In the Ok case, returns a shared, unmapped copy of the memory
     /// region (backed by fresh page-caps) along with this self-same
     /// mapped memory region, marked as shared.
@@ -551,6 +559,14 @@ impl<SS: SharedStatus> WeakMappedMemoryRegion<SS> {
 
     pub(crate) fn asid(&self) -> InternalASID {
         self.caps.start_cap_data.state.asid
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        unsafe { core::slice::from_raw_parts(self.vaddr() as *const u8, self.size_bytes()) }
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        unsafe { core::slice::from_raw_parts_mut(self.vaddr() as *mut u8, self.size_bytes()) }
     }
 
     pub(super) fn try_from_caps(

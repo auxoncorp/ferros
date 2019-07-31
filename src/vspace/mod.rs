@@ -26,6 +26,25 @@ pub use region::*;
 
 include!(concat!(env!("OUT_DIR"), "/KERNEL_RETYPE_FAN_OUT_LIMIT"));
 
+pub trait ElfProc: Sized {
+    /// The name of the image in the selfe_arc
+    const IMAGE_NAME: &'static str;
+
+    /// The total number of pages which need to be mapped when starting the process
+    type RequiredPages: Unsigned;
+
+    /// The number of pages which need to be mapped as writeable (data and BSS
+    /// sections)
+    type WritablePages: Unsigned;
+
+    /// How much memory is required to set up this process (for its writable
+    /// pages), as a bitsize.
+    type RequiredMemoryBits: Unsigned;
+
+    /// How much memory is needed for the process stack, as a bitsize.
+    type StackSizeBits: Unsigned;
+}
+
 pub trait VSpaceState: private::SealedVSpaceState {}
 
 pub mod vspace_state {
@@ -446,6 +465,164 @@ impl VSpace<vspace_state::Imaged, role::Local> {
             untyped: child_untyped,
             slots: child_paging_slots,
             available_address_range,
+            _state: PhantomData,
+        })
+    }
+
+    pub fn new_from_elf<'a, 'b, E: ElfProc>(
+        paging_root: LocalCap<PagingRoot>,
+        asid: LocalCap<UnassignedASID>,
+        mut slots: WCNodeSlots,
+        paging_untyped: LocalCap<WUntyped<memory_kind::General>>,
+        // Things relating to user image code
+        elf_data: &[u8],
+        page_slots: LocalCNodeSlots<E::RequiredPages>,
+        // page_slots: LocalCNodeSlots<U16>,
+        elf_writable_mem: LocalCap<Untyped<E::RequiredMemoryBits>>,
+        user_image: &UserImage<role::Local>,
+        parent_cnode: &LocalCap<LocalCNode>,
+        local_vspace: &mut VSpace,
+    ) -> Result<Self, VSpaceError>
+    where
+        <E as ElfProc>::WritablePages: _Pow,
+        Pow<<E as ElfProc>::WritablePages>: Unsigned,
+    {
+        let mut vspace =
+            VSpace::<vspace_state::Empty>::new(paging_root, asid, slots, paging_untyped)?;
+
+        let elf = xmas_elf::ElfFile::new(elf_data).expect("Error parsing elf file");
+        let mut page_slots = page_slots.weaken();
+        let mut writable_segment_pages_iter = elf_writable_mem
+            .weaken()
+            .retype_pages(&mut page_slots)
+            .unwrap()
+            .into_iter();
+
+        for program_header in elf
+            .program_iter()
+            .filter(|h| h.get_type() == Ok(xmas_elf::program::Type::Load))
+        {
+            let vaddr = program_header.virtual_addr() as usize;
+            let offset = program_header.offset();
+            let vaddr_here = (elf_data as *const [u8] as *const u8 as usize) + offset as usize;
+            let file_size = program_header.file_size() as usize;
+            let flags = program_header.flags();
+
+            let vm_attrs = if flags.is_execute() {
+                arch::vm_attributes::PROGRAM_CODE
+            } else {
+                arch::vm_attributes::PROGRAM_DATA
+            };
+
+            if flags.is_write() {
+                // copy the data into new pages
+                let mem_size = program_header.mem_size() as usize;
+                // let page_count = (mem_size / arch::PageBytes::USIZE)
+                //     + (mem_size % arch::PageBytes::USIZE != 0) as usize;
+
+                let src_offset = program_header.offset() as usize;
+                let src_end = src_offset + file_size;
+                let mut curr_src_offset = src_offset;
+                let mut curr_page_vaddr = vaddr & !((1 << arch::PageBits::USIZE) - 1);
+
+                loop {
+                    // The next page boundary, or the end of the data, whichever is first
+                    let next_src_offset = core::cmp::min(
+                        (curr_src_offset + arch::PageBytes::USIZE)
+                            & !((1 << arch::PageBits::USIZE) - 1),
+                        src_end,
+                    );
+
+                    let dest_page = writable_segment_pages_iter.next().unwrap();
+
+                    let unmapped_region = dest_page.to_region();
+                    let mut mapped_region = local_vspace
+                        .map_region(unmapped_region, CapRights::RW, vm_attrs)
+                        .unwrap();
+
+                    let dest_mem = mapped_region.as_mut_slice();
+                    let offset_in_dest_mem = curr_src_offset & ((1 << arch::PageBits::USIZE) - 1);
+                    let end_in_dest_mem = next_src_offset & ((1 << arch::PageBits::USIZE) - 1);
+                    let end_in_dest_mem = if end_in_dest_mem == 0 {
+                        arch::PageBytes::USIZE
+                    } else {
+                        end_in_dest_mem
+                    };
+
+                    for dest in &mut dest_mem[0..offset_in_dest_mem] {
+                        *dest = 0;
+                    }
+
+                    &mut dest_mem[offset_in_dest_mem..end_in_dest_mem]
+                        .copy_from_slice(&elf_data[src_offset..next_src_offset]);
+
+                    for dest in &mut dest_mem[end_in_dest_mem..] {
+                        *dest = 0;
+                    }
+
+                    let unmapped_region = local_vspace.unmap_region(mapped_region).unwrap();
+
+                    let _ = vspace.map_page_at_addr_without_watermarking(
+                        unmapped_region.to_page(),
+                        curr_page_vaddr,
+                        CapRights::RW,
+                        vm_attrs,
+                    )?;
+                    vspace
+                        .available_address_range
+                        .observe_mapping(curr_page_vaddr, PageBits::U8)?;
+
+                    curr_page_vaddr += arch::PageBytes::USIZE;
+                    curr_src_offset = next_src_offset;
+
+                    if curr_src_offset >= src_end {
+                        break;
+                    }
+                }
+
+            // zero out any remaining memory, in pages after src
+            } else {
+                // map in the pages from boot_info
+                let mut v = vaddr;
+                let start_page_vaddr_here = vaddr_here & !0xfff;
+
+                // TODO just index into the pages
+                for ui_page in user_image
+                    .pages_iter()
+                    .skip_while(|p| p.cap_data.state.vaddr < start_page_vaddr_here)
+                    .take_while(|p| p.cap_data.state.vaddr < vaddr_here + file_size)
+                {
+                    let page_vaddr_here = ui_page.cap_data.state.vaddr;
+                    // debug_println!("mapping root page {:#018x} to {:#018x}", ui_page.cap_data.state.vaddr, v);
+
+                    let copied_page_cap = ui_page.copy(
+                        &parent_cnode,
+                        page_slots.alloc_strong::<U1>().unwrap(),
+                        CapRights::R,
+                    )?;
+
+                    let _ = vspace.map_page_at_addr_without_watermarking(
+                        copied_page_cap,
+                        v,
+                        CapRights::R,
+                        vm_attrs,
+                    )?;
+                    vspace
+                        .available_address_range
+                        .observe_mapping(v, PageBits::U8)?;
+
+                    v += 0x1000;
+                }
+            }
+        }
+
+        Ok(VSpace {
+            root: vspace.root,
+            asid: vspace.asid,
+            layers: vspace.layers,
+            untyped: vspace.untyped,
+            slots: vspace.slots,
+            available_address_range: vspace.available_address_range,
             _state: PhantomData,
         })
     }
