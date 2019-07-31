@@ -9,41 +9,6 @@ pub struct Page<State: PageState> {
     pub(crate) state: State,
 }
 
-pub trait PageState:
-    private::SealedPageState + Copy + Clone + core::fmt::Debug + Sized + PartialEq
-{
-    fn offset_by(&self, bytes: usize) -> Option<Self>;
-}
-
-pub mod page_state {
-    use super::*;
-
-    #[derive(Clone, Copy, Debug, PartialEq)]
-    pub struct Mapped {
-        pub(crate) vaddr: usize,
-        pub(crate) asid: InternalASID,
-    }
-    impl super::PageState for Mapped {
-        fn offset_by(&self, bytes: usize) -> Option<Self> {
-            if let Some(b) = self.vaddr.checked_add(bytes) {
-                Some(Mapped {
-                    vaddr: b,
-                    asid: self.asid,
-                })
-            } else {
-                None
-            }
-        }
-    }
-
-    #[derive(Clone, Copy, Debug, PartialEq)]
-    pub struct Unmapped;
-    impl super::PageState for Unmapped {
-        fn offset_by(&self, _bytes: usize) -> Option<Self> {
-            Some(Unmapped)
-        }
-    }
-}
 impl<State: PageState> CapType for Page<State> {}
 
 impl<State: PageState> CopyAliasable for Page<State> {
@@ -78,10 +43,4 @@ impl<CapRole: CNodeRole> Cap<Page<page_state::Mapped>, CapRole> {
     pub(crate) fn asid(&self) -> InternalASID {
         self.cap_data.state.asid
     }
-}
-
-mod private {
-    pub trait SealedPageState {}
-    impl SealedPageState for super::page_state::Unmapped {}
-    impl SealedPageState for super::page_state::Mapped {}
 }

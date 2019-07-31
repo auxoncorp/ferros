@@ -264,9 +264,6 @@ where
     }
 }
 
-// 2^12 / PageCount
-pub type NumPages<Size> = Pow<op!(Size - PageBits)>;
-
 pub enum ProcessCodeImageConfig<'a, 'b, 'c> {
     ReadOnly,
     /// Use when you need to be able to write to statics in the child process

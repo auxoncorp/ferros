@@ -11,6 +11,7 @@ mod badge;
 mod cnode;
 mod endpoint;
 mod fault_reply_endpoint;
+mod granule;
 mod irq_control;
 pub mod irq_handler;
 mod notification;
@@ -23,6 +24,7 @@ pub use badge::*;
 pub use cnode::*;
 pub use endpoint::*;
 pub use fault_reply_endpoint::*;
+pub use granule::*;
 pub use irq_control::*;
 pub use irq_handler::*;
 pub use notification::*;
@@ -52,6 +54,14 @@ pub mod role {
 pub trait DirectRetype {
     type SizeBits: Unsigned;
     fn sel4_type_id() -> usize;
+
+    fn type_id(&self) -> usize {
+        Self::sel4_type_id()
+    }
+
+    fn size_bits() -> u8 {
+        Self::SizeBits::U8
+    }
 }
 
 /// Marker trait for CapType implementing structs to indicate that

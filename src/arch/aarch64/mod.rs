@@ -1,10 +1,8 @@
 use core::marker::PhantomData;
 
-use arrayvec::ArrayVec;
-
 use typenum::*;
 
-use crate::cap::{page_state, Page, PhantomCap};
+use crate::cap::{page_state, GranuleInfo, Page, PhantomCap};
 use crate::vspace::{PagingRec, PagingTop};
 
 pub mod cap;
@@ -150,27 +148,25 @@ pub mod vm_attributes {
     pub const EXECUTE_NEVER: VMAttributes = selfe_sys::seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever;
 }
 
-#[derive(Debug)]
-pub enum Granules {
-    Page,
-    LargePage,
-    HugePage,
-}
+pub(crate) type WorstCaseGranuleSlotCount = U256;
 
-fn determine_best_granule_fit(region_size_bits: u8) -> (Granules, u8) {
+pub(crate) fn determine_best_granule_fit(region_size_bits: u8) -> GranuleInfo {
     match region_size_bits {
-        _ if region_size_bits >= <cap::HugePage as DirectRetype>::SizeBits::U8 => (
-            Granules::HugePage,
-            (1 << region_size_bits) / <HugePage as DirectRetype>::SizeBits::U8,
-        ),
-        _ if region_size_bits >= <LargePage as DirectRetype>::SizeBits::U8 => (
-            Granules::LargePage,
-            (1 << region_size_bits) / <LargePage as DirectRetype>::SizeBits::U8,
-        ),
-        _ if region_size_bits >= <Page as DirectRetype>::SizeBits::U8 => (
-            Granules::Page,
-            (1 << region_size_bits) / <Page as DirectRetype>::SizeBits::U8,
-        ),
+        _ if region_size_bits >= HugePageBits::U8 => GranuleInfo {
+            type_id: cap::HugePage::TYPE_ID,
+            size_bits: HugePageBits::U8,
+            count: (1 << region_size_bits) / HugePageBits::U8,
+        },
+        _ if region_size_bits >= LargePageBits::U8 => GranuleInfo {
+            type_id: cap::LargePage::TYPE_ID,
+            size_bits: LargePageBits::U8,
+            count: (1 << region_size_bits) / LargePageBits::U8,
+        },
+        _ if region_size_bits >= PageBits::U8 => GranuleInfo {
+            type_id: crate::cap::Page::TYPE_ID,
+            size_bits: PageBits::U8,
+            count: (1 << region_size_bits) / PageBits::U8,
+        },
         _ => unreachable!(),
     }
 }
