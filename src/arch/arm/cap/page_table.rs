@@ -10,19 +10,14 @@ use crate::vspace::{MappingError, Maps};
 pub struct PageTable {}
 
 impl Maps<Page<page_state::Unmapped>> for PageTable {
-    fn map_granule<RootLowerLevel, Root>(
+    fn map_granule(
         &mut self,
         page: &LocalCap<Page<page_state::Unmapped>>,
         addr: usize,
-        root: &mut LocalCap<Root>,
+        root: &mut LocalCap<arch::PagingRoot>,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
-    ) -> Result<(), MappingError>
-    where
-        Root: Maps<RootLowerLevel>,
-        Root: CapType,
-        RootLowerLevel: CapType,
-    {
+    ) -> Result<(), MappingError> {
         if is_aligned(addr) {
             match unsafe {
                 seL4_ARM_Page_Map(

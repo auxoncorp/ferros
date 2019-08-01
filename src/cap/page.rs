@@ -75,9 +75,6 @@ impl<CapRole: CNodeRole> Cap<Page<page_state::Mapped>, CapRole> {
     pub fn vaddr(&self) -> usize {
         self.cap_data.state.vaddr
     }
-    pub(crate) fn asid(&self) -> InternalASID {
-        self.cap_data.state.asid
-    }
 }
 
 mod private {

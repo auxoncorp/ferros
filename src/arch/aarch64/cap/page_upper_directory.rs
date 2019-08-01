@@ -7,7 +7,9 @@ use crate::error::{ErrorExt, KernelError, SeL4Error};
 use crate::userland::CapRights;
 use crate::vspace::{MappingError, Maps};
 
-use super::super::{PageDirIndexBits, PageIndexBits, PageTableIndexBits, PageUpperDirIndexBits};
+use super::super::{
+    PageDirIndexBits, PageIndexBits, PageTableIndexBits, PageUpperDirIndexBits, PagingRoot,
+};
 use super::PageDirectory;
 
 const UD_MASK: usize = !((1 << PageIndexBits::USIZE + PageTableIndexBits::USIZE) - 1);
@@ -16,19 +18,14 @@ const UD_MASK: usize = !((1 << PageIndexBits::USIZE + PageTableIndexBits::USIZE)
 pub struct PageUpperDirectory {}
 
 impl Maps<PageDirectory> for PageUpperDirectory {
-    fn map_granule<RootLowerLevel, Root>(
+    fn map_granule(
         &mut self,
         dir: &LocalCap<PageDirectory>,
         addr: usize,
-        root: &mut LocalCap<Root>,
+        root: &mut LocalCap<PagingRoot>,
         _rights: CapRights,
         vm_attributes: seL4_ARM_VMAttributes,
-    ) -> Result<(), MappingError>
-    where
-        Root: Maps<RootLowerLevel>,
-        Root: CapType,
-        RootLowerLevel: CapType,
-    {
+    ) -> Result<(), MappingError> {
         match unsafe {
             seL4_ARM_PageDirectory_Map(dir.cptr, root.cptr, addr & UD_MASK, vm_attributes)
         }

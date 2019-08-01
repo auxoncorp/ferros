@@ -57,15 +57,13 @@ pub type AddressSpace = PagingRec<
     PagingRec<
         cap::PageTable,
         cap::PageDirectory,
-        PagingRec<
-            cap::PageDirectory,
-            cap::PageUpperDirectory,
-            PagingTop<cap::PageUpperDirectory, cap::PageGlobalDirectory>,
-        >,
+        PagingRec<cap::PageDirectory, cap::PageUpperDirectory, PagingTop>,
     >,
 >;
 
 pub type PagingRoot = cap::PageGlobalDirectory;
+/// The level directly underneath the PagingRoot
+pub type PagingRootLowerLevel = cap::PageUpperDirectory;
 
 impl AddressSpace {
     pub fn new() -> Self {

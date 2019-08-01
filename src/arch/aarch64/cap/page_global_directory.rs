@@ -9,7 +9,7 @@ use crate::vspace::{MappingError, Maps};
 
 use super::super::{
     PageDirIndexBits, PageGlobalDirIndexBits, PageIndexBits, PageTableIndexBits,
-    PageUpperDirIndexBits,
+    PageUpperDirIndexBits, PagingRoot,
 };
 use super::PageUpperDirectory;
 
@@ -20,19 +20,14 @@ const GD_MASK: usize =
 pub struct PageGlobalDirectory {}
 
 impl Maps<PageUpperDirectory> for PageGlobalDirectory {
-    fn map_granule<RootLowerLevel, Root>(
+    fn map_granule(
         &mut self,
         upper_dir: &LocalCap<PageUpperDirectory>,
         addr: usize,
-        root: &mut LocalCap<Root>,
+        root: &mut LocalCap<PagingRoot>,
         _rights: CapRights,
         vm_attributes: seL4_ARM_VMAttributes,
-    ) -> Result<(), MappingError>
-    where
-        Root: Maps<RootLowerLevel>,
-        Root: CapType,
-        RootLowerLevel: CapType,
-    {
+    ) -> Result<(), MappingError> {
         unsafe {
             seL4_ARM_PageUpperDirectory_Map(
                 upper_dir.cptr,

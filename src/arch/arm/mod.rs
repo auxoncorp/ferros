@@ -55,13 +55,11 @@ mod hyp_dependent_constants {
     pub type SectionBits = U20;
     pub type SuperSectionBits = U24;
 
-    pub type AddressSpace = PagingRec<
-        Page<page_state::Unmapped>,
-        cap::PageTable,
-        PagingTop<cap::PageTable, cap::PageDirectory>,
-    >;
+    pub type AddressSpace = PagingRec<Page<page_state::Unmapped>, cap::PageTable, PagingTop>;
 
     pub type PagingRoot = cap::PageDirectory;
+    /// The level directly underneath the PagingRoot
+    pub type PagingRootLowerLevel = cap::PageTable;
 
     impl AddressSpace {
         pub fn new() -> Self {
