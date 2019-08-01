@@ -11,6 +11,7 @@ pub enum SeL4Error {
     PageUnmap(KernelError),
     CNodeCopy(KernelError),
     CNodeMint(KernelError),
+    CNodeSaveCaller(KernelError),
     TCBWriteRegisters(KernelError),
     TCBReadRegisters(KernelError),
     TCBSetPriority(KernelError),
