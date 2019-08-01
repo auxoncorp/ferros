@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 
 use typenum::*;
 
-use crate::cap::{page_state, Page, PhantomCap};
+use crate::cap::{page_state, Page, PageTable, PhantomCap};
 use crate::vspace::{PagingRec, PagingTop};
 
 pub mod cap;
@@ -53,9 +53,9 @@ pub type HugePageBits = U30;
 
 pub type AddressSpace = PagingRec<
     Page<page_state::Unmapped>,
-    cap::PageTable,
+    PageTable,
     PagingRec<
-        cap::PageTable,
+        PageTable,
         cap::PageDirectory,
         PagingRec<cap::PageDirectory, cap::PageUpperDirectory, PagingTop>,
     >,
@@ -68,7 +68,7 @@ pub type PagingRootLowerLevel = cap::PageUpperDirectory;
 impl AddressSpace {
     pub fn new() -> Self {
         PagingRec {
-            layer: cap::PageTable::phantom_instance(),
+            layer: PageTable::phantom_instance(),
             next: PagingRec {
                 layer: cap::PageDirectory::phantom_instance(),
                 next: PagingRec {

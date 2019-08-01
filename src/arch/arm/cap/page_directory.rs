@@ -3,13 +3,12 @@ use selfe_sys::*;
 use typenum::Unsigned;
 
 use crate::arch;
-use crate::cap::{CapType, DirectRetype, LocalCap, Movable, PhantomCap};
+use crate::cap::{CapType, DirectRetype, LocalCap, Movable, PageTable, PhantomCap};
 use crate::error::{ErrorExt, KernelError, SeL4Error};
 use crate::userland::CapRights;
 use crate::vspace::{MappingError, Maps};
 
 use super::super::{PageDirIndexBits, PageIndexBits, PageTableIndexBits, PagingRoot};
-use super::PageTable;
 
 const PD_MASK: usize =
     (((1 << PageDirIndexBits::USIZE) - 1) << PageIndexBits::USIZE + PageTableIndexBits::USIZE);

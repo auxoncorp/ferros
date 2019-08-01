@@ -15,6 +15,7 @@ mod irq_control;
 pub mod irq_handler;
 mod notification;
 mod page;
+mod page_table;
 mod tcb;
 mod untyped;
 
@@ -27,6 +28,7 @@ pub use irq_control::*;
 pub use irq_handler::*;
 pub use notification::*;
 pub use page::*;
+pub use page_table::*;
 pub use tcb::*;
 pub use untyped::*;
 

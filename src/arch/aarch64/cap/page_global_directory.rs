@@ -7,10 +7,7 @@ use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::CapRights;
 use crate::vspace::{MappingError, Maps};
 
-use super::super::{
-    PageDirIndexBits, PageGlobalDirIndexBits, PageIndexBits, PageTableIndexBits,
-    PageUpperDirIndexBits, PagingRoot,
-};
+use super::super::{PageDirIndexBits, PageIndexBits, PageTableIndexBits, PagingRoot};
 use super::PageUpperDirectory;
 
 const GD_MASK: usize =

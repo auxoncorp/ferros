@@ -7,9 +7,7 @@ use crate::error::{ErrorExt, KernelError, SeL4Error};
 use crate::userland::CapRights;
 use crate::vspace::{MappingError, Maps};
 
-use super::super::{
-    PageDirIndexBits, PageIndexBits, PageTableIndexBits, PageUpperDirIndexBits, PagingRoot,
-};
+use super::super::{PageIndexBits, PageTableIndexBits, PagingRoot};
 use super::PageDirectory;
 
 const UD_MASK: usize = !((1 << PageIndexBits::USIZE + PageTableIndexBits::USIZE) - 1);
