@@ -10,13 +10,13 @@ use core::ops::Sub;
 use typenum::*;
 
 use crate::alloc::ut_buddy::{self, UTBuddyError, WUTBuddy};
-use crate::arch::cap::{AssignedASID, UnassignedASID};
 use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot, PagingRootLowerLevel};
 use crate::bootstrap::UserImage;
 use crate::cap::{
-    memory_kind, page_state, role, CNodeRole, CNodeSlots, Cap, CapRange, CapType, ChildCNodeSlot,
-    DirectRetype, InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, Page, PhantomCap,
-    RetypeError, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped, WeakCapRange, WeakCopyError,
+    memory_kind, page_state, role, AssignedASID, CNodeRole, CNodeSlots, Cap, CapRange, CapType,
+    ChildCNodeSlot, DirectRetype, InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, Page,
+    PhantomCap, RetypeError, UnassignedASID, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
+    WeakCapRange, WeakCopyError,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};

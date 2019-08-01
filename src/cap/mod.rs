@@ -6,6 +6,8 @@ use typenum::*;
 use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::CapRights;
 
+mod asid;
+mod asid_control;
 mod asid_pool;
 mod badge;
 mod cnode;
@@ -19,6 +21,8 @@ mod page_table;
 mod tcb;
 mod untyped;
 
+pub use asid::*;
+pub use asid_control::*;
 pub use asid_pool::*;
 pub use badge::*;
 pub use cnode::*;
