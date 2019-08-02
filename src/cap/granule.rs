@@ -1,9 +1,10 @@
-use core::op::Sub;
+use core::ops::Sub;
 
 use typenum::*;
 
 use crate::arch::{G1, G2, G3, G4};
 use crate::cap::{CapType, DirectRetype, LocalCap};
+use crate::pow::{Pow, _Pow};
 use crate::{IfThenElse, _IfThenElse};
 
 /// The type returned by the architecture specific implementations of
@@ -92,13 +93,13 @@ impl IToUUnsafe for Z0 {
     type Uint = U0;
 }
 
-trait _DetermineBestGranuleFit {
+pub(crate) trait _GranuleSlotCount {
     type Count: Unsigned;
 }
 
-type DetermineBestGranuleFit<U> = <U as _DetermineBestGranuleFit>::Count;
+pub(crate) type GranuleSlotCount<U> = <U as _GranuleSlotCount>::Count;
 
-impl<U: Unsigned> _DetermineBestGranuleFit for U
+impl<U: Unsigned> _GranuleSlotCount for U
 where
     // The incoming size must be NonZero; this is a requirement for
     // putting it into a positive int. More on that later.
@@ -167,9 +168,10 @@ where
         <<PInt<U> as Sub<PInt<G4>>>::Output as IToUUnsafe>::Uint,
     >,
 
-    // This last one says the whole thing will ultimately give us an
-    // Unsigned, which is what we need to parameterize
-    // `CNodeSlots::alloc`.
+    // Now that we've done our subtraction, we need to use the result
+    // as an exponent to compute our slot count. Alotogether we're
+    // computing
+    // 2^x / 2^y == 2^(x-y).
     IfThenElse<
         <U as IsGreaterOrEqual<G1>>::Output,
         <<PInt<U> as Sub<PInt<G1>>>::Output as IToUUnsafe>::Uint,
@@ -182,18 +184,39 @@ where
                 <<PInt<U> as Sub<PInt<G4>>>::Output as IToUUnsafe>::Uint,
             >,
         >,
+    >: _Pow,
+
+    // This last one says the whole thing will ultimately give us an
+    // Unsigned, which is what we need to parameterize
+    // `CNodeSlots::alloc`.
+    Pow<
+        IfThenElse<
+            <U as IsGreaterOrEqual<G1>>::Output,
+            <<PInt<U> as Sub<PInt<G1>>>::Output as IToUUnsafe>::Uint,
+            IfThenElse<
+                <U as IsGreaterOrEqual<G2>>::Output,
+                <<PInt<U> as Sub<PInt<G2>>>::Output as IToUUnsafe>::Uint,
+                IfThenElse<
+                    <U as IsGreaterOrEqual<G3>>::Output,
+                    <<PInt<U> as Sub<PInt<G3>>>::Output as IToUUnsafe>::Uint,
+                    <<PInt<U> as Sub<PInt<G4>>>::Output as IToUUnsafe>::Uint,
+                >,
+            >,
+        >,
     >: Unsigned,
 {
-    type Count = IfThenElse<
-        <U as IsGreaterOrEqual<G1>>::Output,
-        <<PInt<U> as Sub<PInt<G1>>>::Output as IToUUnsafe>::Uint,
+    type Count = Pow<
         IfThenElse<
-            <U as IsGreaterOrEqual<G2>>::Output,
-            <<PInt<U> as Sub<PInt<G2>>>::Output as IToUUnsafe>::Uint,
+            <U as IsGreaterOrEqual<G1>>::Output,
+            <<PInt<U> as Sub<PInt<G1>>>::Output as IToUUnsafe>::Uint,
             IfThenElse<
-                <U as IsGreaterOrEqual<G3>>::Output,
-                <<PInt<U> as Sub<PInt<G3>>>::Output as IToUUnsafe>::Uint,
-                <<PInt<U> as Sub<PInt<G4>>>::Output as IToUUnsafe>::Uint,
+                <U as IsGreaterOrEqual<G2>>::Output,
+                <<PInt<U> as Sub<PInt<G2>>>::Output as IToUUnsafe>::Uint,
+                IfThenElse<
+                    <U as IsGreaterOrEqual<G3>>::Output,
+                    <<PInt<U> as Sub<PInt<G3>>>::Output as IToUUnsafe>::Uint,
+                    <<PInt<U> as Sub<PInt<G4>>>::Output as IToUUnsafe>::Uint,
+                >,
             >,
         >,
     >;
