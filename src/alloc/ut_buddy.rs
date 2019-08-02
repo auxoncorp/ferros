@@ -377,7 +377,7 @@ fn alloc(
                 )
             }
             .as_result()
-            .map_err(|e| SeL4Error::UntypedRetype(e))?;
+            .map_err(|e| SeL4Error::new(selfe_wrap::error::APIMethod::UntypedRetype, e))?;
 
             pool[usize::from(i) - 1].push(slot_offset);
             pool[usize::from(i) - 1].push(slot_offset + 1);

@@ -17,7 +17,7 @@ pub type MaxTestUntypedSize = U27;
 pub type MaxTestCNodeSlots = Pow<U17>;
 pub type MaxTestASIDPoolSize = crate::arch::ASIDPoolSize;
 pub type MaxMappedMemoryRegionBitSize = U20;
-pub type RunTest = Fn(
+pub type RunTest = dyn Fn(
     LocalCNodeSlots<MaxTestCNodeSlots>,
     LocalCap<Untyped<MaxTestUntypedSize>>,
     LocalCap<ASIDPool<MaxTestASIDPoolSize>>,

@@ -189,7 +189,12 @@ impl LocalCap<ChildCNode> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::CNodeCopy(e))?;
+        .map_err(|e| {
+            SeL4Error::new(
+                selfe_wrap::error::APIMethod::CNode(selfe_wrap::error::CNodeMethod::Copy),
+                e,
+            )
+        })?;
         Ok((
             Cap {
                 cptr: dest_offset,

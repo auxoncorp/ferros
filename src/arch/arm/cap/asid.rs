@@ -12,7 +12,7 @@ impl LocalCap<UnassignedASID> {
     ) -> Result<LocalCap<AssignedASID>, SeL4Error> {
         unsafe { seL4_ARM_ASIDPool_Assign(self.cptr, global_dir.cptr) }
             .as_result()
-            .map_err(|e| SeL4Error::ASIDPoolAssign(e))?;
+            .map_err(|e| SeL4Error::new(selfe_wrap::error::APIMethod::ASIDPoolAssign, e))?;
 
         Ok(unsafe { mem::transmute(self) })
     }

@@ -8,6 +8,7 @@ use crate::cap::{
     irq_handler, irq_state, CNodeRole, CNodeSlot, Cap, CapType, IRQHandler, LocalCap,
 };
 use crate::error::{ErrorExt, SeL4Error};
+use selfe_wrap::error::APIMethod;
 
 pub type MaxIRQCount = U1024;
 
@@ -97,7 +98,7 @@ impl LocalCap<IRQControl> {
             )
         }
         .as_result()
-        .map_err(|e| IRQError::SeL4Error(SeL4Error::IRQControlGet(e)))?;
+        .map_err(|e| IRQError::SeL4Error(SeL4Error::new(APIMethod::IRQControlGet, e)))?;
 
         self.cap_data.available[usize::from(irq)] = false;
         Ok(dest_offset)

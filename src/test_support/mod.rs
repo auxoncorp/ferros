@@ -189,6 +189,11 @@ where
         )
     }
     .as_result()
-    .map_err(|e| SeL4Error::CNodeRevoke(e))?;
+    .map_err(|e| {
+        SeL4Error::new(
+            selfe_wrap::error::APIMethod::CNode(selfe_wrap::error::CNodeMethod::Revoke),
+            e,
+        )
+    })?;
     Ok(r)
 }

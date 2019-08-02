@@ -8,7 +8,7 @@ use core::ops::{Add, Sub};
 use selfe_sys::*;
 use typenum::*;
 
-use crate::error::{ErrorExt, SeL4Error};
+use selfe_wrap::error::{APIError, APIMethod, ErrorExt, TCBMethod};
 
 use super::*;
 
@@ -130,7 +130,7 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
                 &mut registers,
             )
             .as_result()
-            .map_err(|e| ProcessSetupError::SeL4Error(SeL4Error::TCBWriteRegisters(e)))?;
+            .map_err(|e| APIError::new(APIMethod::TCB(TCBMethod::WriteRegisters), e))?;
 
             // TODO - priority management could be exposed once we
             // plan on actually using it
@@ -145,6 +145,6 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
     pub fn start(self) -> Result<(), SeL4Error> {
         unsafe { seL4_TCB_Resume(self.tcb.cptr) }
             .as_result()
-            .map_err(|e| SeL4Error::TCBResume(e))
+            .map_err(|e| APIError::new(APIMethod::TCB(TCBMethod::Resume), e))
     }
 }

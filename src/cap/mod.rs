@@ -5,6 +5,7 @@ use typenum::*;
 
 use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::CapRights;
+use selfe_wrap::error::{APIMethod, CNodeMethod};
 
 mod asid;
 mod asid_control;
@@ -327,7 +328,7 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
         .as_result()
         {
             Ok(_) => Ok(dest_offset),
-            Err(e) => Err(SeL4Error::CNodeCopy(e)),
+            Err(e) => Err(SeL4Error::new(APIMethod::CNode(CNodeMethod::Copy), e)),
         }
     }
 
@@ -361,7 +362,7 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::CNodeMint(e))?;
+        .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::Mint), e))?;
         Ok(Cap {
             cptr: dest_offset,
             cap_data: PhantomCap::phantom_instance(),
@@ -399,7 +400,7 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::CNodeMint(e))?;
+        .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::Mint), e))?;
         Ok(Cap {
             cptr: dest_offset,
             cap_data: PhantomCap::phantom_instance(),
@@ -435,7 +436,7 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::CNodeMint(e))?;
+        .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::Mint), e))?;
         Ok(Cap {
             cptr: dest_offset,
             cap_data: PhantomCap::phantom_instance(),
@@ -466,7 +467,7 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::CNodeMove(e))?;
+        .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::Move), e))?;
         Ok(Cap {
             cptr: dest_offset,
             cap_data: self.cap_data,
@@ -487,7 +488,7 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::CNodeDelete(e))
+        .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::Delete), e))
     }
 }
 

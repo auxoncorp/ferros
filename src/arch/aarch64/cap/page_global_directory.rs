@@ -3,9 +3,9 @@ use selfe_sys::*;
 use typenum::Unsigned;
 
 use crate::cap::{CapType, DirectRetype, LocalCap, Movable, PhantomCap};
-use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::CapRights;
 use crate::vspace::{MappingError, Maps};
+use selfe_wrap::error::{APIError, APIMethod, ErrorExt};
 
 use super::super::{PageDirIndexBits, PageIndexBits, PageTableIndexBits, PagingRoot};
 use super::PageUpperDirectory;
@@ -34,7 +34,12 @@ impl Maps<PageUpperDirectory> for PageGlobalDirectory {
             )
         }
         .as_result()
-        .map_err(|e| MappingError::IntermediateLayerFailure(SeL4Error::PageUpperDirectoryMap(e)))
+        .map_err(|e| {
+            MappingError::IntermediateLayerFailure(APIError::new(
+                APIMethod::PageUpperDirectoryMap,
+                e,
+            ))
+        })
     }
 }
 

@@ -3,6 +3,7 @@ use crate::cap::{CNodeSlotsData, Cap, CapType, LocalCNodeSlot, LocalCap};
 use crate::error::{ErrorExt, SeL4Error};
 use core::marker::PhantomData;
 use selfe_sys::*;
+use selfe_wrap::error::{APIMethod, CNodeMethod};
 use typenum::*;
 
 #[derive(Debug)]
@@ -32,7 +33,7 @@ impl LocalCap<FaultReplyEndpoint> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::CNodeSaveCaller(e))?;
+        .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::SaveCaller), e))?;
 
         Ok(Cap {
             cptr: offset,

@@ -2,9 +2,9 @@ use selfe_sys::*;
 
 use crate::arch::PagingRoot;
 use crate::cap::{page_state, CapType, LocalCap, Page, PhantomCap};
-use crate::error::{KernelError, SeL4Error};
 use crate::userland::CapRights;
 use crate::vspace::{MappingError, Maps};
+use selfe_wrap::error::{APIError, SeL4Error as RawSeL4Error};
 
 #[derive(Debug)]
 pub struct PageTable {}
@@ -27,7 +27,10 @@ impl Maps<Page<page_state::Unmapped>> for PageTable {
         if is_aligned(addr) {
             match unsafe { page.unchecked_page_map(addr, root, rights, vm_attributes) } {
                 Ok(_) => Ok(()),
-                Err(SeL4Error::PageMap(KernelError::FailedLookup)) => Err(MappingError::Overflow),
+                Err(APIError {
+                    method: _,
+                    error: RawSeL4Error::FailedLookup,
+                }) => Err(MappingError::Overflow),
                 Err(e) => Err(MappingError::PageMapFailure(e)),
             }
         } else {

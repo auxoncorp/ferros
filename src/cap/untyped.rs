@@ -17,6 +17,7 @@ use crate::cap::{
 use crate::error::{ErrorExt, KernelError, SeL4Error};
 use crate::pow::{Pow, _Pow};
 use crate::vspace::NumPages;
+use selfe_wrap::error::{APIMethod, CNodeMethod};
 
 // The seL4 kernel's maximum amount of retypes per system call is configurable
 // in the sel4.toml, particularly by the KernelRetypeFanOutLimit property.
@@ -141,7 +142,7 @@ impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
                 num_pages,                  // num_objects
             )
             .as_result()
-            .map_err(|e| SeL4Error::UntypedRetype(e))?;
+            .map_err(|e| SeL4Error::new(APIMethod::UntypedRetype, e))?;
         }
 
         Ok(WeakCapRange::new(
@@ -179,7 +180,9 @@ impl LocalCap<WUntyped<memory_kind::General>> {
             )
         }
         .as_result()
-        .map_err(|err| RetypeError::SeL4RetypeError(SeL4Error::UntypedRetype(err)))?;
+        .map_err(|err| {
+            RetypeError::SeL4RetypeError(SeL4Error::new(APIMethod::UntypedRetype, err))
+        })?;
 
         Ok(Cap::wrap_cptr(slot.cap_data.offset))
     }
@@ -357,7 +360,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::CNodeRevoke(e))?;
+        .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::Revoke), e))?;
         Ok(r)
     }
 
@@ -401,7 +404,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::UntypedRetype(e))?;
+        .map_err(|e| SeL4Error::new(APIMethod::UntypedRetype, e))?;
         let (kind_a, kind_b) = self.cap_data.kind.halve(2usize.pow(BitSize::U32))
             // TODO - consider piping this out as a proper error
             .expect("Somehow the backing memory was discovered to cover an invalid memory range when paired with the expected size");
@@ -455,7 +458,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::UntypedRetype(e))?;
+        .map_err(|e| SeL4Error::new(APIMethod::UntypedRetype, e))?;
 
         let (kind_a, kind_b, kind_c, kind_d) = self.cap_data.kind.quarter(2usize.pow(BitSize::U32))
             // TODO - consider piping this out as a proper error
@@ -522,7 +525,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
                 1 << (BitSize::USIZE - PageBits::USIZE), // num_objects
             )
             .as_result()
-            .map_err(|e| SeL4Error::UntypedRetype(e))?;
+            .map_err(|e| SeL4Error::new(APIMethod::UntypedRetype, e))?;
         }
 
         Ok(CapRange::new(
@@ -601,7 +604,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::UntypedRetype(e))?;
+        .map_err(|e| SeL4Error::new(APIMethod::UntypedRetype, e))?;
 
         Ok(Cap {
             cptr: dest_offset,
@@ -663,7 +666,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
             count,       // num_objects
         )
         .as_result()
-        .map_err(|e| SeL4Error::UntypedRetype(e))
+        .map_err(|e| SeL4Error::new(APIMethod::UntypedRetype, e))
     }
 
     pub fn retype_cnode<ChildRadix: Unsigned>(
@@ -706,7 +709,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
                 1,                                       // num_objects
             )
             .as_result()
-            .map_err(|e| SeL4Error::UntypedRetype(e))?;
+            .map_err(|e| SeL4Error::new(APIMethod::UntypedRetype, e))?;
 
             // In order to set the guard (for the sake of our C-pointer simplification scheme),
             // mutate the CNode in the scratch slot, which copies the CNode into a second slot
@@ -726,7 +729,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
                 guard_data as usize, // badge or guard: seL4_Word,
             )
             .as_result()
-            .map_err(|e| SeL4Error::CNodeMutate(e))?;
+            .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::Mutate), e))?;
 
             // TODO - If we wanted to make more efficient use of our available slots at the cost
             // of complexity, we could swap the two created CNodes, then delete the one with
@@ -775,7 +778,7 @@ impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::UntypedRetype(e))?;
+        .map_err(|e| SeL4Error::new(APIMethod::UntypedRetype, e))?;
 
         Ok(Cap {
             cptr: dest_offset,

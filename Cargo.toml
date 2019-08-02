@@ -10,6 +10,7 @@ test_support = []
 
 [dependencies]
 selfe-sys = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
+selfe-wrap = { path = "./selfe-wrap" }
 typenum = "1.10"
 generic-array = "0.13.2"
 cross_queue = { path = "./cross_queue" }

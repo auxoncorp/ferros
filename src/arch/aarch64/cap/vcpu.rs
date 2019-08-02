@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 use selfe_sys::*;
 
 use crate::cap::{Cap, CapType, DirectRetype, LocalCap, PhantomCap, ThreadControlBlock};
-use crate::error::{ErrorExt, SeL4Error};
+use selfe_wrap::error::{APIError, APIMethod, ErrorExt, VCPUMethod};
 
 #[derive(Debug, Clone, Copy)]
 pub enum VCpuRegister {
@@ -67,7 +67,7 @@ impl LocalCap<VCpu<vcpu_state::Unbound>> {
     pub fn bind_tcb(
         self,
         tcb: &mut LocalCap<ThreadControlBlock>,
-    ) -> Result<LocalCap<VCpu<vcpu_state::Bound>>, SeL4Error> {
+    ) -> Result<LocalCap<VCpu<vcpu_state::Bound>>, APIError> {
         match unsafe { seL4_ARM_VCPU_SetTCB(self.cptr, tcb.cptr) }.as_result() {
             Ok(_) => Ok(Cap {
                 cptr: self.cptr,
@@ -76,7 +76,7 @@ impl LocalCap<VCpu<vcpu_state::Unbound>> {
                     _state: PhantomData,
                 },
             }),
-            Err(e) => Err(SeL4Error::VCPUBindTcb(e)),
+            Err(e) => Err(APIError::new(APIMethod::VCPU(VCPUMethod::SetTCB), e)),
         }
     }
 }
@@ -89,17 +89,17 @@ impl LocalCap<VCpu<vcpu_state::Bound>> {
         priority: u8,
         group: u8,
         index: u8,
-    ) -> Result<(), SeL4Error> {
+    ) -> Result<(), APIError> {
         match unsafe { seL4_ARM_VCPU_InjectIRQ(self.cptr, virq, priority, group, index) }
             .as_result()
         {
             Ok(_) => Ok(()),
-            Err(e) => Err(SeL4Error::VCPUInjectIRQ(e)),
+            Err(e) => Err(APIError::new(APIMethod::VCPU(VCPUMethod::InjectIRQ), e)),
         }
     }
 
     /// Read a virtual CPU register.
-    pub fn read_register(&self, reg: VCpuRegister) -> Result<usize, SeL4Error> {
+    pub fn read_register(&self, reg: VCpuRegister) -> Result<usize, APIError> {
         let result: seL4_ARM_VCPU_ReadRegs_t =
             unsafe { seL4_ARM_VCPU_ReadRegs(self.cptr, reg as usize) };
 
@@ -108,15 +108,15 @@ impl LocalCap<VCpu<vcpu_state::Bound>> {
         // so we cast to unsigned/u32 like the other errors
         match (result.error as u32).as_result() {
             Ok(_) => Ok(result.value),
-            Err(e) => Err(SeL4Error::VCPUReadRegisters(e)),
+            Err(e) => Err(APIError::new(APIMethod::VCPU(VCPUMethod::ReadRegs), e)),
         }
     }
 
     /// Write a virtual CPU register.
-    pub fn write_register(&mut self, reg: VCpuRegister, value: usize) -> Result<(), SeL4Error> {
+    pub fn write_register(&mut self, reg: VCpuRegister, value: usize) -> Result<(), APIError> {
         match unsafe { seL4_ARM_VCPU_WriteRegs(self.cptr, reg as usize, value) }.as_result() {
             Ok(_) => Ok(()),
-            Err(e) => Err(SeL4Error::VCPUWriteRegisters(e)),
+            Err(e) => Err(APIError::new(APIMethod::VCPU(VCPUMethod::WriteRegs), e)),
         }
     }
 }

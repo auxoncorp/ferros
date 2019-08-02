@@ -1,8 +1,8 @@
 use selfe_sys::*;
 
 use crate::cap::{page_state, DirectRetype, LocalCap, Page, PhantomCap};
-use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::CapRights;
+use selfe_wrap::error::{APIError, APIMethod, ErrorExt, PageMethod};
 
 impl LocalCap<Page<page_state::Unmapped>> {
     pub(crate) unsafe fn unchecked_page_map(
@@ -11,7 +11,7 @@ impl LocalCap<Page<page_state::Unmapped>> {
         root: &mut LocalCap<crate::arch::PagingRoot>,
         rights: CapRights,
         vm_attributes: seL4_ARM_VMAttributes,
-    ) -> Result<(), SeL4Error> {
+    ) -> Result<(), APIError> {
         seL4_ARM_Page_Map(
             self.cptr,
             root.cptr,
@@ -20,14 +20,14 @@ impl LocalCap<Page<page_state::Unmapped>> {
             vm_attributes,
         )
         .as_result()
-        .map_err(|e| SeL4Error::PageMap(e))
+        .map_err(|e| APIError::new(APIMethod::Page(PageMethod::Map), e))
     }
 }
 
 impl LocalCap<Page<page_state::Mapped>> {
     /// Keeping this non-public in order to restrict mapping operations to owners
     /// of a VSpace-related object
-    pub(crate) fn unmap(self) -> Result<LocalCap<Page<page_state::Unmapped>>, SeL4Error> {
+    pub(crate) fn unmap(self) -> Result<LocalCap<Page<page_state::Unmapped>>, APIError> {
         match unsafe { seL4_ARM_Page_Unmap(self.cptr) }.as_result() {
             Ok(_) => Ok(crate::cap::Cap {
                 cptr: self.cptr,
@@ -36,7 +36,7 @@ impl LocalCap<Page<page_state::Mapped>> {
                 },
                 _role: core::marker::PhantomData,
             }),
-            Err(e) => Err(SeL4Error::PageUnmap(e)),
+            Err(e) => Err(APIError::new(APIMethod::Page(PageMethod::Unmap), e)),
         }
     }
 }

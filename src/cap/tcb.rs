@@ -3,9 +3,10 @@ use selfe_sys::*;
 use crate::cap::{
     page_state, role, CapType, ChildCNode, CopyAliasable, DirectRetype, LocalCap, Page, PhantomCap,
 };
-use crate::error::{ErrorExt, SeL4Error};
+use crate::error::ErrorExt;
 use crate::userland::FaultSource;
 use crate::vspace::{self, VSpace};
+use selfe_wrap::error::{APIError, APIMethod, TCBMethod};
 
 #[derive(Debug)]
 pub struct ThreadControlBlock {}
@@ -74,7 +75,7 @@ impl LocalCap<ThreadControlBlock> {
         fault_source: Option<FaultSource<role::Child>>,
         vspace: &VSpace<VSpaceState, role::Local>, // vspace_root,
         ipc_buffer: Option<LocalCap<Page<page_state::Mapped>>>,
-    ) -> Result<(), SeL4Error> {
+    ) -> Result<(), APIError> {
         // Set up the cspace's guard to take the part of the cptr that's not
         // used by the radix.
         let cspace_root_data = unsafe {
@@ -104,7 +105,7 @@ impl LocalCap<ThreadControlBlock> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::TCBConfigure(e))
+        .map_err(|e| APIError::new(APIMethod::TCB(TCBMethod::Configure), e))
     }
 
     /// Set this TCB's priority.
@@ -112,9 +113,9 @@ impl LocalCap<ThreadControlBlock> {
         &mut self,
         tpa: &LocalCap<ThreadPriorityAuthority>,
         prio: usize,
-    ) -> Result<(), SeL4Error> {
+    ) -> Result<(), APIError> {
         unsafe { seL4_TCB_SetPriority(self.cptr, tpa.cptr, prio) }
             .as_result()
-            .map_err(|e| SeL4Error::TCBSetPriority(e))
+            .map_err(|e| APIError::new(APIMethod::TCB(TCBMethod::SetPriority), e))
     }
 }

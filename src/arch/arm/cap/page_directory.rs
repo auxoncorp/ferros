@@ -32,9 +32,10 @@ impl Maps<PageTable> for PageDirectory {
         {
             Ok(_) => Ok(()),
             Err(KernelError::FailedLookup) => Err(MappingError::Overflow),
-            Err(e) => Err(MappingError::IntermediateLayerFailure(
-                SeL4Error::PageTableMap(e),
-            )),
+            Err(e) => Err(MappingError::IntermediateLayerFailure(SeL4Error::new(
+                selfe_wrap::error::APIMethod::PageTableMap,
+                e,
+            ))),
         }
     }
 }

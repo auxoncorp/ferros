@@ -3,9 +3,9 @@ use selfe_sys::*;
 use typenum::Unsigned;
 
 use crate::cap::{CapType, DirectRetype, LocalCap, PhantomCap};
-use crate::error::{ErrorExt, KernelError, SeL4Error};
 use crate::userland::CapRights;
 use crate::vspace::{MappingError, Maps};
+use selfe_wrap::error::{APIError, APIMethod, ErrorExt, SeL4Error};
 
 use super::super::{PageIndexBits, PageTableIndexBits, PagingRoot};
 use super::PageDirectory;
@@ -30,10 +30,11 @@ impl Maps<PageDirectory> for PageUpperDirectory {
         .as_result()
         {
             Ok(_) => Ok(()),
-            Err(KernelError::FailedLookup) => Err(MappingError::Overflow),
-            Err(e) => Err(MappingError::IntermediateLayerFailure(
-                SeL4Error::PageDirectoryMap(e),
-            )),
+            Err(SeL4Error::FailedLookup) => Err(MappingError::Overflow),
+            Err(e) => Err(MappingError::IntermediateLayerFailure(APIError::new(
+                APIMethod::PageDirectoryMap,
+                e,
+            ))),
         }
     }
 }

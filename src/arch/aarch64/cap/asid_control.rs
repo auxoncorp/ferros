@@ -9,14 +9,14 @@ use crate::arch;
 use crate::cap::{
     memory_kind, ASIDControl, ASIDPool, CNodeRole, CNodeSlot, Cap, LocalCap, Untyped,
 };
-use crate::error::{ErrorExt, SeL4Error};
+use selfe_wrap::error::{APIError, APIMethod, ErrorExt};
 
 impl<FreePools: Unsigned> LocalCap<ASIDControl<FreePools>> {
     pub(crate) fn make_asid_pool_without_consuming_control_pool<DestRole: CNodeRole>(
         &mut self,
         ut12: LocalCap<Untyped<U12, memory_kind::General>>,
         dest_slot: CNodeSlot<DestRole>,
-    ) -> Result<LocalCap<ASIDPool<arch::ASIDPoolSize>>, SeL4Error>
+    ) -> Result<LocalCap<ASIDPool<arch::ASIDPoolSize>>, APIError>
     where
         FreePools: Sub<U1>,
         op!(FreePools - U1): Unsigned,
@@ -32,7 +32,7 @@ impl<FreePools: Unsigned> LocalCap<ASIDControl<FreePools>> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::ASIDControlMakePool(e))?;
+        .map_err(|e| APIError::new(APIMethod::ASIDControlMakePool, e))?;
         Ok(Cap {
             cptr: dest_offset,
             cap_data: ASIDPool {

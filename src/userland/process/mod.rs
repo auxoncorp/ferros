@@ -1,7 +1,5 @@
 use core::marker::PhantomData;
 
-use selfe_sys::seL4_Yield;
-
 use typenum::*;
 
 use crate::error::*;
@@ -42,10 +40,9 @@ impl core::default::Default for NeitherSendNorSync {
 }
 
 pub fn yield_forever() -> ! {
-    unsafe {
-        loop {
-            seL4_Yield();
-        }
+    use selfe_wrap::*;
+    loop {
+        SelfeKernel::yield_execution();
     }
 }
 

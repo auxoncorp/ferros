@@ -7,6 +7,7 @@ use selfe_sys::*;
 use crate::cap::irq_handler::weak::WIRQHandler;
 use crate::cap::{Cap, CapType, LocalCap, MaxIRQCount, Movable, Notification, PhantomCap};
 use crate::error::{ErrorExt, SeL4Error};
+use selfe_wrap::error::{APIMethod, IRQHandlerMethod};
 
 /// Whether or not an IRQ Handle has been set to a particular Notification
 pub trait IRQSetState: private::SealedIRQSetState {}
@@ -81,7 +82,9 @@ where
     ) -> Result<(LocalCap<IRQHandler<IRQ, irq_state::Set>>), SeL4Error> {
         unsafe { seL4_IRQHandler_SetNotification(self.cptr, notification.cptr) }
             .as_result()
-            .map_err(|e| SeL4Error::IRQHandlerSetNotification(e))?;
+            .map_err(|e| {
+                SeL4Error::new(APIMethod::IRQHandler(IRQHandlerMethod::SetNotification), e)
+            })?;
         Ok(Cap {
             cptr: self.cptr,
             _role: self._role,
@@ -100,7 +103,7 @@ where
     pub fn ack(&self) -> Result<(), SeL4Error> {
         unsafe { seL4_IRQHandler_Ack(self.cptr) }
             .as_result()
-            .map_err(|e| SeL4Error::IRQHandlerAck(e))
+            .map_err(|e| SeL4Error::new(APIMethod::IRQHandler(IRQHandlerMethod::Ack), e))
     }
 }
 
@@ -128,7 +131,9 @@ pub mod weak {
         ) -> Result<(LocalCap<WIRQHandler<irq_state::Set>>), SeL4Error> {
             unsafe { seL4_IRQHandler_SetNotification(self.cptr, notification.cptr) }
                 .as_result()
-                .map_err(|e| SeL4Error::IRQHandlerSetNotification(e))?;
+                .map_err(|e| {
+                    SeL4Error::new(APIMethod::IRQHandler(IRQHandlerMethod::SetNotification), e)
+                })?;
             Ok(Cap {
                 cptr: self.cptr,
                 _role: self._role,
@@ -144,7 +149,7 @@ pub mod weak {
         pub fn ack(&self) -> Result<(), SeL4Error> {
             unsafe { seL4_IRQHandler_Ack(self.cptr) }
                 .as_result()
-                .map_err(|e| SeL4Error::IRQHandlerAck(e))
+                .map_err(|e| SeL4Error::new(APIMethod::IRQHandler(IRQHandlerMethod::Ack), e))
         }
     }
 }

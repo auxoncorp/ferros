@@ -7,3 +7,4 @@ artifacts
 .\#*
 \#*\#
 .gdbhistory
+selfe-wrap/target
