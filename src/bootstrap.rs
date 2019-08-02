@@ -5,11 +5,11 @@ use selfe_sys::*;
 use typenum::operator_aliases::Diff;
 use typenum::*;
 
-use crate::arch::cap::*;
 use crate::arch::*;
 use crate::cap::{
-    role, CNode, CNodeRole, CNodeSlots, Cap, IRQControl, InternalASID, LocalCNode, LocalCNodeSlots,
-    LocalCap, MaxIRQCount, Page, ThreadControlBlock, Untyped,
+    page_state, role, ASIDControl, AssignedASID, CNode, CNodeRole, CNodeSlots, Cap, IRQControl,
+    InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, MaxIRQCount, Page, ThreadControlBlock,
+    Untyped,
 };
 use crate::error::SeL4Error;
 use crate::pow::Pow;
@@ -53,14 +53,12 @@ pub fn root_cnode(
 ///
 /// Additionally, and importantly, the number of capabilities is not
 /// known until runtime and thus not represented in the type.
-pub struct UserImage<Role: CNodeRole>(
-    WeakMemoryRegion<granule_state::Mapped, shared_status::Shared, Role>,
-);
-
-impl<Role: CNodeRole> UserImage<Role> {
-    fn new(frames_start: usize, frames_end: usize) -> Self {
-        UserImage(WeakMemoryRegion::bootstrap(frames_end - frames_start))
-    }
+#[derive(Debug)]
+pub struct UserImage<Role: CNodeRole> {
+    frames_start_cptr: usize,
+    frames_count: usize,
+    page_table_count: usize,
+    _role: PhantomData<Role>,
 }
 
 /// A BootInfo cannot be handed to child processes and thus its related
