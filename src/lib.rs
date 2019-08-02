@@ -10,6 +10,8 @@ extern crate typenum;
 extern crate cross_queue;
 extern crate smart_alloc;
 
+use typenum::{Bit, False, True};
+
 #[macro_use]
 pub mod debug;
 
@@ -23,3 +25,19 @@ pub mod pow;
 pub mod test_support;
 pub mod userland;
 pub mod vspace;
+
+/// Type-level if/else.
+pub trait _IfThenElse<A, B>: Bit {
+    type Output;
+}
+
+impl<R, L> _IfThenElse<R, L> for True {
+    type Output = R;
+}
+
+impl<R, L> _IfThenElse<R, L> for False {
+    type Output = L;
+}
+
+/// Typenum-style sugar for using if/else at the type level.
+pub type IfThenElse<C, A, B> = <C as _IfThenElse<A, B>>::Output;

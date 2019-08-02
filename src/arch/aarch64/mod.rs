@@ -1,4 +1,5 @@
 use core::marker::PhantomData;
+use core::ops::Sub;
 
 use typenum::*;
 
@@ -150,6 +151,26 @@ pub mod vm_attributes {
 
 pub(crate) type WorstCaseGranuleSlotCount = U256;
 
+/// G1 is the largest granule's size, in bits. These type synonyms are
+/// used in the arch-agnostic granule implementation to help determine
+/// how many slots a memory region will consume.
+pub type G1 = HugePageBits;
+/// G2 is the penultimate granule's size, in bits. These type synonyms are
+/// used in the arch-agnostic granule implementation to help determine
+/// how many slots a memory region will consume.
+pub type G2 = LargePageBits;
+/// G3 is the third largest granule's size, in bits. for aarch64, this
+/// is also the smallest sized granule, Pages.
+pub type G3 = PageBits;
+/// G4 is the smallest granule size. It is not used by
+/// aarch64. Setting it to 0 gives us an unreachable case, as
+/// DetermineBestGranuleFit requies the input be NonZero.
+pub type G4 = U0;
+
+/// Acquire the granule type, size, and how many are needed for
+/// constituting a memory region of size `region_size_bits Acquire the
+/// granule type, size, and how many are needed for constituting a
+/// memory region of size `region_size_bits
 pub(crate) fn determine_best_granule_fit(region_size_bits: u8) -> GranuleInfo {
     match region_size_bits {
         _ if region_size_bits >= HugePageBits::U8 => GranuleInfo {
