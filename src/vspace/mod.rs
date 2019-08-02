@@ -10,13 +10,13 @@ use core::ops::Sub;
 use typenum::*;
 
 use crate::alloc::ut_buddy::{self, UTBuddyError, WUTBuddy};
-use crate::arch::cap::{AssignedASID, UnassignedASID};
-use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot};
+use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot, PagingRootLowerLevel};
 use crate::bootstrap::UserImage;
 use crate::cap::{
-    memory_kind, page_state, role, CNodeRole, CNodeSlots, Cap, CapRange, CapType, ChildCNodeSlot,
-    DirectRetype, InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, Page, PhantomCap,
-    RetypeError, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped, WeakCapRange, WeakCopyError,
+    memory_kind, page_state, role, AssignedASID, CNodeRole, CNodeSlots, Cap, CapRange, CapType,
+    ChildCNodeSlot, DirectRetype, InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, Page,
+    PhantomCap, RetypeError, UnassignedASID, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
+    WeakCapRange, WeakCopyError,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
@@ -58,18 +58,14 @@ pub trait Maps<LowerLevel: CapType> {
     /// Map the level/layer down relative to this layer.
     /// E.G. for a PageTable, this would map a Page.
     /// E.G. for a PageDirectory, this would map a PageTable.
-    fn map_granule<RootLowerLevel, Root>(
+    fn map_granule(
         &mut self,
         item: &LocalCap<LowerLevel>,
         addr: usize,
-        root: &mut LocalCap<Root>,
+        root: &mut LocalCap<PagingRoot>,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
-    ) -> Result<(), MappingError>
-    where
-        Root: Maps<RootLowerLevel>,
-        Root: CapType,
-        RootLowerLevel: CapType;
+    ) -> Result<(), MappingError>;
 }
 
 #[derive(Debug)]
@@ -162,51 +158,41 @@ pub trait PagingLayer {
     /// implementor ought to return `MappingError::Overflow` to signal
     /// that mapping is needed at the layer above, otherwise the error
     /// is just bubbled up to the caller.
-    fn map_layer<RootLowerLevel: CapType, Root>(
+    fn map_layer(
         &mut self,
         item: &LocalCap<Self::Item>,
         addr: usize,
-        root: &mut LocalCap<Root>,
+        root: &mut LocalCap<PagingRoot>,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
         utb: &mut WUTBuddy,
         slots: &mut WCNodeSlots,
-    ) -> Result<(), MappingError>
-    where
-        Root: Maps<RootLowerLevel>,
-        Root: CapType;
+    ) -> Result<(), MappingError>;
 }
 
 /// `PagingTop` represents the root of an address space structure.
-pub struct PagingTop<LowerLevel, CurrentLevel: Maps<LowerLevel>>
+pub struct PagingTop
 where
-    CurrentLevel: CapType,
-    LowerLevel: CapType,
+    PagingRoot: Maps<PagingRootLowerLevel>,
+    PagingRoot: CapType,
+    PagingRootLowerLevel: CapType,
 {
-    pub layer: CurrentLevel,
-    pub(super) _item: PhantomData<LowerLevel>,
+    pub layer: PagingRoot,
+    pub(super) _item: PhantomData<PagingRootLowerLevel>,
 }
 
-impl<LowerLevel, CurrentLevel: Maps<LowerLevel>> PagingLayer for PagingTop<LowerLevel, CurrentLevel>
-where
-    CurrentLevel: CapType,
-    LowerLevel: CapType + DirectRetype + PhantomCap,
-{
-    type Item = LowerLevel;
-    fn map_layer<RootLowerLevel: CapType, Root>(
+impl PagingLayer for PagingTop {
+    type Item = PagingRootLowerLevel;
+    fn map_layer(
         &mut self,
-        item: &LocalCap<LowerLevel>,
+        item: &LocalCap<Self::Item>,
         addr: usize,
-        root: &mut LocalCap<Root>,
+        root: &mut LocalCap<PagingRoot>,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
         _utb: &mut WUTBuddy,
         _slots: &mut WCNodeSlots,
-    ) -> Result<(), MappingError>
-    where
-        Root: Maps<RootLowerLevel>,
-        Root: CapType,
-    {
+    ) -> Result<(), MappingError> {
         self.layer
             .map_granule(item, addr, root, rights, vm_attributes)
     }
@@ -227,20 +213,16 @@ where
     LowerLevel: CapType + DirectRetype + PhantomCap,
 {
     type Item = LowerLevel;
-    fn map_layer<RootLowerLevel: CapType, Root>(
+    fn map_layer(
         &mut self,
         item: &LocalCap<LowerLevel>,
         addr: usize,
-        root: &mut LocalCap<Root>,
+        root: &mut LocalCap<PagingRoot>,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
         utb: &mut WUTBuddy,
         mut slots: &mut WCNodeSlots,
-    ) -> Result<(), MappingError>
-    where
-        Root: Maps<RootLowerLevel>,
-        Root: CapType,
-    {
+    ) -> Result<(), MappingError> {
         // Attempt to map this layer's granule.
         match self
             .layer
