@@ -4,6 +4,7 @@ use crate::error::{ErrorExt, SeL4Error};
 use core::marker::PhantomData;
 use selfe_sys::*;
 use selfe_wrap::error::{APIMethod, CNodeMethod};
+use selfe_wrap::CNodeCptr;
 use typenum::*;
 
 #[derive(Debug)]
@@ -12,7 +13,7 @@ use typenum::*;
 /// execution. After that, it destroys itself, and gives you back the cnode slot
 /// where it was living. Or you can just destroy it, to get the cnode slot back.
 pub struct FaultReplyEndpoint {
-    original_slot_cptr: usize,
+    original_slot_cptr: CNodeCptr,
 }
 
 impl CapType for FaultReplyEndpoint {}
@@ -23,12 +24,11 @@ impl LocalCap<FaultReplyEndpoint> {
     pub fn save_caller_and_create(
         slot: LocalCNodeSlot,
     ) -> Result<LocalCap<FaultReplyEndpoint>, SeL4Error> {
-        let (cptr, offset, _) = slot.elim();
-
+        let dest = slot.elim().cptr;
         unsafe {
             seL4_CNode_SaveCaller(
-                cptr,               // _service
-                offset,             // index
+                dest.cnode.into(),  // _service
+                dest.index.into(),  // index
                 arch::WordSize::U8, // depth
             )
         }
@@ -36,17 +36,17 @@ impl LocalCap<FaultReplyEndpoint> {
         .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::SaveCaller), e))?;
 
         Ok(Cap {
-            cptr: offset,
+            cptr: dest.index.into(),
             _role: PhantomData,
             cap_data: FaultReplyEndpoint {
-                original_slot_cptr: cptr,
+                original_slot_cptr: dest.cnode,
             },
         })
     }
 
     fn to_slot(self) -> LocalCNodeSlot {
         Cap {
-            cptr: self.cap_data.original_slot_cptr,
+            cptr: self.cap_data.original_slot_cptr.into(),
             _role: PhantomData,
             cap_data: CNodeSlotsData {
                 offset: self.cptr,

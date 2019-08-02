@@ -7,8 +7,9 @@ use typenum::operator_aliases::Diff;
 use typenum::*;
 
 use crate::cap::{role, CNodeRole, Cap, CapType, ChildCap, LocalCap};
-use crate::error::{ErrorExt, SeL4Error};
+use crate::error::SeL4Error;
 use crate::userland::CapRights;
+use selfe_wrap::{CNodeKernel, FullyQualifiedCptr, SelfeKernel};
 
 /// There will only ever be one CNode in a process with Role = Root. The
 /// cptrs any regular Cap are /also/ offsets into that cnode, because of
@@ -92,8 +93,7 @@ impl<Size: Unsigned, CapRole: CNodeRole, Role: CNodeRole> Cap<CNodeSlotsData<Siz
         Size: Sub<Count>,
         Diff<Size, Count>: Unsigned,
     {
-        let (cptr, offset, _) = self.elim();
-
+        let (cptr, offset) = (self.cptr, self.cap_data.offset);
         (
             Cap::<CNodeSlotsData<Count, Role>, CapRole>::internal_new(cptr, offset),
             Cap::<CNodeSlotsData<Diff<Size, Count>, Role>, CapRole>::internal_new(
@@ -102,13 +102,19 @@ impl<Size: Unsigned, CapRole: CNodeRole, Role: CNodeRole> Cap<CNodeSlotsData<Siz
             ),
         )
     }
-
-    pub(crate) fn elim(self) -> (usize, usize, usize) {
-        (self.cptr, self.cap_data.offset, Size::USIZE)
-    }
 }
 
 impl<Size: Unsigned, Role: CNodeRole> CNodeSlots<Size, Role> {
+    pub(crate) fn elim(self) -> selfe_wrap::FullyQualifiedCptrSpan {
+        selfe_wrap::FullyQualifiedCptrSpan {
+            cptr: FullyQualifiedCptr {
+                cnode: selfe_wrap::CNodeCptr(self.cptr.into()),
+                index: Role::to_index(self.cap_data.offset),
+            },
+            size: Size::USIZE,
+        }
+    }
+
     pub fn iter(self) -> impl Iterator<Item = CNodeSlot<Role>> {
         let cptr = self.cptr;
         let offset = self.cap_data.offset;
@@ -175,26 +181,12 @@ impl LocalCap<ChildCNode> {
         SlotsForChild: Add<U1>,
         op! {SlotsForChild +  U1}: Unsigned,
     {
-        let (dest_cptr, dest_offset, _) = dest_slots.elim();
-
-        unsafe {
-            seL4_CNode_Copy(
-                dest_cptr,            // _service
-                dest_offset,          // index
-                seL4_WordBits as u8,  // depth
-                parent_cnode.cptr,    // src_root
-                self.cptr,            // src_index
-                seL4_WordBits as u8,  // src_depth
-                CapRights::RW.into(), // rights
-            )
-        }
-        .as_result()
-        .map_err(|e| {
-            SeL4Error::new(
-                selfe_wrap::error::APIMethod::CNode(selfe_wrap::error::CNodeMethod::Copy),
-                e,
-            )
-        })?;
+        let source = FullyQualifiedCptr {
+            cnode: selfe_wrap::CNodeCptr(parent_cnode.cptr.into()),
+            index: role::Local::to_index(self.cptr),
+        };
+        let dest = SelfeKernel::cnode_copy(&source, dest_slots.elim().cptr, CapRights::RW)?;
+        let dest_offset = dest.index.into();
         Ok((
             Cap {
                 cptr: dest_offset,

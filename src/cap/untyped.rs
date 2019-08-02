@@ -18,6 +18,7 @@ use crate::error::{ErrorExt, KernelError, SeL4Error};
 use crate::pow::{Pow, _Pow};
 use crate::vspace::NumPages;
 use selfe_wrap::error::{APIMethod, CNodeMethod};
+use selfe_wrap::FullyQualifiedCptr;
 
 // The seL4 kernel's maximum amount of retypes per system call is configurable
 // in the sel4.toml, particularly by the KernelRetypeFanOutLimit property.
@@ -73,14 +74,14 @@ impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
             return Err(WUntypedSplitError::TooSmallToBeSplit);
         }
 
-        let (dest_cptr, dest_offset, _) = dest_slots.elim();
-
+        let dest = dest_slots.elim().cptr;
+        let dest_offset = dest.index.into();
         unsafe {
             seL4_Untyped_Retype(
                 self.cptr,                              // _service
                 api_object_seL4_UntypedObject as usize, // type
                 usize::from(output_size_bits),          // size_bits
-                dest_cptr,                              // root
+                dest.cnode.into(),                      // root
                 0,                                      // index
                 0,                                      // depth
                 dest_offset,                            // offset
@@ -389,14 +390,14 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
         BitSize: Sub<U1>,
         Diff<BitSize, U1>: Unsigned,
     {
-        let (dest_cptr, dest_offset, _) = dest_slots.elim();
-
+        let dest = dest_slots.elim().cptr;
+        let dest_offset = dest.index.into();
         unsafe {
             seL4_Untyped_Retype(
                 self.cptr,                              // _service
                 api_object_seL4_UntypedObject as usize, // type
                 BitSize::to_usize() - 1,                // size_bits
-                dest_cptr,                              // root
+                dest.cnode.into(),                      // root
                 0,                                      // index
                 0,                                      // depth
                 dest_offset,                            // offset
@@ -444,13 +445,14 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
         BitSize: Sub<U2>,
         Diff<BitSize, U2>: Unsigned,
     {
-        let (dest_cptr, dest_offset, _) = dest_slots.elim();
+        let dest = dest_slots.elim().cptr;
+        let dest_offset = dest.index.into();
         unsafe {
             seL4_Untyped_Retype(
                 self.cptr,                              // _service
                 api_object_seL4_UntypedObject as usize, // type
                 BitSize::to_usize() - 2,                // size_bits
-                dest_cptr,                              // root
+                dest.cnode.into(),                      // root
                 0,                                      // index
                 0,                                      // depth
                 dest_offset,                            // offset
@@ -512,16 +514,16 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
         Pow<<BitSize as Sub<PageBits>>::Output>:
             IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
     {
-        let (dest_cptr, dest_offset, _) = dest_slots.elim();
+        let dest = dest_slots.elim().cptr;
         unsafe {
             seL4_Untyped_Retype(
                 self.cptr,                               // _service
                 Page::sel4_type_id(),                    // type
                 0,                                       // size_bits
-                dest_cptr,                               // root
+                dest.cnode.into(),                       // root
                 0,                                       // index
                 0,                                       // depth
-                dest_offset,                             // offset
+                dest.index.into(),                       // offset
                 1 << (BitSize::USIZE - PageBits::USIZE), // num_objects
             )
             .as_result()
@@ -529,7 +531,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
         }
 
         Ok(CapRange::new(
-            dest_offset,
+            dest.index.into(),
             Page {
                 state: page_state::Unmapped,
                 // TODO - implement kind piping
@@ -589,17 +591,16 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         TargetCapType: PhantomCap,
         BitSize: IsGreaterOrEqual<TargetCapType::SizeBits, Output = True>,
     {
-        let (dest_cptr, dest_offset, _) = dest_slot.elim();
-
+        let dest = dest_slot.elim().cptr;
         unsafe {
             seL4_Untyped_Retype(
                 self.cptr,                     // _service
                 TargetCapType::sel4_type_id(), // type
                 0,                             // size_bits
-                dest_cptr,                     // root
+                dest.cnode.into(),             // root
                 0,                             // index
                 0,                             // depth
-                dest_offset,                   // offset
+                dest.index.into(),             // offset
                 1,                             // num_objects
             )
         }
@@ -607,7 +608,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         .map_err(|e| SeL4Error::new(APIMethod::UntypedRetype, e))?;
 
         Ok(Cap {
-            cptr: dest_offset,
+            cptr: dest.index.into(),
             cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         })
@@ -635,38 +636,34 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
             Output = True,
         >,
     {
-        let (dest_cptr, dest_offset, _) = dest_slots.elim();
-        unsafe {
+        let dest = unsafe {
             Self::retype_multi_internal(
                 self.cptr,
-                Count::USIZE,
                 TargetCapType::sel4_type_id(),
-                dest_cptr,
-                dest_offset,
-            )?;
-        }
-        Ok(CapRange::new_phantom(dest_offset))
+                dest_slots.elim(),
+            )?
+        };
+        Ok(CapRange::new_phantom(dest.cptr.index.into()))
     }
 
     unsafe fn retype_multi_internal(
         self_cptr: usize,
-        count: usize,
         type_id: usize,
-        dest_cptr: usize,
-        dest_offset: usize,
-    ) -> Result<(), SeL4Error> {
+        dest: selfe_wrap::FullyQualifiedCptrSpan,
+    ) -> Result<selfe_wrap::FullyQualifiedCptrSpan, SeL4Error> {
         seL4_Untyped_Retype(
-            self_cptr,   // _service
-            type_id,     // type
-            0,           // size_bits
-            dest_cptr,   // root
-            0,           // index
-            0,           // depth
-            dest_offset, // offset
-            count,       // num_objects
+            self_cptr,              // _service
+            type_id,                // type
+            0,                      // size_bits
+            dest.cptr.cnode.into(), // root
+            0,                      // index
+            0,                      // depth
+            dest.cptr.index.into(), // offset
+            dest.size,              // num_objects
         )
         .as_result()
         .map_err(|e| SeL4Error::new(APIMethod::UntypedRetype, e))
+        .map(|_| dest)
     }
 
     pub fn retype_cnode<ChildRadix: Unsigned>(
@@ -693,8 +690,14 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
         let (scratch_slot, local_slots) = local_slots.alloc::<U1>();
         let (dest_slot, _) = local_slots.alloc::<U1>();
 
-        let (scratch_cptr, scratch_offset, _) = scratch_slot.elim();
-        let (dest_cptr, dest_offset, _) = dest_slot.elim();
+        let FullyQualifiedCptr {
+            cnode: scratch_cptr,
+            index: scratch_offset,
+        } = scratch_slot.elim().cptr;
+        let FullyQualifiedCptr {
+            cnode: dest_cptr,
+            index: dest_offset,
+        } = dest_slot.elim().cptr;
 
         unsafe {
             // Retype to fill the scratch slot with a fresh CNode
@@ -702,10 +705,10 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
                 self.cptr,                               // _service
                 api_object_seL4_CapTableObject as usize, // type
                 ChildRadix::to_usize(),                  // size_bits
-                scratch_cptr,                            // root
+                scratch_cptr.into(),                     // root
                 0,                                       // index
                 0,                                       // depth
-                scratch_offset,                          // offset
+                scratch_offset.into(),                   // offset
                 1,                                       // num_objects
             )
             .as_result()
@@ -720,13 +723,13 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
             .words[0];
 
             seL4_CNode_Mutate(
-                dest_cptr,           // _service: seL4_CNode,
-                dest_offset,         // dest_index: seL4_Word,
-                seL4_WordBits as u8, // dest_depth: seL4_Uint8,
-                scratch_cptr,        // src_root: seL4_CNode,
-                scratch_offset,      // src_index: seL4_Word,
-                seL4_WordBits as u8, // src_depth: seL4_Uint8,
-                guard_data as usize, // badge or guard: seL4_Word,
+                dest_cptr.into(),      // _service: seL4_CNode,
+                dest_offset.into(),    // dest_index: seL4_Word,
+                seL4_WordBits as u8,   // dest_depth: seL4_Uint8,
+                scratch_cptr.into(),   // src_root: seL4_CNode,
+                scratch_offset.into(), // src_index: seL4_Word,
+                seL4_WordBits as u8,   // src_depth: seL4_Uint8,
+                guard_data as usize,   // badge or guard: seL4_Word,
             )
             .as_result()
             .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::Mutate), e))?;
@@ -738,7 +741,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
 
         Ok((
             Cap {
-                cptr: dest_offset,
+                cptr: dest_offset.into(),
                 _role: PhantomData,
                 cap_data: CNode {
                     radix: ChildRadix::to_u8(),
@@ -746,7 +749,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
                 },
             },
             // We start with the next free slot at 1 in order to "reserve" the 0-indexed slot for "null"
-            CNodeSlots::internal_new(dest_offset, 1),
+            CNodeSlots::internal_new(dest_offset.into(), 1),
         ))
     }
 }
@@ -763,17 +766,16 @@ impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
         // trait to allow some sort of associated-type matching between the allowable
         // source Untyped memory kinds and the output cap types.
 
-        let (dest_cptr, dest_offset, _) = dest_slot.elim();
-
+        let dest = dest_slot.elim().cptr;
         unsafe {
             seL4_Untyped_Retype(
                 self.cptr,            // _service
                 Page::sel4_type_id(), // type
                 0,                    // size_bits
-                dest_cptr,            // root
+                dest.cnode.into(),    // root
                 0,                    // index
                 0,                    // depth
-                dest_offset,          // offset
+                dest.index.into(),    // offset
                 1,                    // num_objects
             )
         }
@@ -781,7 +783,7 @@ impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
         .map_err(|e| SeL4Error::new(APIMethod::UntypedRetype, e))?;
 
         Ok(Cap {
-            cptr: dest_offset,
+            cptr: dest.index.into(),
             cap_data: Page {
                 state: page_state::Unmapped,
                 // TODO - reinstate kind piping

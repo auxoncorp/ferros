@@ -14,6 +14,7 @@ use crate::cap::{
     PhantomCap, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
 };
 use crate::error::{ErrorExt, SeL4Error};
+use selfe_wrap::FullyQualifiedCptr;
 
 type UTPoolSlotsPerSize = U4;
 
@@ -362,25 +363,28 @@ fn alloc(
             let cptr = pool[usize::from(i)].pop().unwrap();
             let cptr_bitsize = i + MinUntypedSize::U8;
 
-            let (slot_cptr, slot_offset, _) = slot.elim();
+            let FullyQualifiedCptr {
+                cnode: slot_cptr,
+                index: slot_offset,
+            } = slot.elim().cptr;
 
             unsafe {
                 seL4_Untyped_Retype(
                     cptr,                                   // _service
                     api_object_seL4_UntypedObject as usize, // type
                     usize::from(cptr_bitsize - 1),          // size_bits
-                    slot_cptr,                              // root
+                    slot_cptr.into(),                       // root
                     0,                                      // index
                     0,                                      // depth
-                    slot_offset,                            // offset
+                    slot_offset.into(),                     // offset
                     2,                                      // num_objects
                 )
             }
             .as_result()
             .map_err(|e| SeL4Error::new(selfe_wrap::error::APIMethod::UntypedRetype, e))?;
 
-            pool[usize::from(i) - 1].push(slot_offset);
-            pool[usize::from(i) - 1].push(slot_offset + 1);
+            pool[usize::from(i) - 1].push(slot_offset.into());
+            pool[usize::from(i) - 1].push(usize::from(slot_offset) + 1);
         }
     }
 

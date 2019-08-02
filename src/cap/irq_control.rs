@@ -9,6 +9,7 @@ use crate::cap::{
 };
 use crate::error::{ErrorExt, SeL4Error};
 use selfe_wrap::error::APIMethod;
+use selfe_wrap::CapIndex;
 
 pub type MaxIRQCount = U1024;
 
@@ -50,7 +51,7 @@ impl LocalCap<IRQControl> {
     {
         let destination_relative_cptr = self.internal_create_handler(dest_slot, IRQ::U16)?;
         Ok(Cap {
-            cptr: destination_relative_cptr,
+            cptr: destination_relative_cptr.into(),
             cap_data: IRQHandler {
                 _irq: PhantomData,
                 _set_state: PhantomData,
@@ -69,7 +70,7 @@ impl LocalCap<IRQControl> {
         }
         let destination_relative_cptr = self.internal_create_handler(dest_slot, irq)?;
         Ok(Cap {
-            cptr: destination_relative_cptr,
+            cptr: destination_relative_cptr.into(),
             cap_data: irq_handler::weak::WIRQHandler {
                 irq,
                 _set_state: PhantomData,
@@ -82,8 +83,8 @@ impl LocalCap<IRQControl> {
         &mut self,
         dest_slot: CNodeSlot<DestRole>,
         irq: u16,
-    ) -> Result<usize, IRQError> {
-        let (dest_cptr, dest_offset, _) = dest_slot.elim();
+    ) -> Result<CapIndex, IRQError> {
+        let dest = dest_slot.elim().cptr;
 
         if !self.cap_data.available[usize::from(irq)] {
             return Err(IRQError::UnavailableIRQ(irq));
@@ -92,8 +93,8 @@ impl LocalCap<IRQControl> {
             seL4_IRQControl_Get(
                 self.cptr,           // service/authority
                 usize::from(irq),    // irq
-                dest_cptr,           // root
-                dest_offset,         // index
+                dest.cnode.into(),   // root
+                dest.index.into(),   // index
                 seL4_WordBits as u8, // depth
             )
         }
@@ -101,6 +102,6 @@ impl LocalCap<IRQControl> {
         .map_err(|e| IRQError::SeL4Error(SeL4Error::new(APIMethod::IRQControlGet, e)))?;
 
         self.cap_data.available[usize::from(irq)] = false;
-        Ok(dest_offset)
+        Ok(dest.index)
     }
 }

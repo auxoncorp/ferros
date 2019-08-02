@@ -34,23 +34,34 @@ pub use irq_handler::*;
 pub use notification::*;
 pub use page::*;
 pub use page_table::*;
+use selfe_wrap::FullyQualifiedCptr;
 pub use tcb::*;
 pub use untyped::*;
 
 /// Type-level enum indicating the relative location / Capability Pointer addressing
 /// scheme that should be used for the objects parameterized by it.
-pub trait CNodeRole: private::SealedRole {}
+pub trait CNodeRole: private::SealedRole {
+    fn to_index(raw_cptr_offset: usize) -> selfe_wrap::CapIndex;
+}
 
 pub mod role {
     use super::CNodeRole;
 
     #[derive(Debug, PartialEq)]
     pub struct Local {}
-    impl CNodeRole for Local {}
+    impl CNodeRole for Local {
+        fn to_index(raw_cptr_offset: usize) -> selfe_wrap::CapIndex {
+            selfe_wrap::CapIndex::Local(raw_cptr_offset.into())
+        }
+    }
 
     #[derive(Debug, PartialEq)]
     pub struct Child {}
-    impl CNodeRole for Child {}
+    impl CNodeRole for Child {
+        fn to_index(raw_cptr_offset: usize) -> selfe_wrap::CapIndex {
+            selfe_wrap::CapIndex::Child(raw_cptr_offset.into())
+        }
+    }
 }
 
 /// Marker trait for CapType implementing structs to indicate that
@@ -311,25 +322,13 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
         dest_slot: CNodeSlot<DestRole>,
         rights: CapRights,
     ) -> Result<usize, SeL4Error> {
-        let (dest_cptr, dest_offset, _) = dest_slot.elim();
-        match unsafe {
-            seL4_CNode_Copy(
-                dest_cptr,           // _service
-                dest_offset,         // index
-                seL4_WordBits as u8, // depth
-                // Since src_cnode is restricted to CSpace Local Root, the cptr must
-                // actually be the slot index
-                src_cnode.cptr,      // src_root
-                self.cptr,           // src_index
-                seL4_WordBits as u8, // src_depth
-                rights.into(),       // rights
-            )
-        }
-        .as_result()
-        {
-            Ok(_) => Ok(dest_offset),
-            Err(e) => Err(SeL4Error::new(APIMethod::CNode(CNodeMethod::Copy), e)),
-        }
+        use selfe_wrap::{CNodeKernel, SelfeKernel};
+        let source = FullyQualifiedCptr {
+            cnode: selfe_wrap::CNodeCptr(src_cnode.cptr.into()),
+            index: Role::to_index(self.cptr),
+        };
+        SelfeKernel::cnode_copy(&source, dest_slot.elim().cptr, rights)
+            .map(|dest| dest.index.into())
     }
 
     /// Copy a capability to another CNode while also setting rights and a badge
@@ -346,11 +345,11 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
         CT: PhantomCap,
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
-        let (dest_cptr, dest_offset, _) = dest_slot.elim();
+        let dest = dest_slot.elim().cptr;
         unsafe {
             seL4_CNode_Mint(
-                dest_cptr,           // _service
-                dest_offset,         // dest index
+                dest.cnode.into(),   // _service
+                dest.index.into(),   // dest index
                 seL4_WordBits as u8, // dest depth
                 // Since src_cnode is restricted to Root, the cptr must
                 // actually be the slot index
@@ -364,7 +363,7 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
         .as_result()
         .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::Mint), e))?;
         Ok(Cap {
-            cptr: dest_offset,
+            cptr: dest.index.into(),
             cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         })
@@ -384,11 +383,11 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
         CT: PhantomCap,
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
-        let (dest_cptr, dest_offset, _) = dest_slot.elim();
+        let dest = dest_slot.elim().cptr;
         unsafe {
             seL4_CNode_Mint(
-                dest_cptr,           // _service
-                dest_offset,         // dest index
+                dest.cnode.into(),   // _service
+                dest.index.into(),   // dest index
                 seL4_WordBits as u8, // dest depth
                 // Since src_cnode is restricted to Root, the cptr must
                 // actually be the slot index
@@ -402,7 +401,7 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
         .as_result()
         .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::Mint), e))?;
         Ok(Cap {
-            cptr: dest_offset,
+            cptr: dest.index.into(),
             cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         })
@@ -420,15 +419,15 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
         CT: CopyAliasable,
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
-        let (dest_cptr, dest_offset, _) = dest_slot.elim();
+        let dest = dest_slot.elim().cptr;
         unsafe {
             seL4_CNode_Mint(
-                dest_cptr,           // _service
-                dest_offset,         // index
+                dest.cnode.into(),   // _service
+                dest.index.into(),   // index
                 seL4_WordBits as u8, // depth
                 // Since src_cnode is restricted to Root, the cptr must
                 // actually be the slot index
-                dest_cptr,           // src_root
+                dest.cnode.into(),   // src_root
                 self.cptr,           // src_index
                 seL4_WordBits as u8, // src_depth
                 rights.into(),       // rights
@@ -438,7 +437,7 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
         .as_result()
         .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::Mint), e))?;
         Ok(Cap {
-            cptr: dest_offset,
+            cptr: dest.index.into(),
             cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         })
@@ -453,11 +452,11 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
     where
         CT: Movable,
     {
-        let (dest_cptr, dest_offset, _) = dest_slot.elim();
+        let dest = dest_slot.elim().cptr;
         unsafe {
             seL4_CNode_Move(
-                dest_cptr,           // _service
-                dest_offset,         // index
+                dest.cnode.into(),   // _service
+                dest.index.into(),   // index
                 seL4_WordBits as u8, // depth
                 // Since src_cnode is restricted to Root, the cptr must
                 // actually be the slot index
@@ -469,7 +468,7 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
         .as_result()
         .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::Move), e))?;
         Ok(Cap {
-            cptr: dest_offset,
+            cptr: dest.index.into(),
             cap_data: self.cap_data,
             _role: PhantomData,
         })

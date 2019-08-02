@@ -33,19 +33,28 @@ pub enum CapIndex {
 
 /// An offset relative to the CSpace of the currently executing thread
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LocalCapIndex(usize);
+pub struct LocalCapIndex(pub usize);
 /// An offset within the CSpace of a child CNode
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ChildCapIndex(usize);
+pub struct ChildCapIndex(pub usize);
 
 /// A pointer to a CNode capability, relative to the CSpace of the currently executing thread
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CNodeCptr(LocalCapIndex);
+pub struct CNodeCptr(pub LocalCapIndex);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FullyQualifiedCptr {
     pub cnode: CNodeCptr,
     pub index: CapIndex,
+}
+
+/// A continuous span of fully qualified capability pointers
+/// starting from an initial cptr
+#[derive(Debug, Clone, PartialEq)]
+pub struct FullyQualifiedCptrSpan {
+    pub cptr: FullyQualifiedCptr,
+    // N.B. For future rigor, consider making this core::num::NonZeroUsize
+    pub size: usize,
 }
 
 impl From<CNodeCptr> for usize {
@@ -60,5 +69,17 @@ impl From<CapIndex> for usize {
             CapIndex::Local(LocalCapIndex(i)) => i,
             CapIndex::Child(ChildCapIndex(i)) => i,
         }
+    }
+}
+
+impl From<usize> for LocalCapIndex {
+    fn from(v: usize) -> Self {
+        LocalCapIndex(v)
+    }
+}
+
+impl From<usize> for ChildCapIndex {
+    fn from(v: usize) -> Self {
+        ChildCapIndex(v)
     }
 }
