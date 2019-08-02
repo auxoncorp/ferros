@@ -1,46 +1,31 @@
+// TODO: Move this to arch
 use crate::arch::PageBytes;
-use crate::cap::{
-    CNodeRole, Cap, CapRangeDataReconstruction, CapType, CopyAliasable, InternalASID, Movable,
-};
-use typenum::Unsigned;
+use crate::cap::{CapRangeDataReconstruction, CapType, CopyAliasable, Movable};
 
 #[derive(Clone, Debug)]
-pub struct Page<State: PageState> {
-    pub(crate) state: State,
+pub struct Page {}
+
+impl CapType for Page {}
+
+impl CopyAliasable for Page {
+    type CopyOutput = Page;
 }
+impl Movable for Page {}
 
-impl<State: PageState> CapType for Page<State> {}
-
-impl<State: PageState> CopyAliasable for Page<State> {
-    type CopyOutput = Page<page_state::Unmapped>;
-}
-impl<State: PageState> Movable for Page<State> {}
-
-impl<'a, State: PageState> From<&'a Page<State>> for Page<page_state::Unmapped> {
-    fn from(_val: &'a Page<State>) -> Self {
-        Page {
-            state: page_state::Unmapped {},
-        }
+impl<'a> From<&'a Page> for Page {
+    fn from(_val: &'a Page) -> Self {
+        Page {}
     }
 }
 
-impl<State: PageState> CapRangeDataReconstruction for Page<State> {
-    fn reconstruct(index: usize, seed_cap_data: &Self) -> Self {
-        Page {
-            state: seed_cap_data
-                .state
-                .offset_by(index * PageBytes::USIZE)
-                // TODO - consider making reconstruct fallible
-                .expect("Earlier checks confirm the memory fits into available space"),
-        }
+impl CapRangeDataReconstruction for Page {
+    fn reconstruct(_index: usize, _seed_cap_data: &Self) -> Self {
+        Page {}
     }
 }
 
-impl<CapRole: CNodeRole> Cap<Page<page_state::Mapped>, CapRole> {
-    pub fn vaddr(&self) -> usize {
-        self.cap_data.state.vaddr
-    }
-    pub(crate) fn asid(&self) -> InternalASID {
-        self.cap_data.state.asid
+impl PhantomCap for Page {
+    fn phantom_instance() -> Self {
+        Page {}
     }
 }

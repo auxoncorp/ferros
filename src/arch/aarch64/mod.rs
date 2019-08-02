@@ -3,7 +3,7 @@ use core::ops::Sub;
 
 use typenum::*;
 
-use crate::cap::{page_state, GranuleInfo, Page, PhantomCap};
+use crate::cap::{GranuleInfo, Page, PhantomCap};
 use crate::vspace::{PagingRec, PagingTop};
 
 pub mod cap;

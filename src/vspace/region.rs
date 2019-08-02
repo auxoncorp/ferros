@@ -8,8 +8,8 @@ use crate::arch::cap::*;
 use crate::arch::{self, HugePageBits, LargePageBits, PageBits, WorstCaseGranuleSlotCount};
 use crate::cap::{
     granule_state, memory_kind, role, CNode, CNodeRole, CNodeSlots, Cap, CapRange, Granule,
-    GranuleState, InternalASID, LocalCNodeSlots, LocalCap, MemoryKind, RetypeError, Untyped,
-    WCNodeSlots, WUntyped, WeakCapRange, WeakMemoryKind,
+    GranuleSlotCount, GranuleState, InternalASID, LocalCNodeSlots, LocalCap, MemoryKind,
+    RetypeError, Untyped, WCNodeSlots, WUntyped, WeakCapRange, WeakMemoryKind,
 };
 
 use crate::pow::{Pow, _Pow};
@@ -176,7 +176,7 @@ where
     /// construct a strongly typed (size indexed) unmapped memory
     /// region.
     pub fn new(
-        slots: LocalCNodeSlots<WorstCaseGranuleSlotCount>,
+        slots: LocalCNodeSlots<GranuleSlotCount<SizeBits>>,
         ut: LocalCap<Untyped<SizeBits>>,
     ) -> Result<Self, VSpaceError> {
         let mut weak_slots = slots.weaken();
@@ -464,8 +464,16 @@ impl<SS: SharedStatus, CapRole: CNodeRole> WeakMappedMemoryRegion<SS, CapRole> {
         self.caps.start_cap_data.state.vaddr
     }
 
-    pub(crate) fn asid(&self) -> InternalASID {
+   pub(crate) fn asid(&self) -> InternalASID {
         self.caps.start_cap_data.state.asid
+    }
+}
+
+impl<Role: CNodeRole> WeakMappedMemoryRegion<shared_status::Shared, Role> {
+    /// This is used in bootstrapping a Ferros program. It wraps up
+    /// the user image frames.
+    pub(crate) fn bootstrap(frame_count) -> Self {
+
     }
 }
 
