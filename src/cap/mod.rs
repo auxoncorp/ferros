@@ -1,12 +1,8 @@
 use core::marker::PhantomData;
 
-use selfe_sys::*;
 use typenum::*;
 
-use crate::error::{ErrorExt, SeL4Error};
-use crate::userland::CapRights;
-use selfe_wrap::error::{APIMethod, CNodeMethod};
-
+use crate::error::SeL4Error;
 mod asid;
 mod asid_control;
 mod asid_pool;
@@ -34,32 +30,32 @@ pub use irq_handler::*;
 pub use notification::*;
 pub use page::*;
 pub use page_table::*;
-use selfe_wrap::FullyQualifiedCptr;
+use selfe_wrap::{CNodeCptr, CNodeKernel, CapIndex, CapRights, FullyQualifiedCptr, SelfeKernel};
 pub use tcb::*;
 pub use untyped::*;
 
 /// Type-level enum indicating the relative location / Capability Pointer addressing
 /// scheme that should be used for the objects parameterized by it.
 pub trait CNodeRole: private::SealedRole {
-    fn to_index(raw_cptr_offset: usize) -> selfe_wrap::CapIndex;
+    fn to_index(raw_cptr_offset: usize) -> CapIndex;
 }
 
 pub mod role {
-    use super::CNodeRole;
+    use super::{CNodeRole, CapIndex};
 
     #[derive(Debug, PartialEq)]
     pub struct Local {}
     impl CNodeRole for Local {
-        fn to_index(raw_cptr_offset: usize) -> selfe_wrap::CapIndex {
-            selfe_wrap::CapIndex::Local(raw_cptr_offset.into())
+        fn to_index(raw_cptr_offset: usize) -> CapIndex {
+            CapIndex::Local(raw_cptr_offset.into())
         }
     }
 
     #[derive(Debug, PartialEq)]
     pub struct Child {}
     impl CNodeRole for Child {
-        fn to_index(raw_cptr_offset: usize) -> selfe_wrap::CapIndex {
-            selfe_wrap::CapIndex::Child(raw_cptr_offset.into())
+        fn to_index(raw_cptr_offset: usize) -> CapIndex {
+            CapIndex::Child(raw_cptr_offset.into())
         }
     }
 }
@@ -322,51 +318,12 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
         dest_slot: CNodeSlot<DestRole>,
         rights: CapRights,
     ) -> Result<usize, SeL4Error> {
-        use selfe_wrap::{CNodeKernel, SelfeKernel};
         let source = FullyQualifiedCptr {
-            cnode: selfe_wrap::CNodeCptr(src_cnode.cptr.into()),
+            cnode: src_cnode.into(),
             index: Role::to_index(self.cptr),
         };
         SelfeKernel::cnode_copy(&source, dest_slot.elim().cptr, rights)
             .map(|dest| dest.index.into())
-    }
-
-    /// Copy a capability to another CNode while also setting rights and a badge
-    pub(crate) fn mint_new<DestRole: CNodeRole>(
-        &self,
-        src_cnode: &LocalCap<LocalCNode>,
-        dest_slot: CNodeSlot<DestRole>,
-        rights: CapRights,
-        badge: Badge,
-    ) -> Result<Cap<CT::CopyOutput, DestRole>, SeL4Error>
-    where
-        CT: Mintable,
-        CT: CopyAliasable,
-        CT: PhantomCap,
-        <CT as CopyAliasable>::CopyOutput: PhantomCap,
-    {
-        let dest = dest_slot.elim().cptr;
-        unsafe {
-            seL4_CNode_Mint(
-                dest.cnode.into(),   // _service
-                dest.index.into(),   // dest index
-                seL4_WordBits as u8, // dest depth
-                // Since src_cnode is restricted to Root, the cptr must
-                // actually be the slot index
-                src_cnode.cptr,      // src_root
-                self.cptr,           // src_index
-                seL4_WordBits as u8, // src_depth
-                rights.into(),       // rights
-                badge.into(),        // badge
-            )
-        }
-        .as_result()
-        .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::Mint), e))?;
-        Ok(Cap {
-            cptr: dest.index.into(),
-            cap_data: PhantomCap::phantom_instance(),
-            _role: PhantomData,
-        })
     }
 
     /// Copy a capability to another CNode while also setting rights and a badge
@@ -383,27 +340,16 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
         CT: PhantomCap,
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
-        let dest = dest_slot.elim().cptr;
-        unsafe {
-            seL4_CNode_Mint(
-                dest.cnode.into(),   // _service
-                dest.index.into(),   // dest index
-                seL4_WordBits as u8, // dest depth
-                // Since src_cnode is restricted to Root, the cptr must
-                // actually be the slot index
-                src_cnode.cptr,      // src_root
-                self.cptr,           // src_index
-                seL4_WordBits as u8, // src_depth
-                rights.into(),       // rights
-                badge.into(),        // badge
-            )
-        }
-        .as_result()
-        .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::Mint), e))?;
-        Ok(Cap {
-            cptr: dest.index.into(),
-            cap_data: PhantomCap::phantom_instance(),
-            _role: PhantomData,
+        let source = FullyQualifiedCptr {
+            cnode: src_cnode.into(),
+            index: Role::to_index(self.cptr),
+        };
+        SelfeKernel::cnode_mint(&source, dest_slot.elim().cptr, rights, badge).map(|destination| {
+            Cap {
+                cptr: destination.index.into(),
+                cap_data: PhantomCap::phantom_instance(),
+                _role: PhantomData,
+            }
         })
     }
 
@@ -419,75 +365,51 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
         CT: CopyAliasable,
         <CT as CopyAliasable>::CopyOutput: PhantomCap,
     {
-        let dest = dest_slot.elim().cptr;
-        unsafe {
-            seL4_CNode_Mint(
-                dest.cnode.into(),   // _service
-                dest.index.into(),   // index
-                seL4_WordBits as u8, // depth
-                // Since src_cnode is restricted to Root, the cptr must
-                // actually be the slot index
-                dest.cnode.into(),   // src_root
-                self.cptr,           // src_index
-                seL4_WordBits as u8, // src_depth
-                rights.into(),       // rights
-                badge.into(),        // badge
-            )
-        }
-        .as_result()
-        .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::Mint), e))?;
-        Ok(Cap {
-            cptr: dest.index.into(),
-            cap_data: PhantomCap::phantom_instance(),
-            _role: PhantomData,
+        let source = FullyQualifiedCptr {
+            // Because we limit the dest_slot to be local, and CNodeSlots
+            // are tracked using their primary cptr as a reference to the
+            // relevant CNode, we can extract the cnode cptr thusly
+            cnode: CNodeCptr(dest_slot.cptr.into()),
+            index: Role::to_index(self.cptr),
+        };
+        SelfeKernel::cnode_mint(&source, dest_slot.elim().cptr, rights, badge).map(|destination| {
+            Cap {
+                cptr: destination.index.into(),
+                cap_data: PhantomCap::phantom_instance(),
+                _role: PhantomData,
+            }
         })
     }
 
     /// Migrate a capability from one CNode slot to another.
     pub fn move_to_slot<DestRole: CNodeRole>(
         self,
-        src_cnode: &LocalCap<LocalCNode>,
+        src_cnode: &LocalCap<CNode<Role>>,
         dest_slot: CNodeSlot<DestRole>,
     ) -> Result<Cap<CT, DestRole>, SeL4Error>
     where
         CT: Movable,
     {
-        let dest = dest_slot.elim().cptr;
-        unsafe {
-            seL4_CNode_Move(
-                dest.cnode.into(),   // _service
-                dest.index.into(),   // index
-                seL4_WordBits as u8, // depth
-                // Since src_cnode is restricted to Root, the cptr must
-                // actually be the slot index
-                src_cnode.cptr,      // src_root
-                self.cptr,           // src_index
-                seL4_WordBits as u8, // src_depth
-            )
-        }
-        .as_result()
-        .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::Move), e))?;
-        Ok(Cap {
-            cptr: dest.index.into(),
+        let source = FullyQualifiedCptr {
+            cnode: src_cnode.into(),
+            index: Role::to_index(self.cptr),
+        };
+        SelfeKernel::cnode_move(&source, dest_slot.elim().cptr).map(|destination| Cap {
+            cptr: destination.index.into(),
             cap_data: self.cap_data,
             _role: PhantomData,
         })
     }
 
     /// Delete a capability
-    pub fn delete(self, parent_cnode: &LocalCap<LocalCNode>) -> Result<(), SeL4Error>
+    pub fn delete(self, parent_cnode: &LocalCap<CNode<Role>>) -> Result<(), SeL4Error>
     where
         CT: Delible,
     {
-        unsafe {
-            seL4_CNode_Delete(
-                parent_cnode.cptr,   // _service
-                self.cptr,           // index
-                seL4_WordBits as u8, // depth
-            )
-        }
-        .as_result()
-        .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::Delete), e))
+        SelfeKernel::cnode_delete(FullyQualifiedCptr {
+            cnode: parent_cnode.into(),
+            index: Role::to_index(self.cptr),
+        })
     }
 }
 

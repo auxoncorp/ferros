@@ -1,15 +1,13 @@
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
 
-use selfe_sys::*;
-
 use typenum::operator_aliases::Diff;
 use typenum::*;
 
 use crate::cap::{role, CNodeRole, Cap, CapType, ChildCap, LocalCap};
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
-use selfe_wrap::{CNodeKernel, FullyQualifiedCptr, SelfeKernel};
+use selfe_wrap::{CNodeCptr, CNodeKernel, FullyQualifiedCptr, FullyQualifiedCptrSpan, SelfeKernel};
 
 /// There will only ever be one CNode in a process with Role = Root. The
 /// cptrs any regular Cap are /also/ offsets into that cnode, because of
@@ -105,10 +103,10 @@ impl<Size: Unsigned, CapRole: CNodeRole, Role: CNodeRole> Cap<CNodeSlotsData<Siz
 }
 
 impl<Size: Unsigned, Role: CNodeRole> CNodeSlots<Size, Role> {
-    pub(crate) fn elim(self) -> selfe_wrap::FullyQualifiedCptrSpan {
-        selfe_wrap::FullyQualifiedCptrSpan {
+    pub(crate) fn elim(self) -> FullyQualifiedCptrSpan {
+        FullyQualifiedCptrSpan {
             cptr: FullyQualifiedCptr {
-                cnode: selfe_wrap::CNodeCptr(self.cptr.into()),
+                cnode: CNodeCptr(self.cptr.into()),
                 index: Role::to_index(self.cap_data.offset),
             },
             size: Size::USIZE,
@@ -149,19 +147,19 @@ impl<Size: Unsigned> LocalCNodeSlots<Size> {
     pub(crate) unsafe fn revoke_in_reverse(&self) {
         for offset in (self.cap_data.offset..self.cap_data.offset + Size::USIZE).rev() {
             // Clean up any child/derived capabilities that may have been created.
-            let _err = seL4_CNode_Revoke(
-                self.cptr,           // _service
-                offset,              // index
-                seL4_WordBits as u8, // depth
-            );
-
-            // Clean out the slot itself
-            let _err = seL4_CNode_Delete(
-                self.cptr,           // _service
-                offset,              // index
-                seL4_WordBits as u8, // depth
-            );
+            let pointer = FullyQualifiedCptr {
+                cnode: CNodeCptr(self.cptr.into()),
+                index: role::Local::to_index(offset),
+            };
+            let _err = SelfeKernel::cnode_revoke(pointer.clone());
+            let _err = SelfeKernel::cnode_delete(pointer);
         }
+    }
+}
+
+impl<'a, Role: CNodeRole> From<&'a LocalCap<CNode<Role>>> for CNodeCptr {
+    fn from(v: &LocalCap<CNode<Role>>) -> Self {
+        CNodeCptr(v.cptr.into())
     }
 }
 
@@ -182,7 +180,7 @@ impl LocalCap<ChildCNode> {
         op! {SlotsForChild +  U1}: Unsigned,
     {
         let source = FullyQualifiedCptr {
-            cnode: selfe_wrap::CNodeCptr(parent_cnode.cptr.into()),
+            cnode: CNodeCptr(parent_cnode.cptr.into()),
             index: role::Local::to_index(self.cptr),
         };
         let dest = SelfeKernel::cnode_copy(&source, dest_slots.elim().cptr, CapRights::RW)?;

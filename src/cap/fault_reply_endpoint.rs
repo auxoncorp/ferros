@@ -1,11 +1,8 @@
-use crate::arch;
 use crate::cap::{CNodeSlotsData, Cap, CapType, LocalCNodeSlot, LocalCap};
-use crate::error::{ErrorExt, SeL4Error};
 use core::marker::PhantomData;
 use selfe_sys::*;
-use selfe_wrap::error::{APIMethod, CNodeMethod};
-use selfe_wrap::CNodeCptr;
-use typenum::*;
+use selfe_wrap::error::APIError;
+use selfe_wrap::{CNodeCptr, CNodeKernel, SelfeKernel};
 
 #[derive(Debug)]
 /// A FaultReply encapsulates a reply capability that goes with a fault; all you
@@ -23,23 +20,12 @@ impl LocalCap<FaultReplyEndpoint> {
     /// be Used only in response to a Fault.
     pub fn save_caller_and_create(
         slot: LocalCNodeSlot,
-    ) -> Result<LocalCap<FaultReplyEndpoint>, SeL4Error> {
-        let dest = slot.elim().cptr;
-        unsafe {
-            seL4_CNode_SaveCaller(
-                dest.cnode.into(),  // _service
-                dest.index.into(),  // index
-                arch::WordSize::U8, // depth
-            )
-        }
-        .as_result()
-        .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::SaveCaller), e))?;
-
-        Ok(Cap {
-            cptr: dest.index.into(),
+    ) -> Result<LocalCap<FaultReplyEndpoint>, APIError> {
+        SelfeKernel::save_caller(slot.elim().cptr).map(|destination| Cap {
+            cptr: destination.index.into(),
             _role: PhantomData,
             cap_data: FaultReplyEndpoint {
-                original_slot_cptr: dest.cnode,
+                original_slot_cptr: destination.cnode,
             },
         })
     }

@@ -1,5 +1,40 @@
 use selfe_sys::{seL4_CapRights_new, seL4_CapRights_t};
 
+/// Wrapper for a capability's badge, such as that
+/// used by Endpoints or Notifications for identification.
+///
+/// Note that on 32-bit platforms, the kernel will ignore the high 4 bits
+#[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Debug, Hash)]
+pub struct Badge {
+    inner: usize,
+}
+
+impl Badge {
+    pub fn are_all_overlapping_bits_set(self, other: Badge) -> bool {
+        if self.inner == 0 && other.inner == 0 {
+            return true;
+        }
+        let overlap = self.inner & other.inner;
+        overlap != 0
+    }
+}
+
+impl From<usize> for Badge {
+    fn from(u: usize) -> Self {
+        let unusable_bits = selfe_sys::seL4_WordBits as u32 - selfe_sys::seL4_BadgeBits;
+        let shifted_left = u << unusable_bits;
+        Badge {
+            inner: shifted_left >> unusable_bits,
+        }
+    }
+}
+
+impl From<Badge> for usize {
+    fn from(b: Badge) -> Self {
+        b.inner
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CapRights {
     R,

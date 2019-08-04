@@ -1,13 +1,12 @@
 use core::marker::PhantomData;
 use core::ops::Sub;
 
-use selfe_sys::*;
 use typenum::*;
 
 use crate::arch::{self, PageBits};
 use crate::cap::*;
-use crate::error::{ErrorExt, SeL4Error};
 use crate::pow::{Pow, _Pow};
+use selfe_wrap::error::APIError;
 
 mod resources;
 mod types;
@@ -55,7 +54,7 @@ pub fn execute_tests<'t, R: types::TestReporter>(
     mut reporter: R,
     resources: resources::TestResourceRefs<'t>,
     tests: &[&types::RunTest],
-) -> Result<types::TestOutcome, SeL4Error> {
+) -> Result<types::TestOutcome, APIError> {
     let resources::TestResourceRefs {
         slots,
         untyped,
@@ -81,7 +80,7 @@ pub fn execute_tests<'t, R: types::TestReporter>(
              inner_asid_pool,
              inner_mapped_memory_region,
              inner_irq_control|
-             -> Result<(), SeL4Error> {
+             -> Result<(), APIError> {
                 let (name, outcome) = t(
                     inner_slots,
                     inner_untyped,
@@ -131,7 +130,7 @@ pub fn with_temporary_resources<
     >,
     irq_control: &mut LocalCap<IRQControl>,
     f: Func,
-) -> Result<Result<(), InnerError>, SeL4Error>
+) -> Result<Result<(), InnerError>, APIError>
 where
     Func: FnOnce(
         LocalCNodeSlots<SlotCount>,
@@ -181,19 +180,10 @@ where
     // Clean up any child/derived capabilities that may have been created from the memory
     // Because the slots and the untyped are both Local, the slots' parent CNode capability pointer
     // must be the same as the untyped's parent CNode
-    unsafe {
-        seL4_CNode_Revoke(
-            slots.cptr,          // _service
-            untyped.cptr,        // index
-            seL4_WordBits as u8, // depth
-        )
-    }
-    .as_result()
-    .map_err(|e| {
-        SeL4Error::new(
-            selfe_wrap::error::APIMethod::CNode(selfe_wrap::error::CNodeMethod::Revoke),
-            e,
-        )
+    use selfe_wrap::{CNodeKernel, SelfeKernel};
+    SelfeKernel::cnode_revoke(selfe_wrap::FullyQualifiedCptr {
+        cnode: selfe_wrap::CNodeCptr(slots.cptr.into()),
+        index: role::Local::to_index(untyped.cptr),
     })?;
     Ok(r)
 }

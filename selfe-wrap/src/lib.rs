@@ -13,11 +13,36 @@ pub trait SyscallKernel {
 }
 
 pub trait CNodeKernel {
+    /// Move a capability from a source into a destination slot.
+    /// If successful, return the destination slot pointer
+    fn cnode_move(
+        source: &FullyQualifiedCptr,
+        destination: FullyQualifiedCptr,
+    ) -> Result<FullyQualifiedCptr, error::APIError>;
+
+    /// Copy a capability from a source into a destination slot.
+    /// If successful, return the destination slot pointer
     fn cnode_copy(
         source: &FullyQualifiedCptr,
         destination: FullyQualifiedCptr,
         rights: CapRights,
     ) -> Result<FullyQualifiedCptr, error::APIError>;
+
+    /// Copy a capability from a source into a destination slot,
+    /// while also setting the badge of the fresh capability.
+    /// If successful, return the destination slot pointer
+    fn cnode_mint(
+        source: &FullyQualifiedCptr,
+        destination: FullyQualifiedCptr,
+        rights: CapRights,
+        badge: Badge,
+    ) -> Result<FullyQualifiedCptr, error::APIError>;
+
+    fn cnode_delete(target: FullyQualifiedCptr) -> Result<(), error::APIError>;
+
+    fn cnode_revoke(target: FullyQualifiedCptr) -> Result<(), error::APIError>;
+
+    fn save_caller(destination: FullyQualifiedCptr) -> Result<FullyQualifiedCptr, error::APIError>;
 }
 
 #[cfg(test)]

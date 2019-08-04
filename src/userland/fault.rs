@@ -69,7 +69,7 @@ impl<SinkRole: CNodeRole> FaultSinkSetup<SinkRole> {
 
         let child_endpoint_fault_source =
             self.local_endpoint
-                .mint_new(local_cnode, fault_source_slot, CapRights::RWG, badge)?;
+                .mint(local_cnode, fault_source_slot, CapRights::RWG, badge)?;
 
         Ok(FaultSource {
             endpoint: child_endpoint_fault_source,
@@ -142,7 +142,7 @@ pub fn fault_or_message_channel<Msg: Sized, HandlerRole: CNodeRole>(
     // NB: This approach could be converted to use a `Setup` pattern to allow multiple fault-sources
     let local_endpoint: LocalCap<Endpoint> = untyped.retype(endpoint_slot)?;
     let handler_endpoint = local_endpoint.copy(&local_cnode, handler_slot, CapRights::RW)?;
-    let child_endpoint_fault_source = local_endpoint.mint_new(
+    let child_endpoint_fault_source = local_endpoint.mint(
         local_cnode,
         fault_source_slot,
         CapRights::RWG,

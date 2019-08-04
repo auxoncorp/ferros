@@ -18,7 +18,7 @@ use crate::error::{ErrorExt, KernelError, SeL4Error};
 use crate::pow::{Pow, _Pow};
 use crate::vspace::NumPages;
 use selfe_wrap::error::{APIMethod, CNodeMethod};
-use selfe_wrap::FullyQualifiedCptr;
+use selfe_wrap::{CNodeCptr, CNodeKernel, FullyQualifiedCptr, FullyQualifiedCptrSpan, SelfeKernel};
 
 // The seL4 kernel's maximum amount of retypes per system call is configurable
 // in the sel4.toml, particularly by the KernelRetypeFanOutLimit property.
@@ -353,15 +353,10 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
         });
 
         // Clean up any child/derived capabilities that may have been created.
-        unsafe {
-            seL4_CNode_Revoke(
-                parent_cnode.cptr,   // _service
-                self.cptr,           // index
-                seL4_WordBits as u8, // depth
-            )
-        }
-        .as_result()
-        .map_err(|e| SeL4Error::new(APIMethod::CNode(CNodeMethod::Revoke), e))?;
+        SelfeKernel::cnode_revoke(FullyQualifiedCptr {
+            cnode: CNodeCptr(parent_cnode.cptr.into()),
+            index: role::Local::to_index(self.cptr),
+        })?;
         Ok(r)
     }
 
@@ -649,8 +644,8 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
     unsafe fn retype_multi_internal(
         self_cptr: usize,
         type_id: usize,
-        dest: selfe_wrap::FullyQualifiedCptrSpan,
-    ) -> Result<selfe_wrap::FullyQualifiedCptrSpan, SeL4Error> {
+        dest: FullyQualifiedCptrSpan,
+    ) -> Result<FullyQualifiedCptrSpan, SeL4Error> {
         seL4_Untyped_Retype(
             self_cptr,              // _service
             type_id,                // type

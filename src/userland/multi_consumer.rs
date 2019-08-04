@@ -300,7 +300,7 @@ where
         consumer_token.consumer_vspace_asid = Some(consumer_vspace.asid());
 
         // Assumes we are using the one-hot style for identifying the interrupt badge index
-        let fresh_queue_badge = Badge::from(self.interrupt_badge.inner << 1);
+        let fresh_queue_badge = Badge::from(usize::from(self.interrupt_badge) << 1);
         let producer_setup: ProducerSetup<E, ELen> = ProducerSetup {
             consumer_vspace_asid: consumer_vspace.asid(),
             shared_region,
@@ -474,7 +474,7 @@ where
                 dest_slots,
             )?;
 
-        let fresh_queue_badge = Badge::from(self.queue_badge.inner << 1);
+        let fresh_queue_badge = Badge::from(usize::from(self.queue_badge) << 1);
         let producer_setup: ProducerSetup<F, FLen> = ProducerSetup {
             consumer_vspace_asid: consumer_vspace.asid(),
             shared_region,
@@ -574,7 +574,7 @@ where
                 dest_slots,
             )?;
 
-        let fresh_queue_badge = Badge::from((self.queues.1).0.inner << 1);
+        let fresh_queue_badge = Badge::from(usize::from((self.queues.1).0) << 1);
         let producer_setup: ProducerSetup<F, FLen> = ProducerSetup {
             consumer_vspace_asid: consumer_vspace.asid(),
             shared_region,
