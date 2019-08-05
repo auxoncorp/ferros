@@ -22,8 +22,8 @@ extern "C" {
     static _selfe_arc_data_end: usize;
 }
 
-mod elf_binaries {
-    include!{concat!(env!("OUT_DIR"), "/elf_binaries.rs")}
+mod resources {
+    include! {concat!(env!("OUT_DIR"), "/resources.rs")}
 }
 
 fn main() {
@@ -63,7 +63,7 @@ fn run(raw_bootinfo: &'static selfe_sys::seL4_BootInfo) -> Result<(), TopLevelEr
 
     let archive = selfe_arc::read::Archive::from_slice(archive_slice);
     let hello_printer_elf_data = archive
-        .file(elf_binaries::HelloPrinter::IMAGE_NAME)
+        .file(resources::HelloPrinter::IMAGE_NAME)
         .expect("find hello-printer in arc");
 
     debug_println!("Binary found, size is {}", hello_printer_elf_data.len());
@@ -78,7 +78,7 @@ fn run(raw_bootinfo: &'static selfe_sys::seL4_BootInfo) -> Result<(), TopLevelEr
         let vspace_slots: LocalCNodeSlots<U16> = slots;
         let vspace_ut: LocalCap<Untyped<U16>> = ut;
 
-        let mut hello_vspace = VSpace::new_from_elf::<elf_binaries::HelloPrinter>(
+        let mut hello_vspace = VSpace::new_from_elf::<resources::HelloPrinter>(
             retype(ut, slots)?, // paging_root
             hello_asid,
             vspace_slots.weaken(), // slots
@@ -98,7 +98,7 @@ fn run(raw_bootinfo: &'static selfe_sys::seL4_BootInfo) -> Result<(), TopLevelEr
         };
 
         let stack_mem: UnmappedMemoryRegion<
-            <elf_binaries::HelloPrinter as ElfProc>::StackSizeBits,
+            <resources::HelloPrinter as ElfProc>::StackSizeBits,
             _,
         > = UnmappedMemoryRegion::new(ut, slots).unwrap();
         let stack_mem =
