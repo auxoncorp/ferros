@@ -156,6 +156,8 @@ pub enum VSpaceError {
     /// special-sized granules.
     TriedToMapTooManyPagesAtOnce,
     InvalidRegionSize,
+    ElfParseError(&'static str),
+    InsufficientResourcesForElf,
 }
 
 impl From<RetypeError> for VSpaceError {
@@ -490,12 +492,11 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         let mut vspace =
             VSpace::<vspace_state::Empty>::new(paging_root, asid, slots, paging_untyped)?;
 
-        let elf = xmas_elf::ElfFile::new(elf_data).expect("Error parsing elf file");
+        let elf = xmas_elf::ElfFile::new(elf_data).map_err(VSpaceError::ElfParseError)?;
         let mut page_slots = page_slots.weaken();
         let mut writable_segment_pages_iter = elf_writable_mem
             .weaken()
-            .retype_pages(&mut page_slots)
-            .unwrap()
+            .retype_pages(&mut page_slots)?
             .into_iter();
 
         for program_header in elf
@@ -533,12 +534,17 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                         src_end,
                     );
 
-                    let dest_page = writable_segment_pages_iter.next().unwrap();
+                    // If this fails, it means that we weren't given enough
+                    // resources to map all the pages.This shouldn't happen, as
+                    // we've got it written down in a type that's extracted from
+                    // the binary itself.
+                    let dest_page = writable_segment_pages_iter
+                        .next()
+                        .ok_or(VSpaceError::InsufficientResourcesForElf)?;
 
                     let unmapped_region = dest_page.to_region();
-                    let mut mapped_region = local_vspace
-                        .map_region(unmapped_region, CapRights::RW, vm_attrs)
-                        .unwrap();
+                    let mut mapped_region =
+                        local_vspace.map_region(unmapped_region, CapRights::RW, vm_attrs)?;
 
                     let dest_mem = mapped_region.as_mut_slice();
                     let offset_in_dest_mem = curr_src_offset & ((1 << arch::PageBits::USIZE) - 1);
@@ -560,7 +566,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                         *dest = 0;
                     }
 
-                    let unmapped_region = local_vspace.unmap_region(mapped_region).unwrap();
+                    let unmapped_region = local_vspace.unmap_region(mapped_region)?;
 
                     let _ = vspace.map_page_at_addr_without_watermarking(
                         unmapped_region.to_page(),
@@ -597,7 +603,13 @@ impl VSpace<vspace_state::Imaged, role::Local> {
 
                     let copied_page_cap = ui_page.copy(
                         &parent_cnode,
-                        page_slots.alloc_strong::<U1>().unwrap(),
+                        // If this fails, it means that we weren't given enough
+                        // resources to map all the pages.This shouldn't happen, as
+                        // we've got it written down in a type that's extracted from
+                        // the binary itself.
+                        page_slots
+                            .alloc_strong::<U1>()
+                            .map_err(|_| VSpaceError::InsufficientResourcesForElf)?,
                         CapRights::R,
                     )?;
 

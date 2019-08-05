@@ -121,7 +121,8 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
         registers.pc = match entry_point {
             EntryPoint::Fork(f) => f as usize,
             EntryPoint::Elf(elf_data) => {
-                let elf = xmas_elf::ElfFile::new(elf_data).expect("Error parsing elf file");
+                let elf =
+                    xmas_elf::ElfFile::new(elf_data).map_err(ProcessSetupError::ElfParseError)?;
                 elf.header.pt2.entry_point() as usize
             }
         };

@@ -56,6 +56,7 @@ pub enum ProcessSetupError {
     NotEnoughCNodeSlots,
     VSpaceError(VSpaceError),
     SeL4Error(SeL4Error),
+    ElfParseError(&'static str),
 }
 
 impl From<VSpaceError> for ProcessSetupError {
