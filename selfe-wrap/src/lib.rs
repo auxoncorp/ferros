@@ -20,6 +20,15 @@ pub trait CNodeKernel {
         destination: FullyQualifiedCptr,
     ) -> Result<FullyQualifiedCptr, error::APIError>;
 
+    /// Move a capability from a source into a destination slot,
+    /// while also setting the badge of the moved capability.
+    /// If successful, return the destination slot pointer
+    fn cnode_mutate(
+        source: FullyQualifiedCptr,
+        destination: FullyQualifiedCptr,
+        badge_or_guard: BadgeOrGuard,
+    ) -> Result<FullyQualifiedCptr, error::APIError>;
+
     /// Copy a capability from a source into a destination slot.
     /// If successful, return the destination slot pointer
     fn cnode_copy(
@@ -35,12 +44,14 @@ pub trait CNodeKernel {
         source: &FullyQualifiedCptr,
         destination: FullyQualifiedCptr,
         rights: CapRights,
-        badge: Badge,
+        badge_or_guard: BadgeOrGuard,
     ) -> Result<FullyQualifiedCptr, error::APIError>;
 
-    fn cnode_delete(target: FullyQualifiedCptr) -> Result<(), error::APIError>;
+    /// If successful, return the now-empty slot pointer
+    fn cnode_delete(target: FullyQualifiedCptr) -> Result<FullyQualifiedCptr, error::APIError>;
 
-    fn cnode_revoke(target: FullyQualifiedCptr) -> Result<(), error::APIError>;
+    /// If successful, return the target pointer
+    fn cnode_revoke(target: FullyQualifiedCptr) -> Result<FullyQualifiedCptr, error::APIError>;
 
     fn save_caller(destination: FullyQualifiedCptr) -> Result<FullyQualifiedCptr, error::APIError>;
 }

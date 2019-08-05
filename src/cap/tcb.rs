@@ -7,6 +7,7 @@ use crate::error::ErrorExt;
 use crate::userland::FaultSource;
 use crate::vspace::{self, VSpace};
 use selfe_wrap::error::{APIError, APIMethod, TCBMethod};
+use selfe_wrap::Guard;
 
 #[derive(Debug)]
 pub struct ThreadControlBlock {}
@@ -78,13 +79,7 @@ impl LocalCap<ThreadControlBlock> {
     ) -> Result<(), APIError> {
         // Set up the cspace's guard to take the part of the cptr that's not
         // used by the radix.
-        let cspace_root_data = unsafe {
-            seL4_CNode_CapData_new(
-                0,                                                          // guard
-                (seL4_WordBits - cspace_root.cap_data.radix as usize) as _, // guard size in bits
-            )
-        }
-        .words[0] as usize;
+        let cspace_root_data = Guard::empty(seL4_WordBits as u8 - cspace_root.cap_data.radix);
 
         let (buffer_cap, buffer_vaddr) = if let Some(ipc_buffer) = ipc_buffer {
             (ipc_buffer.cptr, ipc_buffer.vaddr())
@@ -97,7 +92,7 @@ impl LocalCap<ThreadControlBlock> {
                 self.cptr,
                 fault_source.map_or(seL4_CapNull as usize, |source| source.endpoint.cptr), // fault_ep.cptr,
                 cspace_root.cptr,
-                cspace_root_data,
+                cspace_root_data.into(),
                 vspace.root_cptr(),
                 seL4_NilData as usize, // vspace_root_data, always 0, reserved by kernel?
                 buffer_vaddr,          // buffer address

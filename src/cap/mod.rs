@@ -84,8 +84,6 @@ pub trait Mintable: CopyAliasable {}
 /// Internal marker trait for CapType implementing structs that can
 /// have meaningful instances created for them purely from
 /// their type signatures.
-/// TODO - the structures that implement this should be zero-sized,
-/// and we ought to enforce that constraint at compile time.
 pub trait PhantomCap: Sized {
     fn phantom_instance() -> Self;
 }
@@ -344,13 +342,13 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
             cnode: src_cnode.into(),
             index: Role::to_index(self.cptr),
         };
-        SelfeKernel::cnode_mint(&source, dest_slot.elim().cptr, rights, badge).map(|destination| {
-            Cap {
+        SelfeKernel::cnode_mint(&source, dest_slot.elim().cptr, rights, badge.into()).map(
+            |destination| Cap {
                 cptr: destination.index.into(),
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
-            }
-        })
+            },
+        )
     }
 
     /// Copy a capability to another slot inside the same CNode while also setting rights and a badge
@@ -372,13 +370,13 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
             cnode: CNodeCptr(dest_slot.cptr.into()),
             index: Role::to_index(self.cptr),
         };
-        SelfeKernel::cnode_mint(&source, dest_slot.elim().cptr, rights, badge).map(|destination| {
-            Cap {
+        SelfeKernel::cnode_mint(&source, dest_slot.elim().cptr, rights, badge.into()).map(
+            |destination| Cap {
                 cptr: destination.index.into(),
                 cap_data: PhantomCap::phantom_instance(),
                 _role: PhantomData,
-            }
-        })
+            },
+        )
     }
 
     /// Migrate a capability from one CNode slot to another.
@@ -410,6 +408,7 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
             cnode: parent_cnode.into(),
             index: Role::to_index(self.cptr),
         })
+        .map(|_| ())
     }
 }
 

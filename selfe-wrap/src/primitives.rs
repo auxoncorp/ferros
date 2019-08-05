@@ -1,4 +1,4 @@
-use selfe_sys::{seL4_CapRights_new, seL4_CapRights_t};
+use selfe_sys::{seL4_CNode_CapData_new, seL4_CapRights_new, seL4_CapRights_t};
 
 /// Wrapper for a capability's badge, such as that
 /// used by Endpoints or Notifications for identification.
@@ -30,8 +30,55 @@ impl From<usize> for Badge {
 }
 
 impl From<Badge> for usize {
-    fn from(b: Badge) -> Self {
-        b.inner
+    fn from(v: Badge) -> Self {
+        v.inner
+    }
+}
+
+pub enum BadgeOrGuard {
+    Badge(Badge),
+    Guard(Guard),
+}
+
+impl From<Badge> for BadgeOrGuard {
+    fn from(v: Badge) -> Self {
+        BadgeOrGuard::Badge(v)
+    }
+}
+
+impl From<Guard> for BadgeOrGuard {
+    fn from(v: Guard) -> Self {
+        BadgeOrGuard::Guard(v)
+    }
+}
+
+impl From<BadgeOrGuard> for usize {
+    fn from(v: BadgeOrGuard) -> Self {
+        match v {
+            BadgeOrGuard::Badge(Badge { inner }) | BadgeOrGuard::Guard(Guard { inner }) => inner,
+        }
+    }
+}
+
+pub struct Guard {
+    inner: usize,
+}
+
+impl Guard {
+    pub fn empty(guard_size_in_bits: u8) -> Self {
+        let inner = unsafe {
+            seL4_CNode_CapData_new(
+                0,                       // guard
+                guard_size_in_bits as _, // guard size in bits
+            )
+            .words[0] as usize
+        };
+        Guard { inner }
+    }
+}
+impl From<Guard> for usize {
+    fn from(v: Guard) -> Self {
+        v.inner
     }
 }
 
