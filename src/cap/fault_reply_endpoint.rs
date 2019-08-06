@@ -1,6 +1,6 @@
 use crate::arch;
 use crate::cap::{CNodeSlotsData, Cap, CapType, LocalCNodeSlot, LocalCap};
-use crate::error::{ErrorExt, KernelError};
+use crate::error::{ErrorExt, SeL4Error};
 use core::marker::PhantomData;
 use selfe_sys::*;
 use typenum::*;
@@ -21,7 +21,7 @@ impl LocalCap<FaultReplyEndpoint> {
     /// be Used only in response to a Fault.
     pub fn save_caller_and_create(
         slot: LocalCNodeSlot,
-    ) -> Result<LocalCap<FaultReplyEndpoint>, KernelError> {
+    ) -> Result<LocalCap<FaultReplyEndpoint>, SeL4Error> {
         let (cptr, offset, _) = slot.elim();
 
         unsafe {
@@ -31,7 +31,8 @@ impl LocalCap<FaultReplyEndpoint> {
                 arch::WordSize::U8, // depth
             )
         }
-        .as_result()?;
+        .as_result()
+        .map_err(|e| SeL4Error::CNodeSaveCaller(e))?;
 
         Ok(Cap {
             cptr: offset,

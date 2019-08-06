@@ -2,7 +2,6 @@ use selfe_sys::seL4_BootInfo;
 use typenum::*;
 
 use crate::arch;
-use crate::arch::cap::*;
 use crate::bootstrap::*;
 use crate::cap::*;
 use crate::test_support::MaxMappedMemoryRegionBitSize;

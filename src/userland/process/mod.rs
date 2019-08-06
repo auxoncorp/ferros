@@ -54,6 +54,7 @@ pub enum ProcessSetupError {
     ProcessParameterTooBigForStack,
     ProcessParameterHandoffSizeMismatch,
     NotEnoughCNodeSlots,
+    ParentMappedMemoryRegionASIDShouldNotMatchChildVSpaceASID,
     VSpaceError(VSpaceError),
     SeL4Error(SeL4Error),
     ElfParseError(&'static str),

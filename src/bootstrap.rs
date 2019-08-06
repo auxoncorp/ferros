@@ -5,11 +5,11 @@ use selfe_sys::*;
 use typenum::operator_aliases::Diff;
 use typenum::*;
 
-use crate::arch::cap::*;
 use crate::arch::*;
 use crate::cap::{
-    role, CNode, CNodeRole, CNodeSlots, Cap, IRQControl, InternalASID, LocalCNode, LocalCNodeSlots,
-    LocalCap, MaxIRQCount, ThreadControlBlock, Untyped,
+    page_state, role, ASIDControl, AssignedASID, CNode, CNodeRole, CNodeSlots, Cap, IRQControl,
+    InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, MaxIRQCount, Page, ThreadControlBlock,
+    Untyped,
 };
 use crate::error::SeL4Error;
 use crate::pow::Pow;

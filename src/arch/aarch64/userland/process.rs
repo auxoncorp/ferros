@@ -26,7 +26,6 @@ pub(crate) unsafe fn setup_initial_stack_and_regs(
 
     if padded_param_size <= 16 {
         let mut p = param;
-        let tail_word = 0_usize;
         let tail = (param as *const u8).add(param_size).sub(tail_size);
 
         let mut tail_word = 0_usize;

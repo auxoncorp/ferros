@@ -10,13 +10,13 @@ use core::ops::Sub;
 use typenum::*;
 
 use crate::alloc::ut_buddy::{self, UTBuddyError, WUTBuddy};
-use crate::arch::cap::{page_state, AssignedASID, Page, UnassignedASID};
-use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot};
+use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot, PagingRootLowerLevel};
 use crate::bootstrap::UserImage;
 use crate::cap::{
-    memory_kind, role, CNodeRole, CNodeSlots, Cap, CapRange, CapRangeDataReconstruction, CapType,
-    ChildCNodeSlot, DirectRetype, InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, PhantomCap,
-    RetypeError, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped, WeakCapRange, WeakCopyError,
+    memory_kind, page_state, role, AssignedASID, CNodeRole, CNodeSlots, Cap, CapRange, CapType,
+    ChildCNodeSlot, DirectRetype, InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, Page,
+    PhantomCap, RetypeError, UnassignedASID, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
+    WeakCapRange, WeakCopyError,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
@@ -77,18 +77,14 @@ pub trait Maps<LowerLevel: CapType> {
     /// Map the level/layer down relative to this layer.
     /// E.G. for a PageTable, this would map a Page.
     /// E.G. for a PageDirectory, this would map a PageTable.
-    fn map_granule<RootLowerLevel, Root>(
+    fn map_granule(
         &mut self,
         item: &LocalCap<LowerLevel>,
         addr: usize,
-        root: &mut LocalCap<Root>,
+        root: &mut LocalCap<PagingRoot>,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
-    ) -> Result<(), MappingError>
-    where
-        Root: Maps<RootLowerLevel>,
-        Root: CapType,
-        RootLowerLevel: CapType;
+    ) -> Result<(), MappingError>;
 }
 
 #[derive(Debug)]
@@ -183,51 +179,41 @@ pub trait PagingLayer {
     /// implementor ought to return `MappingError::Overflow` to signal
     /// that mapping is needed at the layer above, otherwise the error
     /// is just bubbled up to the caller.
-    fn map_layer<RootLowerLevel: CapType, Root>(
+    fn map_layer(
         &mut self,
         item: &LocalCap<Self::Item>,
         addr: usize,
-        root: &mut LocalCap<Root>,
+        root: &mut LocalCap<PagingRoot>,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
         utb: &mut WUTBuddy,
         slots: &mut WCNodeSlots,
-    ) -> Result<(), MappingError>
-    where
-        Root: Maps<RootLowerLevel>,
-        Root: CapType;
+    ) -> Result<(), MappingError>;
 }
 
 /// `PagingTop` represents the root of an address space structure.
-pub struct PagingTop<LowerLevel, CurrentLevel: Maps<LowerLevel>>
+pub struct PagingTop
 where
-    CurrentLevel: CapType,
-    LowerLevel: CapType,
+    PagingRoot: Maps<PagingRootLowerLevel>,
+    PagingRoot: CapType,
+    PagingRootLowerLevel: CapType,
 {
-    pub layer: CurrentLevel,
-    pub(super) _item: PhantomData<LowerLevel>,
+    pub layer: PagingRoot,
+    pub(super) _item: PhantomData<PagingRootLowerLevel>,
 }
 
-impl<LowerLevel, CurrentLevel: Maps<LowerLevel>> PagingLayer for PagingTop<LowerLevel, CurrentLevel>
-where
-    CurrentLevel: CapType,
-    LowerLevel: CapType + DirectRetype + PhantomCap,
-{
-    type Item = LowerLevel;
-    fn map_layer<RootLowerLevel: CapType, Root>(
+impl PagingLayer for PagingTop {
+    type Item = PagingRootLowerLevel;
+    fn map_layer(
         &mut self,
-        item: &LocalCap<LowerLevel>,
+        item: &LocalCap<Self::Item>,
         addr: usize,
-        root: &mut LocalCap<Root>,
+        root: &mut LocalCap<PagingRoot>,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
         _utb: &mut WUTBuddy,
         _slots: &mut WCNodeSlots,
-    ) -> Result<(), MappingError>
-    where
-        Root: Maps<RootLowerLevel>,
-        Root: CapType,
-    {
+    ) -> Result<(), MappingError> {
         self.layer
             .map_granule(item, addr, root, rights, vm_attributes)
     }
@@ -248,20 +234,16 @@ where
     LowerLevel: CapType + DirectRetype + PhantomCap,
 {
     type Item = LowerLevel;
-    fn map_layer<RootLowerLevel: CapType, Root>(
+    fn map_layer(
         &mut self,
         item: &LocalCap<LowerLevel>,
         addr: usize,
-        root: &mut LocalCap<Root>,
+        root: &mut LocalCap<PagingRoot>,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
         utb: &mut WUTBuddy,
         mut slots: &mut WCNodeSlots,
-    ) -> Result<(), MappingError>
-    where
-        Root: Maps<RootLowerLevel>,
-        Root: CapType,
-    {
+    ) -> Result<(), MappingError> {
         // Attempt to map this layer's granule.
         match self
             .layer
@@ -418,8 +400,9 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         for page_cap in region.caps.into_iter() {
             let _ = self.unmap_page(page_cap)?;
         }
-        Ok(WeakUnmappedMemoryRegion::unchecked_new(
+        Ok(WeakMemoryRegion::unchecked_new(
             start_cptr,
+            page_state::Unmapped,
             region.kind,
             size_bits,
         ))
@@ -810,16 +793,6 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         fn unmap_mapped_page_cptrs(
             mapped_pages: Option<WeakCapRange<Page<page_state::Mapped>, role::Local>>,
         ) -> Result<(), SeL4Error> {
-            impl CapRangeDataReconstruction for Page<page_state::Mapped> {
-                fn reconstruct(index: usize, seed_cap_data: &Self) -> Self {
-                    Page {
-                        state: page_state::Mapped {
-                            vaddr: seed_cap_data.state.vaddr + index * PageBytes::USIZE,
-                            asid: seed_cap_data.state.asid,
-                        },
-                    }
-                }
-            }
             if let Some(mapped_pages) = mapped_pages {
                 mapped_pages
                     .into_iter()
@@ -847,7 +820,12 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                     let _ = unmap_mapped_page_cptrs(mapped_pages);
                     return Err((
                         VSpaceError::SeL4Error(e),
-                        WeakUnmappedMemoryRegion::unchecked_new(cptr, kind, size_bits),
+                        WeakMemoryRegion::unchecked_new(
+                            cptr,
+                            page_state::Unmapped,
+                            kind,
+                            size_bits,
+                        ),
                     ));
                 }
                 Err(e) => {
@@ -855,7 +833,12 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                     let _ = unmap_mapped_page_cptrs(mapped_pages);
                     return Err((
                         VSpaceError::MappingError(e),
-                        WeakUnmappedMemoryRegion::unchecked_new(cptr, kind, size_bits),
+                        WeakMemoryRegion::unchecked_new(
+                            cptr,
+                            page_state::Unmapped,
+                            kind,
+                            size_bits,
+                        ),
                     ));
                 }
                 Ok(_) => {
@@ -886,8 +869,26 @@ impl VSpace<vspace_state::Imaged, role::Local> {
             mapping_vaddr += PageBytes::USIZE;
         }
 
+        if let Err(e) = self
+            .available_address_range
+            .observe_mapping(vaddr, size_bits)
+        {
+            // Rollback the pages we've mapped thus far.
+            let _ = unmap_mapped_page_cptrs(mapped_pages);
+            return Err((
+                e,
+                WeakMemoryRegion::unchecked_new(cptr, page_state::Unmapped, kind, size_bits),
+            ));
+        }
+
         Ok(WeakMappedMemoryRegion::unchecked_new(
-            cptr, vaddr, self.asid, kind, size_bits,
+            cptr,
+            page_state::Mapped {
+                vaddr,
+                asid: self.asid,
+            },
+            kind,
+            size_bits,
         ))
     }
 
@@ -976,8 +977,10 @@ impl VSpace<vspace_state::Imaged, role::Local> {
 
         Ok(WeakMappedMemoryRegion::unchecked_new(
             dest_init_cptr,
-            vaddr,
-            self.asid,
+            page_state::Mapped {
+                vaddr,
+                asid: self.asid,
+            },
             kind,
             size_bits,
         ))
@@ -1024,13 +1027,13 @@ impl VSpace<vspace_state::Imaged, role::Local> {
     ) -> Result<WeakMappedMemoryRegion<shared_status::Shared>, VSpaceError> {
         let caps_copy = region
             .caps
-            .copy_phantom(cnode, slots, rights)
+            .copy(cnode, slots, rights)
             .map_err(|e| match e {
                 WeakCopyError::NotEnoughSlots => VSpaceError::InsufficientCNodeSlots,
                 WeakCopyError::SeL4Error(e) => VSpaceError::SeL4Error(e),
             })?;
         let unmapped_sr: WeakUnmappedMemoryRegion<shared_status::Shared> =
-            WeakUnmappedMemoryRegion::try_from_caps(caps_copy, region.kind, region.size_bits())
+            WeakMemoryRegion::try_from_caps(caps_copy, region.kind, region.size_bits())
                 .map_err(|_| VSpaceError::InvalidRegionSize)?;
         self.weak_map_region_internal(unmapped_sr, rights, vm_attributes)
     }
@@ -1088,8 +1091,10 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         // unmapped region.
         let mapped_region = WeakMappedMemoryRegion::unchecked_new(
             region.caps.start_cptr,
-            starting_address,
-            self.asid(),
+            page_state::Mapped {
+                vaddr: starting_address,
+                asid: self.asid(),
+            },
             region.kind,
             region.size_bits(),
         );
@@ -1282,7 +1287,11 @@ where
             }
         }
         let unmapped_region_copy: UnmappedMemoryRegion<SizeBits, shared_status::Exclusive> =
-            UnmappedMemoryRegion::unchecked_new(region.caps.start_cptr, region.kind);
+            UnmappedMemoryRegion::unchecked_new(
+                region.caps.start_cptr,
+                page_state::Unmapped,
+                region.kind,
+            );
         let mut next_addr = start_vaddr;
         for page in unmapped_region_copy.caps.into_iter() {
             match self.vspace.layers.map_layer(
@@ -1308,10 +1317,12 @@ where
             next_addr += PageBytes::USIZE;
         }
         // map the pages at our predetermined/pre-allocated vaddr range
-        let mut mapped_region = MappedMemoryRegion::unchecked_new(
+        let mut mapped_region = MemoryRegion::unchecked_new(
             region.caps.start_cptr,
-            start_vaddr,
-            self.reserved_region.asid,
+            page_state::Mapped {
+                vaddr: start_vaddr,
+                asid: self.reserved_region.asid,
+            },
             region.kind,
         );
         let res = f(&mut mapped_region);
