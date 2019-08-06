@@ -6,7 +6,7 @@ edition = "2018"
 
 [features]
 default = ["sel4_start_main"]
-sel4_start_main = ["sel4-start", "ferros", "selfe-sys"]
+sel4_start_main = ["sel4-start/panic_handler", "ferros", "selfe-sys"]
 
 [dependencies]
 test-macro-impl = { path = "./test-macro-impl" }
