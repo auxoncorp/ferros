@@ -1,5 +1,6 @@
 [workspace]
 members = ["root-task", "hello-printer"]
+exclude = ["root-task/build-script"]
 
 [profile.dev]
 panic = "abort"
