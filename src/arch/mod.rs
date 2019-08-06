@@ -34,3 +34,5 @@ pub(crate) unsafe fn to_sel4_word(n: usize) -> u32 {
 pub type CNodeSlotBits = typenum::U5;
 #[cfg(target_pointer_width = "32")]
 pub type CNodeSlotBits = typenum::U4;
+
+type UnusedGranule = typenum::U1;
