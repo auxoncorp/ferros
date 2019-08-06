@@ -33,7 +33,9 @@ pub fn grandkid_process_runs(
         let (child_asid, asid_pool) = asid_pool.alloc();
         let child_root = retype(ut, slots)?;
         let child_vspace_slots: LocalCNodeSlots<U1024> = slots;
-        let child_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        // NOTE: this needs to be big enough to map in entire root task. That
+        // could grow if you add more tests elsewhere.
+        let child_vspace_ut: LocalCap<Untyped<U16>> = ut;
 
         let mut child_vspace = VSpace::new(
             child_root,
