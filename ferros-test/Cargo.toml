@@ -13,12 +13,10 @@ test-macro-impl = { path = "./test-macro-impl" }
 
 [dependencies.selfe-sys]
 git = "ssh://git@github.com/auxoncorp/selfe-sys.git"
-branch = "factor-out-runtime-lib"
 optional = true
 
 [dependencies.sel4-start]
 git = "ssh://git@github.com/auxoncorp/selfe-sys.git"
-branch = "factor-out-runtime-lib"
 optional = true
 
 [dependencies.ferros]

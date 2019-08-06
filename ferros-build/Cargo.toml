@@ -5,6 +5,6 @@ authors = ["Russell Mull <russell@auxon.io>"]
 edition = "2018"
 
 [dependencies]
-selfe-arc = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git", branch = "factor-out-runtime-lib"}
+selfe-arc = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
 xmas-elf = "0.7"
 memmap = "0.7"
