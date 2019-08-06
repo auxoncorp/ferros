@@ -210,7 +210,7 @@ impl<SizeBits: Unsigned> UnmappedMemoryRegion<SizeBits, shared_status::Exclusive
         // Ensure that a region is at least one page in size.
         SizeBits: IsGreaterOrEqual<PageBits>,
     {
-        let grans = ut.retype_memory()?;
+        let grans = ut.weaken().retype_memory(&mut slots.weaken())?;
         MemoryRegion {
             caps: grans,
             kind: memory_kind::General {},

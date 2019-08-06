@@ -803,7 +803,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         region: &UnmappedMemoryRegion<SizeBits, shared_status::Shared>,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
-        slots: LocalCNodeSlots<GranuleSlotCount<SizeBits>>,
+        slots: LocalCNodeSlots<WorstCaseGranulesSlots>,
         cnode: &LocalCap<LocalCNode>,
     ) -> Result<MappedMemoryRegion<SizeBits, shared_status::Shared>, VSpaceError> {
         let unmapped_sr: UnmappedMemoryRegion<_, shared_status::Shared> =

@@ -10,8 +10,8 @@ use typenum::*;
 use crate::arch::{self, CNodeSlotBits, PageBits};
 use crate::cap::{
     granule_state, role, CNode, CNodeRole, CNodeSlot, CNodeSlots, CNodeSlotsError, Cap, CapRange,
-    CapType, ChildCNode, ChildCNodeSlots, Delible, DirectRetype, Granule, GranuleSlotCount,
-    LocalCNode, LocalCNodeSlot, LocalCNodeSlots, LocalCap, Movable, Page, PhantomCap, WCNodeSlots,
+    CapType, ChildCNode, ChildCNodeSlots, Delible, DirectRetype, Granule, LocalCNode,
+    LocalCNodeSlot, LocalCNodeSlots, LocalCap, Movable, Page, PhantomCap, WCNodeSlots,
     WCNodeSlotsData, WeakCapRange,
 };
 use crate::error::{ErrorExt, KernelError, SeL4Error};
@@ -492,42 +492,6 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
                     _bit_size: PhantomData,
                 },
                 _role: PhantomData,
-            },
-        ))
-    }
-
-    pub fn retype_memory<CRole: CNodeRole>(
-        self,
-        dest_slots: CNodeSlots<GranuleSlotCount<BitSize>, CRole>,
-    ) -> Result<
-        CapRange<Granule<granule_state::Unmapped>, role::Local, GranuleSlotCount<BitSize>>,
-        SeL4Error,
-    >
-    where
-        BitSize: IsGreaterOrEqual<PageBits>,
-        GranuleSlotCount<BitSize>: IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
-    {
-        let (dest_cptr, dest_offset, _) = dest_slots.elim();
-        let gran_info = arch::determine_best_granule_fit(BitSize::U8);
-        unsafe {
-            seL4_Untyped_Retype(
-                self.cptr,         // _service
-                gran_info.type_id, //type
-                0,                 // size_bits
-                dest_cptr,         // root
-                0,                 // index
-                0,                 // depth
-                dest_offset,       // offset
-                gran_info.count,   // num_objects
-            )
-            .as_result()
-            .map_err(|e| SeL4Error::UntypedRetype(e))?;
-        }
-
-        Ok(CapRange::new(
-            dest_offset,
-            Page {
-                state: granule_state::Unmapped,
             },
         ))
     }
