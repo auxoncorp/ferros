@@ -54,14 +54,13 @@ impl Resource for ElfResource {
     }
 
     fn codegen(&self) -> String {
-        let file = File::open(&self.path).unwrap();
+        let file = File::open(&self.path).expect(&format!("ElfResource::codegen: Couldn't open file {}", self.path.display()));
         let data = unsafe { Mmap::map(&file).unwrap() };
         let elf_file = xmas_elf::ElfFile::new(data.as_ref()).unwrap();
 
         let mut required_pages = 0;
         let mut writable_pages = 0;
 
-        // TODO filter for type == Load
         for ph in elf_file
             .program_iter()
             .filter(|h| h.get_type() == Ok(xmas_elf::program::Type::Load))
