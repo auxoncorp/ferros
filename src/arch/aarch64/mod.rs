@@ -49,6 +49,7 @@ pub type PageTableIndexBits = U9; // How many slots are there, in addressable bi
 pub type PageBits = U12;
 pub type PageIndexBits = U12;
 pub type PageBytes = op!(U1 << U12);
+pub type PageTypeID = U8;
 
 pub type LargePageBits = U21;
 pub type LargePageBytes = op!(U1 << LargePageBits);
@@ -57,7 +58,7 @@ pub type HugePageBits = U30;
 pub type HugePageBytes = op!(U1 << HugePageBits);
 
 pub type AddressSpace = PagingRec<
-    Page<page_state::Unmapped>,
+    Page,
     cap::PageTable,
     PagingRec<
         cap::PageTable,
@@ -107,18 +108,6 @@ pub type CodePageTableCount = op!(U1 << CodePageTableBits); // 32 page tables, b
 pub type CodePageCount = op!(CodePageTableCount * BasePageTableFreeSlots); // 2^14
 pub type TotalCodeSizeBits = op!(CodePageTableBits + PageBits + PageTableIndexBits);
 pub type TotalCodeSizeBytes = crate::pow::Pow<TotalCodeSizeBits>;
-// The root task has a stack size configurable by the sel4.toml
-// in the `root-task-stack-bytes` metadata property.
-// This configuration is turned into a generated Rust type named `RootTaskStackPageTableCount`
-// that implements `typenum::Unsigned` in the `build.rs` file.
-include!(concat!(
-    env!("OUT_DIR"),
-    "/ROOT_TASK_STACK_PAGE_TABLE_COUNT"
-));
-// The first N page tables are already mapped for the user image in the root
-// task. Add in the stack-reserved page tables (minimum of 1 more)
-pub type RootTaskReservedPageDirSlots = op!(CodePageTableCount + RootTaskStackPageTableCount);
-pub type RootTaskPageDirFreeSlots = op!(BasePageDirFreeSlots - RootTaskReservedPageDirSlots);
 
 /* EL2 has 48 addressable bits in the vaddr space, the kernel reserves
  * the top 8 of those bits.
@@ -149,23 +138,21 @@ pub mod vm_attributes {
     pub const EXECUTE_NEVER: VMAttributes = selfe_sys::seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever;
 }
 
-pub(crate) type WorstCaseGranuleSlotCount = U256;
-
 /// G1 is the largest granule's size, in bits. These type synonyms are
 /// used in the arch-agnostic granule implementation to help determine
 /// how many slots a memory region will consume.
-pub type G1 = HugePageBits;
+pub(crate) type G1 = HugePageBits;
 /// G2 is the penultimate granule's size, in bits. These type synonyms are
 /// used in the arch-agnostic granule implementation to help determine
 /// how many slots a memory region will consume.
-pub type G2 = LargePageBits;
+pub(crate) type G2 = LargePageBits;
 /// G3 is the third largest granule's size, in bits. for aarch64, this
 /// is also the smallest sized granule, Pages.
-pub type G3 = PageBits;
+pub(crate) type G3 = PageBits;
 /// G4 is the smallest granule size. It is not used by
 /// aarch64. Setting it to 0 gives us an unreachable case, as
 /// DetermineBestGranuleFit requies the input be NonZero.
-pub type G4 = U0;
+pub(crate) type G4 = U1;
 
 /// Acquire the granule type, size, and how many are needed for
 /// constituting a memory region of size `region_size_bits Acquire the

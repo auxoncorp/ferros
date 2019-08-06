@@ -53,9 +53,7 @@ use crate::cap::{
 };
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
-use crate::vspace::{
-    shared_status, MappedMemoryRegion, ScratchRegion, UnmappedMemoryRegion, VSpace, VSpaceError,
-};
+use crate::vspace::{shared_status, MappedMemoryRegion, UnmappedMemoryRegion, VSpace, VSpaceError};
 
 /// A multi-consumer that consumes interrupt-style notifications
 ///
@@ -194,7 +192,6 @@ impl From<VSpaceError> for MultiConsumerError {
 /// to add a new producer to a given queue
 /// ingested by a multi-consumer (e.g. `Consumer1`)
 pub struct ProducerSetup<T, QLen: Unsigned> {
-    shared_region: UnmappedMemoryRegion<PageBits, shared_status::Shared>,
     queue_badge: Badge,
     // User-concealed alias'ing happening here.
     // Don't mutate this Cap. Copying/minting is okay.
@@ -273,8 +270,7 @@ where
     pub fn add_queue<'a, 'b, ScratchPages: Unsigned, E: Sized + Send + Sync, ELen: Unsigned>(
         self,
         consumer_token: &mut ConsumerToken,
-        shared_region_ut: LocalCap<Untyped<PageBits>>,
-        local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
+        parent_shared_region: &MappedMemoryRegion<PageBits, shared_status::Shared, role::Local>,
         consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
@@ -289,21 +285,18 @@ where
         if let Some(_) = consumer_token.consumer_vspace_asid {
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
-        let (shared_region, consumer_shared_region) =
-            create_region_filled_with_array_queue::<ScratchPages, E, ELen>(
-                shared_region_ut,
-                local_vspace_scratch,
-                consumer_vspace,
-                &local_cnode,
-                dest_slots,
-            )?;
+        let consumer_shared_region = create_region_filled_with_array_queue::<ScratchPages, E, ELen>(
+            parent_shared_region,
+            consumer_vspace,
+            &local_cnode,
+            dest_slots,
+        )?;
         consumer_token.consumer_vspace_asid = Some(consumer_vspace.asid());
 
         // Assumes we are using the one-hot style for identifying the interrupt badge index
         let fresh_queue_badge = Badge::from(self.interrupt_badge.inner << 1);
         let producer_setup: ProducerSetup<E, ELen> = ProducerSetup {
             consumer_vspace_asid: consumer_vspace.asid(),
-            shared_region,
             queue_badge: fresh_queue_badge,
             // Construct a user-inaccessible copy of the local notification
             // purely for use in producing child-cnode-residing copies.
@@ -342,8 +335,7 @@ where
 {
     pub fn new<'a, 'b, ScratchPages: Unsigned>(
         notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
-        shared_region_ut: LocalCap<Untyped<PageBits>>,
-        local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
+        parent_shared_region: &MappedMemoryRegion<PageBits, shared_status::Shared, role::Local>,
         consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         local_slots: LocalCNodeSlots<U3>,
@@ -367,14 +359,12 @@ where
             return Err(MultiConsumerError::QueueTooBig);
         }
         let (slots, local_slots) = local_slots.alloc();
-        let (shared_region, consumer_shared_region) =
-            create_region_filled_with_array_queue::<ScratchPages, E, ELen>(
-                shared_region_ut,
-                local_vspace_scratch,
-                consumer_vspace,
-                &local_cnode,
-                slots,
-            )?;
+        let consumer_shared_region = create_region_filled_with_array_queue::<ScratchPages, E, ELen>(
+            parent_shared_region,
+            consumer_vspace,
+            &local_cnode,
+            slots,
+        )?;
 
         let (slot, _local_slots) = local_slots.alloc();
         let local_notification: LocalCap<Notification> = notification_ut.retype(slot)?;
@@ -390,7 +380,6 @@ where
 
         let producer_setup: ProducerSetup<E, ELen> = ProducerSetup {
             consumer_vspace_asid: consumer_vspace.asid(),
-            shared_region,
             queue_badge: queue_badge,
             // Construct a user-inaccessible copy of the local notification
             // purely for use in producing child-cnode-residing copies.
@@ -438,8 +427,7 @@ where
     pub fn add_queue<'a, 'b, ScratchPages: Unsigned, F: Sized + Send + Sync, FLen: Unsigned>(
         self,
         consumer_token: &ConsumerToken,
-        shared_region_ut: LocalCap<Untyped<PageBits>>,
-        local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
+        parent_shared_region: &MappedMemoryRegion<PageBits, shared_status::Exclusive, role::Local>,
         consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
@@ -465,19 +453,16 @@ where
         } else {
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
-        let (shared_region, consumer_shared_region) =
-            create_region_filled_with_array_queue::<ScratchPages, F, FLen>(
-                shared_region_ut,
-                local_vspace_scratch,
-                consumer_vspace,
-                &local_cnode,
-                dest_slots,
-            )?;
+        let consumer_shared_region = create_region_filled_with_array_queue::<ScratchPages, F, FLen>(
+            parent_shared_region,
+            consumer_vspace,
+            &local_cnode,
+            dest_slots,
+        )?;
 
         let fresh_queue_badge = Badge::from(self.queue_badge.inner << 1);
         let producer_setup: ProducerSetup<F, FLen> = ProducerSetup {
             consumer_vspace_asid: consumer_vspace.asid(),
-            shared_region,
             queue_badge: fresh_queue_badge,
             // Construct a user-inaccessible copy of the local notification
             // purely for use in producing child-cnode-residing copies.
@@ -536,8 +521,7 @@ where
     >(
         self,
         consumer_token: &ConsumerToken,
-        shared_region_ut: LocalCap<Untyped<PageBits>>,
-        local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
+        parent_shared_region: &MappedMemoryRegion<PageBits, shared_status::Shared, role::Local>,
         consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
@@ -565,19 +549,16 @@ where
         } else {
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
-        let (shared_region, consumer_shared_region) =
-            create_region_filled_with_array_queue::<ScratchPages, F, FLen>(
-                shared_region_ut,
-                local_vspace_scratch,
-                consumer_vspace,
-                &local_cnode,
-                dest_slots,
-            )?;
+        let consumer_shared_region = create_region_filled_with_array_queue::<ScratchPages, F, FLen>(
+            parent_shared_region,
+            consumer_vspace,
+            &local_cnode,
+            dest_slots,
+        )?;
 
         let fresh_queue_badge = Badge::from((self.queues.1).0.inner << 1);
         let producer_setup: ProducerSetup<F, FLen> = ProducerSetup {
             consumer_vspace_asid: consumer_vspace.asid(),
-            shared_region,
             queue_badge: fresh_queue_badge,
             // Construct a user-inaccessible copy of the local notification
             // purely for use in producing child-cnode-residing copies.
@@ -613,15 +594,13 @@ where
     }
 }
 
+// TODO: This whole stack of things should start with a shared region.
 fn create_region_filled_with_array_queue<
-    'a,
-    'b,
-    ScratchPages: Unsigned,
+    QueueSizeBits: Unsigned,
     T: Sized + Send + Sync,
     QLen: Unsigned,
 >(
-    shared_region_ut: LocalCap<Untyped<PageBits>>,
-    local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
+    parent_shared_region: &mut MappedMemoryRegion<PageBits, shared_status::Shared, role::Local>,
     consumer_vspace: &mut VSpace,
     local_cnode: &LocalCap<LocalCNode>,
     dest_slots: LocalCNodeSlots<U2>,
@@ -635,35 +614,31 @@ fn create_region_filled_with_array_queue<
 where
     QLen: ArrayLength<Slot<T>>,
     QLen: IsGreater<U0, Output = True>,
-    ScratchPages: IsGreaterOrEqual<U1, Output = True>,
+    QueueSizeBits: IsGreaterOrEqual<PageBits, Output = True>,
 {
     let queue_size = core::mem::size_of::<ArrayQueue<T, QLen>>();
-    if queue_size > PageBytes::USIZE {
+    if queue_size > (1 << QueueSizeBits::U8) {
         return Err(MultiConsumerError::QueueTooBig);
     }
 
-    let (slot, dest_slots) = dest_slots.alloc();
-    let mut region = UnmappedMemoryRegion::new(shared_region_ut, slot)?;
     // Put some data in there. Specifically, an `ArrayQueue`.
-    local_vspace_scratch.temporarily_map_region(&mut region, |mapped_region| unsafe {
-        let aq_ptr = core::mem::transmute::<usize, *mut ArrayQueue<T, QLen>>(mapped_region.vaddr());
-        // Operate directly on a pointer to an uninitialized/zeroed pointer
-        // in order to reduces odds of the full ArrayQueue instance
-        // materializing all at once on the local stack (potentially blowing it)
-        ArrayQueue::<T, QLen>::new_at_ptr(aq_ptr);
-        core::mem::forget(aq_ptr);
-    })?;
+    let aq_ptr =
+        core::mem::transmute::<usize, *mut ArrayQueue<T, QLen>>(parent_shared_region.vaddr());
+    // Operate directly on a pointer to an uninitialized/zeroed pointer
+    // in order to reduces odds of the full ArrayQueue instance
+    // materializing all at once on the local stack (potentially blowing it)
+    ArrayQueue::<T, QLen>::new_at_ptr(aq_ptr);
+    core::mem::forget(aq_ptr);
 
     let (shared_slot, _) = dest_slots.alloc();
-    let shared_region = region.to_shared();
     let consumer_shared_region = consumer_vspace.map_shared_region(
-        &shared_region,
+        &parent_shared_region,
         CapRights::RW,
         arch::vm_attributes::DEFAULT,
         shared_slot,
         local_cnode,
     )?;
-    Ok((shared_region, consumer_shared_region))
+    Ok(consumer_shared_region)
 }
 
 /// Wrapper around the necessary capabilities for a given

@@ -54,14 +54,6 @@ pub mod role {
 pub trait DirectRetype {
     type SizeBits: Unsigned;
     fn sel4_type_id() -> usize;
-
-    fn type_id(&self) -> usize {
-        Self::sel4_type_id()
-    }
-
-    fn size_bits() -> u8 {
-        Self::SizeBits::U8
-    }
 }
 
 /// Marker trait for CapType implementing structs to indicate that
@@ -517,7 +509,7 @@ mod private {
         IRQ: IsLess<MaxIRQCount, Output = True>
     {
     }
-    impl<State: PageState> SealedCapType for Page<State> {}
+    impl SealedCapType for Page {}
 
     /*
     Cross Arch things:

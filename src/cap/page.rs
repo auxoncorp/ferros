@@ -1,6 +1,5 @@
 // TODO: Move this to arch
-use crate::arch::PageBytes;
-use crate::cap::{CapRangeDataReconstruction, CapType, CopyAliasable, Movable};
+use crate::cap::{CapRangeDataReconstruction, CapType, CopyAliasable, Movable, PhantomCap};
 
 #[derive(Clone, Debug)]
 pub struct Page {}

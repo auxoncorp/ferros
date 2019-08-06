@@ -3,7 +3,7 @@ use core::ops::Sub;
 use typenum::*;
 
 use crate::arch::{G1, G2, G3, G4};
-use crate::cap::{CapType, DirectRetype, LocalCap};
+use crate::cap::{CNodeRole, Cap, CapType, DirectRetype, LocalCap};
 use crate::pow::{Pow, _Pow};
 use crate::{IfThenElse, _IfThenElse};
 
@@ -27,6 +27,12 @@ pub struct Granule<State: GranuleState> {
     /// Is this granule mapped or unmapped and the state that goes
     /// along with that.
     state: State,
+}
+
+impl<Role: CNodeRole, State: GranuleState> Cap<Granule<State>, Role> {
+    pub(crate) fn size_bytes(&self) -> usize {
+        1 << self.size_bits
+    }
 }
 
 pub trait GranuleState:
@@ -61,14 +67,6 @@ impl DirectRetype for LocalCap<Granule<granule_state::Unmapped>> {
     fn sel4_type_id() -> usize {
         usize::MAX
     }
-
-    fn type_id(&self) -> usize {
-        self.type_id
-    }
-
-    fn size_bits(&self) -> usize {
-        self.size_bits
-    }
 }
 
 mod private {
@@ -99,11 +97,10 @@ pub(crate) trait _GranuleSlotCount {
 
 pub(crate) type GranuleSlotCount<U> = <U as _GranuleSlotCount>::Count;
 
-impl<U: Unsigned> _GranuleSlotCount for U
+impl<U: Unsigned + NonZero> _GranuleSlotCount for U
 where
     // The incoming size must be NonZero; this is a requirement for
     // putting it into a positive int. More on that later.
-    U: NonZero,
 
     // We need to be able to subtract G1..G4 from U, forall U; some of
     // these results may be negative. Therefore we wrap a positiive

@@ -1,6 +1,5 @@
 use crate::arch::{self, *};
 use crate::cap::*;
-use crate::pow::{Pow, _Pow};
 use crate::userland::rights::CapRights;
 use crate::vspace::*;
 use core::ops::{Add, Sub};
@@ -36,23 +35,18 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
         process_parameter: SetupVer<T>,
         ipc_buffer_ut: LocalCap<Untyped<PageBits>>,
         tcb_ut: LocalCap<Untyped<<ThreadControlBlock as DirectRetype>::SizeBits>>,
-        slots: LocalCNodeSlots<Sum<NumPages<StackBitSize>, U2>>,
+        slots: LocalCNodeSlots<Sum<GranuleSlotCount<StackBitSize>, U2>>,
         priority_authority: &LocalCap<ThreadPriorityAuthority>,
         fault_source: Option<crate::userland::FaultSource<role::Child>>,
     ) -> Result<StandardProcess<StackBitSize>, ProcessSetupError>
     where
-        NumPages<StackBitSize>: Add<U2>,
-        Sum<NumPages<StackBitSize>, U2>: Unsigned,
+        GranuleSlotCount<StackBitSize>: Add<U2>,
+        Sum<GranuleSlotCount<StackBitSize>, U2>: Unsigned,
 
-        Sum<NumPages<StackBitSize>, U2>: Sub<U2>,
-        Diff<Sum<NumPages<StackBitSize>, U2>, U2>: Unsigned,
-        Diff<Sum<NumPages<StackBitSize>, U2>, U2>: IsEqual<NumPages<StackBitSize>, Output = True>,
-
-        StackBitSize: IsGreaterOrEqual<PageBits>,
-        StackBitSize: Sub<PageBits>,
-        <StackBitSize as Sub<PageBits>>::Output: Unsigned,
-        <StackBitSize as Sub<PageBits>>::Output: _Pow,
-        Pow<<StackBitSize as Sub<PageBits>>::Output>: Unsigned,
+        Sum<GranuleSlotCount<StackBitSize>, U2>: Sub<U2>,
+        Diff<Sum<GranuleSlotCount<StackBitSize>, U2>, U2>: Unsigned,
+        Diff<Sum<GranuleSlotCount<StackBitSize>, U2>, U2>:
+            IsEqual<GranuleSlotCount<StackBitSize>, Output = True>,
     {
         if parent_mapped_region.asid() == vspace.asid() {
             return Err(

@@ -1,4 +1,3 @@
-use crate::pow::{Pow, _Pow};
 use core::ops::{Add, Sub};
 use typenum::*;
 
@@ -6,8 +5,9 @@ use selfe_sys::*;
 
 use crate::arch::{self, PageBits};
 use crate::cap::{
-    role, CNodeRole, CNodeSlotsError, Cap, ChildCNode, DirectRetype, LocalCNode, LocalCNodeSlots,
-    LocalCap, ThreadControlBlock, ThreadPriorityAuthority, Untyped, WCNodeSlotsData,
+    role, CNodeRole, CNodeSlotsError, Cap, ChildCNode, DirectRetype, GranuleSlotCount, LocalCNode,
+    LocalCNodeSlots, LocalCap, ThreadControlBlock, ThreadPriorityAuthority, Untyped,
+    WCNodeSlotsData,
 };
 use crate::userland::CapRights;
 use crate::vspace::*;
@@ -44,25 +44,20 @@ impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
         process_parameter: SetupVer<T>,
         ipc_buffer_ut: LocalCap<Untyped<PageBits>>,
         tcb_ut: LocalCap<Untyped<<ThreadControlBlock as DirectRetype>::SizeBits>>,
-        slots: LocalCNodeSlots<Sum<NumPages<StackBitSize>, U2>>,
+        slots: LocalCNodeSlots<Sum<GranuleSlotCount<StackBitSize>, U2>>,
         mut cap_transfer_slots: LocalCap<WCNodeSlotsData<role::Child>>,
         child_paging_slots: Cap<WCNodeSlotsData<role::Child>, role::Child>,
         priority_authority: &LocalCap<ThreadPriorityAuthority>,
         fault_source: Option<crate::userland::FaultSource<role::Child>>,
     ) -> Result<SelfHostedProcess<StackBitSize>, ProcessSetupError>
     where
-        NumPages<StackBitSize>: Add<U2>,
-        Sum<NumPages<StackBitSize>, U2>: Unsigned,
+        GranuleSlotCount<StackBitSize>: Add<U2>,
+        Sum<GranuleSlotCount<StackBitSize>, U2>: Unsigned,
 
-        Sum<NumPages<StackBitSize>, U2>: Sub<U2>,
-        Diff<Sum<NumPages<StackBitSize>, U2>, U2>: Unsigned,
-        Diff<Sum<NumPages<StackBitSize>, U2>, U2>: IsEqual<NumPages<StackBitSize>, Output = True>,
-
-        StackBitSize: IsGreaterOrEqual<PageBits>,
-        StackBitSize: Sub<PageBits>,
-        <StackBitSize as Sub<PageBits>>::Output: Unsigned,
-        <StackBitSize as Sub<PageBits>>::Output: _Pow,
-        Pow<<StackBitSize as Sub<PageBits>>::Output>: Unsigned,
+        Sum<GranuleSlotCount<StackBitSize>, U2>: Sub<U2>,
+        Diff<Sum<GranuleSlotCount<StackBitSize>, U2>, U2>: Unsigned,
+        Diff<Sum<GranuleSlotCount<StackBitSize>, U2>, U2>:
+            IsEqual<GranuleSlotCount<StackBitSize>, Output = True>,
     {
         if parent_mapped_region.asid() == vspace.asid() {
             return Err(

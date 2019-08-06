@@ -5,11 +5,11 @@ use selfe_sys::*;
 use typenum::operator_aliases::Diff;
 use typenum::*;
 
+use crate::arch::cap::{ASIDControl, AssignedASID};
 use crate::arch::*;
 use crate::cap::{
-    page_state, role, ASIDControl, AssignedASID, CNode, CNodeRole, CNodeSlots, Cap, IRQControl,
-    InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, MaxIRQCount, Page, ThreadControlBlock,
-    Untyped,
+    granule_state, role, CNode, CNodeRole, CNodeSlots, Cap, Granule, IRQControl, InternalASID,
+    LocalCNode, LocalCNodeSlots, LocalCap, MaxIRQCount, ThreadControlBlock, Untyped,
 };
 use crate::error::SeL4Error;
 use crate::pow::Pow;
@@ -57,7 +57,6 @@ pub fn root_cnode(
 pub struct UserImage<Role: CNodeRole> {
     frames_start_cptr: usize,
     frames_count: usize,
-    page_table_count: usize,
     _role: PhantomData<Role>,
 }
 
@@ -101,7 +100,6 @@ impl BootInfo<op!(ASIDPoolCount - U1)> {
         let user_image = UserImage {
             frames_start_cptr: bootinfo.userImageFrames.start,
             frames_count: bootinfo.userImageFrames.end - bootinfo.userImageFrames.start,
-            page_table_count: bootinfo.userImagePaging.end - bootinfo.userImagePaging.start,
             _role: PhantomData,
         };
 
@@ -142,36 +140,26 @@ impl UserImage<role::Local> {
         self.page_table_count
     }
 
-    // TODO this doesn't enforce the aliasing constraints we want at the type
-    // level. This can be modeled as an array (or other sized thing) once we
-    // know how big the user image is.
-    pub fn pages_iter(&self) -> impl Iterator<Item = LocalCap<Page<page_state::Mapped>>> {
-        // Iterate over the entire address space's page addresses, starting at
-        // ProgramStart. This is truncated to the number of actual pages in the
-        // user image by zipping it with the range of frame cptrs below.
-        let vaddr_iter = (ProgramStart::USIZE..core::usize::MAX).step_by(1 << PageBits::USIZE);
-
-        (self.frames_start_cptr..(self.frames_start_cptr + self.frames_count))
-            .zip(vaddr_iter)
-            .map(|(cptr, vaddr)| Cap {
+    pub fn frames_iter(&self) -> impl Iterator<Item = LocalCap<Granule<granule_state::Mapped>>> {
+        (self.frames_start_cptr..self.frames_start_cptr + self.frames_count)
+            .zip(
+                ProgramStart::USIZE
+                    ..ProgramStart::USIZE
+                        + (self.frames_count * PageBytes::USIZE).step_by(PageBytes::USIZE),
+            )
+            .map(|cptr, vaddr| Cap {
                 cptr,
-                cap_data: Page {
-                    state: page_state::Mapped {
-                        vaddr,
-                        // N.B. This ASID is only valid for the root task (since we make up
-                        // an internally consistent scheme for our runtime-tracked ASID values).
-                        // We presently lack the piping to associate a UserImage with a
-                        // particular ASID (or with a particular VSpace)
-                        asid: InternalASID { asid: 0 },
-                    },
+                cap_data: Granule {
+                    size_bits: PageBits::USIZE,
+                    type_id: PageTypeID::USIZE,
+                    state: granule_state::Mapped { vaddr, asid: 0 },
                 },
                 _role: PhantomData,
             })
     }
 
-    pub fn pages_count(&self) -> usize {
-        let vaddr_count = (core::usize::MAX - ProgramStart::USIZE) / (1 << PageBits::USIZE);
-        core::cmp::min(self.frames_count, vaddr_count)
+    pub fn frames_count(&self) -> usize {
+        self.frames_count
     }
 
     pub fn copy<TargetRole: CNodeRole>(
@@ -187,7 +175,6 @@ impl UserImage<role::Local> {
         Ok(UserImage {
             frames_start_cptr,
             frames_count: self.frames_count,
-            page_table_count: self.page_table_count,
             _role: PhantomData,
         })
     }
