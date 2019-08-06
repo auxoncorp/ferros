@@ -471,7 +471,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         })
     }
 
-    pub fn new_from_elf<'a, 'b, E: ElfProc>(
+    pub fn new_from_elf<'a, 'b, 'c, E: ElfProc>(
         paging_root: LocalCap<PagingRoot>,
         asid: LocalCap<UnassignedASID>,
         mut slots: WCNodeSlots,
@@ -483,7 +483,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         elf_writable_mem: LocalCap<Untyped<E::RequiredMemoryBits>>,
         user_image: &UserImage<role::Local>,
         parent_cnode: &LocalCap<LocalCNode>,
-        local_vspace: &mut VSpace,
+        local_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
     ) -> Result<Self, VSpaceError>
     where
         <E as ElfProc>::WritablePages: _Pow,
@@ -542,31 +542,34 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                         .next()
                         .ok_or(VSpaceError::InsufficientResourcesForElf)?;
 
-                    let unmapped_region = dest_page.to_region();
-                    let mut mapped_region =
-                        local_vspace.map_region(unmapped_region, CapRights::RW, vm_attrs)?;
+                    let mut unmapped_region = dest_page.to_region();
 
-                    let dest_mem = mapped_region.as_mut_slice();
-                    let offset_in_dest_mem = curr_src_offset & ((1 << arch::PageBits::USIZE) - 1);
-                    let end_in_dest_mem = next_src_offset & ((1 << arch::PageBits::USIZE) - 1);
-                    let end_in_dest_mem = if end_in_dest_mem == 0 {
-                        arch::PageBytes::USIZE
-                    } else {
-                        end_in_dest_mem
-                    };
+                    let _ = local_vspace_scratch.temporarily_map_region::<PageBits, _, _>(
+                        &mut unmapped_region,
+                        |temp_mapped_region| {
+                            let dest_mem = temp_mapped_region.as_mut_slice();
+                            let offset_in_dest_mem =
+                                curr_src_offset & ((1 << arch::PageBits::USIZE) - 1);
+                            let end_in_dest_mem =
+                                next_src_offset & ((1 << arch::PageBits::USIZE) - 1);
+                            let end_in_dest_mem = if end_in_dest_mem == 0 {
+                                arch::PageBytes::USIZE
+                            } else {
+                                end_in_dest_mem
+                            };
 
-                    for dest in &mut dest_mem[0..offset_in_dest_mem] {
-                        *dest = 0;
-                    }
+                            for dest in &mut dest_mem[0..offset_in_dest_mem] {
+                                *dest = 0;
+                            }
 
-                    &mut dest_mem[offset_in_dest_mem..end_in_dest_mem]
-                        .copy_from_slice(&elf_data[src_offset..next_src_offset]);
+                            &mut dest_mem[offset_in_dest_mem..end_in_dest_mem]
+                                .copy_from_slice(&elf_data[src_offset..next_src_offset]);
 
-                    for dest in &mut dest_mem[end_in_dest_mem..] {
-                        *dest = 0;
-                    }
-
-                    let unmapped_region = local_vspace.unmap_region(mapped_region)?;
+                            for dest in &mut dest_mem[end_in_dest_mem..] {
+                                *dest = 0;
+                            }
+                        },
+                    );
 
                     let _ = vspace.map_page_at_addr_without_watermarking(
                         unmapped_region.to_page(),
@@ -574,6 +577,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                         CapRights::RW,
                         vm_attrs,
                     )?;
+
                     vspace
                         .available_address_range
                         .observe_mapping(curr_page_vaddr, PageBits::U8)?;

@@ -3,11 +3,11 @@
 cross_compiler_prefix = "arm-linux-gnueabihf-"
 
 [build.sabre.debug]
-make_root_task = "cargo xbuild --target=armv7-unknown-linux-gnueabihf -vv"
+make_root_task = "./cargo-build.sh --target=armv7-unknown-linux-gnueabihf -vv"
 root_task_image = "target/armv7-unknown-linux-gnueabihf/debug/root-task"
 
 [build.sabre.release]
-make_root_task = "cargo xbuild --target=armv7-unknown-linux-gnueabihf --release"
+make_root_task = "./cargo-build.sh --target=armv7-unknown-linux-gnueabihf --release"
 root_task_image = "target/armv7-unknown-linux-gnueabihf/release/root-task"
 
 ### virt (ARMv8)
@@ -15,11 +15,11 @@ root_task_image = "target/armv7-unknown-linux-gnueabihf/release/root-task"
 cross_compiler_prefix = "aarch64-linux-gnu-"
 
 [build.virt.debug]
-make_root_task = "cargo xbuild --target=aarch64-unknown-linux-gnu"
+make_root_task = "./cargo-build.sh --target=aarch64-unknown-linux-gnu"
 root_task_image = "target/aarch64-unknown-linux-gnu/debug/root-task"
 
 [build.virt.release]
-make_root_task = "cargo xbuild --target=aarch64-unknown-linux-gnu --release"
+make_root_task = "./cargo-build.sh --target=aarch64-unknown-linux-gnu --release"
 root_task_image = "target/aarch64-unknown-linux-gnu/release/root-task"
 
 [sel4]

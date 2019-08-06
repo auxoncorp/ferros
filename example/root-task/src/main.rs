@@ -70,6 +70,7 @@ fn run(raw_bootinfo: &'static selfe_sys::seL4_BootInfo) -> Result<(), TopLevelEr
     debug_println!("\n\n\n");
 
     let uts = alloc::ut_buddy(allocator.alloc_strong::<U20>(&mut ut_slots)?);
+
     smart_alloc!(|slots: local_slots, ut: uts| {
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (hello_asid, asid_pool) = asid_pool.alloc();
@@ -77,6 +78,11 @@ fn run(raw_bootinfo: &'static selfe_sys::seL4_BootInfo) -> Result<(), TopLevelEr
         // TODO: can we determine these numbers statically now, from the elf file's layout?
         let vspace_slots: LocalCNodeSlots<U16> = slots;
         let vspace_ut: LocalCap<Untyped<U16>> = ut;
+
+        let ut_for_scratch: LocalCap<Untyped<U12>> = ut;
+        let sacrificial_page = ut_for_scratch.retype(slots)?;
+        let reserved_for_scratch = root_vspace.reserve(sacrificial_page)?;
+        let mut scratch = reserved_for_scratch.as_scratch(&mut root_vspace).unwrap();
 
         let mut hello_vspace = VSpace::new_from_elf::<resources::HelloPrinter>(
             retype(ut, slots)?, // paging_root
@@ -88,7 +94,7 @@ fn run(raw_bootinfo: &'static selfe_sys::seL4_BootInfo) -> Result<(), TopLevelEr
             ut,    // elf_writable_mem
             &user_image,
             &root_cnode,
-            &mut root_vspace,
+            &mut scratch,
         )?;
 
         let (hello_cnode, hello_slots) = retype_cnode::<U12>(ut, slots)?;

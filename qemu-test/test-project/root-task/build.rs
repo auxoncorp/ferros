@@ -1,12 +1,7 @@
-use std::env;
+use cargo_5730;
 
 fn main() {
-    println!("cargo:rerun-if-env-changed=TEST_CASE");
-
-    let test_case = match env::var("TEST_CASE") {
-        Ok(val) => val,
-        Err(_) => "root_task_runs".to_string(),
-    };
-
-    println!("cargo:rustc-cfg=test_case=\"{}\"", test_case);
+    println!("cargo:rerun-if-changed=build-script/src/main.rs");
+    println!("cargo:rerun-if-changed=build-script/Cargo.toml");
+    cargo_5730::run_build_crate("build-script");
 }

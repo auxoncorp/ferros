@@ -1,5 +1,6 @@
 [workspace]
-members = ["root-task"]
+members = ["root-task", "elf-process"]
+exclude = ["root-task/build-script"]
 
 [profile.dev]
 panic = "abort"
