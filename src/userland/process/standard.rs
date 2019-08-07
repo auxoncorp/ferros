@@ -26,13 +26,35 @@ pub struct StandardProcess<StackBitSize: Unsigned = DefaultStackBitSize> {
     _stack_bit_size: PhantomData<StackBitSize>,
 }
 
+pub enum EntryPoint<'a, T> {
+    Fork(extern "C" fn(T) -> ()),
+    Elf(&'a [u8]),
+}
+
+/// If you want this to work, you need to do:
+///
+///     my_fn as extern "C" fn(_) -> ()
+///
+/// because of https://github.com/rust-lang/rust/issues/62385
+impl<'a, T> From<extern "C" fn(T) -> ()> for EntryPoint<'a, T> {
+    fn from(f: extern "C" fn(T) -> ()) -> Self {
+        EntryPoint::Fork(f)
+    }
+}
+
+impl<'a, T> From<&'a [u8]> for EntryPoint<'a, T> {
+    fn from(elf_data: &'a [u8]) -> Self {
+        EntryPoint::Elf(elf_data)
+    }
+}
+
 impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
-    pub fn new<T: RetypeForSetup>(
+    pub fn new<'a, T: RetypeForSetup, EP: Into<EntryPoint<'a, T>>>(
         vspace: &mut VSpace,
         cspace: LocalCap<ChildCNode>,
         parent_mapped_region: MappedMemoryRegion<StackBitSize, shared_status::Exclusive>,
         parent_cnode: &LocalCap<LocalCNode>,
-        function_descriptor: extern "C" fn(T) -> (),
+        entry_point: EP,
         process_parameter: SetupVer<T>,
         ipc_buffer_ut: LocalCap<Untyped<PageBits>>,
         tcb_ut: LocalCap<Untyped<<ThreadControlBlock as DirectRetype>::SizeBits>>,
@@ -54,11 +76,14 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
         <StackBitSize as Sub<PageBits>>::Output: _Pow,
         Pow<<StackBitSize as Sub<PageBits>>::Output>: Unsigned,
     {
+        let entry_point = entry_point.into();
+
         if parent_mapped_region.asid() == vspace.asid() {
             return Err(
                 ProcessSetupError::ParentMappedMemoryRegionASIDShouldNotMatchChildVSpaceASID,
             );
         }
+
         let (misc_slots, stack_slots) = slots.alloc::<U2>();
         // TODO - lift these checks to compile-time, as static assertions
         // Note - This comparison is conservative because technically
@@ -98,10 +123,25 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
             mapped_stack_pages.vaddr() + mapped_stack_pages.size_bytes() - param_size_on_stack;
 
         registers.sp = stack_pointer;
-        registers.pc = function_descriptor as usize;
+
+        registers.pc = match entry_point {
+            EntryPoint::Fork(f) => f as usize,
+            EntryPoint::Elf(elf_data) => {
+                let elf =
+                    xmas_elf::ElfFile::new(elf_data).map_err(ProcessSetupError::ElfParseError)?;
+                elf.header.pt2.entry_point() as usize
+            }
+        };
 
         // TODO - Probably ought to suspend or destroy the thread instead of endlessly yielding
-        set_thread_link_register(&mut registers, yield_forever);
+        match entry_point {
+            // This doesn't work for elf procs, since yield_forever isn't there
+            EntryPoint::Fork(_) => {
+                set_thread_link_register(&mut registers, yield_forever);
+                ()
+            }
+            _ => (),
+        };
 
         // Reserve a guard page after the stack
         vspace.skip_pages(1)?;

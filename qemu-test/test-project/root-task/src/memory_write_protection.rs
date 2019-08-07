@@ -51,7 +51,7 @@ pub fn memory_write_protection<'a, 'b, 'c>(
             child_cnode,
             local_mapped_region,
             root_cnode,
-            proc_main,
+            proc_main as extern "C" fn(_) -> (),
             params,
             ut,
             ut,

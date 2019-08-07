@@ -3,13 +3,12 @@ use selfe_sys::*;
 use typenum::Unsigned;
 
 use crate::arch;
-use crate::cap::{CapType, DirectRetype, LocalCap, Movable, PhantomCap};
+use crate::cap::{CapType, DirectRetype, LocalCap, Movable, PageTable, PhantomCap};
 use crate::error::{ErrorExt, KernelError, SeL4Error};
 use crate::userland::CapRights;
 use crate::vspace::{MappingError, Maps};
 
-use super::super::{PageDirIndexBits, PageIndexBits, PageTableIndexBits};
-use super::PageTable;
+use super::super::{PageDirIndexBits, PageIndexBits, PageTableIndexBits, PagingRoot};
 
 const PD_MASK: usize =
     (((1 << PageDirIndexBits::USIZE) - 1) << PageIndexBits::USIZE + PageTableIndexBits::USIZE);
@@ -18,19 +17,14 @@ const PD_MASK: usize =
 pub struct PageDirectory {}
 
 impl Maps<PageTable> for PageDirectory {
-    fn map_granule<RootLowerLevel, Root>(
+    fn map_granule(
         &mut self,
         table: &LocalCap<PageTable>,
         addr: usize,
-        root: &mut LocalCap<Root>,
+        root: &mut LocalCap<PagingRoot>,
         _rights: CapRights,
         vm_attributes: arch::VMAttributes,
-    ) -> Result<(), MappingError>
-    where
-        Root: Maps<RootLowerLevel>,
-        Root: CapType,
-        RootLowerLevel: CapType,
-    {
+    ) -> Result<(), MappingError> {
         match unsafe {
             seL4_ARM_PageTable_Map(table.cptr, root.cptr, addr & PD_MASK, vm_attributes)
         }

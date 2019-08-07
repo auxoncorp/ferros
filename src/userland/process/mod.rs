@@ -60,6 +60,7 @@ pub enum ProcessSetupError {
     ParentMappedMemoryRegionASIDShouldNotMatchChildVSpaceASID,
     VSpaceError(VSpaceError),
     SeL4Error(SeL4Error),
+    ElfParseError(&'static str),
 }
 
 impl From<VSpaceError> for ProcessSetupError {

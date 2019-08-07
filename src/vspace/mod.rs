@@ -10,13 +10,13 @@ use core::ops::Sub;
 use typenum::*;
 
 use crate::alloc::ut_buddy::{self, UTBuddyError, WUTBuddy};
-use crate::arch::cap::{AssignedASID, UnassignedASID};
-use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot};
+use crate::arch::{self, AddressSpace, PageBits, PageBytes, PagingRoot, PagingRootLowerLevel};
 use crate::bootstrap::UserImage;
 use crate::cap::{
-    memory_kind, page_state, role, CNodeRole, CNodeSlots, Cap, CapRange, CapType, ChildCNodeSlot,
-    DirectRetype, InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, Page, PhantomCap,
-    RetypeError, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped, WeakCapRange, WeakCopyError,
+    memory_kind, page_state, role, AssignedASID, CNodeRole, CNodeSlots, Cap, CapRange, CapType,
+    ChildCNodeSlot, DirectRetype, InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, Page,
+    PhantomCap, RetypeError, UnassignedASID, Untyped, WCNodeSlots, WCNodeSlotsData, WUntyped,
+    WeakCapRange, WeakCopyError,
 };
 use crate::error::SeL4Error;
 use crate::pow::{Pow, _Pow};
@@ -25,6 +25,25 @@ mod region;
 pub use region::*;
 
 include!(concat!(env!("OUT_DIR"), "/KERNEL_RETYPE_FAN_OUT_LIMIT"));
+
+pub trait ElfProc: Sized {
+    /// The name of the image in the selfe_arc
+    const IMAGE_NAME: &'static str;
+
+    /// The total number of pages which need to be mapped when starting the process
+    type RequiredPages: Unsigned;
+
+    /// The number of pages which need to be mapped as writeable (data and BSS
+    /// sections)
+    type WritablePages: Unsigned;
+
+    /// How much memory is required to set up this process (for its writable
+    /// pages), as a bitsize.
+    type RequiredMemoryBits: Unsigned;
+
+    /// How much memory is needed for the process stack, as a bitsize.
+    type StackSizeBits: Unsigned;
+}
 
 pub trait VSpaceState: private::SealedVSpaceState {}
 
@@ -58,18 +77,14 @@ pub trait Maps<LowerLevel: CapType> {
     /// Map the level/layer down relative to this layer.
     /// E.G. for a PageTable, this would map a Page.
     /// E.G. for a PageDirectory, this would map a PageTable.
-    fn map_granule<RootLowerLevel, Root>(
+    fn map_granule(
         &mut self,
         item: &LocalCap<LowerLevel>,
         addr: usize,
-        root: &mut LocalCap<Root>,
+        root: &mut LocalCap<PagingRoot>,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
-    ) -> Result<(), MappingError>
-    where
-        Root: Maps<RootLowerLevel>,
-        Root: CapType,
-        RootLowerLevel: CapType;
+    ) -> Result<(), MappingError>;
 }
 
 #[derive(Debug)]
@@ -137,6 +152,8 @@ pub enum VSpaceError {
     /// special-sized granules.
     TriedToMapTooManyPagesAtOnce,
     InvalidRegionSize,
+    ElfParseError(&'static str),
+    InsufficientResourcesForElf,
 }
 
 impl From<RetypeError> for VSpaceError {
@@ -162,51 +179,41 @@ pub trait PagingLayer {
     /// implementor ought to return `MappingError::Overflow` to signal
     /// that mapping is needed at the layer above, otherwise the error
     /// is just bubbled up to the caller.
-    fn map_layer<RootLowerLevel: CapType, Root>(
+    fn map_layer(
         &mut self,
         item: &LocalCap<Self::Item>,
         addr: usize,
-        root: &mut LocalCap<Root>,
+        root: &mut LocalCap<PagingRoot>,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
         utb: &mut WUTBuddy,
         slots: &mut WCNodeSlots,
-    ) -> Result<(), MappingError>
-    where
-        Root: Maps<RootLowerLevel>,
-        Root: CapType;
+    ) -> Result<(), MappingError>;
 }
 
 /// `PagingTop` represents the root of an address space structure.
-pub struct PagingTop<LowerLevel, CurrentLevel: Maps<LowerLevel>>
+pub struct PagingTop
 where
-    CurrentLevel: CapType,
-    LowerLevel: CapType,
+    PagingRoot: Maps<PagingRootLowerLevel>,
+    PagingRoot: CapType,
+    PagingRootLowerLevel: CapType,
 {
-    pub layer: CurrentLevel,
-    pub(super) _item: PhantomData<LowerLevel>,
+    pub layer: PagingRoot,
+    pub(super) _item: PhantomData<PagingRootLowerLevel>,
 }
 
-impl<LowerLevel, CurrentLevel: Maps<LowerLevel>> PagingLayer for PagingTop<LowerLevel, CurrentLevel>
-where
-    CurrentLevel: CapType,
-    LowerLevel: CapType + DirectRetype + PhantomCap,
-{
-    type Item = LowerLevel;
-    fn map_layer<RootLowerLevel: CapType, Root>(
+impl PagingLayer for PagingTop {
+    type Item = PagingRootLowerLevel;
+    fn map_layer(
         &mut self,
-        item: &LocalCap<LowerLevel>,
+        item: &LocalCap<Self::Item>,
         addr: usize,
-        root: &mut LocalCap<Root>,
+        root: &mut LocalCap<PagingRoot>,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
         _utb: &mut WUTBuddy,
         _slots: &mut WCNodeSlots,
-    ) -> Result<(), MappingError>
-    where
-        Root: Maps<RootLowerLevel>,
-        Root: CapType,
-    {
+    ) -> Result<(), MappingError> {
         self.layer
             .map_granule(item, addr, root, rights, vm_attributes)
     }
@@ -227,20 +234,16 @@ where
     LowerLevel: CapType + DirectRetype + PhantomCap,
 {
     type Item = LowerLevel;
-    fn map_layer<RootLowerLevel: CapType, Root>(
+    fn map_layer(
         &mut self,
         item: &LocalCap<LowerLevel>,
         addr: usize,
-        root: &mut LocalCap<Root>,
+        root: &mut LocalCap<PagingRoot>,
         rights: CapRights,
         vm_attributes: arch::VMAttributes,
         utb: &mut WUTBuddy,
         mut slots: &mut WCNodeSlots,
-    ) -> Result<(), MappingError>
-    where
-        Root: Maps<RootLowerLevel>,
-        Root: CapType,
-    {
+    ) -> Result<(), MappingError> {
         // Attempt to map this layer's granule.
         match self
             .layer
@@ -451,6 +454,193 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         })
     }
 
+    pub fn new_from_elf<'a, 'b, 'c, E: ElfProc>(
+        paging_root: LocalCap<PagingRoot>,
+        asid: LocalCap<UnassignedASID>,
+        mut slots: WCNodeSlots,
+        paging_untyped: LocalCap<WUntyped<memory_kind::General>>,
+        // Things relating to user image code
+        elf_data: &[u8],
+        page_slots: LocalCNodeSlots<E::RequiredPages>,
+        elf_writable_mem: LocalCap<Untyped<E::RequiredMemoryBits>>,
+        user_image: &UserImage<role::Local>,
+        parent_cnode: &LocalCap<LocalCNode>,
+        local_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
+    ) -> Result<Self, VSpaceError>
+    where
+        <E as ElfProc>::WritablePages: _Pow,
+        Pow<<E as ElfProc>::WritablePages>: Unsigned,
+    {
+        let mut vspace =
+            VSpace::<vspace_state::Empty>::new(paging_root, asid, slots, paging_untyped)?;
+
+        let elf = xmas_elf::ElfFile::new(elf_data).map_err(VSpaceError::ElfParseError)?;
+
+        // 0xfff, for 4k pages
+        const PAGE_MASK: usize = (1 << arch::PageBits::USIZE) - 1;
+
+        // As long as the elf binary agrees with the types in E (which were
+        // extracted from the elf binary), we're good for resource capacity.
+        // Weaken the resources for convenient internal looping.
+        let mut page_slots = page_slots.weaken();
+        let mut writable_segment_pages_iter = elf_writable_mem
+            .weaken()
+            .retype_pages(&mut page_slots)?
+            .into_iter();
+
+        for program_header in elf
+            .program_iter()
+            .filter(|h| h.get_type() == Ok(xmas_elf::program::Type::Load))
+        {
+            let target_vaddr = program_header.virtual_addr() as usize;
+            let offset = program_header.offset();
+
+            let file_size = program_header.file_size() as usize;
+            let flags = program_header.flags();
+
+            let vm_attrs = if flags.is_execute() {
+                arch::vm_attributes::PROGRAM_CODE
+            } else {
+                arch::vm_attributes::PROGRAM_DATA
+            };
+
+            if flags.is_write() {
+                // Writable segments need to be copied into memory owned by the
+                // new process.
+
+                // how much space this segment occupies in memory. For writable
+                // segments, this is often larger than the size in the file, for
+                // things like the BSS section. This memory is zeroed out
+                // below.
+                let mem_size = program_header.mem_size() as usize;
+                let src_offset = program_header.offset() as usize;
+                let src_end = src_offset + file_size;
+
+                let mut curr_src_offset = src_offset;
+                let mut curr_page_vaddr = target_vaddr & !PAGE_MASK;
+
+                loop {
+                    // The next page boundary, or the end of the data, whichever is first
+                    let next_src_offset = core::cmp::min(
+                        (curr_src_offset + arch::PageBytes::USIZE) & !PAGE_MASK,
+                        src_end,
+                    );
+
+                    // If this fails, it means that we weren't given enough
+                    // resources to map all the pages.This shouldn't happen, as
+                    // we've got it written down in a type that's extracted from
+                    // the binary itself.
+                    let dest_page = writable_segment_pages_iter
+                        .next()
+                        .ok_or(VSpaceError::InsufficientResourcesForElf)?;
+
+                    let mut unmapped_region = dest_page.to_region();
+                    let _ = local_vspace_scratch.temporarily_map_region::<PageBits, _, _>(
+                        &mut unmapped_region,
+                        |temp_mapped_region| {
+                            let dest_mem = temp_mapped_region.as_mut_slice();
+                            let offset_in_dest_mem = curr_src_offset & PAGE_MASK;
+                            let end_in_dest_mem = next_src_offset & PAGE_MASK;
+                            let end_in_dest_mem = if end_in_dest_mem == 0 {
+                                arch::PageBytes::USIZE
+                            } else {
+                                end_in_dest_mem
+                            };
+
+                            // zero out any memory that comes before the file data
+                            for dest in &mut dest_mem[0..offset_in_dest_mem] {
+                                *dest = 0;
+                            }
+
+                            // copy over the binary
+                            &mut dest_mem[offset_in_dest_mem..end_in_dest_mem]
+                                .copy_from_slice(&elf_data[src_offset..next_src_offset]);
+
+                            // zero out any remaining memory, in pages after src
+                            for dest in &mut dest_mem[end_in_dest_mem..] {
+                                *dest = 0;
+                            }
+                        },
+                    );
+
+                    let _ = vspace.map_page_at_addr_without_watermarking(
+                        unmapped_region.to_page(),
+                        curr_page_vaddr,
+                        CapRights::RW,
+                        vm_attrs,
+                    )?;
+
+                    vspace
+                        .available_address_range
+                        .observe_mapping(curr_page_vaddr, PageBits::U8)?;
+
+                    curr_page_vaddr += arch::PageBytes::USIZE;
+                    curr_src_offset = next_src_offset;
+
+                    if curr_src_offset >= src_end {
+                        break;
+                    }
+                }
+            } else {
+                // If the elf headers say to map something as read only, we can map in the pages directly
+                // from bootinfo
+
+                // The address of the elf data in the address space executing this code
+                let elf_vaddr_here =
+                    (elf_data as *const [u8] as *const u8 as usize) + offset as usize;
+
+                // mask off the lower bits to get the address of the start page
+                // in the local address space
+                let start_page_vaddr_here = elf_vaddr_here & !PAGE_MASK;
+
+                // TODO just index into the pages, instead of iterating past them
+                for (user_image_page, child_vaddr) in user_image
+                    .pages_iter()
+                    .skip_while(|p| p.cap_data.state.vaddr < start_page_vaddr_here)
+                    .take_while(|p| p.cap_data.state.vaddr < elf_vaddr_here + file_size)
+                    .zip(
+                        (target_vaddr..(target_vaddr + file_size * arch::PageBytes::USIZE))
+                            .step_by(arch::PageBytes::USIZE),
+                    )
+                {
+                    let page_vaddr_here = user_image_page.cap_data.state.vaddr;
+
+                    let copied_page_cap = user_image_page.copy(
+                        &parent_cnode,
+                        // If this fails, it means that we weren't given enough
+                        // resources to map all the pages.This shouldn't happen, as
+                        // we've got it written down in a type that's extracted from
+                        // the binary itself.
+                        page_slots
+                            .alloc_strong::<U1>()
+                            .map_err(|_| VSpaceError::InsufficientResourcesForElf)?,
+                        CapRights::R,
+                    )?;
+
+                    let _ = vspace.map_page_at_addr_without_watermarking(
+                        copied_page_cap,
+                        child_vaddr,
+                        CapRights::R,
+                        vm_attrs,
+                    )?;
+                    vspace
+                        .available_address_range
+                        .observe_mapping(child_vaddr, arch::PageBits::U8)?;
+                }
+            }
+        }
+
+        Ok(VSpace {
+            root: vspace.root,
+            asid: vspace.asid,
+            layers: vspace.layers,
+            untyped: vspace.untyped,
+            slots: vspace.slots,
+            available_address_range: vspace.available_address_range,
+            _state: PhantomData,
+        })
+    }
+
     pub fn new(
         paging_root: LocalCap<PagingRoot>,
         asid: LocalCap<UnassignedASID>,
@@ -471,9 +661,12 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         // Map the code image into the process VSpace
         match code_image_config {
             ProcessCodeImageConfig::ReadOnly => {
-                for (ui_page, slot) in user_image.pages_iter().zip(code_slots.into_strong_iter()) {
-                    let address = ui_page.cap_data.state.vaddr;
-                    let copied_page_cap = ui_page.copy(&parent_cnode, slot, CapRights::R)?;
+                for (user_image_page, slot) in
+                    user_image.pages_iter().zip(code_slots.into_strong_iter())
+                {
+                    let address = user_image_page.cap_data.state.vaddr;
+                    let copied_page_cap =
+                        user_image_page.copy(&parent_cnode, slot, CapRights::R)?;
                     let _ = vspace.map_page_at_addr_without_watermarking(
                         copied_page_cap,
                         address,
@@ -498,10 +691,12 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                     arch::CodePageCount,
                 > = code_pages_ut.retype_multi(code_pages_slots)?;
                 // Then, zip up the pages with the user image pages
-                for (ui_page, fresh_page) in user_image.pages_iter().zip(fresh_pages.into_iter()) {
+                for (user_image_page, fresh_page) in
+                    user_image.pages_iter().zip(fresh_pages.into_iter())
+                {
                     // Temporarily map the new page and copy the data
                     // from `user_image` to the new page.
-                    let address = ui_page.cap_data.state.vaddr;
+                    let address = user_image_page.cap_data.state.vaddr;
                     let mut unmapped_region = fresh_page.to_region();
                     let _ = parent_vspace_scratch.temporarily_map_region::<PageBits, _, _>(
                         &mut unmapped_region,
@@ -513,7 +708,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                                     usize,
                                     *const [usize; arch::WORDS_PER_PAGE],
                                 >(
-                                    ui_page.cap_data.state.vaddr
+                                    user_image_page.cap_data.state.vaddr
                                 ))
                             };
                         },

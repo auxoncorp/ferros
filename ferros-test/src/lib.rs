@@ -30,22 +30,11 @@ pub fn sel4_start_main(tests: &[&ferros::test_support::RunTest]) {
 }
 
 #[cfg(feature = "sel4_start_main")]
-#[doc(hidden)]
-pub fn sel4_start_panic_handler(info: &core::panic::PanicInfo) -> ! {
-    sel4_start::debug_panic_handler(&info)
-}
-
-#[cfg(feature = "sel4_start_main")]
 #[macro_export]
 macro_rules! ferros_test_main {
     ($tests:expr) => {
         fn main() {
             $crate::sel4_start_main($tests)
-        }
-
-        #[panic_handler]
-        fn panic(info: &core::panic::PanicInfo) -> ! {
-            $crate::sel4_start_panic_handler(info)
         }
     };
 }

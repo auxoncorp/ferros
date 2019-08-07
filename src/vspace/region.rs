@@ -247,6 +247,14 @@ where
         self.caps.start_cap_data.state.asid
     }
 
+    pub fn as_slice(&self) -> &[u8] {
+        unsafe { core::slice::from_raw_parts(self.vaddr() as *const u8, self.size_bytes()) }
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        unsafe { core::slice::from_raw_parts_mut(self.vaddr() as *mut u8, self.size_bytes()) }
+    }
+
     #[cfg(feature = "test_support")]
     /// Super dangerous copy-aliasing
     pub(crate) unsafe fn dangerous_internal_alias(&mut self) -> Self {
@@ -485,6 +493,14 @@ impl<SS: SharedStatus, CapRole: CNodeRole> WeakMappedMemoryRegion<SS, CapRole> {
 
     pub(crate) fn asid(&self) -> InternalASID {
         self.caps.start_cap_data.state.asid
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        unsafe { core::slice::from_raw_parts(self.vaddr() as *const u8, self.size_bytes()) }
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        unsafe { core::slice::from_raw_parts_mut(self.vaddr() as *mut u8, self.size_bytes()) }
     }
 }
 
