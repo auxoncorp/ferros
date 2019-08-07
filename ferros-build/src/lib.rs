@@ -74,7 +74,7 @@ impl Resource for ElfResource {
 
         let stack_size_bits = 16;
         println!(
-            "cargo:warning=Using default stack size of 16k for elf process {}",
+            "cargo:warning=Using default stack size of 64k for elf process {}",
             self.image_name
         );
 
