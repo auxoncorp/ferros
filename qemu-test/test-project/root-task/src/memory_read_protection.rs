@@ -52,7 +52,7 @@ pub fn memory_read_protection(
             child_cnode,
             local_mapped_region,
             root_cnode,
-            proc_main,
+            proc_main as extern "C" fn(_) -> (),
             params,
             ut,
             ut,

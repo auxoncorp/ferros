@@ -1,5 +1,5 @@
 [workspace]
-members = ["root-task", "elf-process"]
+members = ["root-task", "hello-printer"]
 exclude = ["root-task/build-script"]
 
 [profile.dev]

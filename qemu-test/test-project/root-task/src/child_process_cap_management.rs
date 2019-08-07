@@ -67,7 +67,7 @@ pub fn child_process_cap_management(
             child_cnode,
             local_mapped_region,
             root_cnode,
-            proc_main,
+            proc_main as extern "C" fn(_) -> (),
             params,
             ut,
             ut,

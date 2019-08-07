@@ -83,7 +83,7 @@ pub fn fault_or_message_handler(
                         child_cnode,
                         mapped_region,
                         root_cnode,
-                        proc_main,
+                        proc_main as extern "C" fn(_) -> (),
                         params,
                         ut,
                         ut,
