@@ -23,3 +23,19 @@ pub mod pow;
 pub mod test_support;
 pub mod userland;
 pub mod vspace;
+
+/// Type-level if/else.
+pub trait _IfThenElse<A, B>: typenum::Bit {
+    type Output;
+}
+
+impl<R, L> _IfThenElse<R, L> for typenum::True {
+    type Output = R;
+}
+
+impl<R, L> _IfThenElse<R, L> for typenum::False {
+    type Output = L;
+}
+
+/// Typenum-style sugar for using if/else at the type level.
+pub type IfThenElse<C, A, B> = <C as _IfThenElse<A, B>>::Output;

@@ -1,19 +1,22 @@
+use core::marker::PhantomData;
 use core::ops::Sub;
 
 use typenum::*;
 
-use crate::arch::{G1, G2, G3, G4};
-use crate::cap::{CNodeRole, Cap, CapType, DirectRetype, LocalCap};
+use crate::arch::{PageBits, G1, G2, G3, G4};
+use crate::cap::{Cap, CapRangeDataReconstruction, CapType, CopyAliasable, LocalCap, Page};
 use crate::pow::{Pow, _Pow};
 use crate::{IfThenElse, _IfThenElse};
 
 /// The type returned by the architecture specific implementations of
 /// `determine_best_granule_fit`.
 pub(crate) struct GranuleInfo {
+    /// The seL4 type id for this granule.
+    pub(crate) type_id: usize,
     /// This granule's size in bits (radix in seL4 parlance).
-    size_bits: u8,
+    pub(crate) size_bits: u8,
     /// How many of them do I need to do this?
-    count: u16,
+    pub(crate) count: u16,
 }
 
 /// An abstract way of thinking about the leaves in paging structures
@@ -21,51 +24,96 @@ pub(crate) struct GranuleInfo {
 /// Section, &c.
 pub struct Granule<State: GranuleState> {
     /// The size of this granule in bits.
-    size_bits: u8,
+    pub(crate) size_bits: u8,
     /// The seL4 object id.
-    type_id: usize,
+    pub(crate) type_id: usize,
     /// Is this granule mapped or unmapped and the state that goes
     /// along with that.
-    state: State,
+    pub(crate) state: State,
 }
 
-impl<Role: CNodeRole, State: GranuleState> Cap<Granule<State>, Role> {
+impl<State: GranuleState> Granule<State> {
     pub(crate) fn size_bytes(&self) -> usize {
         1 << self.size_bits
     }
 }
 
+impl<State: GranuleState> CapType for Granule<State> {}
+
+impl<State: GranuleState> CapRangeDataReconstruction for Granule<State> {
+    fn reconstruct(index: usize, seed_cap_data: &Self) -> Self {
+        Granule {
+            size_bits: seed_cap_data.size_bits,
+            type_id: seed_cap_data.type_id,
+            state: seed_cap_data
+                .state
+                .offset_by(index * seed_cap_data.size_bytes())
+                .unwrap(),
+        }
+    }
+}
+
+impl<'a, State: GranuleState> From<&'a Granule<State>> for Granule<granule_state::Unmapped> {
+    fn from(val: &'a Granule<State>) -> Self {
+        Granule {
+            type_id: val.type_id,
+            size_bits: val.size_bits,
+            state: granule_state::Unmapped {},
+        }
+    }
+}
+
+impl<State: GranuleState> From<LocalCap<Page<State>>> for LocalCap<Granule<State>> {
+    fn from(page: LocalCap<Page<State>>) -> Self {
+        Cap {
+            cptr: page.cptr,
+            cap_data: Granule {
+                type_id: Page::<State>::TYPE_ID,
+                size_bits: PageBits::U8,
+                state: page.cap_data.state,
+            },
+            _role: PhantomData,
+        }
+    }
+}
+
+impl<State: GranuleState> CopyAliasable for Granule<State> {
+    type CopyOutput = Granule<granule_state::Unmapped>;
+}
+
 pub trait GranuleState:
     private::SealedGranuleState + Copy + Clone + core::fmt::Debug + Sized + PartialEq
 {
+    fn offset_by(&self, bytes: usize) -> Option<Self>;
 }
 
 pub mod granule_state {
-    use crate::cap::asid_pool::InternalASID;
+    use crate::cap::InternalASID;
 
     #[derive(Clone, Copy, Debug, PartialEq)]
     pub struct Mapped {
         pub(crate) vaddr: usize,
         pub(crate) asid: InternalASID,
     }
-    impl super::GranuleState for Mapped {}
+    impl super::GranuleState for Mapped {
+        fn offset_by(&self, bytes: usize) -> Option<Self> {
+            if let Some(b) = self.vaddr.checked_add(bytes) {
+                Some(Mapped {
+                    vaddr: b,
+                    asid: self.asid,
+                })
+            } else {
+                None
+            }
+        }
+    }
 
     #[derive(Clone, Copy, Debug, PartialEq)]
     pub struct Unmapped;
-    impl super::GranuleState for Unmapped {}
-}
-
-impl<State: GranuleState> CapType for Granule<State> {}
-
-impl DirectRetype for LocalCap<Granule<granule_state::Unmapped>> {
-    // `SizeBits` is unused for a Granule; it has a custom
-    // implementation of `size_bits`.
-    type SizeBits = U0;
-
-    // Same for `sel4_type_id`. It is not used in Granule's case,
-    // granule implements `type_id`.
-    fn sel4_type_id() -> usize {
-        usize::MAX
+    impl super::GranuleState for Unmapped {
+        fn offset_by(&self, _bytes: usize) -> Option<Self> {
+            Some(Unmapped)
+        }
     }
 }
 
@@ -75,7 +123,7 @@ mod private {
     impl SealedGranuleState for super::granule_state::Mapped {}
 }
 
-trait IToUUnsafe: Integer {
+pub(crate) trait IToUUnsafe: Integer {
     type Uint: Unsigned;
 }
 
@@ -138,37 +186,50 @@ where
     //       return U - G3
     //     else
     //       return U - G4
-    <U as IsGreaterOrEqual<G1>>::Output: _IfThenElse<
-        <<PInt<U> as Sub<PInt<G1>>>::Output as IToUUnsafe>::Uint,
-        IfThenElse<
-            <U as IsGreaterOrEqual<G2>>::Output,
-            <<PInt<U> as Sub<PInt<G2>>>::Output as IToUUnsafe>::Uint,
-            IfThenElse<
-                <U as IsGreaterOrEqual<G3>>::Output,
-                <<PInt<U> as Sub<PInt<G3>>>::Output as IToUUnsafe>::Uint,
-                <<PInt<U> as Sub<PInt<G4>>>::Output as IToUUnsafe>::Uint,
-            >,
-        >,
-    >,
+    <U as IsGreaterOrEqual<G1>>::Output:
+        _IfThenElse<<<PInt<U> as Sub<PInt<G1>>>::Output as IToUUnsafe>::Uint, GranuleSubCond2<U>>,
 
-    <U as IsGreaterOrEqual<G2>>::Output: _IfThenElse<
-        <<PInt<U> as Sub<PInt<G2>>>::Output as IToUUnsafe>::Uint,
-        IfThenElse<
-            <U as IsGreaterOrEqual<G3>>::Output,
-            <<PInt<U> as Sub<PInt<G3>>>::Output as IToUUnsafe>::Uint,
-            <<PInt<U> as Sub<PInt<G4>>>::Output as IToUUnsafe>::Uint,
-        >,
-    >,
+    <U as IsGreaterOrEqual<G2>>::Output:
+        _IfThenElse<<<PInt<U> as Sub<PInt<G2>>>::Output as IToUUnsafe>::Uint, GranuleSubCond1<U>>,
 
     <U as IsGreaterOrEqual<G3>>::Output: _IfThenElse<
         <<PInt<U> as Sub<PInt<G3>>>::Output as IToUUnsafe>::Uint,
         <<PInt<U> as Sub<PInt<G4>>>::Output as IToUUnsafe>::Uint,
     >,
 
-    // Now that we've done our subtraction, we need to use the result
-    // as an exponent to compute our slot count. Alotogether we're
-    // computing
-    // 2^x / 2^y == 2^(x-y).
+    GranuleCondExpr<U>: _Pow,
+
+    GranuleCountExpr<U>: Unsigned,
+{
+    type Count = GranuleCountExpr<U>;
+}
+
+pub(crate) type GranuleSubCond1<U> = IfThenElse<
+    <U as IsGreaterOrEqual<G3>>::Output,
+    <<PInt<U> as Sub<PInt<G3>>>::Output as IToUUnsafe>::Uint,
+    <<PInt<U> as Sub<PInt<G4>>>::Output as IToUUnsafe>::Uint,
+>;
+
+pub(crate) type GranuleSubCond2<U> = IfThenElse<
+    <U as IsGreaterOrEqual<G2>>::Output,
+    <<PInt<U> as Sub<PInt<G2>>>::Output as IToUUnsafe>::Uint,
+    GranuleSubCond1<U>,
+>;
+
+// Now that we've done our subtraction, we need to use the result
+// as an exponent to compute our slot count. Alotogether we're
+// computing
+// 2^x / 2^y == 2^(x-y).
+pub(crate) type GranuleCondExpr<U> = IfThenElse<
+    <U as IsGreaterOrEqual<G1>>::Output,
+    <<PInt<U> as Sub<PInt<G1>>>::Output as IToUUnsafe>::Uint,
+    GranuleSubCond2<U>,
+>;
+
+// This last one says the whole thing will ultimately give us an
+// Unsigned, which is what we need to parameterize
+// `CNodeSlots::alloc`.
+pub(crate) type GranuleCountExpr<U> = Pow<
     IfThenElse<
         <U as IsGreaterOrEqual<G1>>::Output,
         <<PInt<U> as Sub<PInt<G1>>>::Output as IToUUnsafe>::Uint,
@@ -181,40 +242,5 @@ where
                 <<PInt<U> as Sub<PInt<G4>>>::Output as IToUUnsafe>::Uint,
             >,
         >,
-    >: _Pow,
-
-    // This last one says the whole thing will ultimately give us an
-    // Unsigned, which is what we need to parameterize
-    // `CNodeSlots::alloc`.
-    Pow<
-        IfThenElse<
-            <U as IsGreaterOrEqual<G1>>::Output,
-            <<PInt<U> as Sub<PInt<G1>>>::Output as IToUUnsafe>::Uint,
-            IfThenElse<
-                <U as IsGreaterOrEqual<G2>>::Output,
-                <<PInt<U> as Sub<PInt<G2>>>::Output as IToUUnsafe>::Uint,
-                IfThenElse<
-                    <U as IsGreaterOrEqual<G3>>::Output,
-                    <<PInt<U> as Sub<PInt<G3>>>::Output as IToUUnsafe>::Uint,
-                    <<PInt<U> as Sub<PInt<G4>>>::Output as IToUUnsafe>::Uint,
-                >,
-            >,
-        >,
-    >: Unsigned,
-{
-    type Count = Pow<
-        IfThenElse<
-            <U as IsGreaterOrEqual<G1>>::Output,
-            <<PInt<U> as Sub<PInt<G1>>>::Output as IToUUnsafe>::Uint,
-            IfThenElse<
-                <U as IsGreaterOrEqual<G2>>::Output,
-                <<PInt<U> as Sub<PInt<G2>>>::Output as IToUUnsafe>::Uint,
-                IfThenElse<
-                    <U as IsGreaterOrEqual<G3>>::Output,
-                    <<PInt<U> as Sub<PInt<G3>>>::Output as IToUUnsafe>::Uint,
-                    <<PInt<U> as Sub<PInt<G4>>>::Output as IToUUnsafe>::Uint,
-                >,
-            >,
-        >,
-    >;
-}
+    >,
+>;

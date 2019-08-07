@@ -1,12 +1,11 @@
 use selfe_sys::_object_seL4_ARM_LargePageObject;
 
-use crate::arch::cap::UnmappablePage;
-use crate::cap::{CapType, DirectRetype, LocalCap, PhantomCap};
+use crate::cap::{CapType, DirectRetype, PhantomCap};
 
 pub struct LargePage {}
 
 impl LargePage {
-    pub const TYPE_ID: usize = _object_seL4_ARM_LargePageObject;
+    pub const TYPE_ID: usize = _object_seL4_ARM_LargePageObject as usize;
 }
 
 impl CapType for LargePage {}
@@ -23,5 +22,3 @@ impl PhantomCap for LargePage {
         LargePage {}
     }
 }
-
-impl UnmappablePage for LocalCap<LargePage> {}

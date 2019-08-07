@@ -7,16 +7,15 @@ use typenum::operator_aliases::{Diff, Prod, Sum};
 
 use typenum::*;
 
-use crate::arch::{CNodeSlotBits, PageBits};
+use crate::arch::{self, CNodeSlotBits, PageBits};
 use crate::cap::{
-    page_state, role, CNode, CNodeRole, CNodeSlot, CNodeSlots, CNodeSlotsError, Cap, CapRange,
-    CapType, ChildCNode, ChildCNodeSlots, Delible, DirectRetype, LocalCNode, LocalCNodeSlot,
-    LocalCNodeSlots, LocalCap, Movable, Page, PhantomCap, WCNodeSlots, WCNodeSlotsData,
-    WeakCapRange,
+    granule_state, role, CNode, CNodeRole, CNodeSlot, CNodeSlots, CNodeSlotsError, Cap, CapRange,
+    CapType, ChildCNode, ChildCNodeSlots, Delible, DirectRetype, Granule, LocalCNode,
+    LocalCNodeSlot, LocalCNodeSlots, LocalCap, Movable, Page, PhantomCap, WCNodeSlots,
+    WCNodeSlotsData, WeakCapRange,
 };
 use crate::error::{ErrorExt, KernelError, SeL4Error};
 use crate::pow::{Pow, _Pow};
-use crate::vspace::NumPages;
 
 // The seL4 kernel's maximum amount of retypes per system call is configurable
 // in the sel4.toml, particularly by the KernelRetypeFanOutLimit property.
@@ -63,6 +62,7 @@ impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
         }
         None
     }
+
     pub fn split(
         self,
         dest_slots: LocalCNodeSlots<U2>,
@@ -114,31 +114,32 @@ impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
         ))
     }
 
-    pub fn retype_pages<CRole: CNodeRole>(
+    pub fn retype_memory<CRole: CNodeRole>(
         self,
         slots: &mut Cap<WCNodeSlotsData<CRole>, role::Local>,
-    ) -> Result<WeakCapRange<Page<page_state::Unmapped>, CRole>, RetypeError> {
+    ) -> Result<WeakCapRange<Granule<granule_state::Unmapped>, CRole>, RetypeError> {
         if self.cap_data.size_bits < PageBits::U8 {
             return Err(RetypeError::NotBigEnough);
         }
-        let num_pages = 1 << usize::from(self.cap_data.size_bits - PageBits::U8);
-        if num_pages > KernelRetypeFanOutLimit::USIZE {
+        let gran_info = arch::determine_best_granule_fit(self.cap_data.size_bits);
+        if gran_info.count > KernelRetypeFanOutLimit::U16 {
+            // it probably isn't
             return Err(RetypeError::KernelRetypeFanOutLimit);
         }
         // TODO - REVIEW - Do we need more constraints on num_pages?
         let dest_slots = slots
-            .alloc(num_pages)
+            .alloc(gran_info.count as usize)
             .map_err(|e| RetypeError::CNodeSlotsError(e))?;
         unsafe {
             seL4_Untyped_Retype(
                 self.cptr,                  // _service
-                Page::sel4_type_id(),       // type
+                gran_info.type_id,          // type
                 0,                          // size_bits
                 dest_slots.cptr,            // root
                 0,                          // index
                 0,                          // depth
                 dest_slots.cap_data.offset, // offset
-                num_pages,                  // num_objects
+                gran_info.count as usize,   // num_objects
             )
             .as_result()
             .map_err(|e| SeL4Error::UntypedRetype(e))?;
@@ -146,12 +147,12 @@ impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
 
         Ok(WeakCapRange::new(
             dest_slots.cap_data.offset,
-            Page {
-                state: page_state::Unmapped,
-                // TODO - kind piping
-                //memory_kind: self.cap_data.kind,
+            Granule {
+                state: granule_state::Unmapped,
+                type_id: gran_info.type_id,
+                size_bits: gran_info.size_bits,
             },
-            num_pages,
+            gran_info.count as usize,
         ))
     }
 }
@@ -361,17 +362,6 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
         Ok(r)
     }
 
-    /// weaken erases the type-level state-tracking (size).
-    pub fn weaken(self) -> LocalCap<WUntyped<Kind>> {
-        Cap {
-            cptr: self.cptr,
-            cap_data: WUntyped {
-                size_bits: BitSize::U8,
-                kind: self.cap_data.kind,
-            },
-            _role: PhantomData,
-        }
-    }
     pub fn split(
         self,
         dest_slots: LocalCNodeSlots<U2>,
@@ -496,43 +486,16 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
         ))
     }
 
-    pub fn retype_pages<CRole: CNodeRole>(
-        self,
-        dest_slots: CNodeSlots<NumPages<BitSize>, CRole>,
-    ) -> Result<CapRange<Page<page_state::Unmapped>, role::Local, NumPages<BitSize>>, SeL4Error>
-    where
-        BitSize: IsGreaterOrEqual<PageBits>,
-        BitSize: Sub<PageBits>,
-        <BitSize as Sub<PageBits>>::Output: Unsigned,
-        <BitSize as Sub<PageBits>>::Output: _Pow,
-        Pow<<BitSize as Sub<PageBits>>::Output>: Unsigned,
-        Pow<<BitSize as Sub<PageBits>>::Output>:
-            IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
-    {
-        let (dest_cptr, dest_offset, _) = dest_slots.elim();
-        unsafe {
-            seL4_Untyped_Retype(
-                self.cptr,                               // _service
-                Page::sel4_type_id(),                    // type
-                0,                                       // size_bits
-                dest_cptr,                               // root
-                0,                                       // index
-                0,                                       // depth
-                dest_offset,                             // offset
-                1 << (BitSize::USIZE - PageBits::USIZE), // num_objects
-            )
-            .as_result()
-            .map_err(|e| SeL4Error::UntypedRetype(e))?;
-        }
-
-        Ok(CapRange::new(
-            dest_offset,
-            Page {
-                state: page_state::Unmapped,
-                // TODO - implement kind piping
-                //memory_kind: self.cap_data.kind,
+    /// weaken erases the type-level state-tracking (size).
+    pub fn weaken(self) -> LocalCap<WUntyped<Kind>> {
+        Cap {
+            cptr: self.cptr,
+            cap_data: WUntyped {
+                size_bits: BitSize::U8,
+                kind: self.cap_data.kind,
             },
-        ))
+            _role: PhantomData,
+        }
     }
 }
 
@@ -754,7 +717,7 @@ impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
     pub fn retype_device_page(
         self,
         dest_slot: LocalCNodeSlot,
-    ) -> Result<LocalCap<Page<page_state::Unmapped>>, SeL4Error> {
+    ) -> Result<LocalCap<Page<granule_state::Unmapped>>, SeL4Error> {
         // Note that we special case introduce a device page creation function
         // because the most likely alternative would be complicating the DirectRetype
         // trait to allow some sort of associated-type matching between the allowable
@@ -780,7 +743,7 @@ impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
         Ok(Cap {
             cptr: dest_offset,
             cap_data: Page {
-                state: page_state::Unmapped,
+                state: granule_state::Unmapped,
                 // TODO - reinstate kind piping
                 //memory_kind: self.cap_data.kind,
             },

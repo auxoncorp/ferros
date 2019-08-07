@@ -1,57 +1,24 @@
 use selfe_sys::*;
 
-use crate::cap::{page_state, DirectRetype, LocalCap, Page, PhantomCap};
+use crate::cap::{granule_state, DirectRetype, GranuleState, LocalCap, Page, PhantomCap};
 use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::CapRights;
 
-impl LocalCap<Page<page_state::Unmapped>> {
-    pub(crate) unsafe fn unchecked_page_map(
-        &self,
-        addr: usize,
-        root: &mut LocalCap<crate::arch::PagingRoot>,
-        rights: CapRights,
-        vm_attributes: seL4_ARM_VMAttributes,
-    ) -> Result<(), SeL4Error> {
-        seL4_ARM_Page_Map(
-            self.cptr,
-            root.cptr,
-            addr,
-            seL4_CapRights_t::from(rights),
-            vm_attributes,
-        )
-        .as_result()
-        .map_err(|e| SeL4Error::PageMap(e))
-    }
+impl<State: GranuleState> Page<State> {
+    pub(crate) const TYPE_ID: usize = _object_seL4_ARM_SmallPageObject as usize;
 }
 
-impl LocalCap<Page<page_state::Mapped>> {
-    /// Keeping this non-public in order to restrict mapping operations to owners
-    /// of a VSpace-related object
-    pub(crate) fn unmap(self) -> Result<LocalCap<Page<page_state::Unmapped>>, SeL4Error> {
-        match unsafe { seL4_ARM_Page_Unmap(self.cptr) }.as_result() {
-            Ok(_) => Ok(crate::cap::Cap {
-                cptr: self.cptr,
-                cap_data: Page {
-                    state: page_state::Unmapped {},
-                },
-                _role: core::marker::PhantomData,
-            }),
-            Err(e) => Err(SeL4Error::PageUnmap(e)),
-        }
-    }
-}
-
-impl DirectRetype for Page<page_state::Unmapped> {
+impl DirectRetype for Page<granule_state::Unmapped> {
     type SizeBits = super::super::PageBits;
     fn sel4_type_id() -> usize {
-        _object_seL4_ARM_SmallPageObject as usize
+        Self::TYPE_ID
     }
 }
 
-impl PhantomCap for Page<page_state::Unmapped> {
+impl PhantomCap for Page<granule_state::Unmapped> {
     fn phantom_instance() -> Self {
         Page {
-            state: page_state::Unmapped {},
+            state: granule_state::Unmapped {},
         }
     }
 }

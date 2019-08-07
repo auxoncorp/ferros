@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 
 use typenum::*;
 
-use crate::cap::{page_state, Page, PageTable, PhantomCap};
+use crate::cap::{granule_state, GranuleInfo, Page, PageTable};
 use crate::vspace::{PagingRec, PagingTop};
 
 pub mod cap;
@@ -52,7 +52,7 @@ pub type LargePageBits = U21;
 pub type HugePageBits = U30;
 
 pub type AddressSpace = PagingRec<
-    Page<page_state::Unmapped>,
+    Page<granule_state::Unmapped>,
     PageTable,
     PagingRec<
         PageTable,
@@ -68,13 +68,13 @@ pub type PagingRootLowerLevel = cap::PageUpperDirectory;
 impl AddressSpace {
     pub fn new() -> Self {
         PagingRec {
-            layer: PageTable::phantom_instance(),
+            layer: PageTable {},
             next: PagingRec {
-                layer: cap::PageDirectory::phantom_instance(),
+                layer: cap::PageDirectory {},
                 next: PagingRec {
-                    layer: cap::PageUpperDirectory::phantom_instance(),
+                    layer: cap::PageUpperDirectory {},
                     next: PagingTop {
-                        layer: cap::PageGlobalDirectory::phantom_instance(),
+                        layer: cap::PageGlobalDirectory {},
                         _item: PhantomData,
                     },
                     _item: PhantomData,
@@ -158,7 +158,7 @@ pub(crate) type G2 = LargePageBits;
 pub(crate) type G3 = PageBits;
 /// G4 is the smallest granule size. It is not used by
 /// aarch64.
-pub(crate) type G4 = super:UnusedGranule;
+pub(crate) type G4 = super::UnusedGranule;
 
 /// Acquire the granule type, size, and how many are needed for
 /// constituting a memory region of size `region_size_bits Acquire the
@@ -169,17 +169,17 @@ pub(crate) fn determine_best_granule_fit(region_size_bits: u8) -> GranuleInfo {
         _ if region_size_bits >= HugePageBits::U8 => GranuleInfo {
             type_id: cap::HugePage::TYPE_ID,
             size_bits: HugePageBits::U8,
-            count: (1 << region_size_bits) / HugePageBits::U8,
+            count: (1 << region_size_bits) / HugePageBits::U16,
         },
         _ if region_size_bits >= LargePageBits::U8 => GranuleInfo {
             type_id: cap::LargePage::TYPE_ID,
             size_bits: LargePageBits::U8,
-            count: (1 << region_size_bits) / LargePageBits::U8,
+            count: (1 << region_size_bits) / LargePageBits::U16,
         },
         _ if region_size_bits >= PageBits::U8 => GranuleInfo {
-            type_id: crate::cap::Page::TYPE_ID,
+            type_id: crate::cap::Page::<granule_state::Unmapped>::TYPE_ID,
             size_bits: PageBits::U8,
-            count: (1 << region_size_bits) / PageBits::U8,
+            count: (1 << region_size_bits) / PageBits::U16,
         },
         _ => unreachable!(),
     }

@@ -7,7 +7,7 @@ use typenum::*;
 
 use crate::arch::*;
 use crate::cap::{
-    page_state, role, ASIDControl, AssignedASID, CNode, CNodeRole, CNodeSlots, Cap, IRQControl,
+    granule_state, role, ASIDControl, AssignedASID, CNode, CNodeRole, CNodeSlots, Cap, IRQControl,
     InternalASID, LocalCNode, LocalCNodeSlots, LocalCap, MaxIRQCount, Page, ThreadControlBlock,
     Untyped,
 };
@@ -145,7 +145,7 @@ impl UserImage<role::Local> {
     // TODO this doesn't enforce the aliasing constraints we want at the type
     // level. This can be modeled as an array (or other sized thing) once we
     // know how big the user image is.
-    pub fn pages_iter(&self) -> impl Iterator<Item = LocalCap<Page<page_state::Mapped>>> {
+    pub fn pages_iter(&self) -> impl Iterator<Item = LocalCap<Page<granule_state::Mapped>>> {
         // Iterate over the entire address space's page addresses, starting at
         // ProgramStart. This is truncated to the number of actual pages in the
         // user image by zipping it with the range of frame cptrs below.
@@ -156,7 +156,7 @@ impl UserImage<role::Local> {
             .map(|(cptr, vaddr)| Cap {
                 cptr,
                 cap_data: Page {
-                    state: page_state::Mapped {
+                    state: granule_state::Mapped {
                         vaddr,
                         // N.B. This ASID is only valid for the root task (since we make up
                         // an internally consistent scheme for our runtime-tracked ASID values).

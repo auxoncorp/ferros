@@ -13,6 +13,7 @@ mod badge;
 mod cnode;
 mod endpoint;
 mod fault_reply_endpoint;
+mod granule;
 mod irq_control;
 pub mod irq_handler;
 mod notification;
@@ -28,6 +29,7 @@ pub use badge::*;
 pub use cnode::*;
 pub use endpoint::*;
 pub use fault_reply_endpoint::*;
+pub use granule::*;
 pub use irq_control::*;
 pub use irq_handler::*;
 pub use notification::*;
@@ -513,7 +515,7 @@ mod private {
         IRQ: IsLess<MaxIRQCount, Output = True>
     {
     }
-    impl<State: PageState> SealedCapType for Page<State> {}
+    impl<State: GranuleState> SealedCapType for Page<State> {}
 
     /*
     Cross Arch things:
