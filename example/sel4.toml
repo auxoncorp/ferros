@@ -1,0 +1,110 @@
+### Sabre (ARMv7 imx6)
+[build.sabre]
+cross_compiler_prefix = "arm-linux-gnueabihf-"
+
+[build.sabre.debug]
+make_root_task = "./cargo-build.sh --target=armv7-unknown-linux-gnueabihf -vv"
+root_task_image = "target/armv7-unknown-linux-gnueabihf/debug/root-task"
+
+[build.sabre.release]
+make_root_task = "./cargo-build.sh --target=armv7-unknown-linux-gnueabihf --release"
+root_task_image = "target/armv7-unknown-linux-gnueabihf/release/root-task"
+
+### virt (ARMv8)
+[build.virt]
+cross_compiler_prefix = "aarch64-linux-gnu-"
+
+[build.virt.debug]
+make_root_task = "./cargo-build.sh --target=aarch64-unknown-linux-gnu -vv"
+root_task_image = "target/aarch64-unknown-linux-gnu/debug/root-task"
+
+[build.virt.release]
+make_root_task = "./cargo-build.sh --target=aarch64-unknown-linux-gnu --release -vv"
+root_task_image = "target/aarch64-unknown-linux-gnu/release/root-task"
+
+[sel4]
+kernel = { git = "ssh://git@github.com/auxoncorp/seL4.git", branch = "add-virt-platform" }
+tools = { git = "ssh://git@github.com/auxoncorp/seL4_tools.git", branch = "add-virt-platform" }
+util_libs  = { git = "ssh://git@github.com/auxoncorp/util_libs.git", branch = "add-virt-platform" }
+
+### arch
+
+[sel4.config.arm]
+KernelArch = 'arm'
+KernelIPCBufferLocation = 'threadID_register'
+
+### sel4_arch
+
+[sel4.config.aarch32]
+KernelSel4Arch = 'aarch32'
+KernelArmSel4Arch = 'aarch32'
+
+[sel4.config.aarch64]
+KernelSel4Arch = 'aarch64'
+KernelArmSel4Arch = 'aarch64'
+
+### platform
+
+[sel4.config.sabre]
+KernelARMPlatform = 'imx6'
+KernelHaveFPU = true
+
+[sel4.config.virt]
+KernelARMPlatform = 'virt'
+KernelHaveFPU = true
+ElfloaderImage = 'elf'
+KernelArmHypervisorSupport = true
+
+### Build mode
+
+[sel4.config.debug]
+KernelPrinting = true
+KernelDebugBuild = true
+
+[sel4.config.release]
+KernelPrinting = true
+KernelDebugBuild = false
+KernelOptimisation = '-O2'
+
+[sel4.config]
+KernelColourPrinting = true
+KernelUserStackTraceLength = 16
+KernelVerificationBuild = false
+KernelBenchmarks = 'none'
+KernelFastpath = true
+LibSel4FunctionAttributes = 'public'
+KernelNumDomains = 1
+HardwareDebugAPI = false
+KernelFWholeProgram = false
+KernelResetChunkBits = 8
+KernelNumPriorities = 256
+KernelStackBits = 12
+KernelTimeSlice = 5
+KernelTimerTickMS = 2
+KernelMaxNumNodes = 1
+KernelRetypeFanOutLimit = 16384
+KernelRootCNodeSizeBits = 19
+KernelMaxNumBootinfoUntypedCaps = 230
+KernelSupportPCID = false
+KernelDebugDisablePrefetchers = false
+KernelExportPMCUser = false
+KernelFPU = 'FXSAVE'
+KernelFPUMaxRestoresSinceSwitch = 64
+KernelFSGSBase = 'msr'
+KernelHugePage = true
+KernelIOMMU = false
+KernelIRQController = 'IOAPIC'
+KernelIRQReporting = true
+KernelLAPICMode = 'XAPIC'
+KernelMaxNumIOAPIC = 1
+KernelMaxNumWorkUnitsPerPreemption = 100
+KernelMultiboot1Header = true
+KernelMultiboot2Header = true
+KernelMultibootGFXMode = 'none'
+KernelSkimWindow = true
+KernelSyscall = 'syscall'
+KernelXSaveSize = 576
+LinkPageSize = 4096
+
+[metadata]
+root_task_stack_bytes = 2097152

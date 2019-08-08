@@ -15,8 +15,10 @@ extern crate typenum;
 mod call_and_response_loop;
 mod child_process_cap_management;
 mod child_process_runs;
+mod child_thread_runs;
 mod dont_tread_on_me;
 mod double_door_backpressure;
+mod elf_process_runs;
 mod fault_or_message_handler;
 mod fault_pair;
 mod grandkid_process_runs;
@@ -33,13 +35,26 @@ mod stack_setup;
 mod uart;
 mod wutbuddy;
 
+mod resources {
+    include! {concat!(env!("OUT_DIR"), "/resources.rs")}
+}
+
+extern "C" {
+    static _selfe_arc_data_start: u8;
+    static _selfe_arc_data_end: usize;
+}
+
 use ferros::alloc::micro_alloc::Error as AllocError;
 use ferros::alloc::ut_buddy::UTBuddyError;
 use ferros::cap::IRQError;
 use ferros::cap::RetypeError;
 use ferros::error::SeL4Error;
-use ferros::userland::{FaultManagementError, IPCError, MultiConsumerError, ProcessSetupError};
+use ferros::userland::{
+    FaultManagementError, IPCError, MultiConsumerError, ProcessSetupError, ThreadSetupError,
+};
 use ferros::vspace::VSpaceError;
+
+#[cfg(not(test_case = "uart"))]
 use ferros_test::ferros_test_main;
 
 #[cfg(not(test_case = "uart"))]
@@ -47,8 +62,10 @@ ferros_test_main!(&[
     &call_and_response_loop::call_and_response_loop,
     &child_process_cap_management::child_process_cap_management,
     &child_process_runs::child_process_runs,
+    &child_thread_runs::child_thread_runs,
     &dont_tread_on_me::dont_tread_on_me,
     &double_door_backpressure::double_door_backpressure,
+    &elf_process_runs::elf_process_runs,
     &fault_or_message_handler::fault_or_message_handler,
     &fault_pair::fault_pair,
     &grandkid_process_runs::grandkid_process_runs,
@@ -73,12 +90,6 @@ fn main() {
 }
 
 #[cfg(test_case = "uart")]
-#[panic_handler]
-fn panic(info: &core::panic::PanicInfo) -> ! {
-    sel4_start::debug_panic_handler(&info)
-}
-
-#[cfg(test_case = "uart")]
 pub fn run(raw_boot_info: &'static selfe_sys::seL4_BootInfo) {
     uart::run(raw_boot_info).expect("run");
     unsafe {
@@ -98,6 +109,7 @@ pub enum TopLevelError {
     IRQError(IRQError),
     FaultManagementError(FaultManagementError),
     ProcessSetupError(ProcessSetupError),
+    ThreadSetupError(ThreadSetupError),
     UTBuddyError(UTBuddyError),
     RetypeError(RetypeError),
     TestAssertionFailure(&'static str),
@@ -148,6 +160,12 @@ impl From<FaultManagementError> for TopLevelError {
 impl From<ProcessSetupError> for TopLevelError {
     fn from(e: ProcessSetupError) -> Self {
         TopLevelError::ProcessSetupError(e)
+    }
+}
+
+impl From<ThreadSetupError> for TopLevelError {
+    fn from(e: ThreadSetupError) -> Self {
+        TopLevelError::ThreadSetupError(e)
     }
 }
 

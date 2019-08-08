@@ -62,3 +62,6 @@ fn userimage_parameter(image: &UserImage<ferros::cap::role::Local>) {}
 #[ferros_test]
 fn vspacescratch_parameter(scratch: &mut ScratchRegion) {}
 
+#[ferros_test]
+fn vspace_paging_root_parameter(vspace_paging_root: &LocalCap<ferros::arch::PagingRoot>) {}
+

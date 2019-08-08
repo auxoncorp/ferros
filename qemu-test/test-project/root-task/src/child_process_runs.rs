@@ -1,6 +1,8 @@
-use typenum::*;
+use super::TopLevelError;
 
 use ferros::alloc::{smart_alloc, ut_buddy};
+use typenum::*;
+
 use ferros::bootstrap::UserImage;
 use ferros::cap::*;
 use ferros::userland::{
@@ -8,12 +10,8 @@ use ferros::userland::{
 };
 use ferros::vspace::*;
 
-use super::TopLevelError;
-
-/// Test that we can pass process parameters with content larger than that will
-/// fit in the TCB registers
 #[ferros_test::ferros_test]
-pub fn over_register_size_params<'a, 'b, 'c>(
+pub fn child_process_runs(
     local_slots: LocalCNodeSlots<U32768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U1>>,
@@ -25,11 +23,23 @@ pub fn over_register_size_params<'a, 'b, 'c>(
     let uts = ut_buddy(local_ut);
 
     smart_alloc!(|slots: local_slots, ut: uts| {
+        let (child_cnode, child_slots) = retype_cnode::<U12>(ut, slots)?;
+        let (child_fault_source_slot, _child_slots) = child_slots.alloc();
+        let (fault_source, outcome_sender, handler) =
+            fault_or_message_channel(&root_cnode, ut, slots, child_fault_source_slot, slots)?;
+        let params = ProcParams {
+            value: 42,
+            outcome_sender,
+        };
+
         let (child_asid, _asid_pool) = asid_pool.alloc();
+
+        let child_root = retype(ut, slots)?;
         let child_vspace_slots: LocalCNodeSlots<U1024> = slots;
         let child_vspace_ut: LocalCap<Untyped<U14>> = ut;
+
         let mut child_vspace = VSpace::new(
-            retype(ut, slots)?,
+            child_root,
             child_asid,
             child_vspace_slots.weaken(),
             child_vspace_ut.weaken(),
@@ -38,30 +48,18 @@ pub fn over_register_size_params<'a, 'b, 'c>(
             root_cnode,
         )?;
 
-        let (child_cnode, child_slots) = retype_cnode::<U12>(ut, slots)?;
-        let (child_fault_source_slot, _child_slots) = child_slots.alloc();
-        let (fault_source, outcome_sender, handler) =
-            fault_or_message_channel(&root_cnode, ut, slots, child_fault_source_slot, slots)?;
-
-        let params = {
-            let nums = [427; 10];
-            OverRegisterSizeParams {
-                nums,
-                outcome_sender,
-            }
-        };
         let child_process = StandardProcess::new(
             &mut child_vspace,
             child_cnode,
             local_mapped_region,
             root_cnode,
-            proc_main,
+            proc_main as extern "C" fn(_) -> (),
             params,
             ut,
             ut,
             slots,
             tpa,
-            None,
+            None, // fault
         )?;
     });
 
@@ -75,29 +73,18 @@ pub fn over_register_size_params<'a, 'b, 'c>(
     }
 }
 
-pub struct ProcParams {
+pub struct ProcParams<Role: CNodeRole> {
     pub value: usize,
-}
-
-impl RetypeForSetup for ProcParams {
-    type Output = ProcParams;
-}
-
-pub struct OverRegisterSizeParams<Role: CNodeRole> {
-    pub nums: [usize; 10],
     pub outcome_sender: Sender<bool, Role>,
 }
 
-impl RetypeForSetup for OverRegisterSizeParams<role::Local> {
-    type Output = OverRegisterSizeParams<role::Child>;
+impl RetypeForSetup for ProcParams<role::Local> {
+    type Output = ProcParams<role::Child>;
 }
 
-pub extern "C" fn proc_main(params: OverRegisterSizeParams<role::Local>) {
-    let OverRegisterSizeParams {
-        nums,
-        outcome_sender,
-    } = params;
-    outcome_sender
-        .blocking_send(&(nums[7] == 427))
-        .expect("Failure sending test assertion outcome");
+pub extern "C" fn proc_main(params: ProcParams<role::Local>) {
+    params
+        .outcome_sender
+        .blocking_send(&(params.value == 42))
+        .expect("Found value does not match expectations")
 }

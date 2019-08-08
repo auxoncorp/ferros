@@ -140,4 +140,8 @@ pub mod vm_attributes {
         selfe_sys::seL4_ARM_VMAttributes_seL4_ARM_ParityEnabled;
 
     pub const EXECUTE_NEVER: VMAttributes = selfe_sys::seL4_ARM_VMAttributes_seL4_ARM_ExecuteNever;
+
+    pub const PROGRAM_CODE: VMAttributes = DEFAULT;
+
+    pub const PROGRAM_DATA: VMAttributes = PAGE_CACHEABLE | PARITY_ENABLED | EXECUTE_NEVER;
 }

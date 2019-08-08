@@ -64,6 +64,7 @@ pub fn execute_tests<'t, R: types::TestReporter>(
         mapped_memory_region,
         cnode,
         thread_authority,
+        vspace_paging_root,
         user_image,
         irq_control,
     } = resources;
@@ -90,6 +91,7 @@ pub fn execute_tests<'t, R: types::TestReporter>(
                     inner_mapped_memory_region,
                     cnode,
                     thread_authority,
+                    vspace_paging_root,
                     user_image,
                     inner_irq_control,
                 );

@@ -24,6 +24,9 @@ pub mod alloc {
         }
     }
 }
+pub mod arch {
+    pub struct PagingRoot;
+}
 pub mod bootstrap {
     use core::marker::PhantomData;
     pub struct UserImage<T>(pub PhantomData<T>);
