@@ -252,7 +252,7 @@ fn parse_localcap_param_kind(
                 span: segment.span() })
             }
         }
-        "PagingRoot" | "PageGlobalDirectory" => {
+        "PagingRoot" => {
             if arg_kind == ArgKind::Ref {
                 Ok(ParamKind::PagingRoot)
             } else {
