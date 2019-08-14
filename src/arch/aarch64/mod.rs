@@ -91,10 +91,6 @@ pub type ARMVCPUBits = U12;
 pub type BasePageDirFreeSlots = op!((U1 << PageDirectoryBits) - (U1 << U9));
 pub type BasePageTableFreeSlots = op!(U1 << PageTableIndexBits);
 
-// TODO remove these when elf stuff lands.
-// this is a magic numbers we got from inspecting the binary.
-/// 0x00010000
-pub type ProgramStart = op!(U4 << U20);
 pub type CodePageTableBits = U5;
 pub type CodePageTableCount = op!(U1 << CodePageTableBits); // 32 page tables, but larger == 64 mb
 pub type CodePageCount = op!(CodePageTableCount * BasePageTableFreeSlots); // 2^14

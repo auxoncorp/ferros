@@ -57,6 +57,7 @@ pub fn root_cnode(
 pub struct UserImage<Role: CNodeRole> {
     frames_start_cptr: usize,
     frames_count: usize,
+    program_start: usize,
     page_table_count: usize,
     _role: PhantomData<Role>,
 }
@@ -73,6 +74,10 @@ pub struct BootInfo<ASIDControlFreePools: Unsigned> {
 
     #[allow(dead_code)]
     neither_send_nor_sync: NeitherSendNorSync,
+}
+
+extern "C" {
+    static __executable_start: usize;
 }
 
 impl BootInfo<op!(ASIDPoolCount - U1)> {
@@ -102,6 +107,7 @@ impl BootInfo<op!(ASIDPoolCount - U1)> {
             frames_start_cptr: bootinfo.userImageFrames.start,
             frames_count: bootinfo.userImageFrames.end - bootinfo.userImageFrames.start,
             page_table_count: bootinfo.userImagePaging.end - bootinfo.userImagePaging.start,
+            program_start: unsafe { &__executable_start } as *const _ as usize,
             _role: PhantomData,
         };
 
@@ -149,7 +155,7 @@ impl UserImage<role::Local> {
         // Iterate over the entire address space's page addresses, starting at
         // ProgramStart. This is truncated to the number of actual pages in the
         // user image by zipping it with the range of frame cptrs below.
-        let vaddr_iter = (ProgramStart::USIZE..core::usize::MAX).step_by(1 << PageBits::USIZE);
+        let vaddr_iter = (self.program_start..core::usize::MAX).step_by(1 << PageBits::USIZE);
 
         (self.frames_start_cptr..(self.frames_start_cptr + self.frames_count))
             .zip(vaddr_iter)
@@ -170,7 +176,7 @@ impl UserImage<role::Local> {
     }
 
     pub fn pages_count(&self) -> usize {
-        let vaddr_count = (core::usize::MAX - ProgramStart::USIZE) / (1 << PageBits::USIZE);
+        let vaddr_count = (core::usize::MAX - self.program_start) / (1 << PageBits::USIZE);
         core::cmp::min(self.frames_count, vaddr_count)
     }
 
@@ -188,6 +194,7 @@ impl UserImage<role::Local> {
             frames_start_cptr,
             frames_count: self.frames_count,
             page_table_count: self.page_table_count,
+            program_start: self.program_start,
             _role: PhantomData,
         })
     }

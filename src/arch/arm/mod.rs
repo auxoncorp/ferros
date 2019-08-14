@@ -86,10 +86,6 @@ pub type LargePageBits = U16;
 pub type BasePageDirFreeSlots = op!((U1 << PageDirIndexBits) - (U1 << U9));
 pub type BasePageTableFreeSlots = op!(U1 << PageTableIndexBits);
 
-// TODO remove these when elf stuff lands.
-// this is a magic number we got from inspecting the binary.
-/// 0x00010000
-pub type ProgramStart = op!(U1 << U16);
 pub type CodePageTableBits = U6;
 pub type CodePageTableCount = op!(U1 << CodePageTableBits); // 64 page tables == 64 mb
 pub type CodePageCount = op!(CodePageTableCount * BasePageTableFreeSlots); // 2^14
