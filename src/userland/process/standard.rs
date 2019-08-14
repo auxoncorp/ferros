@@ -100,7 +100,7 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
 
         // Map the stack to the target address space
         let stack_top = parent_mapped_region.vaddr() + parent_mapped_region.size_bytes();
-        let (unmapped_stack_pages, _): (UnmappedMemoryRegion<StackBitSize, _>, _) =
+        let (unmapped_stack_pages, local_stack_pages): (UnmappedMemoryRegion<StackBitSize, _>, _) =
             parent_mapped_region.share(stack_slots, parent_cnode, CapRights::RW)?;
         let mapped_stack_pages = vspace.map_shared_region_and_consume(
             unmapped_stack_pages,
@@ -118,6 +118,8 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
                 mapped_stack_pages.vaddr() + mapped_stack_pages.size_bytes(),
             )
         };
+
+        local_stack_pages.flush()?;
 
         let stack_pointer =
             mapped_stack_pages.vaddr() + mapped_stack_pages.size_bytes() - param_size_on_stack;
