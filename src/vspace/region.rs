@@ -258,6 +258,10 @@ where
         self.caps.start_cap_data.state.asid
     }
 
+    pub fn rights(&self) -> CapRights {
+        self.caps.start_cap_data.state.rights
+    }
+
     pub fn as_slice(&self) -> &[u8] {
         unsafe { core::slice::from_raw_parts(self.vaddr() as *const u8, self.size_bytes()) }
     }
@@ -274,6 +278,7 @@ where
             page_state::Mapped {
                 vaddr: self.vaddr(),
                 asid: self.asid(),
+                rights: self.rights(),
             },
             self.kind,
         )
@@ -317,6 +322,7 @@ where
                         state: page_state::Mapped {
                             vaddr: self.vaddr(),
                             asid: self.asid(),
+                            rights: self.rights(),
                         },
                     },
                 ),
@@ -331,6 +337,7 @@ where
                         state: page_state::Mapped {
                             vaddr: new_region_vaddr,
                             asid: self.asid(),
+                            rights: self.rights(),
                         },
                     },
                 ),
@@ -389,6 +396,7 @@ where
                         state: page_state::Mapped {
                             vaddr: a.vaddr(),
                             asid: a.asid(),
+                            rights: a.rights(),
                         },
                     },
                 ),

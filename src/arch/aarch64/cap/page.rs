@@ -3,6 +3,7 @@ use selfe_sys::*;
 use crate::cap::{page_state, DirectRetype, LocalCap, Page, PageState, PhantomCap};
 use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::CapRights;
+use typenum::Unsigned;
 
 impl<T: PageState> LocalCap<Page<T>> {
     pub(crate) fn paddr(&self) -> Result<usize, SeL4Error> {
@@ -38,6 +39,18 @@ impl LocalCap<Page<page_state::Mapped>> {
     /// Keeping this non-public in order to restrict mapping operations to owners
     /// of a VSpace-related object
     pub(crate) fn unmap(self) -> Result<LocalCap<Page<page_state::Unmapped>>, SeL4Error> {
+        if self.rights().is_writable() {
+            unsafe {
+                seL4_ARM_Page_CleanInvalidate_Data(
+                    self.cptr,
+                    0x0000,
+                    super::super::PageBytes::USIZE,
+                )
+            }
+            .as_result()
+            .map_err(|e| SeL4Error::PageCleanInvalidateData(e))?;
+        }
+
         match unsafe { seL4_ARM_Page_Unmap(self.cptr) }.as_result() {
             Ok(_) => Ok(crate::cap::Cap {
                 cptr: self.cptr,

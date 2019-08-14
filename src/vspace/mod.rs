@@ -359,6 +359,7 @@ impl<State: VSpaceState> VSpace<State, role::Local> {
                     state: page_state::Mapped {
                         asid: self.asid,
                         vaddr: address,
+                        rights,
                     },
                 },
             })
@@ -874,6 +875,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                                     state: page_state::Mapped {
                                         vaddr: mapping_vaddr,
                                         asid: self.asid(),
+                                        rights,
                                     },
                                 },
                                 1,
@@ -906,6 +908,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
             page_state::Mapped {
                 vaddr,
                 asid: self.asid,
+                rights,
             },
             kind,
             size_bits,
@@ -1000,6 +1003,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
             page_state::Mapped {
                 vaddr,
                 asid: self.asid,
+                rights,
             },
             kind,
             size_bits,
@@ -1114,6 +1118,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
             page_state::Mapped {
                 vaddr: starting_address,
                 asid: self.asid(),
+                rights,
             },
             region.kind,
             region.size_bits(),
@@ -1313,12 +1318,13 @@ where
                 region.kind,
             );
         let mut next_addr = start_vaddr;
+        let rights = CapRights::RW;
         for page in unmapped_region_copy.caps.into_iter() {
             match self.vspace.layers.map_layer(
                 &page,
                 next_addr,
                 &mut self.vspace.root,
-                CapRights::RW,
+                rights,
                 arch::vm_attributes::DEFAULT,
                 // NB: In the case of a ReservedRegion, we've already
                 // mapped any of the intermediate layers so should
@@ -1342,6 +1348,7 @@ where
             page_state::Mapped {
                 vaddr: start_vaddr,
                 asid: self.reserved_region.asid,
+                rights,
             },
             region.kind,
         );

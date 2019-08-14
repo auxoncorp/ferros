@@ -1,6 +1,6 @@
 use selfe_sys::{seL4_CapRights_new, seL4_CapRights_t};
 
-#[derive(Clone, Copy)]
+#[derive(Eq, PartialEq, Debug, Clone, Copy)]
 pub enum CapRights {
     R,
     W,
@@ -20,6 +20,17 @@ impl From<CapRights> for seL4_CapRights_t {
             CapRights::RWG => unsafe { seL4_CapRights_new(0, 1, 1, 1) },
             CapRights::WG => unsafe { seL4_CapRights_new(0, 1, 0, 1) },
             CapRights::Y => unsafe { seL4_CapRights_new(1, 0, 0, 0) },
+        }
+    }
+}
+
+impl CapRights {
+    pub fn is_writable(&self) -> bool {
+        use CapRights::*;
+
+        match self {
+            W | RW | RWG | WG => true,
+            _ => false,
         }
     }
 }
