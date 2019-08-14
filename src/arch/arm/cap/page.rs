@@ -1,8 +1,18 @@
 use selfe_sys::*;
 
-use crate::cap::{page_state, DirectRetype, LocalCap, Page, PhantomCap};
+use crate::cap::{page_state, DirectRetype, LocalCap, Page, PageState, PhantomCap};
 use crate::error::{ErrorExt, SeL4Error};
 use crate::userland::CapRights;
+
+impl<T: PageState> LocalCap<Page<T>> {
+    pub(crate) fn paddr(&self) -> Result<usize, SeL4Error> {
+        let res = unsafe { seL4_ARM_Page_GetAddress(self.cptr) };
+        match (res.error as seL4_Error).as_result() {
+            Ok(_) => Ok(res.paddr),
+            Err(e) => Err(SeL4Error::PageGetAddress(e)),
+        }
+    }
+}
 
 impl LocalCap<Page<page_state::Unmapped>> {
     pub(crate) unsafe fn unchecked_page_map(

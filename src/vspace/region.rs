@@ -10,6 +10,7 @@ use crate::cap::{
     LocalCNodeSlots, LocalCap, MemoryKind, Page, PageState, RetypeError, Untyped, WCNodeSlots,
     WUntyped, WeakCapRange, WeakMemoryKind,
 };
+use crate::error::SeL4Error;
 
 use crate::pow::{Pow, _Pow};
 use crate::userland::CapRights;
@@ -137,6 +138,16 @@ where
             _role: PhantomData,
         }
     }
+
+    pub fn paddr(&self) -> Result<usize, SeL4Error> {
+        let page = Cap {
+            cptr: self.caps.start_cptr,
+            cap_data: self.caps.start_cap_data.clone(),
+            _role: PhantomData,
+        };
+        page.paddr()
+    }
+
     /// In the Ok case, returns a shared, unmapped copy of the memory
     /// region (backed by fresh page-caps) along with this self-same
     /// memory region, marked as shared.

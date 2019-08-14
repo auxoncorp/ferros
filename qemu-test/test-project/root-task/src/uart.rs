@@ -79,11 +79,14 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             InterruptConsumer::new(ut, &mut irq_control, &root_cnode, slots, slots_u)?;
 
         let unmapped_uart1_page1 = UnmappedMemoryRegion::new_device(uart1_page_1_untyped, slots)?;
+        assert!(unmapped_uart1_page1.paddr().unwrap() == UART1_PADDR);
+
         let uart1_page_1 = uart1_vspace.map_region(
             unmapped_uart1_page1,
             CapRights::RW,
             arch::vm_attributes::DEFAULT,
         )?;
+        assert!(uart1_page_1.paddr().unwrap() == UART1_PADDR);
 
         let uart1_params = uart::UartParams::<Uart1IrqLine, role::Child> {
             base_ptr: uart1_page_1.vaddr(),

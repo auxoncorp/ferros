@@ -7,6 +7,7 @@ pub enum SeL4Error {
     PageDirectoryMap(KernelError),
     ASIDControlMakePool(KernelError),
     ASIDPoolAssign(KernelError),
+    PageGetAddress(KernelError),
     PageMap(KernelError),
     PageUnmap(KernelError),
     CNodeCopy(KernelError),
