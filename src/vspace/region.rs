@@ -4,7 +4,7 @@ use core::ops::Sub;
 use typenum::*;
 
 use super::{KernelRetypeFanOutLimit, NumPages, VSpaceError};
-use crate::arch::PageBits;
+use crate::arch::{self, PageBits};
 use crate::cap::{
     memory_kind, page_state, role, CNode, CNodeRole, CNodeSlots, Cap, CapRange, InternalASID,
     LocalCNodeSlots, LocalCap, MemoryKind, Page, PageState, RetypeError, Untyped, WCNodeSlots,
@@ -258,12 +258,24 @@ where
         self.caps.start_cap_data.state.asid
     }
 
+    pub fn rights(&self) -> CapRights {
+        self.caps.start_cap_data.state.rights
+    }
+
     pub fn as_slice(&self) -> &[u8] {
         unsafe { core::slice::from_raw_parts(self.vaddr() as *const u8, self.size_bytes()) }
     }
 
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
         unsafe { core::slice::from_raw_parts_mut(self.vaddr() as *mut u8, self.size_bytes()) }
+    }
+
+    pub fn flush(&self) -> Result<(), SeL4Error> {
+        self.caps.for_each(|cap| {
+            unsafe { arch::flush_page(cap.cptr) }.unwrap();
+        });
+
+        Ok(())
     }
 
     #[cfg(feature = "test_support")]
@@ -274,6 +286,7 @@ where
             page_state::Mapped {
                 vaddr: self.vaddr(),
                 asid: self.asid(),
+                rights: self.rights(),
             },
             self.kind,
         )
@@ -317,6 +330,7 @@ where
                         state: page_state::Mapped {
                             vaddr: self.vaddr(),
                             asid: self.asid(),
+                            rights: self.rights(),
                         },
                     },
                 ),
@@ -331,6 +345,7 @@ where
                         state: page_state::Mapped {
                             vaddr: new_region_vaddr,
                             asid: self.asid(),
+                            rights: self.rights(),
                         },
                     },
                 ),
@@ -389,6 +404,7 @@ where
                         state: page_state::Mapped {
                             vaddr: a.vaddr(),
                             asid: a.asid(),
+                            rights: a.rights(),
                         },
                     },
                 ),

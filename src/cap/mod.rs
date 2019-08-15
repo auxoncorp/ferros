@@ -148,6 +148,19 @@ impl<CT: CapType, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Role, Slots> {
         }
     }
 
+    pub(crate) fn for_each<F: Fn(&Cap<CT, Role>) -> ()>(&self, f: F)
+    where
+        CT: CapRangeDataReconstruction,
+    {
+        for index in (0..self.len()) {
+            f(&Cap {
+                cptr: self.start_cptr + index,
+                _role: PhantomData,
+                cap_data: CT::reconstruct(index, &self.start_cap_data),
+            })
+        }
+    }
+
     pub(crate) fn into_iter(self) -> impl Iterator<Item = Cap<CT, Role>>
     where
         CT: CapRangeDataReconstruction,

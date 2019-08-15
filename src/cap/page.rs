@@ -2,6 +2,7 @@ use crate::arch::PageBytes;
 use crate::cap::{
     CNodeRole, Cap, CapRangeDataReconstruction, CapType, CopyAliasable, InternalASID, Movable,
 };
+use crate::userland::CapRights;
 use typenum::Unsigned;
 
 #[derive(Clone, Debug)]
@@ -22,6 +23,7 @@ pub mod page_state {
     pub struct Mapped {
         pub(crate) vaddr: usize,
         pub(crate) asid: InternalASID,
+        pub(crate) rights: CapRights,
     }
     impl super::PageState for Mapped {
         fn offset_by(&self, bytes: usize) -> Option<Self> {
@@ -29,6 +31,7 @@ pub mod page_state {
                 Some(Mapped {
                     vaddr: b,
                     asid: self.asid,
+                    rights: self.rights,
                 })
             } else {
                 None
@@ -74,6 +77,10 @@ impl<State: PageState> CapRangeDataReconstruction for Page<State> {
 impl<CapRole: CNodeRole> Cap<Page<page_state::Mapped>, CapRole> {
     pub fn vaddr(&self) -> usize {
         self.cap_data.state.vaddr
+    }
+
+    pub fn rights(&self) -> CapRights {
+        self.cap_data.state.rights
     }
 }
 

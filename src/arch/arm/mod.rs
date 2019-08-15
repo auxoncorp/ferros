@@ -1,3 +1,4 @@
+use crate::error::{ErrorExt, SeL4Error};
 use typenum::*;
 
 pub mod cap;
@@ -134,4 +135,12 @@ pub mod vm_attributes {
     pub const PROGRAM_CODE: VMAttributes = DEFAULT;
 
     pub const PROGRAM_DATA: VMAttributes = PAGE_CACHEABLE | PARITY_ENABLED | EXECUTE_NEVER;
+}
+
+pub(crate) unsafe fn flush_page(cptr: usize) -> Result<(), SeL4Error> {
+    selfe_sys::seL4_ARM_Page_CleanInvalidate_Data(cptr, 0x0000, PageBytes::USIZE)
+        .as_result()
+        .map_err(|e| SeL4Error::PageCleanInvalidateData(e))?;
+
+    Ok(())
 }

@@ -163,6 +163,9 @@ impl UserImage<role::Local> {
                         // We presently lack the piping to associate a UserImage with a
                         // particular ASID (or with a particular VSpace)
                         asid: InternalASID { asid: 0 },
+
+                        // We don't actually know how each page is mapped; assume the worst.
+                        rights: CapRights::RW,
                     },
                 },
                 _role: PhantomData,
