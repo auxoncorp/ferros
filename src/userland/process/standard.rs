@@ -105,7 +105,7 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
         let mapped_stack_pages = vspace.map_shared_region_and_consume(
             unmapped_stack_pages,
             CapRights::RW,
-            arch::vm_attributes::DEFAULT & arch::vm_attributes::EXECUTE_NEVER,
+            arch::vm_attributes::DEFAULT | arch::vm_attributes::EXECUTE_NEVER,
         )?;
 
         // map the child stack into local memory so we can copy the contents
@@ -154,7 +154,7 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
         let ipc_buffer = vspace.map_region(
             ipc_buffer.to_region(),
             CapRights::RW,
-            arch::vm_attributes::DEFAULT & arch::vm_attributes::EXECUTE_NEVER,
+            arch::vm_attributes::DEFAULT | arch::vm_attributes::EXECUTE_NEVER,
         )?;
 
         //// allocate the thread control block
