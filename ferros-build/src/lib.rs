@@ -44,6 +44,18 @@ pub struct ElfResource {
     pub type_name: String,
 }
 
+/// Format n as a fully expanded typenum (in binary form), so allowing arbitrary
+/// numbers to be specified.
+fn format_as_typenum(n: u32) -> String {
+    if n == 0 {
+        "typenum::UTerm".to_string()
+    } else if (n % 2) == 1 {
+        "typenum::UInt<".to_owned() + &format_as_typenum(n >> 1) + ", typenum::B1>"
+    } else {
+        "typenum::UInt<".to_owned() + &format_as_typenum(n >> 1) + ", typenum::B0>"
+    }
+}
+
 impl Resource for ElfResource {
     fn path(&self) -> &Path {
         &self.path
@@ -54,7 +66,10 @@ impl Resource for ElfResource {
     }
 
     fn codegen(&self) -> String {
-        let file = File::open(&self.path).expect(&format!("ElfResource::codegen: Couldn't open file {}", self.path.display()));
+        let file = File::open(&self.path).expect(&format!(
+            "ElfResource::codegen: Couldn't open file {}",
+            self.path.display()
+        ));
         let data = unsafe { Mmap::map(&file).unwrap() };
         let elf_file = xmas_elf::ElfFile::new(data.as_ref()).unwrap();
 
@@ -85,19 +100,19 @@ impl Resource for ElfResource {
 pub struct {} {{ }}
 impl ferros::vspace::ElfProc for {} {{
     const IMAGE_NAME: &'static str = "{}";
-    type RequiredPages = typenum::U{};
-    type WritablePages = typenum::U{};
-    type RequiredMemoryBits = typenum::U{};
-    type StackSizeBits = typenum::U{};
+    type RequiredPages = {};
+    type WritablePages = {};
+    type RequiredMemoryBits = {};
+    type StackSizeBits = {};
 }}
 "#,
             self.type_name,
             self.type_name,
             self.image_name,
-            required_pages,
-            writable_pages,
-            required_memory_bits,
-            stack_size_bits
+            format_as_typenum(required_pages),
+            format_as_typenum(writable_pages),
+            format_as_typenum(required_memory_bits),
+            format_as_typenum(stack_size_bits)
         )
     }
 }
@@ -122,4 +137,28 @@ pub fn embed_resources<'a, P: AsRef<Path>, I: IntoIterator<Item = &'a dyn Resour
     let _f = fs::write(p, code).expect("Unable to write generated code for resources");
 
     selfe_arc::build::link_with_archive(arc_params.iter().map(|(a, b)| (a.as_str(), b.as_path())));
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_format_as_typenum() {
+        assert_eq!(format_as_typenum(0), "typenum::UTerm".to_string());
+        assert_eq!(
+            format_as_typenum(1),
+            "typenum::UInt<typenum::UTerm, typenum::B1>".to_string()
+        );
+        assert_eq!(
+            format_as_typenum(2),
+            "typenum::UInt<typenum::UInt<typenum::UTerm, typenum::B1>, typenum::B0>".to_string()
+        );
+        assert_eq!(
+            format_as_typenum(3),
+            "typenum::UInt<typenum::UInt<typenum::UTerm, typenum::B1>, typenum::B1>".to_string()
+        );
+        assert_eq!(format_as_typenum(4), "typenum::UInt<typenum::UInt<typenum::UInt<typenum::UTerm, typenum::B1>, typenum::B0>, typenum::B0>".to_string());
+    }
+
 }
