@@ -506,11 +506,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         user_image: &UserImage<role::Local>,
         parent_cnode: &LocalCap<LocalCNode>,
         local_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
-    ) -> Result<Self, VSpaceError>
-    where
-        <E as ElfProc>::WritablePages: _Pow,
-        Pow<<E as ElfProc>::WritablePages>: Unsigned,
-    {
+    ) -> Result<Self, VSpaceError> {
         let mut vspace =
             VSpace::<vspace_state::Empty>::new(paging_root, asid, slots, paging_untyped)?;
 
