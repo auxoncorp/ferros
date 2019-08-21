@@ -372,6 +372,45 @@ impl<State: VSpaceState> VSpace<State, role::Local> {
     }
 }
 
+// 0xfff, for 4k pages
+const PAGE_MASK: usize = (1 << arch::PageBits::USIZE) - 1;
+
+struct ByPageIterator {
+    next: usize,
+    end: usize,
+}
+
+impl Iterator for ByPageIterator {
+    type Item = (usize, usize);
+
+    fn next(&mut self) -> Option<(usize, usize)> {
+        if self.next >= self.end {
+            None
+        } else {
+            let new_next =
+                core::cmp::min((self.next + arch::PageBytes::USIZE) & !PAGE_MASK, self.end);
+            let ret = (self.next, new_next);
+            self.next = new_next;
+
+            Some(ret)
+        }
+    }
+}
+
+/// Iterate over segments of the given address range that fit into a page
+/// For example, iterate_by_page(0x0abc, 0x4abc) will yield:
+///    0x0abc, 0x1000
+///    0x1000, 0x2000
+///    0x2000, 0x3000
+///    0x3000, 0x4000
+///    0x4000, 0x4abc
+fn iterate_by_page(start: usize, end: usize) -> impl Iterator<Item = (usize, usize)> {
+    ByPageIterator {
+        next: start,
+        end: end,
+    }
+}
+
 impl VSpace<vspace_state::Imaged, role::Local> {
     /// Unmap a region.
     pub fn unmap_region<SizeBits: Unsigned, SS: SharedStatus>(
@@ -458,7 +497,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
     pub fn new_from_elf<'a, 'b, 'c, E: ElfProc>(
         paging_root: LocalCap<PagingRoot>,
         asid: LocalCap<UnassignedASID>,
-        mut slots: WCNodeSlots,
+        slots: WCNodeSlots,
         paging_untyped: LocalCap<WUntyped<memory_kind::General>>,
         // Things relating to user image code
         elf_data: &[u8],
@@ -476,9 +515,6 @@ impl VSpace<vspace_state::Imaged, role::Local> {
             VSpace::<vspace_state::Empty>::new(paging_root, asid, slots, paging_untyped)?;
 
         let elf = xmas_elf::ElfFile::new(elf_data).map_err(VSpaceError::ElfParseError)?;
-
-        // 0xfff, for 4k pages
-        const PAGE_MASK: usize = (1 << arch::PageBits::USIZE) - 1;
 
         // As long as the elf binary agrees with the types in E (which were
         // extracted from the elf binary), we're good for resource capacity.
@@ -515,19 +551,14 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                 // below.
                 let mem_size = program_header.mem_size() as usize;
                 let src_offset = program_header.offset() as usize;
-                let src_end = src_offset + file_size;
 
-                let mut curr_src_offset = src_offset;
-                let mut curr_page_vaddr = target_vaddr & !PAGE_MASK;
+                for (target_vaddr_start, target_vaddr_end) in
+                    iterate_by_page(target_vaddr, target_vaddr + mem_size)
+                {
+                    let curr_page_vaddr = target_vaddr_start & !PAGE_MASK;
+                    // debug_println!("-- setting up writable range {:X}-{:X}", target_vaddr_start, target_vaddr_end);
 
-                loop {
-                    // The next page boundary, or the end of the data, whichever is first
-                    let next_src_offset = core::cmp::min(
-                        (curr_src_offset + arch::PageBytes::USIZE) & !PAGE_MASK,
-                        src_end,
-                    );
-
-                    // If this fails, it means that we weren't given enough
+                    // if this fails, it means that we weren't given enough
                     // resources to map all the pages.This shouldn't happen, as
                     // we've got it written down in a type that's extracted from
                     // the binary itself.
@@ -540,27 +571,33 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                         &mut unmapped_region,
                         |temp_mapped_region| {
                             let dest_mem = temp_mapped_region.as_mut_slice();
-                            let offset_in_dest_mem = curr_src_offset & PAGE_MASK;
-                            let end_in_dest_mem = next_src_offset & PAGE_MASK;
-                            let end_in_dest_mem = if end_in_dest_mem == 0 {
-                                arch::PageBytes::USIZE
-                            } else {
-                                end_in_dest_mem
-                            };
 
-                            // zero out any memory that comes before the file data
-                            for dest in &mut dest_mem[0..offset_in_dest_mem] {
+                            // zero out the whole page
+                            for dest in &mut dest_mem[..] {
                                 *dest = 0;
                             }
 
-                            // copy over the binary
-                            &mut dest_mem[offset_in_dest_mem..end_in_dest_mem]
-                                .copy_from_slice(&elf_data[src_offset..next_src_offset]);
+                            // if this overlaps with any file-provided data, copy it over
+                            if target_vaddr_start < (target_vaddr + file_size) {
+                                let src_start = src_offset + (target_vaddr_start - target_vaddr);
+                                let src_end = core::cmp::min(
+                                    src_offset + (target_vaddr_end - target_vaddr),
+                                    src_offset + file_size,
+                                );
 
-                            // zero out any remaining memory, in pages after src
-                            for dest in &mut dest_mem[end_in_dest_mem..] {
-                                *dest = 0;
+                                let data_start_in_page = src_start & PAGE_MASK;
+                                let data_end_in_page = src_end & PAGE_MASK;
+                                let data_end_in_page = if data_end_in_page == 0 {
+                                    arch::PageBytes::USIZE
+                                } else {
+                                    data_end_in_page
+                                };
+
+                                &mut dest_mem[data_start_in_page..data_end_in_page]
+                                    .copy_from_slice(&elf_data[src_start..src_end]);
                             }
+
+                            temp_mapped_region.flush().unwrap();
                         },
                     );
 
@@ -574,13 +611,6 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                     vspace
                         .available_address_range
                         .observe_mapping(curr_page_vaddr, PageBits::U8)?;
-
-                    curr_page_vaddr += arch::PageBytes::USIZE;
-                    curr_src_offset = next_src_offset;
-
-                    if curr_src_offset >= src_end {
-                        break;
-                    }
                 }
             } else {
                 // If the elf headers say to map something as read only, we can map in the pages directly
@@ -595,16 +625,14 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                 let start_page_vaddr_here = elf_vaddr_here & !PAGE_MASK;
 
                 // TODO just index into the pages, instead of iterating past them
-                for (user_image_page, child_vaddr) in user_image
+                for user_image_page in user_image
                     .pages_iter()
                     .skip_while(|p| p.cap_data.state.vaddr < start_page_vaddr_here)
                     .take_while(|p| p.cap_data.state.vaddr < elf_vaddr_here + file_size)
-                    .zip(
-                        (target_vaddr..(target_vaddr + file_size * arch::PageBytes::USIZE))
-                            .step_by(arch::PageBytes::USIZE),
-                    )
                 {
                     let page_vaddr_here = user_image_page.cap_data.state.vaddr;
+                    let page_offset = page_vaddr_here - start_page_vaddr_here;
+                    let child_vaddr = target_vaddr + page_offset;
 
                     let copied_page_cap = user_image_page.copy(
                         &parent_cnode,
@@ -631,7 +659,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
             }
         }
 
-        Ok(VSpace {
+        let mut vspace = VSpace {
             root: vspace.root,
             asid: vspace.asid,
             layers: vspace.layers,
@@ -639,7 +667,12 @@ impl VSpace<vspace_state::Imaged, role::Local> {
             slots: vspace.slots,
             available_address_range: vspace.available_address_range,
             _state: PhantomData,
-        })
+        };
+
+        // allocate a padding page
+        vspace.skip_pages(1)?;
+
+        Ok(vspace)
     }
 
     pub fn new(

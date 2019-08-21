@@ -44,6 +44,30 @@ pub struct ElfResource {
     pub type_name: String,
 }
 
+/// Format n as a fully expanded typenum (in binary form), so allowing arbitrary
+/// numbers to be specified.
+fn format_as_typenum(n: u64) -> String {
+    if n == 0 {
+        "typenum::UTerm".to_string()
+    } else if (n % 2) == 1 {
+        "typenum::UInt<".to_owned() + &format_as_typenum(n >> 1) + ", typenum::B1>"
+    } else {
+        "typenum::UInt<".to_owned() + &format_as_typenum(n >> 1) + ", typenum::B0>"
+    }
+}
+
+fn round_down_to_page_boundary(addr: u64) -> u64 {
+    addr & !0xfff
+}
+
+fn round_up_to_page_boundary(addr: u64) -> u64 {
+    if addr & 0xfff == 0 {
+        addr
+    } else {
+        (addr + 0x1000) & !0xfff
+    }
+}
+
 impl Resource for ElfResource {
     fn path(&self) -> &Path {
         &self.path
@@ -54,50 +78,58 @@ impl Resource for ElfResource {
     }
 
     fn codegen(&self) -> String {
-        let file = File::open(&self.path).expect(&format!("ElfResource::codegen: Couldn't open file {}", self.path.display()));
+        let file = File::open(&self.path).expect(&format!(
+            "ElfResource::codegen: Couldn't open file {}",
+            self.path.display()
+        ));
         let data = unsafe { Mmap::map(&file).unwrap() };
         let elf_file = xmas_elf::ElfFile::new(data.as_ref()).unwrap();
 
-        let mut required_pages = 0;
+        let mut read_only_pages = 0;
         let mut writable_pages = 0;
 
         for ph in elf_file
             .program_iter()
             .filter(|h| h.get_type() == Ok(xmas_elf::program::Type::Load))
         {
-            let segment_required_pages = (ph.mem_size() as f64 / 4096.0).ceil() as u32;
-            required_pages += segment_required_pages;
+            let page_aligned_segment_size =
+                round_up_to_page_boundary(ph.virtual_addr() + ph.mem_size())
+                    - round_down_to_page_boundary(ph.virtual_addr());
+            let segment_required_pages = page_aligned_segment_size >> 12;
             if ph.flags().is_write() {
                 writable_pages += segment_required_pages;
+            } else {
+                read_only_pages += segment_required_pages;
             }
         }
 
-        let stack_size_bits = 16;
+        let stack_size_bits = 16u64;
         println!(
             "cargo:warning=Using default stack size of 64k for elf process {}",
             self.image_name
         );
 
         let required_memory_bits = (writable_pages as f64).log2().ceil() as u32 + 12;
+        let required_pages = (1 << (required_memory_bits - 12)) + read_only_pages;
 
         format!(
             r#"
 pub struct {} {{ }}
 impl ferros::vspace::ElfProc for {} {{
     const IMAGE_NAME: &'static str = "{}";
-    type RequiredPages = typenum::U{};
-    type WritablePages = typenum::U{};
-    type RequiredMemoryBits = typenum::U{};
-    type StackSizeBits = typenum::U{};
+    type RequiredPages = {};
+    type WritablePages = {};
+    type RequiredMemoryBits = {};
+    type StackSizeBits = {};
 }}
 "#,
             self.type_name,
             self.type_name,
             self.image_name,
-            required_pages,
-            writable_pages,
-            required_memory_bits,
-            stack_size_bits
+            format_as_typenum(required_pages),
+            format_as_typenum(writable_pages),
+            format_as_typenum(required_memory_bits.into()),
+            format_as_typenum(stack_size_bits)
         )
     }
 }
@@ -122,4 +154,28 @@ pub fn embed_resources<'a, P: AsRef<Path>, I: IntoIterator<Item = &'a dyn Resour
     let _f = fs::write(p, code).expect("Unable to write generated code for resources");
 
     selfe_arc::build::link_with_archive(arc_params.iter().map(|(a, b)| (a.as_str(), b.as_path())));
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_format_as_typenum() {
+        assert_eq!(format_as_typenum(0), "typenum::UTerm".to_string());
+        assert_eq!(
+            format_as_typenum(1),
+            "typenum::UInt<typenum::UTerm, typenum::B1>".to_string()
+        );
+        assert_eq!(
+            format_as_typenum(2),
+            "typenum::UInt<typenum::UInt<typenum::UTerm, typenum::B1>, typenum::B0>".to_string()
+        );
+        assert_eq!(
+            format_as_typenum(3),
+            "typenum::UInt<typenum::UInt<typenum::UTerm, typenum::B1>, typenum::B1>".to_string()
+        );
+        assert_eq!(format_as_typenum(4), "typenum::UInt<typenum::UInt<typenum::UInt<typenum::UTerm, typenum::B1>, typenum::B0>, typenum::B0>".to_string());
+    }
+
 }

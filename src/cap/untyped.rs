@@ -791,7 +791,7 @@ impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
 
 impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::Device>> {
     /// Physical address at the start of the memory this untyped represents
-    pub(crate) fn paddr(&self) -> usize {
+    pub fn paddr(&self) -> usize {
         self.cap_data.kind.paddr
     }
 }
