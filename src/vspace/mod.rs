@@ -625,16 +625,14 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                 let start_page_vaddr_here = elf_vaddr_here & !PAGE_MASK;
 
                 // TODO just index into the pages, instead of iterating past them
-                for (user_image_page, child_vaddr) in user_image
+                for user_image_page in user_image
                     .pages_iter()
                     .skip_while(|p| p.cap_data.state.vaddr < start_page_vaddr_here)
                     .take_while(|p| p.cap_data.state.vaddr < elf_vaddr_here + file_size)
-                    .zip(
-                        (target_vaddr..(target_vaddr + file_size * arch::PageBytes::USIZE))
-                            .step_by(arch::PageBytes::USIZE),
-                    )
                 {
                     let page_vaddr_here = user_image_page.cap_data.state.vaddr;
+                    let page_offset = page_vaddr_here - start_page_vaddr_here;
+                    let child_vaddr = target_vaddr + page_offset;
 
                     let copied_page_cap = user_image_page.copy(
                         &parent_cnode,
