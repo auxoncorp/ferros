@@ -152,7 +152,7 @@ impl<CT: CapType, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Role, Slots> {
     where
         CT: CapRangeDataReconstruction,
     {
-        for index in (0..self.len()) {
+        for index in 0..self.len() {
             f(&Cap {
                 cptr: self.start_cptr + index,
                 _role: PhantomData,
