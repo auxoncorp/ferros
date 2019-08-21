@@ -497,7 +497,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
     pub fn new_from_elf<'a, 'b, 'c, E: ElfProc>(
         paging_root: LocalCap<PagingRoot>,
         asid: LocalCap<UnassignedASID>,
-        mut slots: WCNodeSlots,
+        slots: WCNodeSlots,
         paging_untyped: LocalCap<WUntyped<memory_kind::General>>,
         // Things relating to user image code
         elf_data: &[u8],
