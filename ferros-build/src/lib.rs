@@ -46,13 +46,25 @@ pub struct ElfResource {
 
 /// Format n as a fully expanded typenum (in binary form), so allowing arbitrary
 /// numbers to be specified.
-fn format_as_typenum(n: u32) -> String {
+fn format_as_typenum(n: u64) -> String {
     if n == 0 {
         "typenum::UTerm".to_string()
     } else if (n % 2) == 1 {
         "typenum::UInt<".to_owned() + &format_as_typenum(n >> 1) + ", typenum::B1>"
     } else {
         "typenum::UInt<".to_owned() + &format_as_typenum(n >> 1) + ", typenum::B0>"
+    }
+}
+
+fn round_down_to_page_boundary(addr: u64) -> u64 {
+    addr & !0xfff
+}
+
+fn round_up_to_page_boundary(addr: u64) -> u64 {
+    if addr & 0xfff == 0 {
+        addr
+    } else {
+        (addr + 0x1000) & !0xfff
     }
 }
 
@@ -73,27 +85,32 @@ impl Resource for ElfResource {
         let data = unsafe { Mmap::map(&file).unwrap() };
         let elf_file = xmas_elf::ElfFile::new(data.as_ref()).unwrap();
 
-        let mut required_pages = 0;
+        let mut read_only_pages = 0;
         let mut writable_pages = 0;
 
         for ph in elf_file
             .program_iter()
             .filter(|h| h.get_type() == Ok(xmas_elf::program::Type::Load))
         {
-            let segment_required_pages = (ph.mem_size() as f64 / 4096.0).ceil() as u32;
-            required_pages += segment_required_pages;
+            let page_aligned_segment_size =
+                round_up_to_page_boundary(ph.virtual_addr() + ph.mem_size())
+                    - round_down_to_page_boundary(ph.virtual_addr());
+            let segment_required_pages = page_aligned_segment_size >> 12;
             if ph.flags().is_write() {
                 writable_pages += segment_required_pages;
+            } else {
+                read_only_pages += segment_required_pages;
             }
         }
 
-        let stack_size_bits = 16;
+        let stack_size_bits = 16u64;
         println!(
             "cargo:warning=Using default stack size of 64k for elf process {}",
             self.image_name
         );
 
         let required_memory_bits = (writable_pages as f64).log2().ceil() as u32 + 12;
+        let required_pages = (1 << (required_memory_bits - 12)) + read_only_pages;
 
         format!(
             r#"
@@ -111,7 +128,7 @@ impl ferros::vspace::ElfProc for {} {{
             self.image_name,
             format_as_typenum(required_pages),
             format_as_typenum(writable_pages),
-            format_as_typenum(required_memory_bits),
+            format_as_typenum(required_memory_bits.into()),
             format_as_typenum(stack_size_bits)
         )
     }
