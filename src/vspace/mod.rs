@@ -659,7 +659,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
             }
         }
 
-        Ok(VSpace {
+        let mut vspace = VSpace {
             root: vspace.root,
             asid: vspace.asid,
             layers: vspace.layers,
@@ -667,7 +667,12 @@ impl VSpace<vspace_state::Imaged, role::Local> {
             slots: vspace.slots,
             available_address_range: vspace.available_address_range,
             _state: PhantomData,
-        })
+        };
+
+        // allocate a padding page
+        vspace.skip_pages(1)?;
+
+        Ok(vspace)
     }
 
     pub fn new(
