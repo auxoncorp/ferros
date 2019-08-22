@@ -13,7 +13,6 @@ use ferros::vspace::*;
 use ferros::*;
 use selfe_arc;
 use typenum::*;
-use xmas_elf;
 
 use hello_printer;
 
@@ -31,8 +30,9 @@ fn main() {
     run(raw_bootinfo).expect("Failed to run root task setup");
 }
 
+#[cfg(not(test))]
 fn run(raw_bootinfo: &'static selfe_sys::seL4_BootInfo) -> Result<(), TopLevelError> {
-    let (allocator, mut dev_allocator) = micro_alloc::bootstrap_allocators(&raw_bootinfo)?;
+    let (allocator, mut _dev_allocator) = micro_alloc::bootstrap_allocators(&raw_bootinfo)?;
     let mut allocator = WUTBuddy::from(allocator);
 
     let (root_cnode, local_slots) = root_cnode(&raw_bootinfo);
@@ -63,8 +63,8 @@ fn run(raw_bootinfo: &'static selfe_sys::seL4_BootInfo) -> Result<(), TopLevelEr
 
     let archive = selfe_arc::read::Archive::from_slice(archive_slice);
     let hello_printer_elf_data = archive
-        .file(resources::HelloPrinter::IMAGE_NAME)
-        .expect("find hello-printer in arc");
+        .file(resources::HelloPrinterTest::IMAGE_NAME)
+        .expect("find hello-printer-test in arc");
 
     debug_println!("Binary found, size is {}", hello_printer_elf_data.len());
     debug_println!("\n\n\n");
@@ -73,7 +73,7 @@ fn run(raw_bootinfo: &'static selfe_sys::seL4_BootInfo) -> Result<(), TopLevelEr
 
     smart_alloc!(|slots: local_slots, ut: uts| {
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
-        let (hello_asid, asid_pool) = asid_pool.alloc();
+        let (hello_asid, _asid_pool) = asid_pool.alloc();
 
         // TODO: can we determine these numbers statically now, from the elf file's layout?
         let vspace_slots: LocalCNodeSlots<U16> = slots;
@@ -84,7 +84,7 @@ fn run(raw_bootinfo: &'static selfe_sys::seL4_BootInfo) -> Result<(), TopLevelEr
         let reserved_for_scratch = root_vspace.reserve(sacrificial_page)?;
         let mut scratch = reserved_for_scratch.as_scratch(&mut root_vspace).unwrap();
 
-        let mut hello_vspace = VSpace::new_from_elf::<resources::HelloPrinter>(
+        let mut hello_vspace = VSpace::new_from_elf::<resources::HelloPrinterTest>(
             retype(ut, slots)?, // paging_root
             hello_asid,
             vspace_slots.weaken(), // slots
@@ -97,14 +97,14 @@ fn run(raw_bootinfo: &'static selfe_sys::seL4_BootInfo) -> Result<(), TopLevelEr
             &mut scratch,
         )?;
 
-        let (hello_cnode, hello_slots) = retype_cnode::<U12>(ut, slots)?;
+        let (hello_cnode, _hello_slots) = retype_cnode::<U12>(ut, slots)?;
         let params = hello_printer::ProcParams {
             number_of_hellos: 5,
             data: [0xab; 124],
         };
 
         let stack_mem: UnmappedMemoryRegion<
-            <resources::HelloPrinter as ElfProc>::StackSizeBits,
+            <resources::HelloPrinterTest as ElfProc>::StackSizeBits,
             _,
         > = UnmappedMemoryRegion::new(ut, slots).unwrap();
         let stack_mem =

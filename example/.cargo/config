@@ -1,5 +1,9 @@
 [build]
-rustflags = ["-C", "link-arg=-no-pie", "-C", "link-arg=-nostdlib"]
+rustflags = [
+  "-C", "link-arg=-no-pie",
+  "-C", "link-arg=-nostdlib",
+  "-C", "panic=abort",
+]
 
 [target.armv7-unknown-linux-gnueabihf]
 linker = "arm-linux-gnueabihf-gcc"

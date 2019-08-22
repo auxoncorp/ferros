@@ -16,3 +16,4 @@ for c in $(tsort crate-binary-deps | tac); do
     echo "---------------- building ${c} ----------------"
     cargo xbuild -p $c $@;
 done
+
