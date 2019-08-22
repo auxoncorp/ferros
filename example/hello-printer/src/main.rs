@@ -1,15 +1,16 @@
 #![no_std]
 #![no_main]
+
 #![feature(custom_test_frameworks)]
 #![test_runner(fancy_test::runner)]
 #![reexport_test_harness_main = "test_main"]
+
 
 extern crate selfe_runtime;
 
 #[cfg(test)]
 #[no_mangle]
-pub unsafe extern "C" fn _start(params: TestProcParams) {
-    fancy_test::set_test_proc_params(params);
+pub unsafe extern "C" fn _start() {
     test_main();
 
     unsafe {
