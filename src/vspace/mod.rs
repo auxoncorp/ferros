@@ -507,19 +507,42 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         parent_cnode: &LocalCap<LocalCNode>,
         local_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
     ) -> Result<Self, VSpaceError> {
+        Self::new_from_elf_weak(
+            paging_root,
+            asid,
+            slots,
+            paging_untyped,
+            elf_data,
+            // As long as the elf binary agrees with the types in E (which were
+            // extracted from the elf binary), we're good for resource capacity.
+            page_slots.weaken(),
+            elf_writable_mem.weaken(),
+            user_image,
+            parent_cnode,
+            local_vspace_scratch,
+        )
+    }
+
+    pub fn new_from_elf_weak<'a, 'b, 'c>(
+        paging_root: LocalCap<PagingRoot>,
+        asid: LocalCap<UnassignedASID>,
+        slots: WCNodeSlots,
+        paging_untyped: LocalCap<WUntyped<memory_kind::General>>,
+        // Things relating to user image code
+        elf_data: &[u8],
+        mut page_slots: WCNodeSlots,
+        elf_writable_mem: LocalCap<WUntyped<memory_kind::General>>,
+        user_image: &UserImage<role::Local>,
+        parent_cnode: &LocalCap<LocalCNode>,
+        local_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
+    ) -> Result<Self, VSpaceError> {
         let mut vspace =
             VSpace::<vspace_state::Empty>::new(paging_root, asid, slots, paging_untyped)?;
 
         let elf = xmas_elf::ElfFile::new(elf_data).map_err(VSpaceError::ElfParseError)?;
 
-        // As long as the elf binary agrees with the types in E (which were
-        // extracted from the elf binary), we're good for resource capacity.
-        // Weaken the resources for convenient internal looping.
-        let mut page_slots = page_slots.weaken();
-        let mut writable_segment_pages_iter = elf_writable_mem
-            .weaken()
-            .retype_pages(&mut page_slots)?
-            .into_iter();
+        let mut writable_segment_pages_iter =
+            elf_writable_mem.retype_pages(&mut page_slots)?.into_iter();
 
         for program_header in elf
             .program_iter()
