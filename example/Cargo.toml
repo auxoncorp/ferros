@@ -1,9 +1,12 @@
 [workspace]
-members = ["root-task", "hello-printer"]
+members = ["root-task", "hello-printer", "ext/fancy-test-runner"]
 exclude = ["root-task/build-script"]
 
 [profile.dev]
 panic = "abort"
 
 [profile.release]
+panic = "abort"
+
+[profile.test]
 panic = "abort"

@@ -1,5 +1,5 @@
 [package]
-name = "root-task"
+name = "fancy-test-runner"
 version = "0.1.0"
 authors = ["Russell Mull <russell@auxon.io>"]
 edition = "2018"
@@ -8,18 +8,24 @@ edition = "2018"
 selfe-sys = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
 sel4-start = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git", features = [ "panic_handler" ]  }
 selfe-arc = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git", default-features = false }
-ferros = { path = "../.." }
+ferros = { path = "../../../" }
+fancy-test = { path = "../../../fancy-test" }
 typenum = "1.10"
-xmas-elf = "0.7"
+# test_support = { path = "../../../test-support" }
 
-hello-printer = { path = "../hello-printer" }
+[dependencies.arrayvec]
+version = "0.4.10"
+default-features = false
 
 [build-dependencies]
 cargo-5730 = { path = "/home/mullr/devel/cargo-5730" } #"0.1"
 
+
 [real-build-dependencies]
-ferros-build = { path = "../../ferros-build" }
+ferros-build = { path = "../../../ferros-build" }
+regex = "1"
 
 [[bin]]
-name = "root-task"
-test = false
+name="fancy-test-runner"
+test=false
+
