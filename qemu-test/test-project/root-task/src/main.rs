@@ -34,6 +34,7 @@ mod shared_page_queue;
 mod stack_setup;
 mod uart;
 mod wutbuddy;
+mod weak_elf;
 
 mod resources {
     include! {concat!(env!("OUT_DIR"), "/resources.rs")}
@@ -80,6 +81,7 @@ ferros_test_main!(&[
     &shared_page_queue::shared_page_queue,
     &stack_setup::stack_setup,
     &wutbuddy::wutbuddy,
+    &weak_elf::weak_elf_process_runs,
 ]);
 
 #[cfg(test_case = "uart")]
