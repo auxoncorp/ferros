@@ -41,7 +41,7 @@ use cross_queue::{ArrayQueue, PushError, Slot};
 
 use generic_array::ArrayLength;
 
-use selfe_sys::{seL4_Signal, seL4_Wait};
+use selfe_sys::{seL4_Signal, seL4_Wait, seL4_Poll};
 
 use typenum::*;
 
@@ -750,6 +750,24 @@ where
     QLen: IsGreater<U0, Output = True>,
     QLen: ArrayLength<Slot<E>>,
 {
+    pub fn poll_dropping_interrupts(&mut self) -> Option<E> {
+        let mut sender_badge: usize = 0;
+        let queue: &mut ArrayQueue<E, QLen> =
+            unsafe { core::mem::transmute(self.queue.shared_queue as *mut ArrayQueue<E, QLen>) };
+
+        unsafe {
+            seL4_Poll(self.notification.cptr, &mut sender_badge as *mut usize);
+
+            // NOTE: instead of dequeue on a signal, we always try to dequeue because
+            // we don't get a signal from the sender if the queue is full
+            if let Ok(e) = queue.pop() {
+                Some(e)
+            } else {
+                None
+            }
+        }
+    }
+
     pub fn consume<State, WFn, EFn>(self, initial_state: State, waker_fn: WFn, queue_fn: EFn) -> !
     where
         WFn: Fn(State) -> State,
