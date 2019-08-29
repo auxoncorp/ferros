@@ -182,7 +182,7 @@ pub extern "C" fn consumer_proc(p: ConsumerParams<role::Local>) {
     };
 
     loop {
-        if let Some(data) = consumer.poll_dropping_interrupts() {
+        if let Some(data) = consumer.poll() {
             state.queue_element_count = state.queue_element_count.saturating_add(1);
             state.queue_sum = state.queue_sum.saturating_add(data.a);
 
