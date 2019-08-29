@@ -26,6 +26,7 @@ mod irq_control_manipulation;
 mod memory_read_protection;
 mod memory_write_protection;
 mod over_register_size_params;
+mod polling_consumer;
 mod reuse_slots;
 mod reuse_untyped;
 mod root_task_runs;
@@ -74,6 +75,7 @@ ferros_test_main!(&[
     &memory_read_protection::memory_read_protection,
     &memory_write_protection::memory_write_protection,
     &over_register_size_params::over_register_size_params,
+    &polling_consumer::polling_consumer,
     &reuse_slots::reuse_slots,
     &reuse_untyped::reuse_untyped,
     &root_task_runs::root_task_runs,

@@ -750,6 +750,17 @@ where
     QLen: IsGreater<U0, Output = True>,
     QLen: ArrayLength<Slot<E>>,
 {
+    pub fn poll(&mut self) -> Option<E> {
+        let queue: &mut ArrayQueue<E, QLen> =
+            unsafe { core::mem::transmute(self.queue.shared_queue as *mut ArrayQueue<E, QLen>) };
+
+        if let Ok(e) = queue.pop() {
+            Some(e)
+        } else {
+            None
+        }
+    }
+
     pub fn consume<State, WFn, EFn>(self, initial_state: State, waker_fn: WFn, queue_fn: EFn) -> !
     where
         WFn: Fn(State) -> State,
