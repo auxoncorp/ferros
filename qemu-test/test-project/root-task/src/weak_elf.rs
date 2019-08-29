@@ -13,7 +13,7 @@ use ferros::vspace::*;
 use selfe_arc;
 
 #[ferros_test::ferros_test]
-pub fn elf_process_runs<'a, 'b, 'c>(
+pub fn weak_elf_process_runs<'a, 'b, 'c>(
     local_slots: LocalCNodeSlots<U32768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U1>>,
@@ -54,14 +54,17 @@ pub fn elf_process_runs<'a, 'b, 'c>(
         let child_vspace_ut: LocalCap<Untyped<U14>> = ut;
         let (child_asid, _asid_pool) = asid_pool.alloc();
 
-        let mut child_vspace = VSpace::new_from_elf::<crate::resources::ElfProcess>(
+        let page_slots: LocalCNodeSlots<U1024> = slots;
+        let writable_mem: LocalCap<Untyped<U18>> = ut;
+
+        let mut child_vspace = VSpace::new_from_elf_weak(
             child_root,
             child_asid,
             child_vspace_slots.weaken(),
             child_vspace_ut.weaken(),
             &elf_data,
-            slots, // page_slots
-            ut, // elf_writable_mem,
+            page_slots.weaken(),
+            writable_mem.weaken(),
             &user_image,
             &root_cnode,
             &mut local_vspace_scratch,
