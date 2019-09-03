@@ -18,4 +18,8 @@ registers = { git = "ssh://github.com/auxoncorp/registers.git" }
 elf-process = { path = "../elf-process" }
 
 [build-dependencies]
-cargo-5730 = "0.1"
+cargo-5730 = "0.2"
+
+
+[workaround-build-dependencies]
+ferros-build = { path="../../../ferros-build" }
