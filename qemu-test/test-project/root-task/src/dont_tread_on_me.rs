@@ -24,7 +24,7 @@ pub fn dont_tread_on_me<'a, 'b, 'c>(
     local_ut: LocalCap<Untyped<U27>>,
     asid_pool: LocalCap<ASIDPool<U2>>,
     local_mapped_region: MappedMemoryRegion<U18, shared_status::Exclusive>,
-    local_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
+    mut local_vspace_scratch: &mut ScratchRegion,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -41,7 +41,7 @@ pub fn dont_tread_on_me<'a, 'b, 'c>(
 
         let proc1_root = retype(ut, slots)?;
         let proc1_vspace_slots: LocalCNodeSlots<U1024> = slots;
-        let proc1_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let proc1_vspace_ut: LocalCap<Untyped<U15>> = ut;
 
         let mut proc1_vspace = VSpace::new(
             proc1_root,
@@ -54,7 +54,7 @@ pub fn dont_tread_on_me<'a, 'b, 'c>(
         )?;
 
         let proc2_vspace_slots: LocalCNodeSlots<ferros::arch::CodePageCount> = slots;
-        let proc2_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let proc2_vspace_ut: LocalCap<Untyped<U15>> = ut;
 
         let mut proc2_vspace = VSpace::new(
             retype(ut, slots)?,
@@ -62,7 +62,7 @@ pub fn dont_tread_on_me<'a, 'b, 'c>(
             proc2_vspace_slots.weaken(),
             proc2_vspace_ut.weaken(),
             ProcessCodeImageConfig::ReadWritable {
-                parent_vspace_scratch: local_vspace_scratch,
+                parent_vspace_scratch: &mut local_vspace_scratch,
                 code_pages_ut: ut,
                 code_pages_slots: slots,
             },

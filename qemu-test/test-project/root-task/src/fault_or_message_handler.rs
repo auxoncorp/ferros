@@ -66,7 +66,7 @@ pub fn fault_or_message_handler(
 
                     let child_root = retype(ut, slots)?;
                     let child_vspace_slots: LocalCNodeSlots<U1024> = slots;
-                    let child_vspace_ut: LocalCap<Untyped<U14>> = ut;
+                    let child_vspace_ut: LocalCap<Untyped<U15>> = ut;
 
                     let mut child_vspace = VSpace::new(
                         child_root,

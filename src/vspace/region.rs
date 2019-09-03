@@ -271,9 +271,12 @@ where
     }
 
     pub fn flush(&self) -> Result<(), SeL4Error> {
-        self.caps.for_each(|cap| {
-            unsafe { arch::flush_page(cap.cptr) }.unwrap();
-        });
+        self.caps.for_each::<SeL4Error, _>(|cap| {
+            unsafe {
+                arch::flush_page(cap.cptr)?;
+            }
+            Ok(())
+        })?;
 
         Ok(())
     }

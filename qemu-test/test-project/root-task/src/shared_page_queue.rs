@@ -14,12 +14,12 @@ use super::TopLevelError;
 type U33768 = Sum<U32768, U1000>;
 
 #[ferros_test::ferros_test]
-pub fn shared_page_queue<'a, 'b, 'c>(
+pub fn shared_page_queue(
     local_slots: LocalCNodeSlots<U33768>,
     local_ut: LocalCap<Untyped<U20>>,
     asid_pool: LocalCap<ASIDPool<U2>>,
     local_mapped_region: MappedMemoryRegion<U18, shared_status::Exclusive>,
-    local_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
+    local_vspace_scratch: &mut ScratchRegion,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
@@ -31,7 +31,7 @@ pub fn shared_page_queue<'a, 'b, 'c>(
         let (child_b_asid, _asid_pool) = asid_pool.alloc();
 
         let consumer_vspace_slots: LocalCNodeSlots<U1024> = slots;
-        let consumer_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let consumer_vspace_ut: LocalCap<Untyped<U15>> = ut;
         let mut consumer_vspace = VSpace::new(
             retype(ut, slots)?,
             child_a_asid,
@@ -42,7 +42,7 @@ pub fn shared_page_queue<'a, 'b, 'c>(
             root_cnode,
         )?;
         let producer_vspace_slots: LocalCNodeSlots<U1024> = slots;
-        let producer_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let producer_vspace_ut: LocalCap<Untyped<U15>> = ut;
         let mut producer_vspace = VSpace::new(
             retype(ut, slots)?,
             child_b_asid,

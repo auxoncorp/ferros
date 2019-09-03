@@ -38,7 +38,7 @@ pub fn polling_consumer(
         // vspace setup
         let consumer_root = retype(ut, slots)?;
         let consumer_vspace_slots: LocalCNodeSlots<U1024> = slots;
-        let consumer_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let consumer_vspace_ut: LocalCap<Untyped<U15>> = ut;
         let mut consumer_vspace = VSpace::new(
             consumer_root,
             consumer_asid,
@@ -51,7 +51,7 @@ pub fn polling_consumer(
 
         let producer_root = retype(ut, slots)?;
         let producer_vspace_slots: LocalCNodeSlots<U1024> = slots;
-        let producer_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let producer_vspace_ut: LocalCap<Untyped<U15>> = ut;
         let mut producer_vspace = VSpace::new(
             producer_root,
             producer_asid,
