@@ -7,3 +7,6 @@ artifacts
 .\#*
 \#*\#
 .gdbhistory
+Cargo.build.lock
+build-script-target
+.gdb_history
