@@ -28,7 +28,7 @@ pub fn call_and_response_loop(
         let (responder_asid, _asid_pool) = asid_pool.alloc();
         let caller_root = retype(ut, slots)?;
         let caller_vspace_slots: LocalCNodeSlots<U1024> = slots;
-        let caller_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let caller_vspace_ut: LocalCap<Untyped<U15>> = ut;
 
         let mut caller_vspace = VSpace::new(
             caller_root,
@@ -42,7 +42,7 @@ pub fn call_and_response_loop(
 
         let responder_root = retype(ut, slots)?;
         let responder_vspace_slots: LocalCNodeSlots<U1024> = slots;
-        let responder_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let responder_vspace_ut: LocalCap<Untyped<U15>> = ut;
 
         let mut responder_vspace = VSpace::new(
             responder_root,

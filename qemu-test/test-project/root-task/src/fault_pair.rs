@@ -38,7 +38,7 @@ pub fn fault_pair(
         let (mischief_maker_asid, asid_pool) = asid_pool.alloc();
         let mischief_maker_root = retype(ut, slots)?;
         let mischief_maker_vspace_slots: LocalCNodeSlots<U1024> = slots;
-        let mischief_maker_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let mischief_maker_vspace_ut: LocalCap<Untyped<U15>> = ut;
         let mut mischief_maker_vspace = VSpace::new(
             mischief_maker_root,
             mischief_maker_asid,
@@ -53,7 +53,7 @@ pub fn fault_pair(
         let (fault_handler_asid, _asid_pool) = asid_pool.alloc();
         let fault_handler_root = retype(ut, slots)?;
         let fault_handler_vspace_slots: LocalCNodeSlots<U1024> = slots;
-        let fault_handler_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let fault_handler_vspace_ut: LocalCap<Untyped<U15>> = ut;
         let mut fault_handler_vspace = VSpace::new(
             fault_handler_root,
             fault_handler_asid,

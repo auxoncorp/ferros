@@ -270,11 +270,11 @@ where
 // 2^12 / PageCount
 pub type NumPages<Size> = Pow<op!(Size - PageBits)>;
 
-pub enum ProcessCodeImageConfig<'a, 'b, 'c> {
+pub enum ProcessCodeImageConfig<'a> {
     ReadOnly,
     /// Use when you need to be able to write to statics in the child process
     ReadWritable {
-        parent_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
+        parent_vspace_scratch: &'a mut ScratchRegion,
         code_pages_ut: LocalCap<Untyped<crate::arch::TotalCodeSizeBits>>,
         code_pages_slots: LocalCNodeSlots<crate::arch::CodePageCount>,
     },
@@ -494,7 +494,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         })
     }
 
-    pub fn new_from_elf<'a, 'b, 'c, E: ElfProc>(
+    pub fn new_from_elf<E: ElfProc>(
         paging_root: LocalCap<PagingRoot>,
         asid: LocalCap<UnassignedASID>,
         slots: WCNodeSlots,
@@ -505,7 +505,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         elf_writable_mem: LocalCap<Untyped<E::RequiredMemoryBits>>,
         user_image: &UserImage<role::Local>,
         parent_cnode: &LocalCap<LocalCNode>,
-        local_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
+        local_vspace_scratch: &mut ScratchRegion,
     ) -> Result<Self, VSpaceError> {
         Self::new_from_elf_weak(
             paging_root,
@@ -523,7 +523,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         )
     }
 
-    pub fn new_from_elf_weak<'a, 'b, 'c>(
+    pub fn new_from_elf_weak(
         paging_root: LocalCap<PagingRoot>,
         asid: LocalCap<UnassignedASID>,
         slots: WCNodeSlots,
@@ -534,7 +534,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         elf_writable_mem: LocalCap<WUntyped<memory_kind::General>>,
         user_image: &UserImage<role::Local>,
         parent_cnode: &LocalCap<LocalCNode>,
-        local_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
+        local_vspace_scratch: &mut ScratchRegion,
     ) -> Result<Self, VSpaceError> {
         let mut vspace =
             VSpace::<vspace_state::Empty>::new(paging_root, asid, slots, paging_untyped)?;
@@ -1285,37 +1285,31 @@ where
         })
     }
 
-    pub fn as_scratch<'a, 'b>(
-        &'a self,
-        vspace: &'b mut VSpace,
-    ) -> Result<ScratchRegion<'a, 'b, PageCount>, VSpaceError> {
+    pub fn as_scratch(self, vspace: &VSpace) -> Result<ScratchRegion<PageCount>, VSpaceError> {
         ScratchRegion::new(self, vspace)
     }
 }
 
 /// Borrow of a reserved region and its associated VSpace in order to support
 /// temporary mapping
-pub struct ScratchRegion<
-    'a,
-    'b,
-    PageCount: Unsigned = crate::userland::process::DefaultStackPageCount,
-> {
-    reserved_region: &'a ReservedRegion<PageCount>,
-    vspace: &'b mut VSpace,
+pub struct ScratchRegion<PageCount: Unsigned = crate::userland::process::DefaultStackPageCount> {
+    reserved_region: ReservedRegion<PageCount>,
+    paging_root: LocalCap<PagingRoot>,
 }
 
-impl<'a, 'b, PageCount: Unsigned> ScratchRegion<'a, 'b, PageCount>
+impl<PageCount: Unsigned> ScratchRegion<PageCount>
 where
     PageCount: IsGreaterOrEqual<U1, Output = True>,
 {
-    pub fn new(
-        region: &'a ReservedRegion<PageCount>,
-        vspace: &'b mut VSpace,
-    ) -> Result<Self, VSpaceError> {
+    pub fn new(region: ReservedRegion<PageCount>, vspace: &VSpace) -> Result<Self, VSpaceError> {
         if region.asid == vspace.asid() {
             Ok(ScratchRegion {
                 reserved_region: region,
-                vspace,
+                paging_root: Cap {
+                    cptr: vspace.root.cptr,
+                    cap_data: PagingRoot::phantom_instance(),
+                    _role: PhantomData,
+                },
             })
         } else {
             Err(VSpaceError::ASIDMismatch)
@@ -1339,73 +1333,51 @@ where
         f: F,
     ) -> Result<Out, VSpaceError>
     where
+        // TODO prune these type constraints
         SizeBits: IsGreaterOrEqual<PageBits>,
         SizeBits: Sub<PageBits>,
         <SizeBits as Sub<PageBits>>::Output: Unsigned,
         <SizeBits as Sub<PageBits>>::Output: _Pow,
         Pow<<SizeBits as Sub<PageBits>>::Output>: Unsigned,
         F: Fn(&mut MappedMemoryRegion<SizeBits, shared_status::Exclusive>) -> Out,
-        PageCount: IsGreaterOrEqual<NumPages<SizeBits>, Output = True>,
-        PageCount: IsGreaterOrEqual<U1, Output = True>,
     {
         let start_vaddr = self.reserved_region.vaddr;
-
-        fn dummy_empty_slots() -> WCNodeSlots {
-            // NB: Not happy with this fake cptr,
-            // at least we can expect it to blow up loudly
-            Cap {
-                cptr: core::usize::MAX,
-                _role: PhantomData,
-                cap_data: WCNodeSlotsData {
-                    offset: 0,
-                    size: 0,
-                    _role: PhantomData,
-                },
-            }
-        }
-        let unmapped_region_copy: UnmappedMemoryRegion<SizeBits, shared_status::Exclusive> =
-            UnmappedMemoryRegion::unchecked_new(
-                region.caps.start_cptr,
-                page_state::Unmapped,
-                region.kind,
-            );
         let mut next_addr = start_vaddr;
-        let rights = CapRights::RW;
-        for page in unmapped_region_copy.caps.into_iter() {
-            match self.vspace.layers.map_layer(
-                &page,
-                next_addr,
-                &mut self.vspace.root,
-                rights,
-                arch::vm_attributes::DEFAULT,
-                // NB: In the case of a ReservedRegion, we've already
-                // mapped any of the intermediate layers so should
-                // therefore not need a cache of resources for
-                // temporarily mapping this scratch region.
-                &mut WUTBuddy::empty(),
-                &mut dummy_empty_slots(),
-            ) {
-                Err(MappingError::PageMapFailure(e)) => return Err(VSpaceError::SeL4Error(e)),
-                Err(MappingError::IntermediateLayerFailure(e)) => {
-                    return Err(VSpaceError::SeL4Error(e));
-                }
-                Err(e) => return Err(VSpaceError::MappingError(e)),
-                Ok(_) => (),
-            };
-            next_addr += PageBytes::USIZE;
-        }
-        // map the pages at our predetermined/pre-allocated vaddr range
+
+        let res: Result<(), SeL4Error> = region.caps.for_each::<SeL4Error, _>(|page| {
+            unsafe {
+                page.unchecked_page_map(
+                    next_addr,
+                    &mut self.paging_root,
+                    CapRights::RW,
+                    arch::vm_attributes::DEFAULT,
+                )?;
+            }
+            next_addr += arch::PageBytes::USIZE;
+            let res: Result<(), SeL4Error> = Ok(());
+            res
+        });
+
+        res?;
+
+        // synthesize a MappedMemoryRegion to pass to the callback
         let mut mapped_region = MemoryRegion::unchecked_new(
             region.caps.start_cptr,
             page_state::Mapped {
                 vaddr: start_vaddr,
                 asid: self.reserved_region.asid,
-                rights,
+                rights: CapRights::RW,
             },
             region.kind,
         );
+
         let res = f(&mut mapped_region);
-        let _ = self.vspace.unmap_region(mapped_region)?;
+
+        // unmap everything
+        for page in mapped_region.caps.into_iter() {
+            page.unmap()?;
+        }
+
         Ok(res)
     }
 }

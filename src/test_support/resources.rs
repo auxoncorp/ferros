@@ -12,8 +12,7 @@ pub struct Resources {
     pub(super) untyped: LocalCap<Untyped<super::types::MaxTestUntypedSize>>,
     pub(super) asid_pool: LocalCap<ASIDPool<super::types::MaxTestASIDPoolSize>>,
     pub(super) vspace: VSpace<vspace_state::Imaged, role::Local>,
-    pub(super) reserved_for_scratch:
-        ReservedRegion<crate::userland::process::DefaultStackPageCount>,
+    pub(super) scratch: ScratchRegion,
     pub(super) mapped_memory_region: MappedMemoryRegion<
         super::types::MaxMappedMemoryRegionBitSize,
         crate::vspace::shared_status::Exclusive,
@@ -29,7 +28,7 @@ pub struct TestResourceRefs<'t> {
     pub(super) slots: &'t mut LocalCNodeSlots<super::types::MaxTestCNodeSlots>,
     pub(super) untyped: &'t mut LocalCap<Untyped<super::types::MaxTestUntypedSize>>,
     pub(super) asid_pool: &'t mut LocalCap<ASIDPool<super::types::MaxTestASIDPoolSize>>,
-    pub(super) scratch: ScratchRegion<'t, 't, crate::userland::process::DefaultStackPageCount>,
+    pub(super) scratch: &'t mut ScratchRegion<crate::userland::process::DefaultStackPageCount>,
     pub(super) mapped_memory_region: &'t mut MappedMemoryRegion<
         super::types::MaxMappedMemoryRegionBitSize,
         crate::vspace::shared_status::Exclusive,
@@ -86,7 +85,9 @@ impl Resources {
         };
         let (scratch_slots, local_slots) = local_slots.alloc();
         let sacrificial_page = ut_for_scratch.retype(scratch_slots)?;
-        let reserved_for_scratch = root_vspace.reserve(sacrificial_page)?;
+        let scratch = root_vspace
+            .reserve(sacrificial_page)?
+            .as_scratch(&root_vspace)?;
         let (asid_pool_slots, local_slots) = local_slots.alloc();
         let (extra_pool_slots, local_slots) = local_slots.alloc();
         let ut_for_asid_pool = {
@@ -139,7 +140,7 @@ impl Resources {
                     })?,
                 asid_pool,
                 vspace: root_vspace,
-                reserved_for_scratch,
+                scratch,
                 mapped_memory_region,
                 cnode,
                 thread_authority: root_tcb.downgrade_to_thread_priority_authority(),
@@ -160,16 +161,13 @@ impl Resources {
             slots: &mut self.slots,
             untyped: &mut self.untyped,
             asid_pool: &mut self.asid_pool,
-            scratch: self
-                .reserved_for_scratch
-                .as_scratch(&mut self.vspace)
-                .expect("Failed to use root VSpace in combination with the reserved region, likely an ASID mismatch."),
+            scratch: &mut self.scratch,
             mapped_memory_region: &mut self.mapped_memory_region,
             cnode: &self.cnode,
             thread_authority: &self.thread_authority,
             vspace_paging_root: &self.vspace_paging_root,
             user_image: &self.user_image,
-            irq_control: &mut self.irq_control
+            irq_control: &mut self.irq_control,
         }
     }
 }

@@ -30,7 +30,7 @@ pub fn child_process_cap_management(
 
         let child_root = retype(ut, slots)?;
         let child_vspace_slots: LocalCNodeSlots<U1024> = slots;
-        let child_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let child_vspace_ut: LocalCap<Untyped<U15>> = ut;
 
         smart_alloc! {|slots_c: child_slots| {
             let (cnode_for_child, slots_for_child) =

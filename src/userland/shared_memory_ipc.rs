@@ -7,8 +7,8 @@ use typenum::{Unsigned, B1, U2, U4};
 
 use crate::arch::{self, PageBits, PageBytes};
 use crate::cap::{
-    role, Badge, CNodeRole, Cap, ChildCNodeSlots, DirectRetype, LocalCNode, LocalCNodeSlots,
-    LocalCap, Notification, Untyped,
+    role, Badge, CNodeRole, CNodeSlots, Cap, ChildCNodeSlots, DirectRetype, LocalCNode,
+    LocalCNodeSlots, LocalCap, Notification, Untyped,
 };
 use crate::userland::{CapRights, IPCError};
 use crate::vspace::{UnmappedMemoryRegion, VSpace};
@@ -16,14 +16,7 @@ use crate::vspace::{UnmappedMemoryRegion, VSpace};
 pub mod sync {
     use super::*;
     /// A synchronous call channel backed by a page of shared memory
-    pub fn extended_call_channel<
-        CallerPageDirFreeSlots: Unsigned,
-        CallerPageTableFreeSlots: Unsigned,
-        ResponderPageDirFreeSlots: Unsigned,
-        ResponderPageTableFreeSlots: Unsigned,
-        Req: Send + Sync,
-        Rsp: Send + Sync,
-    >(
+    pub fn extended_call_channel<Req: Send + Sync, Rsp: Send + Sync, CallerRole: CNodeRole>(
         local_cnode: &LocalCap<LocalCNode>,
         local_slots: LocalCNodeSlots<U4>,
         shared_region_ut: LocalCap<Untyped<PageBits>>,
@@ -31,22 +24,15 @@ pub mod sync {
         response_notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
         caller_vspace: &mut VSpace,
         responder_vspace: &mut VSpace,
-        caller_slots: ChildCNodeSlots<U2>,
-        responder_slots: ChildCNodeSlots<U2>,
+        caller_slots: CNodeSlots<U2, CallerRole>,
+        responder_slots: CNodeSlots<U2, role::Child>,
     ) -> Result<
         (
-            ExtendedCaller<Req, Rsp, role::Child>,
+            ExtendedCaller<Req, Rsp, CallerRole>,
             ExtendedResponder<Req, Rsp, role::Child>,
         ),
         IPCError,
-    >
-    where
-        CallerPageTableFreeSlots: Sub<B1>,
-        Sub1<CallerPageTableFreeSlots>: Unsigned,
-
-        ResponderPageTableFreeSlots: Sub<B1>,
-        Sub1<ResponderPageTableFreeSlots>: Unsigned,
-    {
+    > {
         let request_size = core::mem::size_of::<Req>();
         let response_size = core::mem::size_of::<Rsp>();
         // TODO - Move this to compile-time somehow

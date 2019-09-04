@@ -138,6 +138,7 @@ impl<CT: CapType + PhantomCap, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Ro
         }
     }
 }
+
 impl<CT: CapType, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Role, Slots> {
     pub(crate) fn new(start_cptr: usize, start_cap_data: CT) -> Self {
         CapRange {
@@ -148,7 +149,10 @@ impl<CT: CapType, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Role, Slots> {
         }
     }
 
-    pub(crate) fn for_each<F: Fn(&Cap<CT, Role>) -> ()>(&self, f: F)
+    pub(crate) fn for_each<E, F: FnMut(&Cap<CT, Role>) -> Result<(), E>>(
+        &self,
+        mut f: F,
+    ) -> Result<(), E>
     where
         CT: CapRangeDataReconstruction,
     {
@@ -157,8 +161,10 @@ impl<CT: CapType, Role: CNodeRole, Slots: Unsigned> CapRange<CT, Role, Slots> {
                 cptr: self.start_cptr + index,
                 _role: PhantomData,
                 cap_data: CT::reconstruct(index, &self.start_cap_data),
-            })
+            })?
         }
+
+        Ok(())
     }
 
     pub(crate) fn into_iter(self) -> impl Iterator<Item = Cap<CT, Role>>

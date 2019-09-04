@@ -21,7 +21,7 @@ pub fn weak_elf_process_runs<'a, 'b, 'c>(
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
     tpa: &LocalCap<ThreadPriorityAuthority>,
-    mut local_vspace_scratch: &'a mut ScratchRegion<'b, 'c>,
+    mut local_vspace_scratch: &mut ScratchRegion,
 ) -> Result<(), TopLevelError> {
     let uts = ut_buddy(local_ut);
 
@@ -51,7 +51,7 @@ pub fn weak_elf_process_runs<'a, 'b, 'c>(
 
         let child_root = retype(ut, slots)?;
         let child_vspace_slots: LocalCNodeSlots<U1024> = slots;
-        let child_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let child_vspace_ut: LocalCap<Untyped<U15>> = ut;
         let (child_asid, _asid_pool) = asid_pool.alloc();
 
         let page_slots: LocalCNodeSlots<U1024> = slots;

@@ -15,4 +15,7 @@ xmas-elf = "0.7"
 hello-printer = { path = "../hello-printer" }
 
 [build-dependencies]
-cargo-5730 = "0.1"
+cargo-5730 = "0.2"
+
+[workaround-build-dependencies]
+ferros-build = { path = "../../ferros-build" }

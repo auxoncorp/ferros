@@ -42,7 +42,7 @@ pub fn double_door_backpressure(
         // vspace setup
         let consumer_root = retype(ut, slots)?;
         let consumer_vspace_slots: LocalCNodeSlots<U1024> = slots;
-        let consumer_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let consumer_vspace_ut: LocalCap<Untyped<U15>> = ut;
         let mut consumer_vspace = VSpace::new(
             consumer_root,
             consumer_asid,
@@ -55,7 +55,7 @@ pub fn double_door_backpressure(
 
         let producer_a_root = retype(ut, slots)?;
         let producer_a_vspace_slots: LocalCNodeSlots<U1024> = slots;
-        let producer_a_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let producer_a_vspace_ut: LocalCap<Untyped<U15>> = ut;
         let mut producer_a_vspace = VSpace::new(
             producer_a_root,
             producer_a_asid,
@@ -68,7 +68,7 @@ pub fn double_door_backpressure(
 
         let producer_b_root = retype(ut, slots)?;
         let producer_b_vspace_slots: LocalCNodeSlots<U1024> = slots;
-        let producer_b_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let producer_b_vspace_ut: LocalCap<Untyped<U15>> = ut;
         let mut producer_b_vspace = VSpace::new(
             producer_b_root,
             producer_b_asid,
@@ -81,7 +81,7 @@ pub fn double_door_backpressure(
 
         let waker_root = retype(ut, slots)?;
         let waker_vspace_slots: LocalCNodeSlots<U1024> = slots;
-        let waker_vspace_ut: LocalCap<Untyped<U14>> = ut;
+        let waker_vspace_ut: LocalCap<Untyped<U15>> = ut;
         let mut waker_vspace = VSpace::new(
             waker_root,
             waker_asid,

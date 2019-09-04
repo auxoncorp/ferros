@@ -106,7 +106,7 @@ fn run_qemu_test<F>(
 
     println!(r#"running: TEST_CASE={} {:?}"#, test_case, sim_command);
 
-    let mut sim = spawn_command(sim_command, Some(10000)).expect("Couldn't start simulate command");
+    let mut sim = spawn_command(sim_command, Some(100000)).expect("Couldn't start simulate command");
 
     match ready_line_and_func {
         Some((rl, rl_func)) => {
@@ -161,7 +161,7 @@ mod tests {
         fn unified_tests_sabre() {
             run_qemu_test::<fn()>(
                 "unified_tests",
-                Regex::new(".*test result: ok\\. 22 passed;.*").unwrap(),
+                Regex::new(".*test result: ok\\. 23 passed;.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
                 None,
                 None,
@@ -174,7 +174,7 @@ mod tests {
         fn unified_tests_virt() {
             run_qemu_test::<fn()>(
                 "unified_tests",
-                Regex::new(".*test result: ok\\. 22 passed;.*").unwrap(),
+                Regex::new(".*test result: ok\\. 23 passed;.*").unwrap(),
                 Regex::new(".*Root task should never return from main.*").unwrap(),
                 None,
                 None,

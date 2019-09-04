@@ -270,11 +270,11 @@ where
         ))
     }
 
-    pub fn add_queue<'a, 'b, ScratchPages: Unsigned, E: Sized + Send + Sync, ELen: Unsigned>(
+    pub fn add_queue<ScratchPages: Unsigned, E: Sized + Send + Sync, ELen: Unsigned>(
         self,
         consumer_token: &mut ConsumerToken,
         shared_region_ut: LocalCap<Untyped<PageBits>>,
-        local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
+        local_vspace_scratch: &mut ScratchRegion<ScratchPages>,
         consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
@@ -340,10 +340,10 @@ where
     ELen: IsGreater<U0, Output = True>,
     ELen: ArrayLength<Slot<E>>,
 {
-    pub fn new<'a, 'b, ScratchPages: Unsigned>(
+    pub fn new<ScratchPages: Unsigned>(
         notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
         shared_region_ut: LocalCap<Untyped<PageBits>>,
-        local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
+        local_vspace_scratch: &mut ScratchRegion<ScratchPages>,
         consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         local_slots: LocalCNodeSlots<U3>,
@@ -435,11 +435,11 @@ where
         ))
     }
 
-    pub fn add_queue<'a, 'b, ScratchPages: Unsigned, F: Sized + Send + Sync, FLen: Unsigned>(
+    pub fn add_queue<ScratchPages: Unsigned, F: Sized + Send + Sync, FLen: Unsigned>(
         self,
         consumer_token: &ConsumerToken,
         shared_region_ut: LocalCap<Untyped<PageBits>>,
-        local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
+        local_vspace_scratch: &mut ScratchRegion<ScratchPages>,
         consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
@@ -527,8 +527,6 @@ where
     FLen: ArrayLength<Slot<F>>,
 {
     pub fn add_queue<
-        'a,
-        'b,
         ScratchPages: Unsigned,
         G: Sized + Send + Sync,
         GLen: Unsigned,
@@ -537,7 +535,7 @@ where
         self,
         consumer_token: &ConsumerToken,
         shared_region_ut: LocalCap<Untyped<PageBits>>,
-        local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
+        local_vspace_scratch: &mut ScratchRegion<ScratchPages>,
         consumer_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         dest_slots: LocalCNodeSlots<U2>,
@@ -614,14 +612,12 @@ where
 }
 
 fn create_region_filled_with_array_queue<
-    'a,
-    'b,
     ScratchPages: Unsigned,
     T: Sized + Send + Sync,
     QLen: Unsigned,
 >(
     shared_region_ut: LocalCap<Untyped<PageBits>>,
-    local_vspace_scratch: &mut ScratchRegion<'a, 'b, ScratchPages>,
+    local_vspace_scratch: &mut ScratchRegion<ScratchPages>,
     consumer_vspace: &mut VSpace,
     local_cnode: &LocalCap<LocalCNode>,
     dest_slots: LocalCNodeSlots<U2>,
@@ -750,6 +746,17 @@ where
     QLen: IsGreater<U0, Output = True>,
     QLen: ArrayLength<Slot<E>>,
 {
+    pub fn poll(&mut self) -> Option<E> {
+        let queue: &mut ArrayQueue<E, QLen> =
+            unsafe { core::mem::transmute(self.queue.shared_queue as *mut ArrayQueue<E, QLen>) };
+
+        if let Ok(e) = queue.pop() {
+            Some(e)
+        } else {
+            None
+        }
+    }
+
     pub fn consume<State, WFn, EFn>(self, initial_state: State, waker_fn: WFn, queue_fn: EFn) -> !
     where
         WFn: Fn(State) -> State,

@@ -1,3 +1,7 @@
+use super::TopLevelError;
+
+use selfe_sys::seL4_Yield;
+
 use typenum::*;
 
 use ferros::alloc::{smart_alloc, ut_buddy};
@@ -9,16 +13,14 @@ use ferros::userland::{
 };
 use ferros::vspace::*;
 
-use super::TopLevelError;
-
-type U33768 = Sum<U32768, U1000>;
+type U66536 = Sum<U65536, U1000>;
 
 #[ferros_test::ferros_test]
-pub fn shared_page_queue(
-    local_slots: LocalCNodeSlots<U33768>,
-    local_ut: LocalCap<Untyped<U20>>,
-    asid_pool: LocalCap<ASIDPool<U2>>,
-    local_mapped_region: MappedMemoryRegion<U18, shared_status::Exclusive>,
+pub fn polling_consumer(
+    local_slots: LocalCNodeSlots<U66536>,
+    local_ut: LocalCap<Untyped<U27>>,
+    asid_pool: LocalCap<ASIDPool<U4>>,
+    local_mapped_region: MappedMemoryRegion<U19, shared_status::Exclusive>,
     local_vspace_scratch: &mut ScratchRegion,
     root_cnode: &LocalCap<LocalCNode>,
     user_image: &UserImage<role::Local>,
@@ -27,25 +29,32 @@ pub fn shared_page_queue(
     let uts = ut_buddy(local_ut);
 
     smart_alloc!(|slots: local_slots, ut: uts| {
-        let (child_a_asid, asid_pool) = asid_pool.alloc();
-        let (child_b_asid, _asid_pool) = asid_pool.alloc();
+        let (consumer_asid, asid_pool) = asid_pool.alloc();
+        let (producer_asid, asid_pool) = asid_pool.alloc();
 
+        let (consumer_cnode, consumer_slots) = retype_cnode::<U12>(ut, slots)?;
+        let (producer_cnode, producer_slots) = retype_cnode::<U12>(ut, slots)?;
+
+        // vspace setup
+        let consumer_root = retype(ut, slots)?;
         let consumer_vspace_slots: LocalCNodeSlots<U1024> = slots;
         let consumer_vspace_ut: LocalCap<Untyped<U15>> = ut;
         let mut consumer_vspace = VSpace::new(
-            retype(ut, slots)?,
-            child_a_asid,
+            consumer_root,
+            consumer_asid,
             consumer_vspace_slots.weaken(),
             consumer_vspace_ut.weaken(),
             ProcessCodeImageConfig::ReadOnly,
             user_image,
             root_cnode,
         )?;
+
+        let producer_root = retype(ut, slots)?;
         let producer_vspace_slots: LocalCNodeSlots<U1024> = slots;
         let producer_vspace_ut: LocalCap<Untyped<U15>> = ut;
         let mut producer_vspace = VSpace::new(
-            retype(ut, slots)?,
-            child_b_asid,
+            producer_root,
+            producer_asid,
             producer_vspace_slots.weaken(),
             producer_vspace_ut.weaken(),
             ProcessCodeImageConfig::ReadOnly,
@@ -53,11 +62,8 @@ pub fn shared_page_queue(
             root_cnode,
         )?;
 
-        let (consumer_cnode, consumer_slots) = retype_cnode::<U12>(ut, slots)?;
-        let (producer_cnode, producer_slots) = retype_cnode::<U12>(ut, slots)?;
-
         let (slots_c, consumer_slots) = consumer_slots.alloc();
-        let (consumer, _consumer_token, producer_setup, _waker_setup) = Consumer1::new(
+        let (consumer, consumer_token, producer_setup, _waker_setup) = Consumer1::new(
             ut,
             ut,
             local_vspace_scratch,
@@ -66,16 +72,17 @@ pub fn shared_page_queue(
             slots,
             slots_c,
         )?;
-        let (consumer_sender_slot, _consumer_slots) = consumer_slots.alloc();
-        let (consumer_fault_source, outcome_sender, handler) =
-            fault_or_message_channel(&root_cnode, ut, slots, consumer_sender_slot, slots)?;
+
+        let (outcome_sender_slots, _consumer_slots) = consumer_slots.alloc();
+        let (fault_source, outcome_sender, handler) =
+            fault_or_message_channel(&root_cnode, ut, slots, outcome_sender_slots, slots)?;
 
         let consumer_params = ConsumerParams::<role::Child> {
             consumer,
             outcome_sender,
         };
 
-        let (slots_p, _producer_slots) = producer_slots.alloc();
+        let (slots_p, _producer_a_slots) = producer_slots.alloc();
         let producer = Producer::new(
             &producer_setup,
             slots_p,
@@ -86,36 +93,38 @@ pub fn shared_page_queue(
 
         let producer_params = ProducerParams::<role::Child> { producer };
 
-        let (producer_region, consumer_region) = local_mapped_region.split()?;
+        let (u18_region_a, _u18_region_b) = local_mapped_region.split()?;
+        let (consumer_region, producer_region) = u18_region_a.split()?;
 
         let consumer_process = StandardProcess::new(
             &mut consumer_vspace,
             consumer_cnode,
             consumer_region,
             root_cnode,
-            consumer_run as extern "C" fn(_) -> (),
+            consumer_proc as extern "C" fn(_) -> (),
             consumer_params,
             ut,
             ut,
             slots,
             tpa,
-            Some(consumer_fault_source),
+            None, // fault
         )?;
-        consumer_process.start()?;
 
         let producer_process = StandardProcess::new(
             &mut producer_vspace,
             producer_cnode,
             producer_region,
             root_cnode,
-            producer_run as extern "C" fn(_) -> (),
+            producer_proc as extern "C" fn(_) -> (),
             producer_params,
             ut,
             ut,
             slots,
             tpa,
-            None, // fault handler
+            None, // fault
         )?;
+
+        consumer_process.start()?;
         producer_process.start()?;
     });
 
@@ -128,12 +137,12 @@ pub fn shared_page_queue(
 }
 
 #[derive(Debug)]
-pub struct Xenon {
+pub struct Data {
     a: u64,
 }
 
 pub struct ConsumerParams<Role: CNodeRole> {
-    pub consumer: Consumer1<Role, Xenon, U100>,
+    pub consumer: Consumer1<Role, Data, U20>,
     pub outcome_sender: Sender<bool, Role>,
 }
 
@@ -142,46 +151,67 @@ impl RetypeForSetup for ConsumerParams<role::Local> {
 }
 
 pub struct ProducerParams<Role: CNodeRole> {
-    pub producer: Producer<Role, Xenon, U100>,
+    pub producer: Producer<Role, Data, U20>,
 }
 
 impl RetypeForSetup for ProducerParams<role::Local> {
     type Output = ProducerParams<role::Child>;
 }
 
-pub extern "C" fn consumer_run(p: ConsumerParams<role::Local>) {
+pub extern "C" fn consumer_proc(p: ConsumerParams<role::Local>) {
+    #[derive(Debug)]
+    struct State {
+        queue_element_count: usize,
+        queue_sum: u64,
+    }
+
+    impl State {
+        fn is_finished(&self) -> bool {
+            self.queue_element_count == 20 && self.queue_sum == 190
+        }
+    }
+
     let ConsumerParams {
-        consumer,
+        mut consumer,
         outcome_sender,
     } = p;
-    let initial_state = 0;
-    consumer.consume(
-        initial_state,
-        |state| {
-            let fresh_state = state + 1;
-            fresh_state
-        },
-        |x, state| {
-            let fresh_state = x.a + state;
-            if fresh_state > 10_000 {
+
+    let mut state = State {
+        queue_element_count: 0,
+        queue_sum: 0,
+    };
+
+    loop {
+        if let Some(data) = consumer.poll() {
+            state.queue_element_count = state.queue_element_count.saturating_add(1);
+            state.queue_sum = state.queue_sum.saturating_add(data.a);
+
+            if state.is_finished() {
                 outcome_sender
                     .blocking_send(&true)
-                    .expect("Failed to send test outcome");
+                    .expect("Could not send final test result")
             }
-            fresh_state
-        },
-    )
+        }
+
+        unsafe {
+            seL4_Yield();
+        }
+    }
 }
 
-pub extern "C" fn producer_run(p: ProducerParams<role::Local>) {
-    for i in 0..256 {
-        match p.producer.send(Xenon { a: i }) {
-            Ok(_) => (),
-            Err(QueueFullError(_x)) => {
-                // Rejected sending this value, let's yield and let the consumer catch up
-                // Note that we do not attempt to resend the rejected value
-                unsafe {
-                    selfe_sys::seL4_Yield();
+pub extern "C" fn producer_proc(p: ProducerParams<role::Local>) {
+    for i in 0..20 {
+        let mut data = Data { a: i };
+        loop {
+            match p.producer.send(data) {
+                Ok(_) => {
+                    break;
+                }
+                Err(QueueFullError(rejected_data)) => {
+                    data = rejected_data;
+                    unsafe {
+                        seL4_Yield();
+                    }
                 }
             }
         }
