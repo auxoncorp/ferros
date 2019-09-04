@@ -69,19 +69,53 @@ pub fn call_channel<Req: Send + Sync, Rsp: Send + Sync>(
     ))
 }
 
+/// A more general version of call_channel; only gives you an IPCSetup, from
+/// which you can create callers/responders as needed.
+pub fn call_channel_setup<Req: Send + Sync, Rsp: Send + Sync>(
+    untyped: LocalCap<Untyped<<Endpoint as DirectRetype>::SizeBits>>,
+    local_cnode: &LocalCap<LocalCNode>,
+    local_slot: LocalCNodeSlot,
+) -> Result<IpcSetup<Req, Rsp>, IPCError> {
+    let _ = IPCBuffer::<Req, Rsp>::new()?; // Check buffer fits Req and Rsp
+    let local_endpoint: LocalCap<Endpoint> = untyped.retype(local_slot)?;
+
+    Ok(IpcSetup {
+        endpoint: local_endpoint,
+        endpoint_cnode: &local_cnode,
+        _req: PhantomData,
+        _rsp: PhantomData,
+    })
+}
+
 impl<'a, Req, Rsp> IpcSetup<'a, Req, Rsp> {
-    pub fn create_caller(
+    pub fn create_caller<Role: CNodeRole>(
         &self,
-        child_slot: ChildCNodeSlot,
-    ) -> Result<Caller<Req, Rsp, role::Child>, IPCError> {
-        let child_endpoint =
+        caller_slot: CNodeSlot<Role>,
+    ) -> Result<Caller<Req, Rsp, Role>, IPCError> {
+        let caller_endpoint =
             self.endpoint
-                .copy(&self.endpoint_cnode, child_slot, CapRights::RWG)?;
+                .copy(&self.endpoint_cnode, caller_slot, CapRights::RWG)?;
 
         Ok(Caller {
-            endpoint: child_endpoint,
+            endpoint: caller_endpoint,
             _req: PhantomData,
             _rsp: PhantomData,
+        })
+    }
+
+    pub fn create_responder<Role: CNodeRole>(
+        &self,
+        responder_slot: CNodeSlot<Role>,
+    ) -> Result<Responder<Req, Rsp, Role>, IPCError> {
+        let responder_endpoint =
+            self.endpoint
+                .copy(&self.endpoint_cnode, responder_slot, CapRights::RWG)?;
+
+        Ok(Responder {
+            endpoint: responder_endpoint,
+            _req: PhantomData,
+            _rsp: PhantomData,
+            _role: PhantomData,
         })
     }
 }
