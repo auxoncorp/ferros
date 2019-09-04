@@ -361,6 +361,42 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
             .into();
         }
     }
+
+    pub fn recv_reply_once<F>(&self, mut f: F) -> Result<(), IPCError>
+    where
+        F: FnMut(Req) -> (Rsp),
+    {
+        // Can safely use unchecked_new because we check sizing during the creation of Responder
+        let mut ipc_buffer = unsafe { IPCBuffer::unchecked_new() };
+        let mut sender_badge: usize = 0;
+        // Do a regular receive to seed our initial value
+        let mut msg_info: MessageInfo =
+            unsafe { seL4_Recv(self.endpoint.cptr, &mut sender_badge as *mut usize) }.into();
+
+        let request_length_in_words = type_length_in_words::<Req>();
+        if msg_info.length_words() != request_length_in_words {
+            // A wrong-sized message length is an indication of unforeseen or
+            // misunderstood kernel operations. Using the checks established in
+            // the creation of Caller/Responder sets should prevent the creation
+            // of wrong-sized messages through their expected paths.
+            //
+            // Not knowing what this incoming message is, we drop it and spin-fail the loop.
+            // Note that `continue`'ing from here will cause this process
+            // to loop forever doing this check with no fresh data, most likely leaving the caller perpetually blocked.
+            debug_println!("Request size incoming ({} words) does not match static size expectation ({} words).",
+                msg_info.length_words(), request_length_in_words);
+            return Err(IPCError::RequestSizeMismatch);
+        }
+
+        let response = f(ipc_buffer.copy_req_from_buffer());
+        ipc_buffer.copy_rsp_into_buffer(&response);
+
+        unsafe {
+            seL4_Reply(type_length_message_info::<Rsp>());
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
