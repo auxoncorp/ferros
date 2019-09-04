@@ -167,7 +167,12 @@ pub extern "C" fn caller_proc(p: CallerParams<role::Local>) {
 }
 
 pub extern "C" fn responder_proc(p: ResponderParams<role::Local>) {
-    let initial_state: usize = 0;
+    p.responder
+        .recv_reply_once(|req| AdditionResponse { sum: req.a + req.b })
+        .expect("recv_reply_once");
+
+    let initial_state: usize = 1;
+
     p.responder
         .reply_recv_with_state(initial_state, move |req, state| {
             (AdditionResponse { sum: req.a + req.b }, state + 1)
