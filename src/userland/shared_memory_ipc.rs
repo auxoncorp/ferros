@@ -174,14 +174,14 @@ pub mod sync {
     impl<Req, Rsp> ExtendedResponder<Req, Rsp, role::Local> {
         pub fn reply_recv<F>(self, f: F) -> !
         where
-            F: Fn(&Req) -> (Rsp),
+            F: Fn(Req) -> (Rsp),
         {
             self.reply_recv_with_state((), move |req, state| (f(req), state))
         }
 
         pub fn reply_recv_with_state<F, State>(self, initial_state: State, f: F) -> !
         where
-            F: Fn(&Req, State) -> (Rsp, State),
+            F: Fn(Req, State) -> (Rsp, State),
         {
             let mut inner = self.inner;
             let mut sender_badge: usize = 0;
@@ -190,7 +190,7 @@ pub mod sync {
             loop {
                 unsafe {
                     seL4_Wait(inner.request_ready.cptr, &mut sender_badge as *mut usize);
-                    let out = f(&inner.unchecked_copy_from_buffer(), state);
+                    let out = f(inner.unchecked_copy_from_buffer(), state);
                     response = out.0;
                     state = out.1;
                     inner.unchecked_copy_into_buffer(&response);
