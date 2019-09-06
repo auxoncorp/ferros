@@ -40,18 +40,18 @@ pub struct IpcSetup<'a, Req, Rsp> {
     _rsp: PhantomData<Rsp>,
 }
 
-/// Fastpath call channel -> given some memory capacity and two child cnodes,
-/// create an endpoint locally, copy it to the responder process cnode, and return an
-/// IpcSetup to allow connecting callers.
-pub fn call_channel<Req: Send + Sync, Rsp: Send + Sync>(
+/// Fastpath call channel -> given some memory capacity, a local cnode, and a
+/// target responder cnode, create an endpoint locally, copy it to the responder
+/// process cnode, and return an IpcSetup to allow connecting callers.
+pub fn call_channel<Req: Send + Sync, Rsp: Send + Sync, ResponderRole: CNodeRole>(
     untyped: LocalCap<Untyped<<Endpoint as DirectRetype>::SizeBits>>,
     local_cnode: &LocalCap<LocalCNode>,
     local_slot: LocalCNodeSlot,
-    child_slot: ChildCNodeSlot,
-) -> Result<(IpcSetup<Req, Rsp>, Responder<Req, Rsp, role::Child>), IPCError> {
+    responder_slot: CNodeSlot<ResponderRole>,
+) -> Result<(IpcSetup<Req, Rsp>, Responder<Req, Rsp, ResponderRole>), IPCError> {
     let _ = IPCBuffer::<Req, Rsp>::new()?; // Check buffer fits Req and Rsp
     let local_endpoint: LocalCap<Endpoint> = untyped.retype(local_slot)?;
-    let child_endpoint = local_endpoint.copy(&local_cnode, child_slot, CapRights::RW)?;
+    let responder_endpoint = local_endpoint.copy(&local_cnode, responder_slot, CapRights::RW)?;
 
     Ok((
         IpcSetup {
@@ -61,7 +61,7 @@ pub fn call_channel<Req: Send + Sync, Rsp: Send + Sync>(
             _rsp: PhantomData,
         },
         Responder {
-            endpoint: child_endpoint,
+            endpoint: responder_endpoint,
             _req: PhantomData,
             _rsp: PhantomData,
             _role: PhantomData,
@@ -70,16 +70,16 @@ pub fn call_channel<Req: Send + Sync, Rsp: Send + Sync>(
 }
 
 impl<'a, Req, Rsp> IpcSetup<'a, Req, Rsp> {
-    pub fn create_caller(
+    pub fn create_caller<Role: CNodeRole>(
         &self,
-        child_slot: ChildCNodeSlot,
-    ) -> Result<Caller<Req, Rsp, role::Child>, IPCError> {
-        let child_endpoint =
+        caller_slot: CNodeSlot<Role>,
+    ) -> Result<Caller<Req, Rsp, Role>, IPCError> {
+        let caller_endpoint =
             self.endpoint
-                .copy(&self.endpoint_cnode, child_slot, CapRights::RWG)?;
+                .copy(&self.endpoint_cnode, caller_slot, CapRights::RWG)?;
 
         Ok(Caller {
-            endpoint: child_endpoint,
+            endpoint: caller_endpoint,
             _req: PhantomData,
             _rsp: PhantomData,
         })
@@ -326,6 +326,42 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
             }
             .into();
         }
+    }
+
+    pub fn recv_reply_once<F>(&self, mut f: F) -> Result<(), IPCError>
+    where
+        F: FnMut(Req) -> (Rsp),
+    {
+        // Can safely use unchecked_new because we check sizing during the creation of Responder
+        let mut ipc_buffer = unsafe { IPCBuffer::unchecked_new() };
+        let mut sender_badge: usize = 0;
+        // Do a regular receive to seed our initial value
+        let mut msg_info: MessageInfo =
+            unsafe { seL4_Recv(self.endpoint.cptr, &mut sender_badge as *mut usize) }.into();
+
+        let request_length_in_words = type_length_in_words::<Req>();
+        if msg_info.length_words() != request_length_in_words {
+            // A wrong-sized message length is an indication of unforeseen or
+            // misunderstood kernel operations. Using the checks established in
+            // the creation of Caller/Responder sets should prevent the creation
+            // of wrong-sized messages through their expected paths.
+            //
+            // Not knowing what this incoming message is, we drop it and spin-fail the loop.
+            // Note that `continue`'ing from here will cause this process
+            // to loop forever doing this check with no fresh data, most likely leaving the caller perpetually blocked.
+            debug_println!("Request size incoming ({} words) does not match static size expectation ({} words).",
+                msg_info.length_words(), request_length_in_words);
+            return Err(IPCError::RequestSizeMismatch);
+        }
+
+        let response = f(ipc_buffer.copy_req_from_buffer());
+        ipc_buffer.copy_rsp_into_buffer(&response);
+
+        unsafe {
+            seL4_Reply(type_length_message_info::<Rsp>());
+        }
+
+        Ok(())
     }
 }
 
