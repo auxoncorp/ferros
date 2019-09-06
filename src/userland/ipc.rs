@@ -40,18 +40,18 @@ pub struct IpcSetup<'a, Req, Rsp> {
     _rsp: PhantomData<Rsp>,
 }
 
-/// Fastpath call channel -> given some memory capacity and two child cnodes,
-/// create an endpoint locally, copy it to the responder process cnode, and return an
-/// IpcSetup to allow connecting callers.
-pub fn call_channel<Req: Send + Sync, Rsp: Send + Sync>(
+/// Fastpath call channel -> given some memory capacity, a local cnode, and a
+/// target responder cnode, create an endpoint locally, copy it to the responder
+/// process cnode, and return an IpcSetup to allow connecting callers.
+pub fn call_channel<Req: Send + Sync, Rsp: Send + Sync, ResponderRole: CNodeRole>(
     untyped: LocalCap<Untyped<<Endpoint as DirectRetype>::SizeBits>>,
     local_cnode: &LocalCap<LocalCNode>,
     local_slot: LocalCNodeSlot,
-    child_slot: ChildCNodeSlot,
-) -> Result<(IpcSetup<Req, Rsp>, Responder<Req, Rsp, role::Child>), IPCError> {
+    responder_slot: CNodeSlot<ResponderRole>,
+) -> Result<(IpcSetup<Req, Rsp>, Responder<Req, Rsp, ResponderRole>), IPCError> {
     let _ = IPCBuffer::<Req, Rsp>::new()?; // Check buffer fits Req and Rsp
     let local_endpoint: LocalCap<Endpoint> = untyped.retype(local_slot)?;
-    let child_endpoint = local_endpoint.copy(&local_cnode, child_slot, CapRights::RW)?;
+    let responder_endpoint = local_endpoint.copy(&local_cnode, responder_slot, CapRights::RW)?;
 
     Ok((
         IpcSetup {
@@ -61,30 +61,12 @@ pub fn call_channel<Req: Send + Sync, Rsp: Send + Sync>(
             _rsp: PhantomData,
         },
         Responder {
-            endpoint: child_endpoint,
+            endpoint: responder_endpoint,
             _req: PhantomData,
             _rsp: PhantomData,
             _role: PhantomData,
         },
     ))
-}
-
-/// A more general version of call_channel; only gives you an IPCSetup, from
-/// which you can create callers/responders as needed.
-pub fn call_channel_setup<Req: Send + Sync, Rsp: Send + Sync>(
-    untyped: LocalCap<Untyped<<Endpoint as DirectRetype>::SizeBits>>,
-    local_cnode: &LocalCap<LocalCNode>,
-    local_slot: LocalCNodeSlot,
-) -> Result<IpcSetup<Req, Rsp>, IPCError> {
-    let _ = IPCBuffer::<Req, Rsp>::new()?; // Check buffer fits Req and Rsp
-    let local_endpoint: LocalCap<Endpoint> = untyped.retype(local_slot)?;
-
-    Ok(IpcSetup {
-        endpoint: local_endpoint,
-        endpoint_cnode: &local_cnode,
-        _req: PhantomData,
-        _rsp: PhantomData,
-    })
 }
 
 impl<'a, Req, Rsp> IpcSetup<'a, Req, Rsp> {
@@ -100,22 +82,6 @@ impl<'a, Req, Rsp> IpcSetup<'a, Req, Rsp> {
             endpoint: caller_endpoint,
             _req: PhantomData,
             _rsp: PhantomData,
-        })
-    }
-
-    pub fn create_responder<Role: CNodeRole>(
-        &self,
-        responder_slot: CNodeSlot<Role>,
-    ) -> Result<Responder<Req, Rsp, Role>, IPCError> {
-        let responder_endpoint =
-            self.endpoint
-                .copy(&self.endpoint_cnode, responder_slot, CapRights::RWG)?;
-
-        Ok(Responder {
-            endpoint: responder_endpoint,
-            _req: PhantomData,
-            _rsp: PhantomData,
-            _role: PhantomData,
         })
     }
 }

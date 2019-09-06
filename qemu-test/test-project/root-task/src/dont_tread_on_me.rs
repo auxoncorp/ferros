@@ -9,7 +9,7 @@ use ferros::alloc::{smart_alloc, ut_buddy};
 use ferros::bootstrap::UserImage;
 use ferros::cap::*;
 use ferros::userland::{
-    call_channel_setup, fault_or_message_channel, Caller, FaultOrMessage, Responder, RetypeForSetup,
+    call_channel, fault_or_message_channel, Caller, FaultOrMessage, Responder, RetypeForSetup,
     Sender, StandardProcess,
 };
 use ferros::vspace::*;
@@ -70,11 +70,8 @@ pub fn dont_tread_on_me<'a, 'b, 'c>(
             root_cnode,
         )?;
 
-        let ipc_setup = call_channel_setup(ut, &root_cnode, slots)?;
-
         let (slots1, proc1_slots) = proc1_slots.alloc();
-        let responder = ipc_setup.create_responder(slots1)?;
-
+        let (ipc_setup, responder) = call_channel(ut, &root_cnode, slots, slots1)?;
         let (proc1_outcome_sender_slot, _proc1_slots) = proc1_slots.alloc();
         let (fault_source, outcome_sender, handler) =
             fault_or_message_channel(&root_cnode, ut, slots, proc1_outcome_sender_slot, slots)?;
