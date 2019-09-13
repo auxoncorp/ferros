@@ -11,8 +11,27 @@ if [ -z ${SEL4_PLATFORM+x} ]; then
     exit 1;
 fi
 
-# reversed topological sort of the dep graph
-for c in $(tsort crate-binary-deps | tac); do
-    echo "---------------- building ${c} ----------------"
-    cargo xbuild -p $c $@;
-done
+if [ -z ${TEST+x} ]; then
+    echo "----------- building apps and libs -----------"
+    cargo xbuild --all --exclude "root-task" $@
+
+    echo "----------- building root task ---------------"
+    cargo xbuild -p "root-task" $@;
+
+else
+    rm target/armv7-unknown-linux-gnueabi/debug/* || true
+    rm target/aarch64-unknown-linux-gnu/debug/* || true
+
+    echo "--------------- building tests ---------------"
+    cargo xtest --no-run $@
+
+    echo "------------- building test runner -----------"
+    cargo xbuild -p "fancy-test-runner" $@
+
+    echo "----- replacing root task with test runner----"
+    rm target/armv7-unknown-linux-gnueabi/debug/root-task || true
+    cp target/armv7-unknown-linux-gnueabi/debug/fancy-test-runner target/armv7-unknown-linux-gnueabi/debug/root-task || true
+
+    rm target/aarch64-unknown-linux-gnu/debug/root-task || true
+    cp target/aarch64-unknown-linux-gnu/debug/fancy-test-runner target/aarch64-unknown-linux-gnu/debug/root-task || true
+fi

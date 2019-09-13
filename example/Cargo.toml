@@ -1,9 +1,17 @@
 [workspace]
-members = ["root-task", "hello-printer"]
-exclude = ["root-task/build-script"]
+members = [
+  "root-task",
+  "hello-printer",
+  "ext/ferros-fancy-test/fancy-test-runner",
+  "ext/ferros-fancy-test/fancy-test-macros",
+  "ext/ferros-fancy-test/fancy-test",
+]
 
 [profile.dev]
 panic = "abort"
 
 [profile.release]
 panic = "abort"
+
+[patch."ssh://git@github.com/auxoncorp/ferros.git"]
+ferros = { path = ".." }

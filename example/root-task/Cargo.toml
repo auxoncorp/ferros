@@ -19,3 +19,7 @@ cargo-5730 = "0.2"
 
 [workaround-build-dependencies]
 ferros-build = { path = "../../ferros-build" }
+
+[[bin]]
+name = "root-task"
+test = false

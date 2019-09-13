@@ -8,3 +8,9 @@ edition = "2018"
 selfe-sys = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
 selfe-runtime = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git", features = [ "panic_handler"  ]}
 ferros = { path = "../.." }
+
+[lib]
+test = false
+
+[dev-dependencies]
+fancy-test = { path = "../ext/ferros-fancy-test/fancy-test" }

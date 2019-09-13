@@ -1,0 +1,3 @@
+[submodule "example/ext/ferros-fancy-test"]
+	path = example/ext/ferros-fancy-test
+	url = ssh://git@github.com/auxoncorp/ferros-fancy-test.git
