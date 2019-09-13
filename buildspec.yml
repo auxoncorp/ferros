@@ -1,0 +1,15 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+      - mkdir -p ~/.ssh
+      - echo "$ci_ssh_key" > ~/.ssh/id_rsa
+      - chmod 600 ~/.ssh/id_rsa
+      - eval `ssh-agent -s`
+      - ssh-add
+      - ssh-keyscan github.com > ~/.ssh/known_hosts
+      - cargo install --git ssh://git@github.com/auxoncorp/selfe-sys.git selfe-config --bin selfe --features bin --force
+  build:
+    commands:
+      - ./check-all.sh
