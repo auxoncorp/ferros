@@ -13,7 +13,7 @@ use syn::{
     parse_quote, ArgCaptured, Block, Error as SynError, Expr, ExprClosure, FnArg, GenericArgument,
     Ident, Item as SynItem, ItemMacro, Pat, PathArguments, ReturnType, Stmt, Type,
 };
-use uuid::Uuid;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const RESOURCE_TYPE_HINT_CSLOTS: &str = "CNodeSlots";
 const RESOURCE_TYPE_HINT_UNTYPED: &str = "UntypedBuddy";
@@ -540,9 +540,12 @@ impl IdTracker {
     }
 }
 
-fn make_ident(uuid: Uuid, name_hint: &'static str) -> Ident {
+static IDENT_ID: AtomicUsize = AtomicUsize::new(0);
+
+fn gensym(name_hint: &'static str) -> Ident {
+    let id = IDENT_ID.fetch_add(1, Ordering::SeqCst);
     syn::Ident::new(
-        &format!("__smart_alloc_{}_{}", name_hint, uuid.to_simple()),
+        &format!("__smart_alloc_{}_{}", name_hint, id),
         Span::call_site(),
     )
 }
@@ -587,7 +590,7 @@ impl Fold for IdTracker {
 
     fn fold_ident(&mut self, node: Ident) -> Ident {
         if node == self.cslot_request_id {
-            let fresh_id = make_ident(Uuid::new_v4(), "cslots");
+            let fresh_id = gensym("cslots");
             self.planned_allocs
                 .push(PlannedAlloc::CSlot(fresh_id.clone()));
             return fresh_id;
@@ -595,10 +598,10 @@ impl Fold for IdTracker {
 
         if let Some(ut_request_id) = &self.untyped_request_id {
             if node == *ut_request_id {
-                let fresh_id = make_ident(Uuid::new_v4(), "untyped");
+                let fresh_id = gensym("untyped");
                 self.planned_allocs.push(PlannedAlloc::Untyped {
                     ut: fresh_id.clone(),
-                    cslot: make_ident(Uuid::new_v4(), "cslots_for_untyped"),
+                    cslot: gensym("cslots_for_untyped"),
                 });
                 return fresh_id;
             }
