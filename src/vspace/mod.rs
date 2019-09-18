@@ -153,7 +153,8 @@ pub enum VSpaceError {
     TriedToMapTooManyPagesAtOnce,
     InvalidRegionSize,
     ElfParseError(&'static str),
-    InsufficientResourcesForElf,
+    InsufficientResourcesForElfWritablePage,
+    InsufficientResourcesForElfPageMapping,
 }
 
 impl From<RetypeError> for VSpaceError {
@@ -583,7 +584,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                     // the binary itself.
                     let dest_page = writable_segment_pages_iter
                         .next()
-                        .ok_or(VSpaceError::InsufficientResourcesForElf)?;
+                        .ok_or(VSpaceError::InsufficientResourcesForElfWritablePage)?;
 
                     let mut unmapped_region = dest_page.to_region();
                     let _ = local_vspace_scratch.temporarily_map_region::<PageBits, _, _>(
@@ -619,7 +620,6 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                             temp_mapped_region.flush().unwrap();
                         },
                     );
-
                     let _ = vspace.map_page_at_addr_without_watermarking(
                         unmapped_region.to_page(),
                         curr_page_vaddr,
@@ -661,7 +661,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                         // the binary itself.
                         page_slots
                             .alloc_strong::<U1>()
-                            .map_err(|_| VSpaceError::InsufficientResourcesForElf)?,
+                            .map_err(|_| VSpaceError::InsufficientResourcesForElfPageMapping)?,
                         CapRights::R,
                     )?;
 

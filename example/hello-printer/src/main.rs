@@ -1,12 +1,16 @@
 #![no_std]
 #![no_main]
 
-#![cfg_attr(test, feature(custom_test_frameworks))]
+#![cfg_attr(test, feature(custom_test_frameworks, alloc))]
 #![cfg_attr(test, test_runner(fancy_test::runner))]
 #![cfg_attr(test, reexport_test_harness_main = "test_main")]
 
 use ferros::*;
 extern crate selfe_runtime;
+
+#[cfg(test)]
+#[macro_use]
+extern crate alloc;
 
 use hello_printer::ProcParams;
 
@@ -36,6 +40,7 @@ pub extern "C" fn _start(context: fancy_test::TestContext<ferros::cap::role::Loc
 #[cfg(test)]
 mod test {
     use fancy_test::unit_test;
+    use proptest::prelude::*;
 
     #[unit_test]
     fn pass() {
@@ -45,5 +50,12 @@ mod test {
     #[unit_test]
     fn pass2() {
         assert_eq!(2, 2);
+    }
+
+    #[unit_test]
+    fn addition_commutes() {
+        proptest!(|(a: u16, b: u16)| {
+            prop_assert_eq!(a as u32 + b as u32, b as u32 + a as u32);
+        });
     }
 }

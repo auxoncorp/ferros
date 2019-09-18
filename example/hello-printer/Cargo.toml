@@ -14,3 +14,4 @@ test = false
 
 [dev-dependencies]
 fancy-test = { path = "../ext/ferros-fancy-test/fancy-test" }
+proptest = { git = "ssh://git@github.com/auxoncorp/proptest.git", branch="nostd-sugar-macros", default-features = false }
