@@ -189,6 +189,15 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
         })
     }
 
+    pub fn bind_notification(
+        &mut self,
+        notification: &LocalCap<Notification>,
+    ) -> Result<(), SeL4Error> {
+        unsafe { seL4_TCB_BindNotification(self.tcb.cptr, notification.cptr) }
+            .as_result()
+            .map_err(|e| SeL4Error::TCBBindNotification(e))
+    }
+
     pub fn start(self) -> Result<(), SeL4Error> {
         unsafe { seL4_TCB_Resume(self.tcb.cptr) }
             .as_result()
