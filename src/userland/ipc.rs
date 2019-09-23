@@ -275,7 +275,7 @@ pub struct Responder<Req: Sized, Rsp: Sized, Role: CNodeRole> {
 impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
     pub fn reply_recv<F>(self, mut f: F) -> Result<Rsp, IPCError>
     where
-        F: FnMut(&Req) -> (Rsp),
+        F: FnMut(Req) -> (Rsp),
     {
         self.reply_recv_with_state((), move |req, state| (f(req), state))
     }
@@ -286,7 +286,20 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
         mut f: F,
     ) -> Result<Rsp, IPCError>
     where
-        F: FnMut(&Req, State) -> (Rsp, State),
+        F: FnMut(Req, State) -> (Rsp, State),
+    {
+        self.reply_recv_with_notification(initial_state, f, move |_sender_badge, state| state)
+    }
+
+    pub fn reply_recv_with_notification<F, G, State>(
+        self,
+        initial_state: State,
+        mut f: F,
+        mut g: G,
+    ) -> Result<Rsp, IPCError>
+    where
+        F: FnMut(Req, State) -> (Rsp, State),
+        G: FnMut(usize, State) -> State,
     {
         // Can safely use unchecked_new because we check sizing during the creation of Responder
         let mut ipc_buffer = unsafe { IPCBuffer::unchecked_new() };
@@ -299,32 +312,43 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
         let mut response;
         let mut state = initial_state;
         loop {
-            if msg_info.length_words() != request_length_in_words {
-                // A wrong-sized message length is an indication of unforeseen or
-                // misunderstood kernel operations. Using the checks established in
-                // the creation of Caller/Responder sets should prevent the creation
-                // of wrong-sized messages through their expected paths.
-                //
-                // Not knowing what this incoming message is, we drop it and spin-fail the loop.
-                // Note that `continue`'ing from here will cause this process
-                // to loop forever doing this check with no fresh data, most likely leaving the caller perpetually blocked.
-                debug_println!("Request size incoming ({} words) does not match static size expectation ({} words).",
+            // if the badge is zero, it's a regular IPC
+            if sender_badge == 0 {
+                if msg_info.length_words() != request_length_in_words {
+                    // A wrong-sized message length is an indication of unforeseen or
+                    // misunderstood kernel operations. Using the checks established in
+                    // the creation of Caller/Responder sets should prevent the creation
+                    // of wrong-sized messages through their expected paths.
+                    //
+                    // Not knowing what this incoming message is, we drop it and spin-fail the loop.
+                    // Note that `continue`'ing from here will cause this process
+                    // to loop forever doing this check with no fresh data, most likely leaving the
+                    // caller perpetually blocked.
+                    debug_println!("Request size incoming ({} words) does not match static size expectation ({} words).",
                 msg_info.length_words(), request_length_in_words);
-                continue;
-            }
-            let out = f(&ipc_buffer.copy_req_from_buffer(), state);
-            response = out.0;
-            state = out.1;
+                    continue;
+                }
+                let out = f(ipc_buffer.copy_req_from_buffer(), state);
+                response = out.0;
+                state = out.1;
 
-            ipc_buffer.copy_rsp_into_buffer(&response);
-            msg_info = unsafe {
-                seL4_ReplyRecv(
-                    self.endpoint.cptr,
-                    type_length_message_info::<Rsp>(),
-                    &mut sender_badge as *mut usize,
-                )
+                ipc_buffer.copy_rsp_into_buffer(&response);
+                msg_info = unsafe {
+                    seL4_ReplyRecv(
+                        self.endpoint.cptr,
+                        type_length_message_info::<Rsp>(),
+                        &mut sender_badge as *mut usize,
+                    )
+                }
+                .into();
+            } else {
+                // nonzero badges are from a notification
+                state = g(sender_badge, state);
+
+                msg_info =
+                    unsafe { seL4_Recv(self.endpoint.cptr, &mut sender_badge as *mut usize) }
+                        .into();
             }
-            .into();
         }
     }
 

@@ -30,6 +30,7 @@ pub enum SeL4Error {
     VCPUReadRegisters(KernelError),
     VCPUWriteRegisters(KernelError),
     VCPUBindTcb(KernelError),
+    TCBBindNotification(KernelError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

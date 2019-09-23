@@ -3,7 +3,7 @@ use ferros::alloc::{smart_alloc, ut_buddy};
 use ferros::bootstrap::UserImage;
 use ferros::cap::{
     retype, retype_cnode, role, ASIDPool, CNodeRole, LocalCNode, LocalCNodeSlots, LocalCap,
-    ThreadPriorityAuthority, Untyped,
+    ThreadPriorityAuthority, Untyped, Notification, Badge, Cap
 };
 use ferros::userland::*;
 use ferros::vspace::*;
@@ -61,11 +61,19 @@ pub fn call_and_response_loop(
 
         let (slots_c, caller_slots) = caller_slots.alloc();
         let caller = ipc_setup.create_caller(slots_c)?;
-        let (child_fault_source_slot, _caller_slots) = caller_slots.alloc();
+        let (child_fault_source_slot, caller_slots) = caller_slots.alloc();
         let (fault_source, fault_or_outcome_sender, handler) =
             fault_or_message_channel(&root_cnode, ut, slots, child_fault_source_slot, slots)?;
+
+        let notification: LocalCap<Notification> = retype(ut, slots)?;
+        let notification_badge = Badge::from(0b100);
+        let (slots_c, _caller_slots) = caller_slots.alloc();
+        let caller_notification =
+            notification.mint(root_cnode, slots_c, CapRights::RWG, notification_badge)?;
+
         let caller_params = CallerParams::<role::Child> {
             caller,
+            notification: caller_notification,
             outcome_sender: fault_or_outcome_sender,
         };
 
@@ -88,7 +96,7 @@ pub fn call_and_response_loop(
         )?;
         caller_process.start()?;
 
-        let responder_process = StandardProcess::new(
+        let mut responder_process = StandardProcess::new(
             &mut responder_vspace,
             responder_cnode,
             responder_region,
@@ -101,6 +109,8 @@ pub fn call_and_response_loop(
             tpa,
             None, // fault
         )?;
+
+        responder_process.bind_notification(&notification)?;
         responder_process.start()?;
     });
 
@@ -126,6 +136,7 @@ pub struct AdditionResponse {
 #[derive(Debug)]
 pub struct CallerParams<Role: CNodeRole> {
     pub caller: Caller<AdditionRequest, AdditionResponse, Role>,
+    pub notification: Cap<Notification, Role>,
     pub outcome_sender: Sender<bool, Role>,
 }
 
@@ -158,7 +169,10 @@ pub extern "C" fn caller_proc(p: CallerParams<role::Local>) {
             }
             Err(_) => panic!("Addition requester panic'd"),
         }
+
+        p.notification.signal();
     }
+
     p.outcome_sender
         .blocking_send(
             &(current_sum == 128 && addition_request.a + addition_request.b == current_sum),
@@ -174,8 +188,15 @@ pub extern "C" fn responder_proc(p: ResponderParams<role::Local>) {
     let initial_state: usize = 1;
 
     p.responder
-        .reply_recv_with_state(initial_state, move |req, state| {
-            (AdditionResponse { sum: req.a + req.b }, state + 1)
-        })
+        .reply_recv_with_notification(
+            initial_state,
+            move |req, state| {
+                (AdditionResponse { sum: req.a + req.b }, state + 1)
+            },
+            move |notification_badge, state| {
+                assert!(notification_badge == 0b100);
+                state + 1
+            }
+        )
         .expect("Could not set up a reply_recv");
 }

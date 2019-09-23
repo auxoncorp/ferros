@@ -32,6 +32,10 @@ impl DirectRetype for Notification {
 }
 
 impl LocalCap<Notification> {
+    pub fn signal(&self) {
+        unsafe { seL4_Signal(self.cptr) }
+    }
+
     /// Blocking wait on a notification
     pub fn wait(&self) -> Badge {
         let mut sender_badge: usize = 0;
