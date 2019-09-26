@@ -10,7 +10,7 @@ use ferros::cap::{
     retype, retype_cnode, role, CNodeRole, LocalCNodeSlots, LocalCap, MaxIRQCount, Untyped,
 };
 use ferros::userland::{
-    CapRights, DefaultStackBitSize, InterruptConsumer, RetypeForSetup, StandardProcess,
+    CapRights, DefaultStackBitSize, InterruptConsumer, RetypeForSetup, StandardProcess, Consumer1, Producer
 };
 use ferros::vspace::*;
 
@@ -74,9 +74,35 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
         let (uart1_cnode, uart1_slots) = retype_cnode::<U12>(ut, slots)?;
 
-        let (slots_u, _uart1_slots) = uart1_slots.alloc();
-        let (interrupt_consumer, _) =
+        let (slots_u, uart1_slots) = uart1_slots.alloc();
+        let (interrupt_consumer, mut interrupt_consumer_token) =
             InterruptConsumer::new(ut, &mut irq_control, &root_cnode, slots, slots_u)?;
+
+        let scratch_ut: LocalCap<Untyped<U12>> = ut;
+        let reserved_for_scratch = root_vspace.reserve::<U1>(scratch_ut.retype(slots)?)?;
+
+        let mut local_vspace_scratch = reserved_for_scratch
+            .as_scratch(&mut root_vspace)
+            .expect("Failed to use root VSpace for scratch");
+
+        // Add a queue and producer to the interrupt consumer just to see that
+        // we can (this is a regression test, it used to crash)
+        let (interrupt_consumer, test_producer_setup) = interrupt_consumer.add_queue(
+            &mut interrupt_consumer_token,
+            ut,
+            &mut local_vspace_scratch,
+            &mut uart1_vspace,
+            &root_cnode,
+            slots,
+        )?;
+
+        let test_producer = Producer::new(
+            &test_producer_setup,
+            slots,
+            &mut root_vspace,
+            &root_cnode,
+            slots,
+        )?;
 
         let unmapped_uart1_page1 = UnmappedMemoryRegion::new_device(uart1_page_1_untyped, slots)?;
         assert!(unmapped_uart1_page1.paddr().unwrap() == UART1_PADDR);
@@ -127,7 +153,7 @@ pub mod uart {
         IRQ: IsLess<MaxIRQCount, Output = True>,
     {
         pub base_ptr: usize,
-        pub consumer: InterruptConsumer<IRQ, Role>,
+        pub consumer: Consumer1<Role, u32, U16, IRQ>,
     }
 
     impl<IRQ: Unsigned + Sync + Send> RetypeForSetup for UartParams<IRQ, role::Local>
@@ -266,12 +292,19 @@ pub mod uart {
 
         debug_println!("thou art ready");
 
-        params.consumer.consume((), move |state| {
-            let data = uart.get();
-            if let Some(d) = data {
-                debug_println!("got byte: {:?}", d);
+        params.consumer.consume(
+            (),
+            move |state| {
+                let data = uart.get();
+                if let Some(d) = data {
+                    debug_println!("got byte: {:?}", d);
+                }
+                state
+            },
+            |num, state| {
+                debug_println!("got num from queue: {:?}", num);
+                state
             }
-            state
-        })
+        )
     }
 }

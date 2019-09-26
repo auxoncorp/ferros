@@ -47,9 +47,9 @@ use typenum::*;
 
 use crate::arch::{self, PageBits, PageBytes};
 use crate::cap::{
-    irq_state, role, Badge, CNodeRole, Cap, ChildCNodeSlot, ChildCNodeSlots, DirectRetype,
-    IRQControl, IRQError, IRQHandler, InternalASID, LocalCNode, LocalCNodeSlot, LocalCNodeSlots,
-    LocalCap, MaxIRQCount, Notification, PhantomCap, Untyped,
+    irq_state, role, Badge, CNodeRole, CNodeSlot, Cap, ChildCNodeSlot, ChildCNodeSlots,
+    DirectRetype, IRQControl, IRQError, IRQHandler, InternalASID, LocalCNode, LocalCNodeSlot,
+    LocalCNodeSlots, LocalCap, MaxIRQCount, Notification, PhantomCap, Untyped,
 };
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
@@ -264,7 +264,7 @@ where
                 notification: notification_in_child,
             },
             ConsumerToken {
-                notification,
+                notification: unbadged_notification,
                 consumer_vspace_asid: None,
             },
         ))
@@ -999,25 +999,25 @@ where
     }
 }
 
-impl<T: Sized + Sync + Send, QLen: Unsigned> Producer<role::Child, T, QLen>
+impl<T: Sized + Sync + Send, QLen: Unsigned, Role: CNodeRole> Producer<Role, T, QLen>
 where
     QLen: IsGreater<U0, Output = True>,
     QLen: ArrayLength<Slot<T>>,
 {
     pub fn new(
         setup: &ProducerSetup<T, QLen>,
-        dest_slot: ChildCNodeSlot,
-        child_vspace: &mut VSpace,
+        dest_slot: CNodeSlot<Role>,
+        dest_vspace: &mut VSpace,
         local_cnode: &LocalCap<LocalCNode>,
         local_slot: LocalCNodeSlot,
     ) -> Result<Self, MultiConsumerError> {
-        if setup.consumer_vspace_asid == child_vspace.asid() {
+        if setup.consumer_vspace_asid == dest_vspace.asid() {
             // To simplify reasoning about likely control flow patterns,
             // we presently disallow a consumer thread from producing to one
             // of its own ingest queues.
             return Err(MultiConsumerError::ProduceToOwnQueueForbidden);
         }
-        let producer_shared_region = child_vspace.map_shared_region(
+        let producer_shared_region = dest_vspace.map_shared_region(
             &setup.shared_region,
             CapRights::RW,
             arch::vm_attributes::DEFAULT,
