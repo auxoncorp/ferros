@@ -741,10 +741,11 @@ where
         }
     }
 }
-impl<E: Sized + Sync + Send, QLen: Unsigned> Consumer1<role::Local, E, QLen>
+impl<E: Sized + Sync + Send, QLen: Unsigned, IRQ: Unsigned> Consumer1<role::Local, E, QLen, IRQ>
 where
     QLen: IsGreater<U0, Output = True>,
     QLen: ArrayLength<Slot<E>>,
+    IRQ: IsLess<MaxIRQCount, Output = True>,
 {
     pub fn poll(&mut self) -> Option<E> {
         let queue: &mut ArrayQueue<E, QLen> =
