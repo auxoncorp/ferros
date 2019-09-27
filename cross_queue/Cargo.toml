@@ -4,10 +4,5 @@ version = "0.1.0"
 authors = ["Dan Pittman <dan@auxon.io>", "Zack Pierce <zack@auxon.io>"]
 edition = "2018"
 
-[dependencies]
-typenum = "1.10"
-generic-array = "0.13.2"
-
 [dev-dependencies]
-rand = "0.6"
 crossbeam-utils = "0.6.5"

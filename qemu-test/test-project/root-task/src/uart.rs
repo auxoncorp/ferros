@@ -87,12 +87,13 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
         // Add a queue and producer to the interrupt consumer just to see that
         // we can (this is a regression test, it used to crash)
-        let (interrupt_consumer, test_producer_setup) = interrupt_consumer.add_queue(
+        let (interrupt_consumer, test_producer_setup) = interrupt_consumer.add_queue::<u32, U16, U12, _>(
             &mut interrupt_consumer_token,
             ut,
             &mut local_vspace_scratch,
             &mut uart1_vspace,
             &root_cnode,
+            slots,
             slots,
         )?;
 
@@ -153,7 +154,7 @@ pub mod uart {
         IRQ: IsLess<MaxIRQCount, Output = True>,
     {
         pub base_ptr: usize,
-        pub consumer: Consumer1<Role, u32, U16, IRQ>,
+        pub consumer: Consumer1<Role, u32, IRQ>,
     }
 
     impl<IRQ: Unsigned + Sync + Send> RetypeForSetup for UartParams<IRQ, role::Local>

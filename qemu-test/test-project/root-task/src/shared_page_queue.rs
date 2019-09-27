@@ -57,12 +57,14 @@ pub fn shared_page_queue(
         let (producer_cnode, producer_slots) = retype_cnode::<U12>(ut, slots)?;
 
         let (slots_c, consumer_slots) = consumer_slots.alloc();
-        let (consumer, _consumer_token, producer_setup, _waker_setup) = Consumer1::new(
+        let (consumer, _consumer_token, producer_setup, _waker_setup) = Consumer1::new::<U100, U12, _>(
             ut,
             ut,
             local_vspace_scratch,
             &mut consumer_vspace,
             &root_cnode,
+            slots,
+            slots,
             slots,
             slots_c,
         )?;
@@ -133,7 +135,7 @@ pub struct Xenon {
 }
 
 pub struct ConsumerParams<Role: CNodeRole> {
-    pub consumer: Consumer1<Role, Xenon, U100>,
+    pub consumer: Consumer1<Role, Xenon>,
     pub outcome_sender: Sender<bool, Role>,
 }
 
@@ -142,7 +144,7 @@ impl RetypeForSetup for ConsumerParams<role::Local> {
 }
 
 pub struct ProducerParams<Role: CNodeRole> {
-    pub producer: Producer<Role, Xenon, U100>,
+    pub producer: Producer<Role, Xenon>,
 }
 
 impl RetypeForSetup for ProducerParams<role::Local> {
