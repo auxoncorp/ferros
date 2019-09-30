@@ -471,6 +471,28 @@ impl<T> ArrayQueue<T> {
     }
 }
 
+impl<T> Drop for ArrayQueue<T>
+{
+    fn drop(&mut self) {
+        // Get the index of the head.
+        let hix = self.head.load(Ordering::Relaxed) & (self.one_lap - 1);
+
+        // Loop over all slots that hold a message and drop them.
+        for i in 0..self.len() {
+            // Compute the index of the next slot holding a message.
+            let index = if hix + i < self.cap {
+                hix + i
+            } else {
+                hix + i - self.cap
+            };
+
+            unsafe {
+                self.buffer().add(index).drop_in_place();
+            }
+        }
+    }
+}
+
 /// Error which occurs when popping from an empty queue.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct PopError;

@@ -5,4 +5,5 @@ authors = ["Dan Pittman <dan@auxon.io>", "Zack Pierce <zack@auxon.io>"]
 edition = "2018"
 
 [dev-dependencies]
+rand = "0.6"
 crossbeam-utils = "0.6.5"
