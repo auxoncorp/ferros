@@ -31,12 +31,8 @@ use core::cell::{Cell, UnsafeCell};
 use core::fmt;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
+use core::ptr;
 use core::sync::atomic::{self, AtomicUsize, Ordering};
-
-use generic_array::sequence::GenericSequence;
-use generic_array::{ArrayLength, GenericArray};
-
-use typenum::{IsGreater, True, Unsigned, U0};
 
 /// A slot in a queue.
 pub struct Slot<T> {
@@ -50,19 +46,8 @@ pub struct Slot<T> {
     value: UnsafeCell<T>,
 }
 
-unsafe impl<T: Send, Size: Unsigned> Send for ArrayQueue<T, Size>
-where
-    Size: ArrayLength<Slot<T>>,
-    Size: IsGreater<U0, Output = True>,
-{
-}
-
-unsafe impl<T: Send, Size: Unsigned> Sync for ArrayQueue<T, Size>
-where
-    Size: ArrayLength<Slot<T>>,
-    Size: IsGreater<U0, Output = True>,
-{
-}
+unsafe impl<T: Send> Send for ArrayQueue<T> {}
+unsafe impl<T: Send> Sync for ArrayQueue<T> {}
 
 #[repr(align(64))]
 pub struct CachePadded<T> {
@@ -102,11 +87,12 @@ impl<T> DerefMut for CachePadded<T> {
     }
 }
 
-pub struct ArrayQueue<T, Size: Unsigned>
-where
-    Size: ArrayLength<Slot<T>>,
-    Size: IsGreater<U0, Output = True>,
-{
+enum BufferAddress<T> {
+    Direct(*mut Slot<T>),
+    Offset(usize),
+}
+
+pub struct ArrayQueue<T> {
     /// The head of the queue.
     ///
     /// This value is a "stamp" consisting of an index into the buffer
@@ -125,10 +111,14 @@ where
     /// Elements are pushed into the tail of the queue.
     tail: CachePadded<AtomicUsize>,
 
-    /// The buffer holding slots.
-    /// Should always contain `Some` at the beginning and end of every method,
-    /// with the sole exception of the Drop implementation.
-    buffer: UnsafeCell<Option<GenericArray<Slot<T>, Size>>>,
+    /// The buffer holding slots. Should always contain `Some` at the beginning
+    /// and end of every method, with the sole exception of the Drop
+    /// implementation. This can be either 'direct', for a straight address, or
+    /// 'offset', to indicating an offset from &self.
+    buffer: BufferAddress<T>,
+
+    /// The queue capacity.
+    cap: usize,
 
     /// A stamp with the value of `{ lap: 1, index: 0 }`.
     one_lap: usize,
@@ -136,57 +126,72 @@ where
     /// Indicates that dropping an `ArrayQueue<T>` may drop elements
     /// of type `T`.
     _marker: PhantomData<T>,
-
-    _size: PhantomData<Size>,
 }
 
-impl<T, Size: Unsigned> ArrayQueue<T, Size>
-where
-    Size: ArrayLength<Slot<T>>,
-    Size: IsGreater<U0, Output = True>,
-{
-    /// Creates a new bounded queue with the capacity `Size`.
+impl<T> ArrayQueue<T> {
+    /// Creates a new bounded queue `Size`, using the memory at `buffer_ptr`
     ///
     /// ```
-    /// use cross_queue::ArrayQueue;
-    /// use typenum::U100;
+    /// use cross_queue::{ArrayQueue, Slot};
+    /// use core::mem::MaybeUninit;
     ///
-    /// let q = ArrayQueue::<i32, U100>::new();
+    /// let mut buff = unsafe { MaybeUninit::<[Slot::<usize>;100]>::uninit().assume_init() };
+    /// let q = unsafe { ArrayQueue::new(100, &mut buff[0]) };
     /// ```
-    pub fn new() -> Self {
+    pub unsafe fn new(cap: usize, buffer_ptr: *mut Slot<T>) -> Self {
+        assert!(cap > 0, "capacity must be non-zero");
+
         // Head is initialized to `{ lap: 0, index: 0 }`.
         // Tail is initialized to `{ lap: 0, index: 0 }`.
         let head = 0;
         let tail = 0;
 
-        // One lap is the smallest power of two greater than `cap`.
-        let one_lap = (Size::USIZE + 1).next_power_of_two();
+        let buffer = BufferAddress::Direct(buffer_ptr as *mut Slot<T>);
 
-        ArrayQueue {
-            buffer: UnsafeCell::new(Some(GenericArray::generate(move |i| Slot {
-                stamp: AtomicUsize::new(i),
-                value: unsafe { core::mem::zeroed() },
-            }))),
-            one_lap: one_lap,
+        // One lap is the smallest power of two greater than `cap`.
+        let one_lap = (cap + 1).next_power_of_two();
+
+        let mut aq = ArrayQueue {
+            buffer,
+            cap,
+            one_lap,
             head: CachePadded::new(AtomicUsize::new(head)),
             tail: CachePadded::new(AtomicUsize::new(tail)),
             _marker: PhantomData,
-            _size: PhantomData,
-        }
-    }
-    pub unsafe fn new_at_ptr(pointer: *mut ArrayQueue<T, Size>) {
-        // Head is initialized to `{ lap: 0, index: 0 }`.
-        // Tail is initialized to `{ lap: 0, index: 0 }`.
+        };
 
-        let q: &mut ArrayQueue<T, Size> = &mut *pointer;
+        aq.inititialize_stamps();
+        aq
+    }
+
+    pub unsafe fn new_at_ptr(ptr: *mut ArrayQueue<T>, cap: usize, buffer_offset: usize) {
+        let q: &mut ArrayQueue<T> = &mut *ptr;
+
+        q.cap = cap;
         q.head = CachePadded::new(AtomicUsize::new(0));
         q.tail = CachePadded::new(AtomicUsize::new(0));
-        q.buffer = UnsafeCell::new(Some(GenericArray::generate(move |i| Slot {
-            stamp: AtomicUsize::new(i),
-            value: core::mem::zeroed(),
-        })));
-        // One lap is the smallest power of two greater than `cap`.
-        q.one_lap = (Size::USIZE + 1).next_power_of_two();
+        q.buffer = BufferAddress::Offset(buffer_offset);
+        q.one_lap = (cap + 1).next_power_of_two();
+
+        q.inititialize_stamps();
+    }
+
+    unsafe fn buffer(&self) -> *mut Slot<T> {
+        match self.buffer {
+            BufferAddress::Direct(p) => p,
+            BufferAddress::Offset(o) => (self as *const _ as usize + o) as *mut _,
+        }
+    }
+
+    fn inititialize_stamps(&mut self) {
+        // Initialize stamps in the slots.
+        for i in 0..self.cap {
+            unsafe {
+                // Set the stamp to `{ lap: 0, index: i }`.
+                let slot = self.buffer().add(i);
+                ptr::write(&mut (*slot).stamp, AtomicUsize::new(i));
+            }
+        }
     }
 
     /// Attempts to push an element into the queue.
@@ -196,24 +201,16 @@ where
     /// # Examples
     ///
     /// ```
-    /// use cross_queue::{ArrayQueue, PushError};
-    /// use typenum::U1;
+    /// use cross_queue::{ArrayQueue, Slot, PushError};
+    /// use core::mem::MaybeUninit;
     ///
-    /// let q = ArrayQueue::<_, U1>::new();
+    /// let mut buff = unsafe { MaybeUninit::<[Slot::<usize>;1]>::uninit().assume_init() };
+    /// let q = unsafe { ArrayQueue::new(1, &mut buff[0]) };
     ///
     /// assert_eq!(q.push(10), Ok(()));
     /// assert_eq!(q.push(20), Err(PushError(20)));
     /// ```
     pub fn push(&self, value: T) -> Result<(), PushError<T>> {
-        let local_buffer: &mut GenericArray<Slot<T>, Size> = unsafe {
-            let mut b: Option<&mut GenericArray<Slot<T>, Size>> =
-                (&mut *self.buffer.get()).as_mut();
-            // We can safely unwrap because the implementation maintains an invariant
-            // that the inner contents of buffer are always Some at the beginning
-            // and ends of all methods, with the sole exception of Drop.
-            b.take().expect("Failed to unwrap in push")
-        };
-
         let backoff = Backoff::new();
         let mut tail = self.tail.load(Ordering::Relaxed);
 
@@ -223,12 +220,12 @@ where
             let lap = tail & !(self.one_lap - 1);
 
             // Inspect the corresponding slot.
-            let slot = &mut local_buffer[index];
+            let slot = unsafe { &*self.buffer().add(index) };
             let stamp = slot.stamp.load(Ordering::Acquire);
 
             // If the tail and the stamp match, we may attempt to push.
             if tail == stamp {
-                let new_tail = if index + 1 < Size::USIZE {
+                let new_tail = if index + 1 < self.cap {
                     // Same lap, incremented index.
                     // Set to `{ lap: lap, index: index + 1 }`.
                     tail + 1
@@ -285,24 +282,18 @@ where
     /// # Examples
     ///
     /// ```
-    /// use cross_queue::{ArrayQueue, PopError};
-    /// use typenum::U1;
+    /// use cross_queue::{ArrayQueue, Slot, PopError};
+    /// use core::mem::MaybeUninit;
     ///
-    /// let q = ArrayQueue::<_, U1>::new();
+    /// let mut buff = unsafe { MaybeUninit::<[Slot::<usize>;1]>::uninit().assume_init() };
+    /// let q = unsafe { ArrayQueue::new(1, &mut buff[0]) };
+    ///
     /// assert_eq!(q.push(10), Ok(()));
     ///
     /// assert_eq!(q.pop(), Ok(10));
     /// assert_eq!(q.pop(), Err(PopError));
     /// ```
     pub fn pop(&self) -> Result<T, PopError> {
-        let local_buffer: &mut GenericArray<Slot<T>, Size> = unsafe {
-            let mut b: Option<&mut GenericArray<Slot<T>, Size>> =
-                (&mut *self.buffer.get()).as_mut();
-            // We can safely unwrap because the implementation maintains an invariant
-            // that the inner contents of buffer are always Some at the beginning
-            // and ends of all methods, with the sole exception of Drop.
-            b.take().expect("Failed to unwrap in pop")
-        };
         let backoff = Backoff::new();
         let mut head = self.head.load(Ordering::Relaxed);
 
@@ -312,12 +303,12 @@ where
             let lap = head & !(self.one_lap - 1);
 
             // Inspect the corresponding slot.
-            let slot = &mut local_buffer[index];
+            let slot = unsafe { &*self.buffer().add(index) };
             let stamp = slot.stamp.load(Ordering::Acquire);
 
             // If the the stamp is ahead of the head by 1, we may attempt to pop.
             if head + 1 == stamp {
-                let new = if index + 1 < Size::USIZE {
+                let new = if index + 1 < self.cap {
                     // Same lap, incremented index.
                     // Set to `{ lap: lap, index: index + 1 }`.
                     head + 1
@@ -370,15 +361,16 @@ where
     /// # Examples
     ///
     /// ```
-    /// use cross_queue::{ArrayQueue, PopError};
-    /// use typenum::{U100, Unsigned};
+    /// use cross_queue::{ArrayQueue, Slot};
+    /// use core::mem::MaybeUninit;
     ///
-    /// let q = ArrayQueue::<i32, U100>::new();
+    /// let mut buff = unsafe { MaybeUninit::<[Slot::<usize>;100]>::uninit().assume_init() };
+    /// let q = unsafe { ArrayQueue::new(100, &mut buff[0]) };
     ///
     /// assert_eq!(q.capacity(), 100);
     /// ```
     pub fn capacity(&self) -> usize {
-        Size::USIZE
+        self.cap
     }
 
     /// Returns `true` if the queue is empty.
@@ -386,10 +378,11 @@ where
     /// # Examples
     ///
     /// ```
-    /// use cross_queue::{ArrayQueue, PopError};
-    /// use typenum::{U100, Unsigned};
+    /// use cross_queue::{ArrayQueue, Slot};
+    /// use core::mem::MaybeUninit;
     ///
-    /// let q = ArrayQueue::<_, U100>::new();
+    /// let mut buff = unsafe { MaybeUninit::<[Slot::<usize>;100]>::uninit().assume_init() };
+    /// let q = unsafe { ArrayQueue::new(100, &mut buff[0]) };
     ///
     /// assert!(q.is_empty());
     /// q.push(1).unwrap();
@@ -414,10 +407,11 @@ where
     /// # Examples
     ///
     /// ```
-    /// use cross_queue::{ArrayQueue, PopError};
-    /// use typenum::U1;
+    /// use cross_queue::{ArrayQueue, Slot};
+    /// use core::mem::MaybeUninit;
     ///
-    /// let q = ArrayQueue::<_, U1>::new();
+    /// let mut buff = unsafe { MaybeUninit::<[Slot::<usize>;1]>::uninit().assume_init() };
+    /// let q = unsafe { ArrayQueue::new(1, &mut buff[0]) };
     ///
     /// assert!(!q.is_full());
     /// q.push(1).unwrap();
@@ -439,10 +433,11 @@ where
     /// # Examples
     ///
     /// ```
-    /// use cross_queue::{ArrayQueue, PopError};
-    /// use typenum::U100;
+    /// use cross_queue::{ArrayQueue, Slot};
+    /// use core::mem::MaybeUninit;
     ///
-    /// let q = ArrayQueue::<_, U100>::new();
+    /// let mut buff = unsafe { MaybeUninit::<[Slot::<usize>;100]>::uninit().assume_init() };
+    /// let q = unsafe { ArrayQueue::new(100, &mut buff[0]) };
     /// assert_eq!(q.len(), 0);
     ///
     /// q.push(10).unwrap();
@@ -465,56 +460,36 @@ where
                 return if hix < tix {
                     tix - hix
                 } else if hix > tix {
-                    Size::USIZE - hix + tix
+                    self.cap - hix + tix
                 } else if tail == head {
                     0
                 } else {
-                    Size::USIZE
+                    self.cap
                 };
             }
         }
     }
 }
 
-impl<T, Size: Unsigned> Drop for ArrayQueue<T, Size>
-where
-    Size: ArrayLength<Slot<T>>,
-    Size: IsGreater<U0, Output = True>,
+impl<T> Drop for ArrayQueue<T>
 {
     fn drop(&mut self) {
         // Get the index of the head.
         let hix = self.head.load(Ordering::Relaxed) & (self.one_lap - 1);
 
-        let local_buffer: &mut GenericArray<Slot<T>, Size> = unsafe {
-            (&mut *self.buffer.get())
-                .as_mut()
-                .take()
-                .expect("Failed to unwrap in drop")
-        };
-
         // Loop over all slots that hold a message and drop them.
         for i in 0..self.len() {
             // Compute the index of the next slot holding a message.
-            let index = if hix + i < Size::USIZE {
+            let index = if hix + i < self.cap {
                 hix + i
             } else {
-                hix + i - Size::USIZE
+                hix + i - self.cap
             };
 
             unsafe {
-                (&mut local_buffer[index] as *mut Slot<T>).drop_in_place();
+                self.buffer().add(index).drop_in_place();
             }
         }
-
-        let local_buffer: GenericArray<Slot<T>, Size> = unsafe {
-            (&mut *self.buffer.get())
-                .take()
-                .expect("Failed to unwrap second time in drop")
-        };
-        // Leak the buffer now that all actually-initialized values have been dropped
-        // The original implementation in crossbeam-queue had the intent of
-        // deallocating the buffer without running any destructors for the members.
-        core::mem::forget(local_buffer)
     }
 }
 
@@ -756,11 +731,5 @@ impl fmt::Debug for Backoff {
             .field("step", &self.step)
             .field("is_completed", &self.is_completed())
             .finish()
-    }
-}
-
-impl Default for Backoff {
-    fn default() -> Backoff {
-        Backoff::new()
     }
 }

@@ -93,22 +93,25 @@ pub fn double_door_backpressure(
         )?;
 
         let (slots_c, consumer_slots) = consumer_slots.alloc();
-        let (consumer, consumer_token, producer_setup_a, waker_setup) = Consumer1::new(
+        let (consumer, consumer_token, producer_setup_a, waker_setup) = Consumer1::new::<U14, U14, _>(
             ut,
             ut,
             local_vspace_scratch,
             &mut consumer_vspace,
             &root_cnode,
             slots,
+            slots,
+            slots,
             slots_c,
         )?;
 
-        let (consumer, producer_setup_b) = consumer.add_queue(
+        let (consumer, producer_setup_b) = consumer.add_queue::<Yttrium, U14, U14, _>(
             &consumer_token,
             ut,
             local_vspace_scratch,
             &mut consumer_vspace,
             &root_cnode,
+            slots,
             slots,
         )?;
         let (outcome_sender_slots, _consumer_slots) = consumer_slots.alloc();
@@ -224,18 +227,18 @@ pub fn double_door_backpressure(
     }
 }
 
-#[derive(Debug)]
 pub struct Xenon {
     a: u64,
+    padding: [u8; 1024],
 }
 
-#[derive(Debug)]
 pub struct Yttrium {
     b: u64,
+    padding: [u8; 1024],
 }
 
 pub struct ConsumerParams<Role: CNodeRole> {
-    pub consumer: Consumer2<Role, Xenon, U10, Yttrium, U2>,
+    pub consumer: Consumer2<Role, Xenon, Yttrium>,
     pub outcome_sender: Sender<bool, Role>,
 }
 
@@ -244,7 +247,7 @@ impl RetypeForSetup for ConsumerParams<role::Local> {
 }
 
 pub struct ProducerXParams<Role: CNodeRole> {
-    pub producer: Producer<Role, Xenon, U10>,
+    pub producer: Producer<Role, Xenon>,
 }
 
 impl RetypeForSetup for ProducerXParams<role::Local> {
@@ -252,7 +255,7 @@ impl RetypeForSetup for ProducerXParams<role::Local> {
 }
 
 pub struct ProducerYParams<Role: CNodeRole> {
-    pub producer: Producer<Role, Yttrium, U2>,
+    pub producer: Producer<Role, Yttrium>,
 }
 
 impl RetypeForSetup for ProducerYParams<role::Local> {
@@ -335,7 +338,7 @@ pub extern "C" fn waker_proc(p: WakerParams<role::Local>) {
 
 pub extern "C" fn producer_a_proc(p: ProducerXParams<role::Local>) {
     for i in 0..20 {
-        let mut x = Xenon { a: i };
+        let mut x = Xenon { a: i, padding: [0; 1024] };
         loop {
             match p.producer.send(x) {
                 Ok(_) => {
@@ -355,7 +358,7 @@ pub extern "C" fn producer_a_proc(p: ProducerXParams<role::Local>) {
 pub extern "C" fn producer_b_proc(p: ProducerYParams<role::Local>) {
     let mut rejection_count = 0;
     for i in 0..20 {
-        let mut y = Yttrium { b: i };
+        let mut y = Yttrium { b: i, padding: [0; 1024] };
         loop {
             match p.producer.send(y) {
                 Ok(_) => {

@@ -63,12 +63,14 @@ pub fn polling_consumer(
         )?;
 
         let (slots_c, consumer_slots) = consumer_slots.alloc();
-        let (consumer, consumer_token, producer_setup, _waker_setup) = Consumer1::new(
+        let (consumer, consumer_token, producer_setup, _waker_setup) = Consumer1::new::<U20, U12, _>(
             ut,
             ut,
             local_vspace_scratch,
             &mut consumer_vspace,
             &root_cnode,
+            slots,
+            slots,
             slots,
             slots_c,
         )?;
@@ -142,7 +144,7 @@ pub struct Data {
 }
 
 pub struct ConsumerParams<Role: CNodeRole> {
-    pub consumer: Consumer1<Role, Data, U20>,
+    pub consumer: Consumer1<Role, Data>,
     pub outcome_sender: Sender<bool, Role>,
 }
 
@@ -151,7 +153,7 @@ impl RetypeForSetup for ConsumerParams<role::Local> {
 }
 
 pub struct ProducerParams<Role: CNodeRole> {
-    pub producer: Producer<Role, Data, U20>,
+    pub producer: Producer<Role, Data>,
 }
 
 impl RetypeForSetup for ProducerParams<role::Local> {

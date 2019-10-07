@@ -1297,10 +1297,7 @@ pub struct ScratchRegion<PageCount: Unsigned = crate::userland::process::Default
     paging_root: LocalCap<PagingRoot>,
 }
 
-impl<PageCount: Unsigned> ScratchRegion<PageCount>
-where
-    PageCount: IsGreaterOrEqual<U1, Output = True>,
-{
+impl<PageCount: Unsigned> ScratchRegion<PageCount> {
     pub fn new(region: ReservedRegion<PageCount>, vspace: &VSpace) -> Result<Self, VSpaceError> {
         if region.asid == vspace.asid() {
             Ok(ScratchRegion {
@@ -1333,7 +1330,6 @@ where
         f: F,
     ) -> Result<Out, VSpaceError>
     where
-        // TODO prune these type constraints
         SizeBits: IsGreaterOrEqual<PageBits>,
         SizeBits: Sub<PageBits>,
         <SizeBits as Sub<PageBits>>::Output: Unsigned,
