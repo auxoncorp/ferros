@@ -1110,6 +1110,15 @@ impl<T> From<PushError<T>> for QueueFullError<T> {
 }
 
 impl<T: Sized + Sync + Send> Producer<role::Local, T> {
+    pub fn capacity(&self) -> usize {
+        self.queue.queue_len
+    }
+
+    pub fn is_full(&self) -> bool {
+        let queue: &ArrayQueue<T> = unsafe { core::mem::transmute(self.queue.shared_queue) };
+        queue.is_full()
+    }
+
     pub fn send(&self, t: T) -> Result<(), QueueFullError<T>> {
         let queue: &mut ArrayQueue<T> = unsafe { core::mem::transmute(self.queue.shared_queue) };
         queue.push(t)?;
