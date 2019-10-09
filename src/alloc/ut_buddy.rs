@@ -336,6 +336,8 @@ impl WUTBuddy<role::Local> {
 }
 
 impl<Role: CNodeRole> WUTBuddy<Role> {
+    // This might be brought back to life later on
+    #[allow(dead_code)]
     pub(crate) fn empty() -> WUTBuddy<Role> {
         WUTBuddy {
             pool: make_pool(),

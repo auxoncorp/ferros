@@ -37,14 +37,14 @@
 //!     dest_slots)?;
 use core::marker::PhantomData;
 use core::mem::size_of;
-use core::ops::{Shr, Sub};
+use core::ops::{Sub};
 
 use cross_queue::{ArrayQueue, PushError, Slot};
 use generic_array::ArrayLength;
 use selfe_sys::{seL4_Signal, seL4_Wait};
 use typenum::*;
 
-use crate::arch::{self, PageBits, PageBytes};
+use crate::arch::{self, PageBits};
 use crate::cap::{
     irq_state, role, Badge, CNodeRole, CNodeSlot, Cap, ChildCNodeSlot, ChildCNodeSlots,
     DirectRetype, IRQControl, IRQError, IRQHandler, InternalASID, LocalCNode, LocalCNodeSlot,
