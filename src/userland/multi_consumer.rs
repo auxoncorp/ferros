@@ -522,7 +522,7 @@ where
         };
         Ok((
             Consumer2 {
-                irq_handler: None,
+                irq_handler: self.irq_handler,
                 interrupt_badge: self.interrupt_badge,
                 notification: self.notification,
                 queues: (
@@ -623,7 +623,7 @@ where
         };
         Ok((
             Consumer3 {
-                irq_handler: None,
+                irq_handler: self.irq_handler,
                 interrupt_badge: self.interrupt_badge,
                 notification: self.notification,
                 queues: (
@@ -866,7 +866,10 @@ where
     }
 }
 
-impl<E: Sized + Sync + Send, F: Sized + Sync + Send> Consumer2<role::Local, E, F> {
+impl<E: Sized + Sync + Send, F: Sized + Sync + Send, IRQ: Unsigned> Consumer2<role::Local, E, F, IRQ>
+where
+    IRQ: IsLess<MaxIRQCount, Output = True>,
+{
     pub fn capacity(&self) -> (usize, usize) {
         ((self.queues.0).1.queue_len, (self.queues.1).1.queue_len)
     }
@@ -946,8 +949,10 @@ impl<E: Sized + Sync + Send, F: Sized + Sync + Send> Consumer2<role::Local, E, F
     }
 }
 
-impl<E: Sized + Sync + Send, F: Sized + Sync + Send, G: Sized + Sync + Send>
-    Consumer3<role::Local, E, F, G>
+impl<E: Sized + Sync + Send, F: Sized + Sync + Send, G: Sized + Sync + Send, IRQ: Unsigned>
+    Consumer3<role::Local, E, F, G, IRQ>
+where
+    IRQ: IsLess<MaxIRQCount, Output = True>,
 {
     pub fn capacity(&self) -> (usize, usize, usize) {
         (
