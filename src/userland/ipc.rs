@@ -4,7 +4,7 @@ use selfe_sys::*;
 
 use crate::arch;
 use crate::cap::{
-    role, CNode, CNodeRole, CNodeSlot, Cap, ChildCNodeSlot, DirectRetype, Endpoint, LocalCNode,
+    role, CNode, CNodeRole, CNodeSlot, Cap, DirectRetype, Endpoint, LocalCNode,
     LocalCNodeSlot, LocalCap, Untyped,
 };
 use crate::error::SeL4Error;
@@ -283,7 +283,7 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
     pub fn reply_recv_with_state<F, State>(
         self,
         initial_state: State,
-        mut f: F,
+        f: F,
     ) -> Result<Rsp, IPCError>
     where
         F: FnMut(Req, State) -> (Rsp, State),
@@ -360,7 +360,7 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
         let mut ipc_buffer = unsafe { IPCBuffer::unchecked_new() };
         let mut sender_badge: usize = 0;
         // Do a regular receive to seed our initial value
-        let mut msg_info: MessageInfo =
+        let msg_info: MessageInfo =
             unsafe { seL4_Recv(self.endpoint.cptr, &mut sender_badge as *mut usize) }.into();
 
         let request_length_in_words = type_length_in_words::<Req>();

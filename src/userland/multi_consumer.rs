@@ -37,14 +37,14 @@
 //!     dest_slots)?;
 use core::marker::PhantomData;
 use core::mem::size_of;
-use core::ops::{Shr, Sub};
+use core::ops::{Sub};
 
 use cross_queue::{ArrayQueue, PushError, Slot};
 use generic_array::ArrayLength;
 use selfe_sys::{seL4_Signal, seL4_Wait};
 use typenum::*;
 
-use crate::arch::{self, PageBits, PageBytes};
+use crate::arch::{self, PageBits};
 use crate::cap::{
     irq_state, role, Badge, CNodeRole, CNodeSlot, Cap, ChildCNodeSlot, ChildCNodeSlots,
     DirectRetype, IRQControl, IRQError, IRQHandler, InternalASID, LocalCNode, LocalCNodeSlot,
@@ -702,7 +702,7 @@ where
 
     // put guard pages on either side of the shared region, so any overruns
     // become page faults instead of data corruption.
-    consumer_vspace.skip_pages(1);
+    consumer_vspace.skip_pages(1)?;
     let consumer_shared_region = consumer_vspace.map_shared_region(
         &shared_region,
         CapRights::RW,
@@ -710,7 +710,7 @@ where
         shared_slots,
         local_cnode,
     )?;
-    consumer_vspace.skip_pages(1);
+    consumer_vspace.skip_pages(1)?;
 
     Ok((shared_region, consumer_shared_region))
 }

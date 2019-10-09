@@ -1,13 +1,11 @@
 use core::marker::PhantomData;
-use core::ops::Sub;
 
 use selfe_sys::{seL4_Signal, seL4_Wait};
-use typenum::operator_aliases::Sub1;
-use typenum::{Unsigned, B1, U2, U4};
+use typenum::{Unsigned, U2, U4};
 
 use crate::arch::{self, PageBits, PageBytes};
 use crate::cap::{
-    role, Badge, CNodeRole, CNodeSlots, Cap, ChildCNodeSlots, DirectRetype, LocalCNode,
+    role, Badge, CNodeRole, CNodeSlots, Cap, DirectRetype, LocalCNode,
     LocalCNodeSlots, LocalCap, Notification, Untyped,
 };
 use crate::userland::{CapRights, IPCError};
