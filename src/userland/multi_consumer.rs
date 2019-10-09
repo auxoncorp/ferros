@@ -702,7 +702,7 @@ where
 
     // put guard pages on either side of the shared region, so any overruns
     // become page faults instead of data corruption.
-    consumer_vspace.skip_pages(1);
+    consumer_vspace.skip_pages(1)?;
     let consumer_shared_region = consumer_vspace.map_shared_region(
         &shared_region,
         CapRights::RW,
@@ -710,7 +710,7 @@ where
         shared_slots,
         local_cnode,
     )?;
-    consumer_vspace.skip_pages(1);
+    consumer_vspace.skip_pages(1)?;
 
     Ok((shared_region, consumer_shared_region))
 }
