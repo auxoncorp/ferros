@@ -298,6 +298,7 @@ pub extern "C" fn consumer_proc(p: ConsumerParams<role::Local>) {
         queue_f_element_count: 0,
         queue_f_sum: 0,
     };
+    assert_eq!(consumer.capacity(), (U14::USIZE, U14::USIZE));
     consumer.consume(
         initial_state,
         |mut state| {
@@ -337,6 +338,8 @@ pub extern "C" fn waker_proc(p: WakerParams<role::Local>) {
 }
 
 pub extern "C" fn producer_a_proc(p: ProducerXParams<role::Local>) {
+    assert_eq!(p.producer.capacity(), U14::USIZE);
+    assert_eq!(p.producer.is_full(), false);
     for i in 0..20 {
         let mut x = Xenon { a: i, padding: [0; 1024] };
         loop {
@@ -356,6 +359,8 @@ pub extern "C" fn producer_a_proc(p: ProducerXParams<role::Local>) {
 }
 
 pub extern "C" fn producer_b_proc(p: ProducerYParams<role::Local>) {
+    assert_eq!(p.producer.capacity(), U14::USIZE);
+    assert_eq!(p.producer.is_full(), false);
     let mut rejection_count = 0;
     for i in 0..20 {
         let mut y = Yttrium { b: i, padding: [0; 1024] };
