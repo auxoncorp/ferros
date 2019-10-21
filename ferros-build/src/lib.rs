@@ -42,6 +42,8 @@ pub struct ElfResource {
     pub image_name: String,
     /// The name of the generated type for this elf file
     pub type_name: String,
+    /// Explicitly specify the process stack size
+    pub stack_size_bits: Option<u8>,
 }
 
 /// Format n as a fully expanded typenum (in binary form), so allowing arbitrary
@@ -103,11 +105,16 @@ impl Resource for ElfResource {
             }
         }
 
-        let stack_size_bits = 16u64;
-        println!(
-            "cargo:warning=Using default stack size of 64k for elf process {}",
-            self.image_name
-        );
+        let stack_size_bits = self
+            .stack_size_bits
+            .map(|ssb| ssb as u64)
+            .unwrap_or_else(|| {
+                println!(
+                    "cargo:warning=Using default stack size of 64k for elf process {}",
+                    self.image_name
+                );
+                16u64
+            });
 
         let required_memory_bits = (writable_pages as f64).log2().ceil() as u32 + 12;
         let required_pages = (1 << (required_memory_bits - 12)) + read_only_pages;

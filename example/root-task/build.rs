@@ -16,6 +16,7 @@ fn main() {
         path: bin_dir.join("hello-printer"),
         image_name: "hello-printer".to_owned(),
         type_name: "HelloPrinter".to_owned(),
+        stack_size_bits: None
     };
 
     embed_resources(&resources, vec![&hello as &dyn Resource]);

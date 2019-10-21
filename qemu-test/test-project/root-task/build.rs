@@ -27,6 +27,7 @@ fn main() {
         path: bin_dir.join("elf-process"),
         image_name: "elf-process".to_owned(),
         type_name: "ElfProcess".to_owned(),
+        stack_size_bits: None,
     };
 
     embed_resources(&resources, vec![&elf_proc as &dyn Resource]);
