@@ -189,6 +189,17 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
         })
     }
 
+    pub fn set_name(&mut self, name: &str) {
+        let mut c_str = [0u8; 256];
+        for (n, byte) in name.bytes().take(255).enumerate() {
+            c_str[n] = byte;
+        }
+
+        unsafe {
+            seL4_DebugNameThread(self.tcb.cptr, &c_str as *const u8 as *const i8);
+        }
+    }
+
     pub fn bind_notification(
         &mut self,
         notification: &LocalCap<Notification>,
