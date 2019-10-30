@@ -37,7 +37,7 @@
 //!     dest_slots)?;
 use core::marker::PhantomData;
 use core::mem::size_of;
-use core::ops::{Sub};
+use core::ops::Sub;
 
 use cross_queue::{ArrayQueue, PushError, Slot};
 use generic_array::ArrayLength;
@@ -115,6 +115,25 @@ where
         (Badge, QueueHandle<E, Role>),
         (Badge, QueueHandle<F, Role>),
         (Badge, QueueHandle<G, Role>),
+    ),
+}
+
+/// A multi-consumer that consumes interrupt-style notifications and from 4 queues
+///
+/// Designed to be handed to a new process as a member of the
+/// initial thread parameters struct (see `VSpace::prepare_thread`).
+pub struct Consumer4<Role: CNodeRole, E, F, G, H, IRQ: Unsigned = U0>
+where
+    IRQ: IsLess<MaxIRQCount, Output = True>,
+{
+    irq_handler: Option<Cap<IRQHandler<IRQ, irq_state::Set>, Role>>,
+    interrupt_badge: Badge,
+    notification: Cap<Notification, Role>,
+    queues: (
+        (Badge, QueueHandle<E, Role>),
+        (Badge, QueueHandle<F, Role>),
+        (Badge, QueueHandle<G, Role>),
+        (Badge, QueueHandle<H, Role>),
     ),
 }
 
@@ -549,10 +568,10 @@ where
     IRQ: IsLess<MaxIRQCount, Output = True>,
 {
     pub fn add_queue<
-        ScratchPages: Unsigned,
         G: Sized + Send + Sync,
         GLen: Unsigned,
         GQueueSizeBits: Unsigned,
+        ScratchPages: Unsigned,
     >(
         self,
         consumer_token: &ConsumerToken,
@@ -636,6 +655,109 @@ where
                             _role: PhantomData,
                             _t: PhantomData,
                             queue_len: GLen::USIZE,
+                        },
+                    ),
+                ),
+            },
+            producer_setup,
+        ))
+    }
+}
+
+impl<E: Sized + Sync + Send, F: Sized + Sync + Send, G: Sized + Sync + Send, IRQ: Unsigned>
+    Consumer3<role::Child, E, F, G, IRQ>
+where
+    IRQ: IsLess<MaxIRQCount, Output = True>,
+{
+    pub fn add_queue<
+        H: Sized + Send + Sync,
+        HLen: Unsigned,
+        HQueueSizeBits: Unsigned,
+        ScratchPages: Unsigned,
+    >(
+        self,
+        consumer_token: &ConsumerToken,
+        shared_region_ut: LocalCap<Untyped<HQueueSizeBits>>,
+        local_vspace_scratch: &mut ScratchRegion<ScratchPages>,
+        consumer_vspace: &mut VSpace,
+        local_cnode: &LocalCap<LocalCNode>,
+        umr_slots: LocalCNodeSlots<NumPages<HQueueSizeBits>>,
+        shared_slots: LocalCNodeSlots<NumPages<HQueueSizeBits>>,
+    ) -> Result<
+        (
+            Consumer4<role::Child, E, F, G, H, IRQ>,
+            ProducerSetup<H, HLen, HQueueSizeBits>,
+        ),
+        MultiConsumerError,
+    >
+    where
+        HLen: ArrayLength<Slot<H>>,
+        HLen: IsGreater<U0, Output = True>,
+        ScratchPages: IsGreaterOrEqual<NumPages<HQueueSizeBits>, Output = True>,
+
+        // needed by temporarily_map_region
+        HQueueSizeBits: IsGreaterOrEqual<PageBits>,
+        HQueueSizeBits: Sub<PageBits>,
+        <HQueueSizeBits as Sub<PageBits>>::Output: Unsigned,
+        <HQueueSizeBits as Sub<PageBits>>::Output: _Pow,
+        Pow<<HQueueSizeBits as Sub<PageBits>>::Output>:
+            Unsigned + IsGreaterOrEqual<U1, Output = True>,
+
+        // Needed by unmappedMemoryRegion::new
+        Pow<<HQueueSizeBits as Sub<PageBits>>::Output>:
+            IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
+    {
+        // Ensure that the consumer process that the `waker_setup` is wrapping
+        // a notification to is the same process as the one referred to by
+        // the `consumer_vspace` parameter.
+        if let Some(ref consumer_token_vspace_asid) = consumer_token.consumer_vspace_asid {
+            if consumer_token_vspace_asid != &consumer_vspace.asid() {
+                return Err(MultiConsumerError::ConsumerIdentityMismatch);
+            }
+        } else {
+            return Err(MultiConsumerError::ConsumerIdentityMismatch);
+        }
+        let (shared_region, consumer_shared_region) =
+            create_region_filled_with_array_queue::<ScratchPages, H, HLen, HQueueSizeBits>(
+                shared_region_ut,
+                local_vspace_scratch,
+                consumer_vspace,
+                &local_cnode,
+                umr_slots,
+                shared_slots,
+            )?;
+
+        let fresh_queue_badge = Badge::from((self.queues.1).0.inner << 1);
+        let producer_setup: ProducerSetup<H, HLen, HQueueSizeBits> = ProducerSetup {
+            consumer_vspace_asid: consumer_vspace.asid(),
+            shared_region,
+            queue_badge: fresh_queue_badge,
+            // Construct a user-inaccessible copy of the local notification
+            // purely for use in producing child-cnode-residing copies.
+            notification: Cap {
+                cptr: consumer_token.notification.cptr,
+                cap_data: PhantomCap::phantom_instance(),
+                _role: PhantomData,
+            },
+            _queue_element_type: PhantomData,
+            _queue_length: PhantomData,
+        };
+        Ok((
+            Consumer4 {
+                irq_handler: self.irq_handler,
+                interrupt_badge: self.interrupt_badge,
+                notification: self.notification,
+                queues: (
+                    self.queues.0,
+                    self.queues.1,
+                    self.queues.2,
+                    (
+                        fresh_queue_badge,
+                        QueueHandle {
+                            shared_queue: consumer_shared_region.vaddr(),
+                            _role: PhantomData,
+                            _t: PhantomData,
+                            queue_len: HLen::USIZE,
                         },
                     ),
                 ),
@@ -866,7 +988,8 @@ where
     }
 }
 
-impl<E: Sized + Sync + Send, F: Sized + Sync + Send, IRQ: Unsigned> Consumer2<role::Local, E, F, IRQ>
+impl<E: Sized + Sync + Send, F: Sized + Sync + Send, IRQ: Unsigned>
+    Consumer2<role::Local, E, F, IRQ>
 where
     IRQ: IsLess<MaxIRQCount, Output = True>,
 {
@@ -1041,6 +1164,128 @@ where
                     for _ in 0..queue_g.len().saturating_add(1) {
                         if let Ok(e) = queue_g.pop() {
                             state = queue_g_fn(e, state);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl<
+        E: Sized + Sync + Send,
+        F: Sized + Sync + Send,
+        G: Sized + Sync + Send,
+        H: Sized + Sync + Send,
+        IRQ: Unsigned,
+    > Consumer4<role::Local, E, F, G, H, IRQ>
+where
+    IRQ: IsLess<MaxIRQCount, Output = True>,
+{
+    pub fn capacity(&self) -> (usize, usize, usize, usize) {
+        (
+            (self.queues.0).1.queue_len,
+            (self.queues.1).1.queue_len,
+            (self.queues.2).1.queue_len,
+            (self.queues.3).1.queue_len,
+        )
+    }
+
+    pub fn consume<State, WFn, EFn, FFn, GFn, HFn>(
+        self,
+        initial_state: State,
+        waker_fn: WFn,
+        queue_e_fn: EFn,
+        queue_f_fn: FFn,
+        queue_g_fn: GFn,
+        queue_h_fn: HFn,
+    ) -> !
+    where
+        WFn: Fn(State) -> State,
+        EFn: Fn(E, State) -> State,
+        FFn: Fn(F, State) -> State,
+        GFn: Fn(G, State) -> State,
+        HFn: Fn(H, State) -> State,
+    {
+        let mut sender_badge: usize = 0;
+        let mut state = initial_state;
+
+        let (badge_e, handle_e) = self.queues.0;
+        let queue_e: &mut ArrayQueue<E> = unsafe { core::mem::transmute(handle_e.shared_queue) };
+
+        let (badge_f, handle_f) = self.queues.1;
+        let queue_f: &mut ArrayQueue<F> = unsafe { core::mem::transmute(handle_f.shared_queue) };
+
+        let (badge_g, handle_g) = self.queues.2;
+        let queue_g: &mut ArrayQueue<G> = unsafe { core::mem::transmute(handle_g.shared_queue) };
+
+        let (badge_h, handle_h) = self.queues.3;
+        let queue_h: &mut ArrayQueue<H> = unsafe { core::mem::transmute(handle_h.shared_queue) };
+
+        if let Some(ref irq_handler) = self.irq_handler {
+            match irq_handler.ack() {
+                Ok(_) => (),
+                Err(e) => {
+                    debug_println!("Ack error in InterruptConsumer::consume setup. {:?}", e);
+                    panic!()
+                }
+            };
+        }
+        loop {
+            unsafe {
+                seL4_Wait(self.notification.cptr, &mut sender_badge as *mut usize);
+                let current_badge = Badge::from(sender_badge);
+                if self
+                    .interrupt_badge
+                    .are_all_overlapping_bits_set(current_badge)
+                {
+                    state = waker_fn(state);
+                    if let Some(ref irq_handler) = self.irq_handler {
+                        match irq_handler.ack() {
+                            Ok(_) => (),
+                            Err(e) => {
+                                debug_println!(
+                                    "Ack error in InterruptConsumer::consume loop. {:?}",
+                                    e
+                                );
+                                panic!()
+                            }
+                        };
+                    }
+                }
+                if badge_e.are_all_overlapping_bits_set(current_badge) {
+                    for _ in 0..queue_e.len().saturating_add(1) {
+                        if let Ok(e) = queue_e.pop() {
+                            state = queue_e_fn(e, state);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                if badge_f.are_all_overlapping_bits_set(current_badge) {
+                    for _ in 0..queue_f.len().saturating_add(1) {
+                        if let Ok(e) = queue_f.pop() {
+                            state = queue_f_fn(e, state);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                if badge_g.are_all_overlapping_bits_set(current_badge) {
+                    for _ in 0..queue_g.len().saturating_add(1) {
+                        if let Ok(e) = queue_g.pop() {
+                            state = queue_g_fn(e, state);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                if badge_h.are_all_overlapping_bits_set(current_badge) {
+                    for _ in 0..queue_h.len().saturating_add(1) {
+                        if let Ok(e) = queue_h.pop() {
+                            state = queue_h_fn(e, state);
                         } else {
                             break;
                         }
