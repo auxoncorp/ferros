@@ -1,7 +1,7 @@
 use typenum::*;
 
 use ferros::alloc::{smart_alloc, ut_buddy};
-use ferros::arch::{self, CodePageCount, CodePageTableCount};
+use ferros::arch::{self, CodePageCount, CodePageTableCount, PageBytes};
 use ferros::bootstrap::UserImage;
 use ferros::cap::*;
 use ferros::userland::{
@@ -143,6 +143,29 @@ fn child_run(params: ChildParams<role::Local>) -> Result<(), TopLevelError> {
     } = params;
 
     let uts = ut_buddy(untyped);
+
+    // Clean/invalidate the entire region
+    mapped_region.flush();
+    mapped_region
+        .flush_range(mapped_region.vaddr(), mapped_region.size_bytes())
+        .unwrap();
+
+    // Clean/invalidate by page
+    let range = mapped_region.vaddr()..mapped_region.vaddr() + mapped_region.size_bytes();
+    for vaddr in range.step_by(PageBytes::USIZE) {
+        mapped_region.flush_range(vaddr, PageBytes::USIZE).unwrap();
+    }
+
+    // Clean/invalidate arbitrary ranges
+    let first = mapped_region.vaddr();
+    let mid = mapped_region.vaddr() + (mapped_region.size_bytes() / 2);
+    mapped_region.flush_range(first, mid - first).unwrap();
+    mapped_region
+        .flush_range(
+            mid,
+            mapped_region.size_bytes() - (mapped_region.size_bytes() / 2),
+        )
+        .unwrap();
 
     smart_alloc!(|slots: cnode_slots, ut: uts| {
         let (child_cnode, child_slots) = retype_cnode::<U8>(ut, slots)?;

@@ -1,10 +1,11 @@
+use core::cmp;
 use core::marker::PhantomData;
 use core::ops::Sub;
 
 use typenum::*;
 
 use super::{KernelRetypeFanOutLimit, NumPages, VSpaceError};
-use crate::arch::{self, PageBits};
+use crate::arch::{self, PageBits, PageBytes};
 use crate::cap::{
     memory_kind, page_state, role, CNode, CNodeRole, CNodeSlots, Cap, CapRange, InternalASID,
     LocalCNodeSlots, LocalCap, MemoryKind, Page, PageState, RetypeError, Untyped, WCNodeSlots,
@@ -274,6 +275,22 @@ where
         self.caps.for_each::<SeL4Error, _>(|cap| {
             unsafe {
                 arch::flush_page(cap.cptr)?;
+            }
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
+    pub fn flush_range(&self, vaddr: usize, size: usize) -> Result<(), SeL4Error> {
+        let bottom = vaddr & !0xFFF;
+        let top = vaddr + cmp::max(PageBytes::USIZE, size);
+        let range = bottom..top;
+        self.caps.for_each::<SeL4Error, _>(|cap| {
+            if range.contains(&cap.vaddr()) {
+                unsafe {
+                    arch::flush_page(cap.cptr)?;
+                }
             }
             Ok(())
         })?;
