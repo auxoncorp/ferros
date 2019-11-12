@@ -267,6 +267,66 @@ where
         ))
     }
 
+    pub fn new_with_waker(
+        notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
+        irq_control: &mut LocalCap<IRQControl>,
+        local_cnode: &LocalCap<LocalCNode>,
+        local_slots: LocalCNodeSlots<U3>,
+        consumer_slots: ChildCNodeSlots<U2>,
+    ) -> Result<
+        (
+            InterruptConsumer<IRQ, role::Child>,
+            ConsumerToken,
+            WakerSetup,
+        ),
+        IRQError,
+    > {
+        // Make a notification, mint-copy it to establish a badge
+        let (local_slot, local_slots) = local_slots.alloc();
+        let unbadged_notification: LocalCap<Notification> = notification_ut.retype(local_slot)?;
+
+        let interrupt_badge = Badge::from(1);
+
+        let (local_slot, local_slots) = local_slots.alloc();
+        let notification =
+            unbadged_notification.mint_inside_cnode(local_slot, CapRights::RWG, interrupt_badge)?;
+
+        // Make a new IRQHandler, link it to the notification and move both to the child
+        // CNode
+        let (local_slot, _local_slots) = local_slots.alloc();
+        let irq_handler = irq_control.create_handler(local_slot)?;
+        let irq_handler = irq_handler.set_notification(&notification)?;
+
+        let (consumer_slot, consumer_slots) = consumer_slots.alloc();
+        let irq_handler_in_child = irq_handler.move_to_slot(&local_cnode, consumer_slot)?;
+
+        let (consumer_slot, _consumer_slots) = consumer_slots.alloc();
+        let notification_in_child =
+            notification.copy(&local_cnode, consumer_slot, CapRights::RW)?;
+        let waker_setup = WakerSetup {
+            interrupt_badge,
+            // Construct a user-inaccessible copy of the local notification
+            // purely for use in producing child-cnode-residing copies.
+            notification: Cap {
+                cptr: unbadged_notification.cptr,
+                cap_data: PhantomCap::phantom_instance(),
+                _role: PhantomData,
+            },
+        };
+        Ok((
+            InterruptConsumer {
+                irq_handler: irq_handler_in_child,
+                interrupt_badge,
+                notification: notification_in_child,
+            },
+            ConsumerToken {
+                notification: unbadged_notification,
+                consumer_vspace_asid: None,
+            },
+            waker_setup,
+        ))
+    }
+
     pub fn add_queue<
         E: Sized + Send + Sync,
         ELen: Unsigned,
