@@ -5,9 +5,10 @@ use typenum::{Unsigned, U2, U4};
 
 use crate::arch::{self, PageBits, PageBytes};
 use crate::cap::{
-    role, Badge, CNodeRole, CNodeSlots, Cap, DirectRetype, LocalCNode,
-    LocalCNodeSlots, LocalCap, Notification, Untyped,
+    role, Badge, CNodeRole, CNodeSlots, Cap, DirectRetype, LocalCNode, LocalCNodeSlots, LocalCap,
+    Notification, Untyped,
 };
+use crate::userland::multi_consumer::WakerSetup;
 use crate::userland::{CapRights, IPCError};
 use crate::vspace::{UnmappedMemoryRegion, VSpace};
 
@@ -28,6 +29,7 @@ pub mod sync {
         (
             ExtendedCaller<Req, Rsp, CallerRole>,
             ExtendedResponder<Req, Rsp, role::Child>,
+            WakerSetup,
         ),
         IPCError,
     > {
@@ -119,7 +121,13 @@ pub mod sync {
                 _role: PhantomData,
             },
         };
-        Ok((caller, responder))
+
+        let waker_setup = WakerSetup {
+            interrupt_badge: Badge::from(1),
+            notification: local_request_ready,
+        };
+
+        Ok((caller, responder, waker_setup))
     }
 
     #[derive(Debug)]
@@ -169,6 +177,7 @@ pub mod sync {
     pub struct ExtendedResponder<Req: Sized, Rsp: Sized, Role: CNodeRole> {
         inner: SyncExtendedIpcPair<Req, Rsp, Role>,
     }
+
     impl<Req, Rsp> ExtendedResponder<Req, Rsp, role::Local> {
         pub fn reply_recv<F>(self, f: F) -> !
         where
@@ -193,6 +202,37 @@ pub mod sync {
                     state = out.1;
                     inner.unchecked_copy_into_buffer(&response);
                     seL4_Signal(inner.response_ready.cptr);
+                }
+            }
+        }
+
+        pub fn reply_recv_with_notification<F, G, State>(
+            self,
+            initial_state: State,
+            f: F,
+            g: G,
+        ) -> !
+        where
+            F: Fn(Req, State) -> (Rsp, State),
+            G: Fn(usize, State) -> State,
+        {
+            let mut inner = self.inner;
+            let mut sender_badge: usize = 0;
+            let mut response;
+            let mut state = initial_state;
+            loop {
+                unsafe {
+                    seL4_Wait(inner.request_ready.cptr, &mut sender_badge as *mut usize);
+                    if sender_badge == 0 {
+                        let out = f(inner.unchecked_copy_from_buffer(), state);
+                        response = out.0;
+                        state = out.1;
+                        inner.unchecked_copy_into_buffer(&response);
+                        seL4_Signal(inner.response_ready.cptr);
+                    } else {
+                        // nonzero badges are from a notification
+                        state = g(sender_badge, state);
+                    }
                 }
             }
         }

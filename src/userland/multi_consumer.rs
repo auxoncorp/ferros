@@ -205,11 +205,11 @@ where
 /// to trigger a multi-consumer's non-queue-reading
 /// interrupt-like wakeup path.
 pub struct WakerSetup {
-    interrupt_badge: Badge,
+    pub(crate) interrupt_badge: Badge,
 
     // User-concealed alias'ing happening here.
     // Don't mutate/delete this Cap. Copying/minting is okay.
-    notification: LocalCap<Notification>,
+    pub(crate) notification: LocalCap<Notification>,
 }
 
 /// Wrapper around the locally-accessible resources

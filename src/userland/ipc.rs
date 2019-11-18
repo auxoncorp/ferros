@@ -4,8 +4,8 @@ use selfe_sys::*;
 
 use crate::arch;
 use crate::cap::{
-    role, CNode, CNodeRole, CNodeSlot, Cap, DirectRetype, Endpoint, LocalCNode,
-    LocalCNodeSlot, LocalCap, Untyped,
+    role, CNode, CNodeRole, CNodeSlot, Cap, DirectRetype, Endpoint, LocalCNode, LocalCNodeSlot,
+    LocalCap, Untyped,
 };
 use crate::error::SeL4Error;
 use crate::userland::CapRights;
