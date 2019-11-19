@@ -248,6 +248,22 @@ impl From<seL4_MessageInfo_t> for MessageInfo {
     }
 }
 
+impl<Req, Rsp> Caller<Req, Rsp, role::Child> {
+    pub fn as_cap(self) -> Cap<Endpoint, role::Child> {
+        self.endpoint
+    }
+}
+
+impl<Req, Rsp> Caller<Req, Rsp, role::Local> {
+    pub fn wrap_cptr(cptr: usize) -> Caller<Req, Rsp, role::Local> {
+        Caller {
+            endpoint: Cap::wrap_cptr(cptr),
+            _req: PhantomData,
+            _rsp: PhantomData,
+        }
+    }
+}
+
 impl<Req, Rsp> Caller<Req, Rsp, role::Local> {
     pub fn blocking_call<'a>(&self, request: &Req) -> Result<Rsp, IPCError> {
         // Can safely use unchecked_new because we check sizing during the creation of Caller
