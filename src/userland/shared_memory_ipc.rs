@@ -12,6 +12,8 @@ use crate::userland::multi_consumer::WakerSetup;
 use crate::userland::{CapRights, IPCError};
 use crate::vspace::{UnmappedMemoryRegion, VSpace};
 
+const WAKER_BADGE: usize = 2;
+
 pub mod sync {
     use super::*;
     /// A synchronous call channel backed by a page of shared memory
@@ -123,7 +125,7 @@ pub mod sync {
         };
 
         let waker_setup = WakerSetup {
-            interrupt_badge: Badge::from(1),
+            interrupt_badge: Badge::from(WAKER_BADGE),
             notification: local_request_ready,
         };
 
@@ -223,15 +225,15 @@ pub mod sync {
             loop {
                 unsafe {
                     seL4_Wait(inner.request_ready.cptr, &mut sender_badge as *mut usize);
-                    if sender_badge == 0 {
+                    if sender_badge == WAKER_BADGE {
+                        // nonzero badges are from a notification
+                        state = g(sender_badge, state);
+                    } else {
                         let out = f(inner.unchecked_copy_from_buffer(), state);
                         response = out.0;
                         state = out.1;
                         inner.unchecked_copy_into_buffer(&response);
                         seL4_Signal(inner.response_ready.cptr);
-                    } else {
-                        // nonzero badges are from a notification
-                        state = g(sender_badge, state);
                     }
                 }
             }
