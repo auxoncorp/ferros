@@ -12,7 +12,7 @@ use crate::userland::multi_consumer::WakerSetup;
 use crate::userland::{CapRights, IPCError};
 use crate::vspace::{UnmappedMemoryRegion, VSpace};
 
-const WAKER_BADGE: usize = 2;
+pub(crate) const WAKER_BADGE: usize = 2;
 
 pub mod sync {
     use super::*;

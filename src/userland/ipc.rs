@@ -4,12 +4,15 @@ use selfe_sys::*;
 
 use crate::arch;
 use crate::cap::{
-    role, CNode, CNodeRole, CNodeSlot, Cap, DirectRetype, Endpoint, LocalCNode, LocalCNodeSlot,
-    LocalCap, Untyped,
+    role, Badge, CNode, CNodeRole, CNodeSlot, Cap, DirectRetype, Endpoint, LocalCNode,
+    LocalCNodeSlot, LocalCNodeSlots, LocalCap, Notification, Untyped,
 };
 use crate::error::SeL4Error;
+use crate::userland::multi_consumer::WakerSetup;
 use crate::userland::CapRights;
+use crate::userland::shared_memory_ipc::WAKER_BADGE;
 use crate::vspace::VSpaceError;
+use typenum::U2;
 
 #[derive(Debug)]
 pub enum IPCError {
@@ -65,6 +68,50 @@ pub fn call_channel<Req: Send + Sync, Rsp: Send + Sync, ResponderRole: CNodeRole
             _req: PhantomData,
             _rsp: PhantomData,
             _role: PhantomData,
+        },
+    ))
+}
+
+pub fn call_channel_with_waker<Req: Send + Sync, Rsp: Send + Sync, ResponderRole: CNodeRole>(
+    untyped: LocalCap<Untyped<<Endpoint as DirectRetype>::SizeBits>>,
+    notification_ut: LocalCap<Untyped<<Notification as DirectRetype>::SizeBits>>,
+    local_cnode: &LocalCap<LocalCNode>,
+    local_slots: LocalCNodeSlots<U2>,
+    responder_slot: CNodeSlot<ResponderRole>,
+) -> Result<
+    (
+        IpcSetup<Req, Rsp>,
+        Responder<Req, Rsp, ResponderRole>,
+        LocalCap<Notification>,
+        WakerSetup,
+    ),
+    IPCError,
+> {
+    let _ = IPCBuffer::<Req, Rsp>::new()?; // Check buffer fits Req and Rsp
+    let (local_slot, local_slots) = local_slots.alloc();
+    let local_endpoint: LocalCap<Endpoint> = untyped.retype(local_slot)?;
+    let responder_endpoint = local_endpoint.copy(&local_cnode, responder_slot, CapRights::RW)?;
+
+    let (local_slot, _local_slots) = local_slots.alloc();
+    let notification: LocalCap<Notification> = notification_ut.retype(local_slot)?;
+
+    Ok((
+        IpcSetup {
+            endpoint: local_endpoint,
+            endpoint_cnode: &local_cnode,
+            _req: PhantomData,
+            _rsp: PhantomData,
+        },
+        Responder {
+            endpoint: responder_endpoint,
+            _req: PhantomData,
+            _rsp: PhantomData,
+            _role: PhantomData,
+        },
+        Cap::wrap_cptr(notification.cptr),
+        WakerSetup {
+            interrupt_badge: Badge::from(WAKER_BADGE),
+            notification,
         },
     ))
 }
