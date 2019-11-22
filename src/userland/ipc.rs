@@ -288,7 +288,22 @@ pub struct Responder<Req: Sized, Rsp: Sized, Role: CNodeRole> {
     _role: PhantomData<Role>,
 }
 
+impl<Req, Rsp> Responder<Req, Rsp, role::Child> {
+    pub fn as_cap(self) -> Cap<Endpoint, role::Child> {
+        self.endpoint
+    }
+}
+
 impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
+    pub fn wrap_cptr(cptr: usize) -> Responder<Req, Rsp, role::Local> {
+        Responder {
+            endpoint: Cap::wrap_cptr(cptr),
+            _req: PhantomData,
+            _rsp: PhantomData,
+            _role: PhantomData,
+        }
+    }
+
     pub fn reply_recv<F>(self, mut f: F) -> Result<Rsp, IPCError>
     where
         F: FnMut(Req) -> (Rsp),
