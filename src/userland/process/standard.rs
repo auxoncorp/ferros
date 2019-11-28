@@ -209,9 +209,13 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
             .map_err(|e| SeL4Error::TCBBindNotification(e))
     }
 
-    pub fn start(self) -> Result<(), SeL4Error> {
+    pub fn start(&mut self) -> Result<(), SeL4Error> {
         unsafe { seL4_TCB_Resume(self.tcb.cptr) }
             .as_result()
             .map_err(|e| SeL4Error::TCBResume(e))
+    }
+
+    pub fn elim(self) -> usize {
+        self.tcb.cptr
     }
 }
