@@ -218,4 +218,8 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
     pub fn elim(self) -> usize {
         self.tcb.cptr
     }
+
+    pub fn unsafe_get_tcb_cptr(&self) -> usize {
+        self.tcb.cptr
+    }
 }

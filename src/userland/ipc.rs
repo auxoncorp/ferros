@@ -9,8 +9,8 @@ use crate::cap::{
 };
 use crate::error::SeL4Error;
 use crate::userland::multi_consumer::WakerSetup;
-use crate::userland::CapRights;
 use crate::userland::shared_memory_ipc::WAKER_BADGE;
+use crate::userland::CapRights;
 use crate::vspace::VSpaceError;
 use typenum::U2;
 
