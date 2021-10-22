@@ -3,6 +3,7 @@ name = "ferros-test"
 version = "0.1.0"
 authors = ["Zachary Pierce <zack@auxon.io>"]
 edition = "2018"
+resolver = "2"
 
 [features]
 default = ["sel4_start_main"]
@@ -12,11 +13,11 @@ sel4_start_main = ["sel4-start/panic_handler", "ferros", "selfe-sys"]
 test-macro-impl = { path = "./test-macro-impl" }
 
 [dependencies.selfe-sys]
-git = "ssh://git@github.com/auxoncorp/selfe-sys.git"
+git = "https://github.com/auxoncorp/selfe-sys"
 optional = true
 
 [dependencies.sel4-start]
-git = "ssh://git@github.com/auxoncorp/selfe-sys.git"
+git = "https://github.com/auxoncorp/selfe-sys"
 optional = true
 
 [dependencies.ferros]

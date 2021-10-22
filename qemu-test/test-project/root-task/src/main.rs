@@ -7,7 +7,7 @@ extern crate cross_queue;
 #[macro_use]
 extern crate ferros;
 #[macro_use]
-extern crate registers;
+extern crate bounded_registers;
 extern crate selfe_sys;
 #[macro_use]
 extern crate typenum;
@@ -34,8 +34,8 @@ mod self_hosted_mem_mgmt;
 mod shared_page_queue;
 mod stack_setup;
 mod uart;
-mod wutbuddy;
 mod weak_elf;
+mod wutbuddy;
 
 mod resources {
     include! {concat!(env!("OUT_DIR"), "/resources.rs")}

@@ -62,7 +62,7 @@ pub fn child_process_cap_management(
             root_cnode,
         )?;
 
-        let child_process = StandardProcess::new(
+        let mut child_process = StandardProcess::new(
             &mut child_vspace,
             child_cnode,
             local_mapped_region,

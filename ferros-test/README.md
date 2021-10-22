@@ -30,7 +30,7 @@ that will serve as the test harness project.
 
 ```toml
 [dependencies]
-ferros-test = { git = "ssh://git@github.com/auxoncorp/ferros.git"}
+ferros-test = { git = "https://github.com/auxoncorp/ferros"}
 ```
 
 ### Creating Tests

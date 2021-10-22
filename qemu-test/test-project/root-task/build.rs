@@ -1,15 +1,8 @@
-#[cfg(not(workaround_build))]
+use ferros_build::*;
+use std::env;
+use std::path::Path;
+
 fn main() {
-    cargo_5730::run_build_script();
-}
-
-
-#[cfg(workaround_build)]
-fn main() {
-    use ferros_build::*;
-    use std::path::Path;
-    use std::env;
-
     println!("cargo:rerun-if-env-changed=TEST_CASE");
 
     let test_case = match env::var("TEST_CASE") {

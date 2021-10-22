@@ -3,6 +3,7 @@ name = "cross_queue"
 version = "0.1.0"
 authors = ["Dan Pittman <dan@auxon.io>", "Zack Pierce <zack@auxon.io>"]
 edition = "2018"
+resolver = "2"
 
 [dev-dependencies]
 rand = "0.6"

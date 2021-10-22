@@ -87,7 +87,7 @@ pub fn dont_tread_on_me<'a, 'b, 'c>(
 
         let (proc1_region, proc2_region) = local_mapped_region.split()?;
 
-        let proc1_process = StandardProcess::new(
+        let mut proc1_process = StandardProcess::new(
             &mut proc1_vspace,
             proc1_cspace,
             proc1_region,
@@ -102,7 +102,7 @@ pub fn dont_tread_on_me<'a, 'b, 'c>(
         )?;
         proc1_process.start()?;
 
-        let proc2_process = StandardProcess::new(
+        let mut proc2_process = StandardProcess::new(
             &mut proc2_vspace,
             proc2_cspace,
             proc2_region,
@@ -132,7 +132,8 @@ fn to_be_changed() -> bool {
     true
 }
 
-/// The substitue function that proc2 will attempt to put in the place of `to_be_changed`
+/// The substitue function that proc2 will attempt to put in the place of
+/// `to_be_changed`
 #[allow(dead_code)]
 fn substitute() -> bool {
     false

@@ -10,7 +10,8 @@ use ferros::cap::{
     retype, retype_cnode, role, CNodeRole, LocalCNodeSlots, LocalCap, MaxIRQCount, Untyped,
 };
 use ferros::userland::{
-    CapRights, DefaultStackBitSize, InterruptConsumer, RetypeForSetup, StandardProcess, Consumer1, Producer
+    CapRights, Consumer1, DefaultStackBitSize, InterruptConsumer, Producer, RetypeForSetup,
+    StandardProcess,
 };
 use ferros::vspace::*;
 
@@ -87,15 +88,16 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 
         // Add a queue and producer to the interrupt consumer just to see that
         // we can (this is a regression test, it used to crash)
-        let (interrupt_consumer, test_producer_setup) = interrupt_consumer.add_queue::<u32, U16, U12, _>(
-            &mut interrupt_consumer_token,
-            ut,
-            &mut local_vspace_scratch,
-            &mut uart1_vspace,
-            &root_cnode,
-            slots,
-            slots,
-        )?;
+        let (interrupt_consumer, test_producer_setup) = interrupt_consumer
+            .add_queue::<u32, U16, U12, _>(
+                &mut interrupt_consumer_token,
+                ut,
+                &mut local_vspace_scratch,
+                &mut uart1_vspace,
+                &root_cnode,
+                slots,
+                slots,
+            )?;
 
         let test_producer = Producer::new(
             &test_producer_setup,
@@ -124,7 +126,7 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
             UnmappedMemoryRegion::new(ut, slots)?;
         let mapped_region =
             root_vspace.map_region(unmapped_region, CapRights::RW, arch::vm_attributes::DEFAULT)?;
-        let uart1_process = StandardProcess::new(
+        let mut uart1_process = StandardProcess::new(
             &mut uart1_vspace,
             uart1_cnode,
             mapped_region,
@@ -147,7 +149,8 @@ pub fn run(raw_boot_info: &'static seL4_BootInfo) -> Result<(), TopLevelError> {
 pub mod uart {
     use super::*;
 
-    use registers::{ReadOnlyRegister, ReadWriteRegister, WriteOnlyRegister};
+    //use bounded_registers::{ReadOnlyRegister, ReadWriteRegister,
+    // WriteOnlyRegister};
 
     pub struct UartParams<IRQ: Unsigned + Sync + Send, Role: CNodeRole>
     where
@@ -166,6 +169,7 @@ pub mod uart {
 
     register! {
         UartRX,
+        u32,
         RO,
         Fields [
             Data        WIDTH(U8) OFFSET(U0),
@@ -182,6 +186,7 @@ pub mod uart {
 
     register! {
         UartTX,
+        u32,
         WO,
         Fields [
             Data WIDTH(U8) OFFSET(U0)
@@ -192,6 +197,7 @@ pub mod uart {
 
     register! {
         UartControl1,
+        u32,
         RW,
         Fields [
             Enable              WIDTH(U1) OFFSET(U0),
@@ -214,6 +220,7 @@ pub mod uart {
 
     register! {
         UartControl2,
+        u32,
         RW,
         Fields [
             SoftwareReset      WIDTH(U1) OFFSET(U0),
@@ -305,7 +312,7 @@ pub mod uart {
             |num, state| {
                 debug_println!("got num from queue: {:?}", num);
                 state
-            }
+            },
         )
     }
 }

@@ -3,11 +3,10 @@ name = "elf-process"
 version = "0.1.0"
 authors = ["Russell Mull <russell@auxon.io>"]
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+resolver = "2"
 
 [dependencies]
-selfe-sys = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
-selfe-runtime = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git", features = [ "panic_handler"  ]}
-selfe-arc = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git", default-features=false }
+selfe-sys = { git = "https://github.com/auxoncorp/selfe-sys" }
+selfe-runtime = { git = "https://github.com/auxoncorp/selfe-sys", features = ["panic_handler"] }
+selfe-arc = { git = "https://github.com/auxoncorp/selfe-sys", default-features = false }
 ferros = { path = "../../.." }

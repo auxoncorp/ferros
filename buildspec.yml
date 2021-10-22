@@ -9,7 +9,7 @@ phases:
       - eval `ssh-agent -s`
       - ssh-add
       - ssh-keyscan github.com > ~/.ssh/known_hosts
-      - cargo install --git ssh://git@github.com/auxoncorp/selfe-sys.git selfe-config --bin selfe --features bin --force
+      - cargo install --git https://github.com/auxoncorp/selfe-sys selfe-config --bin selfe --features bin --force
   build:
     commands:
       - ./check-all.sh

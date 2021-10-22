@@ -98,7 +98,7 @@ pub fn polling_consumer(
         let (u18_region_a, _u18_region_b) = local_mapped_region.split()?;
         let (consumer_region, producer_region) = u18_region_a.split()?;
 
-        let consumer_process = StandardProcess::new(
+        let mut consumer_process = StandardProcess::new(
             &mut consumer_vspace,
             consumer_cnode,
             consumer_region,
@@ -112,7 +112,7 @@ pub fn polling_consumer(
             None, // fault
         )?;
 
-        let producer_process = StandardProcess::new(
+        let mut producer_process = StandardProcess::new(
             &mut producer_vspace,
             producer_cnode,
             producer_region,

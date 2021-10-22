@@ -1,6 +1,7 @@
 [workspace]
 members = ["root-task", "elf-process"]
 exclude = ["root-task/build-script"]
+resolver = "2"
 
 [profile.dev]
 panic = "abort"

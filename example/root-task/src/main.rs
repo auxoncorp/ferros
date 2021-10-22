@@ -75,7 +75,8 @@ fn run(raw_bootinfo: &'static selfe_sys::seL4_BootInfo) -> Result<(), TopLevelEr
         let (asid_pool, _asid_control) = asid_control.allocate_asid_pool(ut, slots)?;
         let (hello_asid, asid_pool) = asid_pool.alloc();
 
-        // TODO: can we determine these numbers statically now, from the elf file's layout?
+        // TODO: can we determine these numbers statically now, from the elf file's
+        // layout?
         let vspace_slots: LocalCNodeSlots<U16> = slots;
         let vspace_ut: LocalCap<Untyped<U16>> = ut;
 
@@ -110,7 +111,7 @@ fn run(raw_bootinfo: &'static selfe_sys::seL4_BootInfo) -> Result<(), TopLevelEr
         let stack_mem =
             root_vspace.map_region(stack_mem, CapRights::RW, arch::vm_attributes::DEFAULT)?;
 
-        let hello_process = StandardProcess::new::<hello_printer::ProcParams, _>(
+        let mut hello_process = StandardProcess::new::<hello_printer::ProcParams, _>(
             &mut hello_vspace,
             hello_cnode,
             stack_mem,

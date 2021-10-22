@@ -86,7 +86,7 @@ pub fn grandkid_process_runs(
             outcome_sender,
         };
 
-        let child_process = StandardProcess::new(
+        let mut child_process = StandardProcess::new(
             &mut child_vspace,
             child_cnode,
             local_mapped_region,
@@ -189,7 +189,7 @@ fn child_run(params: ChildParams<role::Local>) -> Result<(), TopLevelError> {
             &cnode,
         )?;
 
-        let child_process = StandardProcess::new(
+        let mut child_process = StandardProcess::new(
             &mut child_vspace,
             child_cnode,
             mapped_region,

@@ -13,7 +13,7 @@ toolchains_dir="${dir}/target/toolchains"
 mkdir -p $toolchains_dir
 
 armv7_toolchain="gcc-linaro-7.4.1-2019.02-i686_arm-linux-gnueabihf"
-armv7_toolchain_url="https://releases.linaro.org/components/toolchain/binaries/latest-7/arm-linux-gnueabihf/${armv7_toolchain}.tar.xz"
+armv7_toolchain_url="https://releases.linaro.org/components/toolchain/binaries/7.4-2019.02/arm-linux-gnueabihf/${armv7_toolchain}.tar.xz"
 armv7_toolchain_dir="${toolchains_dir}/${armv7_toolchain}"
 
 if [ ! -d "${armv7_toolchain_dir}" ]; then
@@ -27,7 +27,7 @@ else
 fi
 
 armv8_toolchain="gcc-linaro-7.4.1-2019.02-i686_aarch64-linux-gnu"
-armv8_toolchain_url="https://releases.linaro.org/components/toolchain/binaries/latest-7/aarch64-linux-gnu/${armv8_toolchain}.tar.xz"
+armv8_toolchain_url="https://releases.linaro.org/components/toolchain/binaries/7.4-2019.02/aarch64-linux-gnu/${armv8_toolchain}.tar.xz"
 armv8_toolchain_dir="${toolchains_dir}/${armv8_toolchain}"
 
 if [ ! -d "${armv8_toolchain_dir}" ]; then
