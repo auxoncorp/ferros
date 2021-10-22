@@ -1,5 +1,4 @@
 #![no_std]
-#![feature(optin_builtin_traits)]
 //! A lock free queue implementation adapted from Crossbeam's `ArrayQueue`:
 //! https://github.com/crossbeam-rs/crossbeam
 //! crossbeam is dual-licensed via apache / MIT.
@@ -397,8 +396,9 @@ impl<T> ArrayQueue<T> {
         // Is the tail lagging one lap behind head?
         // Is the tail equal to the head?
         //
-        // Note: If the head changes just before we load the tail, that means there was a moment
-        // when the channel was not empty, so it is safe to just return `false`.
+        // Note: If the head changes just before we load the tail, that means there was
+        // a moment when the channel was not empty, so it is safe to just return
+        // `false`.
         tail == head
     }
 
@@ -423,8 +423,9 @@ impl<T> ArrayQueue<T> {
 
         // Is the head lagging one lap behind tail?
         //
-        // Note: If the tail changes just before we load the head, that means there was a moment
-        // when the queue was not full, so it is safe to just return `false`.
+        // Note: If the tail changes just before we load the head, that means there was
+        // a moment when the queue was not full, so it is safe to just return
+        // `false`.
         head.wrapping_add(self.one_lap) == tail
     }
 
@@ -471,8 +472,7 @@ impl<T> ArrayQueue<T> {
     }
 }
 
-impl<T> Drop for ArrayQueue<T>
-{
+impl<T> Drop for ArrayQueue<T> {
     fn drop(&mut self) {
         // Get the index of the head.
         let hix = self.head.load(Ordering::Relaxed) & (self.one_lap - 1);
@@ -562,8 +562,8 @@ impl Backoff {
 
     /// Backs off in a lock-free loop.
     ///
-    /// This method should be used when we need to retry an operation because another thread made
-    /// progress.
+    /// This method should be used when we need to retry an operation because
+    /// another thread made progress.
     ///
     /// The processor may yield using the *YIELD* or *PAUSE* instruction.
     ///
@@ -604,15 +604,18 @@ impl Backoff {
 
     /// Backs off in a blocking loop.
     ///
-    /// This method should be used when we need to wait for another thread to make progress.
+    /// This method should be used when we need to wait for another thread to
+    /// make progress.
     ///
-    /// The processor may yield using the *YIELD* or *PAUSE* instruction and the current thread
-    /// may yield by giving up a timeslice to the OS scheduler.
+    /// The processor may yield using the *YIELD* or *PAUSE* instruction and the
+    /// current thread may yield by giving up a timeslice to the OS
+    /// scheduler.
     ///
     /// In `#[no_std]` environments, this method is equivalent to [`spin`].
     ///
-    /// If possible, use [`is_completed`] to check when it is advised to stop using backoff and
-    /// block the current thread using a different synchronization mechanism instead.
+    /// If possible, use [`is_completed`] to check when it is advised to stop
+    /// using backoff and block the current thread using a different
+    /// synchronization mechanism instead.
     ///
     /// [`spin`]: struct.Backoff.html#method.spin
     /// [`is_completed`]: struct.Backoff.html#method.is_completed
@@ -671,11 +674,13 @@ impl Backoff {
         }
     }
 
-    /// Returns `true` if exponential backoff has completed and blocking the thread is advised.
+    /// Returns `true` if exponential backoff has completed and blocking the
+    /// thread is advised.
     ///
     /// # Examples
     ///
-    /// Waiting for an [`AtomicBool`] to become `true` and parking the thread after a long wait:
+    /// Waiting for an [`AtomicBool`] to become `true` and parking the thread
+    /// after a long wait:
     ///
     /// ```
     /// use crossbeam_utils::Backoff;

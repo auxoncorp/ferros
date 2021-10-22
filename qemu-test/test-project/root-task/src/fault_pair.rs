@@ -1,4 +1,5 @@
-//! Test demonstrating that child processes can listen for faults happening on each other
+//! Test demonstrating that child processes can listen for faults happening on
+//! each other
 use core::marker::PhantomData;
 
 use selfe_sys::*;
@@ -87,7 +88,7 @@ pub fn fault_pair(
 
         let (mischief_region, fault_region) = local_mapped_region.split()?;
 
-        let mischief_maker_process = StandardProcess::new(
+        let mut mischief_maker_process = StandardProcess::new(
             &mut mischief_maker_vspace,
             mischief_maker_cnode,
             mischief_region,
@@ -102,7 +103,7 @@ pub fn fault_pair(
         )?;
         mischief_maker_process.start()?;
 
-        let fault_handler_process = StandardProcess::new(
+        let mut fault_handler_process = StandardProcess::new(
             &mut fault_handler_vspace,
             fault_handler_cnode,
             fault_region,
@@ -169,7 +170,8 @@ pub extern "C" fn fault_handler_proc(p: MischiefDetectorParams<role::Local>) {
     let reply = LocalCap::<FaultReplyEndpoint>::save_caller_and_create(p.local_slots)
         .expect("Failed to save caller");
 
-    // resume the thread, which will try to do the same thing as becore and fault again
+    // resume the thread, which will try to do the same thing as becore and fault
+    // again
     let slot = reply.resume_faulted_thread();
     let fault = p.fault_sink.wait_for_fault();
 

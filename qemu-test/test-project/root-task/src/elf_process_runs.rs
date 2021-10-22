@@ -6,9 +6,7 @@ use typenum::*;
 use elf_process;
 use ferros::bootstrap::UserImage;
 use ferros::cap::*;
-use ferros::userland::{
-    fault_or_message_channel, FaultOrMessage, StandardProcess,
-};
+use ferros::userland::{fault_or_message_channel, FaultOrMessage, StandardProcess};
 use ferros::vspace::*;
 use selfe_arc;
 
@@ -44,7 +42,7 @@ pub fn elf_process_runs(
         let (fault_source, outcome_sender, handler) =
             fault_or_message_channel(&root_cnode, ut, slots, child_fault_source_slot, slots)?;
 
-        let params : elf_process::ProcParams<role::Child> = elf_process::ProcParams {
+        let params: elf_process::ProcParams<role::Child> = elf_process::ProcParams {
             value: 42,
             outcome_sender,
         };
@@ -61,13 +59,13 @@ pub fn elf_process_runs(
             child_vspace_ut.weaken(),
             &elf_data,
             slots, // page_slots
-            ut, // elf_writable_mem,
+            ut,    // elf_writable_mem,
             &user_image,
             &root_cnode,
             &mut local_vspace_scratch,
         )?;
 
-        let child_process = StandardProcess::new::<elf_process::ProcParams<_>, _>(
+        let mut child_process = StandardProcess::new::<elf_process::ProcParams<_>, _>(
             &mut child_vspace,
             child_cnode,
             stack_mem,

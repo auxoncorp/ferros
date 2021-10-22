@@ -2,8 +2,8 @@ use super::TopLevelError;
 use ferros::alloc::{smart_alloc, ut_buddy};
 use ferros::bootstrap::UserImage;
 use ferros::cap::{
-    retype, retype_cnode, role, ASIDPool, CNodeRole, LocalCNode, LocalCNodeSlots, LocalCap,
-    ThreadPriorityAuthority, Untyped, Notification, Badge, Cap
+    retype, retype_cnode, role, ASIDPool, Badge, CNodeRole, Cap, LocalCNode, LocalCNodeSlots,
+    LocalCap, Notification, ThreadPriorityAuthority, Untyped,
 };
 use ferros::userland::*;
 use ferros::vspace::*;
@@ -81,7 +81,7 @@ pub fn call_and_response_loop(
 
         let (caller_region, responder_region) = local_mapped_region.split()?;
 
-        let caller_process = StandardProcess::new(
+        let mut caller_process = StandardProcess::new(
             &mut caller_vspace,
             caller_cnode,
             caller_region,
@@ -190,13 +190,11 @@ pub extern "C" fn responder_proc(p: ResponderParams<role::Local>) {
     p.responder
         .reply_recv_with_notification(
             initial_state,
-            move |req, state| {
-                (AdditionResponse { sum: req.a + req.b }, state + 1)
-            },
+            move |req, state| (AdditionResponse { sum: req.a + req.b }, state + 1),
             move |notification_badge, state| {
                 assert!(notification_badge == 0b100);
                 state + 1
-            }
+            },
         )
         .expect("Could not set up a reply_recv");
 }

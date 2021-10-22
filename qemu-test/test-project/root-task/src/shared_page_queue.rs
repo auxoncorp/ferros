@@ -57,17 +57,18 @@ pub fn shared_page_queue(
         let (producer_cnode, producer_slots) = retype_cnode::<U12>(ut, slots)?;
 
         let (slots_c, consumer_slots) = consumer_slots.alloc();
-        let (consumer, _consumer_token, producer_setup, _waker_setup) = Consumer1::new::<U100, U12, _>(
-            ut,
-            ut,
-            local_vspace_scratch,
-            &mut consumer_vspace,
-            &root_cnode,
-            slots,
-            slots,
-            slots,
-            slots_c,
-        )?;
+        let (consumer, _consumer_token, producer_setup, _waker_setup) =
+            Consumer1::new::<U100, U12, _>(
+                ut,
+                ut,
+                local_vspace_scratch,
+                &mut consumer_vspace,
+                &root_cnode,
+                slots,
+                slots,
+                slots,
+                slots_c,
+            )?;
         let (consumer_sender_slot, _consumer_slots) = consumer_slots.alloc();
         let (consumer_fault_source, outcome_sender, handler) =
             fault_or_message_channel(&root_cnode, ut, slots, consumer_sender_slot, slots)?;
@@ -90,7 +91,7 @@ pub fn shared_page_queue(
 
         let (producer_region, consumer_region) = local_mapped_region.split()?;
 
-        let consumer_process = StandardProcess::new(
+        let mut consumer_process = StandardProcess::new(
             &mut consumer_vspace,
             consumer_cnode,
             consumer_region,
@@ -105,7 +106,7 @@ pub fn shared_page_queue(
         )?;
         consumer_process.start()?;
 
-        let producer_process = StandardProcess::new(
+        let mut producer_process = StandardProcess::new(
             &mut producer_vspace,
             producer_cnode,
             producer_region,

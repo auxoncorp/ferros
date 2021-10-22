@@ -1,15 +1,16 @@
 [package]
 name = "ferros"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Russell Mull <russell@auxon.io>", "Zack Pierce <zack@auxon.io"]
 edition = "2018"
+resolver = "2"
 
 [features]
 default = []
 test_support = []
 
 [dependencies]
-selfe-sys = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
+selfe-sys = { git = "https://github.com/auxoncorp/selfe-sys" }
 typenum = "1.10"
 generic-array = "0.13.2"
 cross_queue = { path = "./cross_queue" }
@@ -22,4 +23,4 @@ version = "0.4.10"
 default-features = false
 
 [build-dependencies]
-selfe-config = { git = "ssh://git@github.com/auxoncorp/selfe-sys.git" }
+selfe-config = { git = "https://github.com/auxoncorp/selfe-sys" }

@@ -93,17 +93,18 @@ pub fn double_door_backpressure(
         )?;
 
         let (slots_c, consumer_slots) = consumer_slots.alloc();
-        let (consumer, consumer_token, producer_setup_a, waker_setup) = Consumer1::new::<U14, U14, _>(
-            ut,
-            ut,
-            local_vspace_scratch,
-            &mut consumer_vspace,
-            &root_cnode,
-            slots,
-            slots,
-            slots,
-            slots_c,
-        )?;
+        let (consumer, consumer_token, producer_setup_a, waker_setup) =
+            Consumer1::new::<U14, U14, _>(
+                ut,
+                ut,
+                local_vspace_scratch,
+                &mut consumer_vspace,
+                &root_cnode,
+                slots,
+                slots,
+                slots,
+                slots_c,
+            )?;
 
         let (consumer, producer_setup_b) = consumer.add_queue::<Yttrium, U14, U14, _>(
             &consumer_token,
@@ -157,7 +158,7 @@ pub fn double_door_backpressure(
         let (consumer_region, producer_a_region) = u18_region_a.split()?;
         let (producer_b_region, waker_region) = u18_region_b.split()?;
 
-        let consumer_process = StandardProcess::new(
+        let mut consumer_process = StandardProcess::new(
             &mut consumer_vspace,
             consumer_cnode,
             consumer_region,
@@ -171,7 +172,7 @@ pub fn double_door_backpressure(
             None, // fault
         )?;
 
-        let producer_a_process = StandardProcess::new(
+        let mut producer_a_process = StandardProcess::new(
             &mut producer_a_vspace,
             producer_a_cnode,
             producer_a_region,
@@ -185,7 +186,7 @@ pub fn double_door_backpressure(
             None, // fault
         )?;
 
-        let producer_b_process = StandardProcess::new(
+        let mut producer_b_process = StandardProcess::new(
             &mut producer_b_vspace,
             producer_b_cnode,
             producer_b_region,
@@ -199,7 +200,7 @@ pub fn double_door_backpressure(
             None, // fault
         )?;
 
-        let waker_process = StandardProcess::new(
+        let mut waker_process = StandardProcess::new(
             &mut waker_vspace,
             waker_cnode,
             waker_region,
@@ -341,7 +342,10 @@ pub extern "C" fn producer_a_proc(p: ProducerXParams<role::Local>) {
     assert_eq!(p.producer.capacity(), U14::USIZE);
     assert_eq!(p.producer.is_full(), false);
     for i in 0..20 {
-        let mut x = Xenon { a: i, padding: [0; 1024] };
+        let mut x = Xenon {
+            a: i,
+            padding: [0; 1024],
+        };
         loop {
             match p.producer.send(x) {
                 Ok(_) => {
@@ -363,7 +367,10 @@ pub extern "C" fn producer_b_proc(p: ProducerYParams<role::Local>) {
     assert_eq!(p.producer.is_full(), false);
     let mut rejection_count = 0;
     for i in 0..20 {
-        let mut y = Yttrium { b: i, padding: [0; 1024] };
+        let mut y = Yttrium {
+            b: i,
+            padding: [0; 1024],
+        };
         loop {
             match p.producer.send(y) {
                 Ok(_) => {

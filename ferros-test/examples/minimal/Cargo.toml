@@ -3,6 +3,7 @@ name = "minimal-ferros-test"
 version = "0.1.0"
 authors = ["Zack Pierce <zack@auxon.io>"]
 edition = "2018"
+resolver = "2"
 
 [dependencies]
 ferros = { path = "../../.." , features = ["test_support"] }
