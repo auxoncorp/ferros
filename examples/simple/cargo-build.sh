@@ -14,5 +14,5 @@ fi
 # reversed topological sort of the dep graph
 for c in $(tsort crate-binary-deps | tac); do
     echo "---------------- building ${c} ----------------"
-    cargo xbuild -p $c $@;
+    cargo build -p $c $@;
 done

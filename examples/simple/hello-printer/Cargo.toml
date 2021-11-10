@@ -8,4 +8,4 @@ resolver = "2"
 [dependencies]
 selfe-sys = { git = "https://github.com/auxoncorp/selfe-sys" }
 selfe-runtime = { git = "https://github.com/auxoncorp/selfe-sys", features = ["panic_handler"] }
-ferros = { path = "../.." }
+ferros = { path = "../../.." }

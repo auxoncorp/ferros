@@ -1,6 +1,5 @@
 [workspace]
 members = ["root-task", "hello-printer"]
-exclude = ["root-task/build-script"]
 resolver = "2"
 
 [profile.dev]

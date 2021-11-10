@@ -9,11 +9,11 @@ resolver = "2"
 selfe-sys = { git = "https://github.com/auxoncorp/selfe-sys" }
 sel4-start = { git = "https://github.com/auxoncorp/selfe-sys", features = ["panic_handler"] }
 selfe-arc = { git = "https://github.com/auxoncorp/selfe-sys", default-features = false, features = [] }
-ferros = { path = "../.." }
+ferros = { path = "../../.." }
 typenum = "1.10"
 xmas-elf = "0.7"
 
 hello-printer = { path = "../hello-printer" }
 
 [build-dependencies]
-ferros-build = { path = "../../ferros-build" }
+ferros-build = { path = "../../../ferros-build" }
