@@ -47,7 +47,8 @@ impl GpioExt for GPIO3 {
     }
 }
 
-// TODO - macro gen all the pins/etc
+// TODO - macro impl generate all the pins/banks
+// https://github.com/auxoncorp/ferros/issues/88
 impl<MODE> P3_19<MODE> {
     const OFFSET: usize = 19;
 }

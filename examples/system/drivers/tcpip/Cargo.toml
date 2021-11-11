@@ -31,6 +31,4 @@ features = [
     "socket-udp",
     "socket",
     "ethernet",
-    #"verbose",
-    #"log",
 ]

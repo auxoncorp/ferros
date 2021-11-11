@@ -1,4 +1,5 @@
 //! ENET
+//! See [IMX6DQRM](http://cache.freescale.com/files/32bit/doc/ref_manual/IMX6DQRM.pdf) chapter 23.
 
 use core::mem;
 use core::ops::{Deref, DerefMut};

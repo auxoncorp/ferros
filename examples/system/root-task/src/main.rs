@@ -28,6 +28,7 @@ type UdpIpcQueuePageBits = U14;
 type UdpIpcQueueDepth = op!(((U1 << UdpIpcQueuePageBits) / MtuSize) - U1);
 
 // TODO - read hw OTP MAC address, use forged if not available
+// https://github.com/auxoncorp/ferros/issues/88
 const MAC_ADDRESS: EthernetAddress = EthernetAddress([0x00, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE]);
 const IP_ADDRESS: Ipv4Address = Ipv4Address([192, 0, 2, 80]);
 

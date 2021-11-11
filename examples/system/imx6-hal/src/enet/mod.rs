@@ -155,6 +155,7 @@ impl Enet {
 
         // TODO - need to configure IOMUX
         // Initialise ethernet pins, also does a PHY reset
+        // https://github.com/auxoncorp/ferros/issues/88
 
         // Set MAC and pause frame type field
         self.set_mac();
@@ -235,10 +236,12 @@ impl Enet {
         // Connect the phy to the ethernet controller
         // TODO
         // all the MDIO/PHY/link stuff
+        // https://github.com/auxoncorp/ferros/issues/88
 
         //
         // Initialize FEC, ENET1 has an MDIO interface
         // TODO
+        // https://github.com/auxoncorp/ferros/issues/88
 
         self.set_duplex_speed();
 
@@ -274,9 +277,12 @@ impl Enet {
             .modify(InterruptMask::RxFrame::Set + InterruptMask::BusErr::Set);
     }
 
-    // NOTE: after reset, the caller should
-    // * configure the ENET clock after reset to ENET_FREQ_HZ
-    // * configure MDIO clock frequency to MDC_FREQ_HZ
+    /// Reset the ENET periphal.
+    ///
+    /// NOTE: after reset, the caller should
+    /// * configure the ENET clock after reset to ENET_FREQ_HZ
+    /// * configure MDIO clock frequency to MDC_FREQ_HZ
+    /// * Not currently being done, seehttps://github.com/auxoncorp/ferros/issues/88
     pub fn reset(&mut self) {
         log::trace!("[enet] reset");
         unsafe { self.enet.ecr.write(0) };
@@ -320,6 +326,9 @@ impl Enet {
         irqs.is_set(InterruptEvent::RxFrame::Set)
     }
 
+    /// Receives the next available packet from the rx ring, if one is ready.
+    /// Calls the function `f` with the packet data and returns the size of the
+    /// received packet.
     pub fn receive<F>(&mut self, mut f: F) -> usize
     where
         F: FnMut(&[u8]),
@@ -333,7 +342,11 @@ impl Enet {
         }
     }
 
-    // NOTE: fire and forget, does not block until completion
+    /// Enqueue a packet into the tx ring.
+    ///
+    /// This function blocks if the tx ring is currently full, until
+    /// an entry becomes available.
+    /// It does not wait for the hardware to complete the transfer.
     pub fn transmit(&mut self, data: &[u8]) -> Result<(), Error> {
         if data.len() > MtuSize::USIZE {
             Err(Error::TransmitBufferTooBig)

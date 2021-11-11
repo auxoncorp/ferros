@@ -108,7 +108,6 @@ pub extern "C" fn _start(params: ProcParams<role::Local>) -> ! {
         initial_state,
         |mut state| {
             // Non-queue wakeup event
-            //log::trace!("[tcpip-driver IRQ wakeup");
 
             // Ack timer interrupt
             state.ack_timer_irq();

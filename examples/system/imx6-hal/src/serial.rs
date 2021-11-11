@@ -1,8 +1,6 @@
 // TODO
-// - need to deal PINS/IOMUX, clocks, etc
-// - Error type, read status bits
-// - do proper reset + init
-// - sealed Instance trait for peripherials, UART: Instance
+// pin config, clock, IOMUX, etc
+// see https://github.com/auxoncorp/ferros/issues/88
 
 use crate::pac::{typenum::U1, uart1::*};
 use core::convert::Infallible;
@@ -18,7 +16,6 @@ impl Serial<UART1> {
     pub fn new(mut uart: UART1) -> Self {
         uart.ctl1.modify(Control1::Enable::Clear);
         uart.ctl1.modify(Control1::Enable::Set);
-        // TODO reset SRST
         uart.ctl2
             .modify(Control2::RxEnable::Set + Control2::TxEnable::Set);
         uart.ctl2

@@ -1,4 +1,5 @@
 //! GPT
+//! See [IMX6DQRM](http://cache.freescale.com/files/32bit/doc/ref_manual/IMX6DQRM.pdf) chapter 30.
 
 use core::mem;
 use core::ops::{Deref, DerefMut};

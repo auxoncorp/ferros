@@ -1,6 +1,7 @@
 //! SPI driver based on the u-boot ECSPI driver
-// TODO - can probably cleanup the Transfer impl to not require 2 part
-// operations
+
+// NOTE: the Transfer impl can likely be improved to not require
+// the 2 part operations, mostly copied from u-boot
 
 use crate::asm;
 use crate::pac::{ecspi1::*, typenum};

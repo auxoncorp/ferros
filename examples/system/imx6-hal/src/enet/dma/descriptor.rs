@@ -1,5 +1,8 @@
 //! Legacy FEC DMA buffer descriptor
 //!
+//! See [IMX6DQRM](http://cache.freescale.com/files/32bit/doc/ref_manual/IMX6DQRM.pdf)
+//! chapter 23.6.13.
+//!
 //! NOTE:
 //! * To enable legacy support, write 0 to ENETn_ECR[1588EN].
 //! * DBSWP must be set to 1 after reset to enable little-endian mode.

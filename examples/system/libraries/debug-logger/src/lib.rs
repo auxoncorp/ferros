@@ -21,8 +21,8 @@ impl DebugLogger {
 }
 
 impl log::Log for DebugLogger {
-    fn enabled(&self, _metadata: &Metadata) -> bool {
-        true
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        metadata.level().to_level_filter() <= Self::max_log_level_from_env()
     }
 
     fn log(&self, record: &Record) {
