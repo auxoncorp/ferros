@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = [
+    "libraries/net-types",
+    "libraries/debug-logger",
+    "imx6-devices",
+    "imx6-hal",
+    "drivers/iomux",
+    "drivers/enet",
+    "drivers/persistent-storage",
+    "drivers/tcpip",
+    "applications/console",
+    "root-task",
+]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

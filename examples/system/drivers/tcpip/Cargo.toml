@@ -1,0 +1,36 @@
+[package]
+name = "tcpip"
+version = "0.1.0"
+authors = ["Jon Lamb"]
+edition = "2021"
+
+[dependencies]
+selfe-sys = { git = "https://github.com/auxoncorp/selfe-sys" }
+selfe-runtime = { git = "https://github.com/auxoncorp/selfe-sys", features = ["panic_handler"] }
+ferros = { path = "../../../.." }
+log = "0.4"
+static_assertions = "1.1"
+typenum = "1.10"
+
+[dependencies.imx6-hal]
+path = "../../imx6-hal"
+
+[dependencies.debug-logger]
+path = "../../libraries/debug-logger"
+
+[dependencies.net-types]
+path = "../../libraries/net-types"
+
+[dependencies.smoltcp]
+version = "0.7"
+default-features = false
+features = [
+    "proto-ipv4",
+    "socket-icmp",
+    "proto-igmp",
+    "socket-udp",
+    "socket",
+    "ethernet",
+    #"verbose",
+    #"log",
+]

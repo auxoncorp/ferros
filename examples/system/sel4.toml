@@ -1,0 +1,75 @@
+# Sabre (ARMv7)
+[sel4.config.sabre]
+KernelARMPlatform = 'imx6'
+KernelHaveFPU = true
+
+[build.sabre]
+cross_compiler_prefix = "arm-linux-gnueabihf-"
+
+[build.sabre.debug]
+make_root_task = "./scripts/workspace-build-wrapper.sh --target=armv7-unknown-linux-gnueabihf"
+root_task_image = "target/armv7-unknown-linux-gnueabihf/debug/root-task"
+
+[build.sabre.release]
+make_root_task = "./scripts/workspace-build-wrapper.sh --target=armv7-unknown-linux-gnueabihf --release"
+root_task_image = "target/armv7-unknown-linux-gnueabihf/release/root-task"
+
+[sel4]
+kernel = { git = "https://github.com/seL4/seL4" , rev = "4d0f02c029560cae0e8d93727eb17d58bcecc2ac" }
+tools = { git = "https://github.com/seL4/seL4_tools" , rev = "f3b4bef672b92858c139787bc6fd5124e6022d26" }
+util_libs  = { git = "https://github.com/seL4/util_libs" , rev = "98aaebe56c66d46576485216f8c4626ed76a3757" }
+
+[sel4.config.arm]
+KernelArch = 'arm'
+KernelArmSel4Arch = 'aarch32'
+KernelSel4Arch = 'aarch32'
+KernelIPCBufferLocation = 'threadID_register'
+
+[sel4.config.debug]
+KernelPrinting = true
+KernelDebugBuild = true
+
+[sel4.config.release]
+KernelPrinting = false
+KernelDebugBuild = false
+KernelOptimisation = '-O2'
+
+[sel4.config]
+KernelColourPrinting = true
+KernelUserStackTraceLength = 16
+KernelVerificationBuild = false
+KernelBenchmarks = 'none'
+KernelFastpath = true
+LibSel4FunctionAttributes = 'public'
+KernelNumDomains = 1
+HardwareDebugAPI = false
+KernelFWholeProgram = false
+KernelResetChunkBits = 8
+KernelNumPriorities = 256
+KernelStackBits = 12
+KernelTimeSlice = 5
+KernelTimerTickMS = 2
+KernelMaxNumNodes = 4
+KernelRetypeFanOutLimit = 16384
+KernelRootCNodeSizeBits = 19
+KernelMaxNumBootinfoUntypedCaps = 230
+KernelSupportPCID = false
+KernelDebugDisablePrefetchers = false
+KernelExportPMCUser = false
+KernelFPU = 'FXSAVE'
+KernelFPUMaxRestoresSinceSwitch = 64
+KernelFSGSBase = 'msr'
+KernelHugePage = true
+KernelIOMMU = false
+KernelIRQController = 'IOAPIC'
+KernelIRQReporting = true
+KernelLAPICMode = 'XAPIC'
+KernelMaxNumIOAPIC = 1
+KernelMaxNumWorkUnitsPerPreemption = 100
+KernelMultiboot1Header = true
+KernelMultiboot2Header = true
+KernelMultibootGFXMode = 'none'
+KernelSkimWindow = true
+KernelSyscall = 'syscall'
+KernelXSaveSize = 576
+LinkPageSize = 4096
