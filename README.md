@@ -23,7 +23,7 @@ Add `ferros` as a cargo dependency.
 
 ```
 [dependencies]
-ferros = { git = "https://github.com/auxoncorp/ferros"}
+ferros = { git = "https://github.com/auxoncorp/ferros" }
 ```
 
 ## Quick Start

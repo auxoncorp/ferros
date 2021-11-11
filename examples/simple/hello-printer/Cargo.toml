@@ -1,0 +1,11 @@
+[package]
+name = "hello-printer"
+version = "0.1.0"
+authors = ["Russell Mull <russell@auxon.io>"]
+edition = "2018"
+resolver = "2"
+
+[dependencies]
+selfe-sys = { git = "https://github.com/auxoncorp/selfe-sys" }
+selfe-runtime = { git = "https://github.com/auxoncorp/selfe-sys", features = ["panic_handler"] }
+ferros = { path = "../../.." }

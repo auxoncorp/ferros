@@ -1,0 +1,42 @@
+[package]
+name = "root-task"
+version = "0.1.0"
+authors = ["Jon Lamb"]
+edition = "2021"
+
+[dependencies]
+selfe-sys = { git = "https://github.com/auxoncorp/selfe-sys" }
+sel4-start = { git = "https://github.com/auxoncorp/selfe-sys", features = ["panic_handler"] }
+selfe-arc = { git = "https://github.com/auxoncorp/selfe-sys", default-features = false, features = [] }
+ferros = { path = "../../.." }
+typenum = "1.10"
+xmas-elf = "0.7"
+log = "0.4"
+
+[dependencies.net-types]
+path = "../libraries/net-types"
+
+[dependencies.debug-logger]
+path = "../libraries/debug-logger"
+
+[dependencies.imx6-hal]
+path = "../imx6-hal"
+
+[dependencies.iomux]
+path = "../drivers/iomux"
+
+[dependencies.enet]
+path = "../drivers/enet"
+
+[dependencies.tcpip]
+path = "../drivers/tcpip"
+
+[dependencies.persistent-storage]
+path = "../drivers/persistent-storage"
+
+[dependencies.console]
+path = "../applications/console"
+
+[build-dependencies]
+ferros-build = { path = "../../../ferros-build" }
+built = "0.5"

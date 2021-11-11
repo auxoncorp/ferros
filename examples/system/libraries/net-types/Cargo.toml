@@ -1,0 +1,8 @@
+[package]
+name = "net-types"
+version = "0.1.0"
+authors = ["Jon Lamb"]
+edition = "2021"
+
+[dependencies]
+typenum = "1.10"

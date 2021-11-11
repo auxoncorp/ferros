@@ -1,0 +1,19 @@
+[package]
+name = "root-task"
+version = "0.1.0"
+authors = ["Russell Mull <russell@auxon.io>"]
+edition = "2018"
+resolver = "2"
+
+[dependencies]
+selfe-sys = { git = "https://github.com/auxoncorp/selfe-sys" }
+sel4-start = { git = "https://github.com/auxoncorp/selfe-sys", features = ["panic_handler"] }
+selfe-arc = { git = "https://github.com/auxoncorp/selfe-sys", default-features = false, features = [] }
+ferros = { path = "../../.." }
+typenum = "1.10"
+xmas-elf = "0.7"
+
+hello-printer = { path = "../hello-printer" }
+
+[build-dependencies]
+ferros-build = { path = "../../../ferros-build" }

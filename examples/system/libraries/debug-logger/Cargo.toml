@@ -1,0 +1,10 @@
+[package]
+name = "debug-logger"
+version = "0.1.0"
+authors = ["Jon Lamb"]
+edition = "2021"
+build = "build.rs"
+
+[dependencies]
+ferros = { path = "../../../.." }
+log = "0.4"

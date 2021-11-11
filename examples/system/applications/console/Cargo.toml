@@ -1,0 +1,24 @@
+[package]
+name = "console"
+version = "0.1.0"
+authors = ["Jon Lamb"]
+edition = "2021"
+
+[dependencies]
+selfe-sys = { git = "https://github.com/auxoncorp/selfe-sys" }
+selfe-runtime = { git = "https://github.com/auxoncorp/selfe-sys", features = ["panic_handler"] }
+ferros = { path = "../../../.." }
+menu = "0.3"
+log = "0.4"
+
+[dependencies.imx6-hal]
+path = "../../imx6-hal"
+
+[dependencies.debug-logger]
+path = "../../libraries/debug-logger"
+
+[dependencies.net-types]
+path = "../../libraries/net-types"
+
+[dependencies.persistent-storage]
+path = "../../drivers/persistent-storage"
