@@ -1,6 +1,13 @@
 #![no_std]
 #![recursion_limit = "256"]
 #![feature(proc_macro_hygiene)]
+#![allow(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::upper_case_acronyms,
+    clippy::wrong_self_convention,
+    clippy::new_without_default
+)]
 
 extern crate arrayvec;
 extern crate generic_array;

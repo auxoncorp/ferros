@@ -113,7 +113,7 @@ impl<Size: Unsigned, Role: CNodeRole> CNodeSlots<Size, Role> {
         let cptr = self.cptr;
         let offset = self.cap_data.offset;
         (0..Size::USIZE).map(move |n| Cap {
-            cptr: cptr,
+            cptr,
             _role: PhantomData,
             cap_data: CNodeSlotsData {
                 offset: offset + n,
@@ -189,7 +189,7 @@ impl LocalCap<ChildCNode> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::CNodeCopy(e))?;
+        .map_err(SeL4Error::CNodeCopy)?;
         Ok((
             Cap {
                 cptr: dest_offset,
@@ -267,8 +267,8 @@ impl WCNodeSlots {
 }
 
 impl<Role: CNodeRole> LocalCap<WCNodeSlotsData<Role>> {
-    /// Iterate through the available slots in the runtime-tracked collection of slots,
-    /// consuming slots each iter step.
+    /// Iterate through the available slots in the runtime-tracked collection of
+    /// slots, consuming slots each iter step.
     /// TODO - a way better name that isn't iter_mut or mut_iter
     pub(crate) fn incrementally_consuming_iter(
         &mut self,

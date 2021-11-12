@@ -11,7 +11,7 @@ use super::super::{PageDirIndexBits, PageIndexBits, PageTableIndexBits, PagingRo
 use super::PageUpperDirectory;
 
 const GD_MASK: usize =
-    !((1 << PageIndexBits::USIZE + PageTableIndexBits::USIZE + PageDirIndexBits::USIZE) - 1);
+    !((1 << (PageIndexBits::USIZE + PageTableIndexBits::USIZE + PageDirIndexBits::USIZE)) - 1);
 
 #[derive(Debug)]
 pub struct PageGlobalDirectory {}

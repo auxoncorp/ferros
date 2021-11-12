@@ -32,7 +32,7 @@ impl<FreePools: Unsigned> LocalCap<ASIDControl<FreePools>> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::ASIDControlMakePool(e))?;
+        .map_err(SeL4Error::ASIDControlMakePool)?;
         Ok(Cap {
             cptr: dest_offset,
             cap_data: ASIDPool {

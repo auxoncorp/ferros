@@ -87,13 +87,13 @@ impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
             )
         }
         .as_result()
-        .map_err(|e| WUntypedSplitError::UntypedRetypeError(e))?;
+        .map_err(WUntypedSplitError::UntypedRetypeError)?;
 
         let (kind_a, kind_b) = self
             .cap_data
             .kind
             .halve(2usize.pow(u32::from(self.cap_data.size_bits)))
-            .ok_or_else(|| WUntypedSplitError::MemoryRegionWouldExceedAddressableSpace)?;
+            .ok_or(WUntypedSplitError::MemoryRegionWouldExceedAddressableSpace)?;
         Ok((
             Cap {
                 cptr: dest_offset,
@@ -128,7 +128,7 @@ impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
         // TODO - REVIEW - Do we need more constraints on num_pages?
         let dest_slots = slots
             .alloc(num_pages)
-            .map_err(|e| RetypeError::CNodeSlotsError(e))?;
+            .map_err(RetypeError::CNodeSlotsError)?;
         unsafe {
             seL4_Untyped_Retype(
                 self.cptr,                  // _service
@@ -141,15 +141,15 @@ impl<Kind: MemoryKind> LocalCap<WUntyped<Kind>> {
                 num_pages,                  // num_objects
             )
             .as_result()
-            .map_err(|e| SeL4Error::UntypedRetype(e))?;
+            .map_err(SeL4Error::UntypedRetype)?;
         }
 
         Ok(WeakCapRange::new(
             dest_slots.cap_data.offset,
             Page {
                 state: page_state::Unmapped,
-                // TODO - kind piping
-                //memory_kind: self.cap_data.kind,
+                /* TODO - kind piping
+                 *memory_kind: self.cap_data.kind, */
             },
             num_pages,
         ))
@@ -260,7 +260,7 @@ pub mod memory_kind {
             super::WeakMemoryKind::Device { paddr: self.paddr }
         }
         fn halve(&self, size_bytes: usize) -> Option<(Self, Self)> {
-            if let Some(_) = self.paddr.checked_add(size_bytes) {
+            if self.paddr.checked_add(size_bytes).is_some() {
                 Some((
                     Device { paddr: self.paddr },
                     Device {
@@ -273,7 +273,7 @@ pub mod memory_kind {
         }
 
         fn quarter(&self, size_bytes: usize) -> Option<(Self, Self, Self, Self)> {
-            if let Some(_) = self.paddr.checked_add(size_bytes) {
+            if self.paddr.checked_add(size_bytes).is_some() {
                 let subregion_size = size_bytes / 4;
                 Some((
                     Device { paddr: self.paddr },
@@ -293,11 +293,7 @@ pub mod memory_kind {
         }
 
         fn offset_by(&self, bytes: usize) -> Option<Self> {
-            if let Some(b) = self.paddr.checked_add(bytes) {
-                Some(Device { paddr: b })
-            } else {
-                None
-            }
+            self.paddr.checked_add(bytes).map(|b| Device { paddr: b })
         }
     }
 }
@@ -325,11 +321,12 @@ impl From<CNodeSlotsError> for RetypeError {
 }
 
 impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
-    /// Gain temporary access to an untyped capability for use in a function context.
-    /// When the passed function call is complete, all capabilities derived
-    /// from this untyped will be revoked (and thus destroyed).
+    /// Gain temporary access to an untyped capability for use in a function
+    /// context. When the passed function call is complete, all capabilities
+    /// derived from this untyped will be revoked (and thus destroyed).
     ///
-    /// Be cautious not to return or store any capabilities created in this function, even in the error case.
+    /// Be cautious not to return or store any capabilities created in this
+    /// function, even in the error case.
     pub fn with_temporary<E, F>(
         &mut self,
         parent_cnode: &LocalCap<LocalCNode>,
@@ -343,7 +340,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
             cptr: self.cptr,
             cap_data: Untyped {
                 _bit_size: PhantomData,
-                kind: self.cap_data.kind.clone(),
+                kind: self.cap_data.kind,
             },
             _role: PhantomData,
         });
@@ -357,7 +354,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::CNodeRevoke(e))?;
+        .map_err(SeL4Error::CNodeRevoke)?;
         Ok(r)
     }
 
@@ -401,7 +398,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::UntypedRetype(e))?;
+        .map_err(SeL4Error::UntypedRetype)?;
         let (kind_a, kind_b) = self.cap_data.kind.halve(2usize.pow(BitSize::U32))
             // TODO - consider piping this out as a proper error
             .expect("Somehow the backing memory was discovered to cover an invalid memory range when paired with the expected size");
@@ -455,7 +452,7 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::UntypedRetype(e))?;
+        .map_err(SeL4Error::UntypedRetype)?;
 
         let (kind_a, kind_b, kind_c, kind_d) = self.cap_data.kind.quarter(2usize.pow(BitSize::U32))
             // TODO - consider piping this out as a proper error
@@ -522,15 +519,15 @@ impl<BitSize: Unsigned, Kind: MemoryKind> LocalCap<Untyped<BitSize, Kind>> {
                 1 << (BitSize::USIZE - PageBits::USIZE), // num_objects
             )
             .as_result()
-            .map_err(|e| SeL4Error::UntypedRetype(e))?;
+            .map_err(SeL4Error::UntypedRetype)?;
         }
 
         Ok(CapRange::new(
             dest_offset,
             Page {
                 state: page_state::Unmapped,
-                // TODO - implement kind piping
-                //memory_kind: self.cap_data.kind,
+                /* TODO - implement kind piping
+                 *memory_kind: self.cap_data.kind, */
             },
         ))
     }
@@ -550,8 +547,8 @@ where
     untyped.retype(dest_slot)
 }
 
-/// A version of retype_cnode that concretely specifies the required untyped size,
-/// to work well with type inference.
+/// A version of retype_cnode that concretely specifies the required untyped
+/// size, to work well with type inference.
 pub fn retype_cnode<ChildRadix: Unsigned>(
     untyped: LocalCap<Untyped<Sum<ChildRadix, CNodeSlotBits>, memory_kind::General>>,
     local_slots: LocalCNodeSlots<U2>,
@@ -601,7 +598,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::UntypedRetype(e))?;
+        .map_err(SeL4Error::UntypedRetype)?;
 
         Ok(Cap {
             cptr: dest_offset,
@@ -663,7 +660,7 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
             count,       // num_objects
         )
         .as_result()
-        .map_err(|e| SeL4Error::UntypedRetype(e))
+        .map_err(SeL4Error::UntypedRetype)
     }
 
     pub fn retype_cnode<ChildRadix: Unsigned>(
@@ -706,10 +703,11 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
                 1,                                       // num_objects
             )
             .as_result()
-            .map_err(|e| SeL4Error::UntypedRetype(e))?;
+            .map_err(SeL4Error::UntypedRetype)?;
 
-            // In order to set the guard (for the sake of our C-pointer simplification scheme),
-            // mutate the CNode in the scratch slot, which copies the CNode into a second slot
+            // In order to set the guard (for the sake of our C-pointer simplification
+            // scheme), mutate the CNode in the scratch slot, which copies the
+            // CNode into a second slot
             let guard_data = seL4_CNode_CapData_new(
                 0,                                                      // guard
                 (seL4_WordBits - ChildRadix::to_usize() as usize) as _, // guard size in bits
@@ -726,11 +724,13 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
                 guard_data as usize, // badge or guard: seL4_Word,
             )
             .as_result()
-            .map_err(|e| SeL4Error::CNodeMutate(e))?;
+            .map_err(SeL4Error::CNodeMutate)?;
 
-            // TODO - If we wanted to make more efficient use of our available slots at the cost
-            // of complexity, we could swap the two created CNodes, then delete the one with
-            // the incorrect guard (the one originally occupying the scratch slot).
+            // TODO - If we wanted to make more efficient use of our available
+            // slots at the cost of complexity, we could swap the
+            // two created CNodes, then delete the one with
+            // the incorrect guard (the one originally occupying the scratch
+            // slot).
         }
 
         Ok((
@@ -742,7 +742,8 @@ impl<BitSize: Unsigned> LocalCap<Untyped<BitSize, memory_kind::General>> {
                     _role: PhantomData,
                 },
             },
-            // We start with the next free slot at 1 in order to "reserve" the 0-indexed slot for "null"
+            // We start with the next free slot at 1 in order to "reserve" the 0-indexed slot for
+            // "null"
             CNodeSlots::internal_new(dest_offset, 1),
         ))
     }
@@ -775,14 +776,14 @@ impl LocalCap<Untyped<PageBits, memory_kind::Device>> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::UntypedRetype(e))?;
+        .map_err(SeL4Error::UntypedRetype)?;
 
         Ok(Cap {
             cptr: dest_offset,
             cap_data: Page {
                 state: page_state::Unmapped,
-                // TODO - reinstate kind piping
-                //memory_kind: self.cap_data.kind,
+                /* TODO - reinstate kind piping
+                 *memory_kind: self.cap_data.kind, */
             },
             _role: PhantomData,
         })

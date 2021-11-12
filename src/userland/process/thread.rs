@@ -18,8 +18,7 @@ use super::*;
 ///  * Initial process state (e.g. parameter data) written into a
 ///    `seL4_UserContext` and/or its stack.
 ///  * Said seL4_UserContext written into the TCB.
-///  * An IPC buffer and CSpace and fault handler associated with that
-///    TCB.
+///  * An IPC buffer and CSpace and fault handler associated with that TCB.
 pub struct Thread<StackBitSize: Unsigned = DefaultStackBitSize> {
     tcb: LocalCap<ThreadControlBlock>,
     _stack_bit_size: PhantomData<StackBitSize>,
@@ -79,7 +78,8 @@ impl<StackBitSize: Unsigned> Thread<StackBitSize> {
         registers.sp = stack_pointer;
         registers.pc = function_descriptor as usize;
 
-        // TODO - Probably ought to suspend or destroy the thread instead of endlessly yielding
+        // TODO - Probably ought to suspend or destroy the thread instead of endlessly
+        // yielding
         set_thread_link_register(&mut registers, yield_forever);
 
         //// allocate the thread control block
@@ -117,7 +117,7 @@ impl<StackBitSize: Unsigned> Thread<StackBitSize> {
     pub fn start(self) -> Result<(), SeL4Error> {
         unsafe { seL4_TCB_Resume(self.tcb.cptr) }
             .as_result()
-            .map_err(|e| SeL4Error::TCBResume(e))
+            .map_err(SeL4Error::TCBResume)
     }
 }
 #[derive(Debug)]

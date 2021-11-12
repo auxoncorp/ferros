@@ -98,8 +98,9 @@ pub type TotalCodeSizeBits = op!(CodePageTableBits + PageBits + PageTableIndexBi
 pub type TotalCodeSizeBytes = crate::pow::Pow<TotalCodeSizeBits>;
 // The root task has a stack size configurable by the sel4.toml
 // in the `root-task-stack-bytes` metadata property.
-// This configuration is turned into a generated Rust type named `RootTaskStackPageTableCount`
-// that implements `typenum::Unsigned` in the `build.rs` file.
+// This configuration is turned into a generated Rust type named
+// `RootTaskStackPageTableCount` that implements `typenum::Unsigned` in the
+// `build.rs` file.
 include!(concat!(
     env!("OUT_DIR"),
     "/ROOT_TASK_STACK_PAGE_TABLE_COUNT"
@@ -114,7 +115,8 @@ pub type KernelReservedStart = op!((U1 << U32) - U1);
 
 pub const WORDS_PER_PAGE: usize = PageBytes::USIZE / core::mem::size_of::<usize>();
 
-/// Type type alias allows us to treat vm_attributes in a cross-architecture way, abstractly
+/// Type type alias allows us to treat vm_attributes in a cross-architecture
+/// way, abstractly
 pub type VMAttributes = selfe_sys::seL4_ARM_VMAttributes;
 
 /// A convenience module
@@ -140,7 +142,7 @@ pub mod vm_attributes {
 pub(crate) unsafe fn flush_page(cptr: usize) -> Result<(), SeL4Error> {
     selfe_sys::seL4_ARM_Page_CleanInvalidate_Data(cptr, 0x0000, PageBytes::USIZE)
         .as_result()
-        .map_err(|e| SeL4Error::PageCleanInvalidateData(e))?;
+        .map_err(SeL4Error::PageCleanInvalidateData)?;
 
     Ok(())
 }

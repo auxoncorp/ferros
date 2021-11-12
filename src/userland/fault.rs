@@ -48,7 +48,7 @@ impl<SinkRole: CNodeRole> FaultSinkSetup<SinkRole> {
 
         let local_endpoint: LocalCap<Endpoint> = untyped.retype(endpoint_slot)?;
 
-        let sink_endpoint = local_endpoint.copy(&local_cnode, fault_sink_slot, CapRights::RW)?;
+        let sink_endpoint = local_endpoint.copy(local_cnode, fault_sink_slot, CapRights::RW)?;
 
         Ok(FaultSinkSetup {
             local_endpoint,
@@ -83,9 +83,11 @@ impl<SinkRole: CNodeRole> FaultSinkSetup<SinkRole> {
     }
 }
 
-/// Only supports establishing two child processes where one process will be watching for faults on the other.
-/// Requires a separate input signature if we want the local/current thread to be the watcher due to
-/// our consuming full instances of the local scratch CNode and the destination CNodes separately in this function.
+/// Only supports establishing two child processes where one process will be
+/// watching for faults on the other. Requires a separate input signature if we
+/// want the local/current thread to be the watcher due to our consuming full
+/// instances of the local scratch CNode and the destination CNodes separately
+/// in this function.
 pub fn setup_fault_endpoint_pair(
     local_cnode: &LocalCap<LocalCNode>,
     untyped: LocalCap<Untyped<<Endpoint as DirectRetype>::SizeBits>>,
@@ -93,8 +95,8 @@ pub fn setup_fault_endpoint_pair(
     fault_source_slot: ChildCNodeSlot,
     fault_sink_slot: ChildCNodeSlot,
 ) -> Result<(FaultSource<role::Child>, FaultSink<role::Child>), FaultManagementError> {
-    let setup = FaultSinkSetup::new(&local_cnode, untyped, endpoint_slot, fault_sink_slot)?;
-    let fault_source = setup.add_fault_source(&local_cnode, fault_source_slot, Badge::from(0))?;
+    let setup = FaultSinkSetup::new(local_cnode, untyped, endpoint_slot, fault_sink_slot)?;
+    let fault_source = setup.add_fault_source(local_cnode, fault_source_slot, Badge::from(0))?;
     Ok((fault_source, setup.sink()))
 }
 
@@ -139,9 +141,10 @@ pub fn fault_or_message_channel<Msg: Sized, HandlerRole: CNodeRole>(
         return Err(FaultManagementError::MessageSizeTooBig);
     }
 
-    // NB: This approach could be converted to use a `Setup` pattern to allow multiple fault-sources
+    // NB: This approach could be converted to use a `Setup` pattern to allow
+    // multiple fault-sources
     let local_endpoint: LocalCap<Endpoint> = untyped.retype(endpoint_slot)?;
-    let handler_endpoint = local_endpoint.copy(&local_cnode, handler_slot, CapRights::RW)?;
+    let handler_endpoint = local_endpoint.copy(local_cnode, handler_slot, CapRights::RW)?;
     let child_endpoint_fault_source = local_endpoint.mint_new(
         local_cnode,
         fault_source_slot,

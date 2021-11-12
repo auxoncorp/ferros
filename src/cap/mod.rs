@@ -36,8 +36,8 @@ pub use page_table::*;
 pub use tcb::*;
 pub use untyped::*;
 
-/// Type-level enum indicating the relative location / Capability Pointer addressing
-/// scheme that should be used for the objects parameterized by it.
+/// Type-level enum indicating the relative location / Capability Pointer
+/// addressing scheme that should be used for the objects parameterized by it.
 pub trait CNodeRole: private::SealedRole {}
 
 pub mod role {
@@ -114,7 +114,7 @@ where
     // TODO - Make even more private!
     pub(crate) fn wrap_cptr(cptr: usize) -> Cap<CT, Role> {
         Cap {
-            cptr: cptr,
+            cptr,
             cap_data: PhantomCap::phantom_instance(),
             _role: PhantomData,
         }
@@ -199,7 +199,8 @@ impl<CT: CapType + CopyAliasable, Role: CNodeRole, Slots: Unsigned> CapRange<CT,
         CT: CapRangeDataReconstruction,
     {
         let copied_to_start_cptr = slots.cap_data.offset;
-        // N.B. Conside replacing with a general purpose CapRange::iter(&self) that returns references to constructed caps
+        // N.B. Conside replacing with a general purpose CapRange::iter(&self) that
+        // returns references to constructed caps
         for (offset, slot) in (0..Slots::USIZE).zip(slots.iter()) {
             let cap: Cap<CT, Role> = Cap {
                 cptr: self.start_cptr + offset,
@@ -250,7 +251,8 @@ impl<CT: CapType + CopyAliasable, Role: CNodeRole> WeakCapRange<CT, Role> {
             return Err(WeakCopyError::NotEnoughSlots);
         }
         let copied_to_start_cptr = slots.cap_data.offset;
-        // N.B. Conside replacing with a general purpose CapRange::iter(&self) that returns references to constructed caps
+        // N.B. Conside replacing with a general purpose CapRange::iter(&self) that
+        // returns references to constructed caps
         for (offset, slot) in (0..self.len()).zip(slots.incrementally_consuming_iter()) {
             let cap: Cap<CT, Role> = Cap {
                 cptr: self.start_cptr + offset,
@@ -380,7 +382,7 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::CNodeMint(e))?;
+        .map_err(SeL4Error::CNodeMint)?;
         Ok(Cap {
             cptr: dest_offset,
             cap_data: PhantomCap::phantom_instance(),
@@ -418,7 +420,7 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::CNodeMint(e))?;
+        .map_err(SeL4Error::CNodeMint)?;
         Ok(Cap {
             cptr: dest_offset,
             cap_data: PhantomCap::phantom_instance(),
@@ -426,7 +428,8 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
         })
     }
 
-    /// Copy a capability to another slot inside the same CNode while also setting rights and a badge
+    /// Copy a capability to another slot inside the same CNode while also
+    /// setting rights and a badge
     pub fn mint_inside_cnode(
         &self,
         dest_slot: LocalCNodeSlot,
@@ -454,7 +457,7 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::CNodeMint(e))?;
+        .map_err(SeL4Error::CNodeMint)?;
         Ok(Cap {
             cptr: dest_offset,
             cap_data: PhantomCap::phantom_instance(),
@@ -485,7 +488,7 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::CNodeMove(e))?;
+        .map_err(SeL4Error::CNodeMove)?;
         Ok(Cap {
             cptr: dest_offset,
             cap_data: self.cap_data,
@@ -506,7 +509,7 @@ impl<Role: CNodeRole, CT: CapType> Cap<CT, Role> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::CNodeDelete(e))
+        .map_err(SeL4Error::CNodeDelete)
     }
 }
 
@@ -577,6 +580,5 @@ mod private {
         impl<FreePools: Unsigned> super::SealedCapType for ASIDControl<FreePools> {}
         impl super::SealedCapType for UnassignedASID {}
         impl super::SealedCapType for AssignedASID {}
-
     }
 }

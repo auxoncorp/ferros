@@ -127,8 +127,8 @@ where
             .expect("Cap page slots to memory region size invariant maintained by type signature")
     }
 
-    /// N.B. until MemoryKind tracking is added to Page, this is a lossy conversion
-    /// that will assume the Region was for General memory
+    /// N.B. until MemoryKind tracking is added to Page, this is a lossy
+    /// conversion that will assume the Region was for General memory
     pub(crate) fn to_page(self) -> LocalCap<Page<State>>
     where
         SizeBits: IsEqual<PageBits, Output = True>,
@@ -168,7 +168,7 @@ where
         CNodeSlotCount: IsEqual<NumPages<SizeBits>, Output = True>,
     {
         let pages_offset = self.caps.start_cptr;
-        let original_mapped_state = self.caps.start_cap_data.state.clone();
+        let original_mapped_state = self.caps.start_cap_data.state;
         let slots_offset = slots.cap_data.offset;
         for (slot, page) in slots.iter().zip(self.caps.into_iter()) {
             let _ = page.copy(cnode, slot, rights)?;
@@ -190,8 +190,8 @@ where
 }
 
 impl LocalCap<Page<page_state::Unmapped>> {
-    /// N.B. until MemoryKind tracking is added to Page, this is a lossy conversion
-    /// that will assume the Page was for General memory
+    /// N.B. until MemoryKind tracking is added to Page, this is a lossy
+    /// conversion that will assume the Page was for General memory
     pub(crate) fn to_region(
         self,
     ) -> MemoryRegion<page_state::Unmapped, PageBits, shared_status::Exclusive> {
@@ -562,7 +562,7 @@ pub(super) fn num_pages(size_bits: u8) -> Result<usize, InvalidSizeBits> {
     if size_bits < PageBits::U8 {
         return Err(InvalidSizeBits::TooSmallToRepresentAPage);
     }
-    Ok(2usize
+    2usize
         .checked_pow(u32::from(size_bits) - PageBits::U32)
-        .ok_or_else(|| InvalidSizeBits::SizeBitsTooBig)?)
+        .ok_or(InvalidSizeBits::SizeBitsTooBig)
 }

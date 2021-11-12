@@ -54,12 +54,12 @@ pub fn call_channel<Req: Send + Sync, Rsp: Send + Sync, ResponderRole: CNodeRole
 ) -> Result<(IpcSetup<Req, Rsp>, Responder<Req, Rsp, ResponderRole>), IPCError> {
     let _ = IPCBuffer::<Req, Rsp>::new()?; // Check buffer fits Req and Rsp
     let local_endpoint: LocalCap<Endpoint> = untyped.retype(local_slot)?;
-    let responder_endpoint = local_endpoint.copy(&local_cnode, responder_slot, CapRights::RW)?;
+    let responder_endpoint = local_endpoint.copy(local_cnode, responder_slot, CapRights::RW)?;
 
     Ok((
         IpcSetup {
             endpoint: local_endpoint,
-            endpoint_cnode: &local_cnode,
+            endpoint_cnode: local_cnode,
             _req: PhantomData,
             _rsp: PhantomData,
         },
@@ -90,7 +90,7 @@ pub fn call_channel_with_waker<Req: Send + Sync, Rsp: Send + Sync, ResponderRole
     let _ = IPCBuffer::<Req, Rsp>::new()?; // Check buffer fits Req and Rsp
     let (local_slot, local_slots) = local_slots.alloc();
     let local_endpoint: LocalCap<Endpoint> = untyped.retype(local_slot)?;
-    let responder_endpoint = local_endpoint.copy(&local_cnode, responder_slot, CapRights::RW)?;
+    let responder_endpoint = local_endpoint.copy(local_cnode, responder_slot, CapRights::RW)?;
 
     let (local_slot, _local_slots) = local_slots.alloc();
     let notification: LocalCap<Notification> = notification_ut.retype(local_slot)?;
@@ -98,7 +98,7 @@ pub fn call_channel_with_waker<Req: Send + Sync, Rsp: Send + Sync, ResponderRole
     Ok((
         IpcSetup {
             endpoint: local_endpoint,
-            endpoint_cnode: &local_cnode,
+            endpoint_cnode: local_cnode,
             _req: PhantomData,
             _rsp: PhantomData,
         },
@@ -123,7 +123,7 @@ impl<'a, Req, Rsp> IpcSetup<'a, Req, Rsp> {
     ) -> Result<Caller<Req, Rsp, Role>, IPCError> {
         let caller_endpoint =
             self.endpoint
-                .copy(&self.endpoint_cnode, caller_slot, CapRights::RWG)?;
+                .copy(self.endpoint_cnode, caller_slot, CapRights::RWG)?;
 
         Ok(Caller {
             endpoint: caller_endpoint,
@@ -312,8 +312,9 @@ impl<Req, Rsp> Caller<Req, Rsp, role::Local> {
 }
 
 impl<Req, Rsp> Caller<Req, Rsp, role::Local> {
-    pub fn blocking_call<'a>(&self, request: &Req) -> Result<Rsp, IPCError> {
-        // Can safely use unchecked_new because we check sizing during the creation of Caller
+    pub fn blocking_call(&self, request: &Req) -> Result<Rsp, IPCError> {
+        // Can safely use unchecked_new because we check sizing during the creation of
+        // Caller
         let mut ipc_buffer = unsafe { IPCBuffer::unchecked_new() };
         let msg_info: MessageInfo = unsafe {
             ipc_buffer.copy_req_into_buffer(request);
@@ -353,7 +354,7 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
 
     pub fn reply_recv<F>(self, mut f: F) -> Result<Rsp, IPCError>
     where
-        F: FnMut(Req) -> (Rsp),
+        F: FnMut(Req) -> Rsp,
     {
         self.reply_recv_with_state((), move |req, state| (f(req), state))
     }
@@ -379,7 +380,8 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
         F: FnMut(Req, State) -> (Rsp, State),
         G: FnMut(usize, State) -> State,
     {
-        // Can safely use unchecked_new because we check sizing during the creation of Responder
+        // Can safely use unchecked_new because we check sizing during the creation of
+        // Responder
         let mut ipc_buffer = unsafe { IPCBuffer::unchecked_new() };
         let mut sender_badge: usize = 0;
         // Do a regular receive to seed our initial value
@@ -432,9 +434,10 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
 
     pub fn recv_reply_once<F>(&self, mut f: F) -> Result<(), IPCError>
     where
-        F: FnMut(Req) -> (Rsp),
+        F: FnMut(Req) -> Rsp,
     {
-        // Can safely use unchecked_new because we check sizing during the creation of Responder
+        // Can safely use unchecked_new because we check sizing during the creation of
+        // Responder
         let mut ipc_buffer = unsafe { IPCBuffer::unchecked_new() };
         let mut sender_badge: usize = 0;
         // Do a regular receive to seed our initial value
@@ -450,7 +453,8 @@ impl<Req, Rsp> Responder<Req, Rsp, role::Local> {
             //
             // Not knowing what this incoming message is, we drop it and spin-fail the loop.
             // Note that `continue`'ing from here will cause this process
-            // to loop forever doing this check with no fresh data, most likely leaving the caller perpetually blocked.
+            // to loop forever doing this check with no fresh data, most likely leaving the
+            // caller perpetually blocked.
             debug_println!("Request size incoming ({} words) does not match static size expectation ({} words).",
                 msg_info.length_words(), request_length_in_words);
             return Err(IPCError::RequestSizeMismatch);
@@ -474,7 +478,7 @@ pub struct Sender<Msg: Sized, Role: CNodeRole> {
 }
 
 impl<Msg: Sized> Sender<Msg, role::Local> {
-    pub fn blocking_send<'a>(&self, message: &Msg) -> Result<(), IPCError> {
+    pub fn blocking_send(&self, message: &Msg) -> Result<(), IPCError> {
         // Using unchecked_new is acceptable here because we check the message size
         // constraints during the construction of Sender + FaultOrMessageHandler
         let mut ipc_buffer: IPCBuffer<Msg, ()> = unsafe { IPCBuffer::unchecked_new() };

@@ -55,7 +55,7 @@ pub mod sync {
             CapRights::RW,
             arch::vm_attributes::DEFAULT,
             slot,
-            &local_cnode,
+            local_cnode,
         )?;
 
         let responder_shared_region = responder_vspace.map_shared_region_and_consume(
@@ -72,7 +72,7 @@ pub mod sync {
 
         let (caller_slot, caller_slots) = caller_slots.alloc();
         let caller_request_ready = local_request_ready.mint(
-            &local_cnode,
+            local_cnode,
             caller_slot,
             CapRights::RWG,
             Badge::from(1 << 0),
@@ -80,7 +80,7 @@ pub mod sync {
 
         let (caller_slot, _caller_slots) = caller_slots.alloc();
         let caller_response_ready = local_response_ready.mint(
-            &local_cnode,
+            local_cnode,
             caller_slot,
             CapRights::RWG,
             Badge::from(1 << 1),
@@ -99,7 +99,7 @@ pub mod sync {
 
         let (responder_slot, responder_slots) = responder_slots.alloc();
         let responder_request_ready = local_request_ready.mint(
-            &local_cnode,
+            local_cnode,
             responder_slot,
             CapRights::RWG,
             Badge::from(1 << 2),
@@ -107,7 +107,7 @@ pub mod sync {
 
         let (responder_slot, _responder_slots) = responder_slots.alloc();
         let responder_response_ready = local_response_ready.mint(
-            &local_cnode,
+            local_cnode,
             responder_slot,
             CapRights::RWG,
             Badge::from(1 << 3),
@@ -144,11 +144,11 @@ pub mod sync {
 
     impl<Req: Sized, Rsp: Sized> SyncExtendedIpcPair<Req, Rsp, role::Local> {
         unsafe fn unchecked_copy_into_buffer<T: Sized>(&mut self, data: &T) {
-            let shared: &mut T = core::mem::transmute(self.shared_page_address as *mut T);
+            let shared: &mut T = &mut *(self.shared_page_address as *mut T);
             core::ptr::copy(data as *const T, shared as *mut T, 1);
         }
         unsafe fn unchecked_copy_from_buffer<T: Sized>(&self) -> T {
-            let shared: &T = core::mem::transmute(self.shared_page_address as *const T);
+            let shared: &T = &*(self.shared_page_address as *const T);
             let mut data = core::mem::zeroed();
             core::ptr::copy_nonoverlapping(shared as *const T, &mut data as *mut T, 1);
             data
@@ -161,7 +161,7 @@ pub mod sync {
     }
 
     impl<Req, Rsp> ExtendedCaller<Req, Rsp, role::Local> {
-        pub fn blocking_call<'a>(&mut self, request: &Req) -> Rsp {
+        pub fn blocking_call(&mut self, request: &Req) -> Rsp {
             let mut sender_badge: usize = 0;
             unsafe {
                 self.inner.unchecked_copy_into_buffer(request);
@@ -183,7 +183,7 @@ pub mod sync {
     impl<Req, Rsp> ExtendedResponder<Req, Rsp, role::Local> {
         pub fn reply_recv<F>(self, f: F) -> !
         where
-            F: Fn(Req) -> (Rsp),
+            F: Fn(Req) -> Rsp,
         {
             self.reply_recv_with_state((), move |req, state| (f(req), state))
         }

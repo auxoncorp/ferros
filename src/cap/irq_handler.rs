@@ -78,10 +78,10 @@ where
     pub fn set_notification(
         self,
         notification: &LocalCap<Notification>,
-    ) -> Result<(LocalCap<IRQHandler<IRQ, irq_state::Set>>), SeL4Error> {
+    ) -> Result<LocalCap<IRQHandler<IRQ, irq_state::Set>>, SeL4Error> {
         unsafe { seL4_IRQHandler_SetNotification(self.cptr, notification.cptr) }
             .as_result()
-            .map_err(|e| SeL4Error::IRQHandlerSetNotification(e))?;
+            .map_err(SeL4Error::IRQHandlerSetNotification)?;
         Ok(Cap {
             cptr: self.cptr,
             _role: self._role,
@@ -100,7 +100,7 @@ where
     pub fn ack(&self) -> Result<(), SeL4Error> {
         unsafe { seL4_IRQHandler_Ack(self.cptr) }
             .as_result()
-            .map_err(|e| SeL4Error::IRQHandlerAck(e))
+            .map_err(SeL4Error::IRQHandlerAck)
     }
 }
 
@@ -125,10 +125,10 @@ pub mod weak {
         pub fn set_notification(
             self,
             notification: &LocalCap<Notification>,
-        ) -> Result<(LocalCap<WIRQHandler<irq_state::Set>>), SeL4Error> {
+        ) -> Result<LocalCap<WIRQHandler<irq_state::Set>>, SeL4Error> {
             unsafe { seL4_IRQHandler_SetNotification(self.cptr, notification.cptr) }
                 .as_result()
-                .map_err(|e| SeL4Error::IRQHandlerSetNotification(e))?;
+                .map_err(SeL4Error::IRQHandlerSetNotification)?;
             Ok(Cap {
                 cptr: self.cptr,
                 _role: self._role,
@@ -144,7 +144,7 @@ pub mod weak {
         pub fn ack(&self) -> Result<(), SeL4Error> {
             unsafe { seL4_IRQHandler_Ack(self.cptr) }
                 .as_result()
-                .map_err(|e| SeL4Error::IRQHandlerAck(e))
+                .map_err(SeL4Error::IRQHandlerAck)
         }
     }
 }

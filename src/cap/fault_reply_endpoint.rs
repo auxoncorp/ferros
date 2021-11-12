@@ -7,9 +7,10 @@ use typenum::*;
 
 #[derive(Debug)]
 /// A FaultReply encapsulates a reply capability that goes with a fault; all you
-/// can do is send an empty message to it, once, which resumes the fault source's
-/// execution. After that, it destroys itself, and gives you back the cnode slot
-/// where it was living. Or you can just destroy it, to get the cnode slot back.
+/// can do is send an empty message to it, once, which resumes the fault
+/// source's execution. After that, it destroys itself, and gives you back the
+/// cnode slot where it was living. Or you can just destroy it, to get the cnode
+/// slot back.
 pub struct FaultReplyEndpoint {
     original_slot_cptr: usize,
 }
@@ -32,7 +33,7 @@ impl LocalCap<FaultReplyEndpoint> {
             )
         }
         .as_result()
-        .map_err(|e| SeL4Error::CNodeSaveCaller(e))?;
+        .map_err(SeL4Error::CNodeSaveCaller)?;
 
         Ok(Cap {
             cptr: offset,
