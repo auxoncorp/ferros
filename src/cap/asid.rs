@@ -2,6 +2,7 @@ use crate::cap::{CapType, InternalASID};
 
 #[derive(Debug)]
 pub struct UnassignedASID {
+    #[allow(dead_code)]
     pub(crate) asid: InternalASID,
 }
 

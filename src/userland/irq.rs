@@ -24,7 +24,8 @@ impl<Role: CNodeRole> WIRQHandlerCollection<Role> {
         if dest_slots.cap_data.size < requested_count {
             return Err(IRQCollectionError::NotEnoughSlots);
         }
-        // First pass to detect requested-but-unavailable IRQs and reject the request without mutation
+        // First pass to detect requested-but-unavailable IRQs and reject the request
+        // without mutation
         for (irq, (is_requested, is_available)) in (0..MaxIRQCount::U16).zip(
             requested_irqs
                 .iter()
@@ -36,8 +37,8 @@ impl<Role: CNodeRole> WIRQHandlerCollection<Role> {
         }
         let mut handlers = ArrayVec::new();
         for (irq, is_requested) in (0..MaxIRQCount::U16).zip(requested_irqs.iter()) {
-            // The source instance of IRQControl should treat the IRQs split off into the other
-            // instance as if they were unavailable.
+            // The source instance of IRQControl should treat the IRQs split off into the
+            // other instance as if they were unavailable.
             if *is_requested {
                 let slot = dest_slots
                     .alloc_strong()
@@ -45,7 +46,7 @@ impl<Role: CNodeRole> WIRQHandlerCollection<Role> {
                 handlers.push(
                     irq_control
                         .create_weak_handler(slot, irq)
-                        .map_err(|e| IRQCollectionError::IRQError(e))?,
+                        .map_err(IRQCollectionError::IRQError)?,
                 );
             }
         }
@@ -64,7 +65,8 @@ impl<Role: CNodeRole> WIRQHandlerCollection<Role> {
         if dest_slots.cap_data.size < requested_count {
             return Err(IRQCollectionError::NotEnoughSlots);
         }
-        // First pass to detect requested-but-unavailable IRQs and reject the request without mutation
+        // First pass to detect requested-but-unavailable IRQs and reject the request
+        // without mutation
         for (irq, (is_requested, is_available)) in (0..MaxIRQCount::U16).zip(
             requested_irqs
                 .iter()
@@ -76,16 +78,15 @@ impl<Role: CNodeRole> WIRQHandlerCollection<Role> {
         }
         let mut handlers = ArrayVec::new();
         for (irq, is_requested) in (0..MaxIRQCount::U16).zip(requested_irqs.iter()) {
-            // The source instance of IRQControl should treat the IRQs split off into the other
-            // instance as if they were unavailable.
+            // The source instance of IRQControl should treat the IRQs split off into the
+            // other instance as if they were unavailable.
             if *is_requested {
                 let slot = dest_slots
                     .alloc_strong()
                     .map_err(|_| IRQCollectionError::NotEnoughSlots)?;
-                match irq_control.create_weak_handler(slot, irq) {
-                    Ok(h) => handlers.push(h),
-                    // Swallow the error
-                    Err(_) => (),
+                // Swallow the error
+                if let Ok(h) = irq_control.create_weak_handler(slot, irq) {
+                    handlers.push(h)
                 }
             }
         }
@@ -110,6 +111,10 @@ impl<Role: CNodeRole> WIRQHandlerCollection<Role> {
 
     pub fn len(&self) -> usize {
         self.handlers.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Cap<weak::WIRQHandler<irq_state::Unset>, Role>> {

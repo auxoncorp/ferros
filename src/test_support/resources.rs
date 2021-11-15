@@ -11,6 +11,7 @@ pub struct Resources {
     pub(super) slots: LocalCNodeSlots<super::types::MaxTestCNodeSlots>,
     pub(super) untyped: LocalCap<Untyped<super::types::MaxTestUntypedSize>>,
     pub(super) asid_pool: LocalCap<ASIDPool<super::types::MaxTestASIDPoolSize>>,
+    #[allow(dead_code)]
     pub(super) vspace: VSpace<vspace_state::Imaged, role::Local>,
     pub(super) scratch: ScratchRegion,
     pub(super) mapped_memory_region: MappedMemoryRegion<

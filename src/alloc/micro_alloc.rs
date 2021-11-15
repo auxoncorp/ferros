@@ -69,7 +69,8 @@ pub fn bootstrap_allocators(
             }
         }
     }
-    // N.B. could cut the pdqsort dependency by doing this sorting during the initial insertion
+    // N.B. could cut the pdqsort dependency by doing this sorting during the
+    // initial insertion
     pdqsort::sort_by_key(&mut device_uts, |wut| wut.cap_data.kind.paddr);
     Ok((
         Allocator { items: general_uts },
@@ -116,12 +117,13 @@ impl Allocator {
             _role: PhantomData,
         };
         self.items.remove(position);
-        return Some(ut);
+        Some(ut)
     }
 }
 
 // TODO(dan@auxon.io): I have no idea what to put here.
-// N.B.(zack@auxon.io): Linked to another constant with similar need for grounding
+// N.B.(zack@auxon.io): Linked to another constant with similar need for
+// grounding
 const MAX_DEVICE_UTS: usize = MAX_INIT_UNTYPED_ITEMS;
 
 /// An allocator for memory in use by devices.
@@ -175,7 +177,7 @@ impl TryFrom<usize> for PageAligned {
         if value % crate::arch::PageBytes::USIZE == 0 {
             Ok(PageAligned(value))
         } else {
-            return Err(NotPageAligned);
+            Err(NotPageAligned)
         }
     }
 }
@@ -238,11 +240,12 @@ impl DeviceAllocator {
             })
     }
 
-    /// Extract a single device-memory-backed untyped based on its starting address and size.
-    /// If the requested memory range is managed by this allocator, but does not already exist
-    /// as an Untyped region of the desired size, the allocator will split apart the larger
-    /// memory chunks containing the region of interest just enough to get out exactly the requested
-    /// range, consuming CNode slots as it does so.
+    /// Extract a single device-memory-backed untyped based on its starting
+    /// address and size. If the requested memory range is managed by this
+    /// allocator, but does not already exist as an Untyped region of the
+    /// desired size, the allocator will split apart the larger
+    /// memory chunks containing the region of interest just enough to get out
+    /// exactly the requested range, consuming CNode slots as it does so.
     pub fn get_untyped_by_address_range(
         &mut self,
         address_range: PageAlignedAddressRange,
@@ -265,7 +268,7 @@ impl DeviceAllocator {
 
         let mut ut = self
             .get_device_untyped_containing(address_range.start.0)
-            .ok_or_else(|| DeviceRangeAllocError::AddressStartNotFound)?;
+            .ok_or(DeviceRangeAllocError::AddressStartNotFound)?;
         let first_found_size = ut.size_bytes();
 
         if first_found_size < requested_size_bytes {
@@ -291,8 +294,9 @@ impl DeviceAllocator {
         }
 
         // Time to do some splitting
-        // Note that we take care to maintain the "all untypeds are sorted by paddr" invariant
-        // at every early exit point, while only doing a single full-sort per call of this method
+        // Note that we take care to maintain the "all untypeds are sorted by paddr"
+        // invariant at every early exit point, while only doing a single
+        // full-sort per call of this method
         while usize::from(ut.size_bits()) > requested_size_bits {
             let slot_pair = slots.alloc_strong::<U2>().map_err(|_| {
                 pdqsort::sort_by_key(&mut self.untypeds, |wut| wut.cap_data.kind.paddr);

@@ -30,7 +30,8 @@ pub trait ElfProc: Sized {
     /// The name of the image in the selfe_arc
     const IMAGE_NAME: &'static str;
 
-    /// The total number of pages which need to be mapped when starting the process
+    /// The total number of pages which need to be mapped when starting the
+    /// process
     type RequiredPages: Unsigned;
 
     /// The number of pages which need to be mapped as writeable (data and BSS
@@ -139,10 +140,11 @@ pub enum VSpaceError {
     SeL4Error(SeL4Error),
     /// There are no more slots in which to place retyped layer caps.
     InsufficientCNodeSlots,
-    /// An attempted mapping would have overflowed the maximum addressable range (core::usize::MAX)
+    /// An attempted mapping would have overflowed the maximum addressable range
+    /// (core::usize::MAX)
     ExceededAddressableSpace,
-    /// Internal watermarking has determined that the desired region mapping would
-    /// not fit in available unclaimed address space.
+    /// Internal watermarking has determined that the desired region mapping
+    /// would not fit in available unclaimed address space.
     InsufficientAddressSpaceAvailableToMapRegion,
     ASIDMismatch,
 
@@ -282,8 +284,9 @@ pub enum ProcessCodeImageConfig<'a> {
 
 /// A virtual address space manager.
 ///
-/// CapRole indicates whether the capabilities related to manipulating this VSpace
-/// are accessible from the current thread's CSpace, or from a child's CSpace
+/// CapRole indicates whether the capabilities related to manipulating this
+/// VSpace are accessible from the current thread's CSpace, or from a child's
+/// CSpace
 pub struct VSpace<State: VSpaceState = vspace_state::Imaged, CapRole: CNodeRole = role::Local> {
     /// The cap to this address space's root-of-the-tree item.
     root: Cap<PagingRoot, CapRole>,
@@ -405,10 +408,7 @@ impl Iterator for ByPageIterator {
 ///    0x3000, 0x4000
 ///    0x4000, 0x4abc
 fn iterate_by_page(start: usize, end: usize) -> impl Iterator<Item = (usize, usize)> {
-    ByPageIterator {
-        next: start,
-        end: end,
-    }
+    ByPageIterator { next: start, end }
 }
 
 impl VSpace<vspace_state::Imaged, role::Local> {
@@ -575,7 +575,8 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                     iterate_by_page(target_vaddr, target_vaddr + mem_size)
                 {
                     let curr_page_vaddr = target_vaddr_start & !PAGE_MASK;
-                    // debug_println!("-- setting up writable range {:X}-{:X}", target_vaddr_start, target_vaddr_end);
+                    // debug_println!("-- setting up writable range {:X}-{:X}", target_vaddr_start,
+                    // target_vaddr_end);
 
                     // if this fails, it means that we weren't given enough
                     // resources to map all the pages.This shouldn't happen, as
@@ -611,9 +612,9 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                                 } else {
                                     data_end_in_page
                                 };
-
-                                &mut dest_mem[data_start_in_page..data_end_in_page]
-                                    .copy_from_slice(&elf_data[src_start..src_end]);
+                                let dest_slice =
+                                    &mut dest_mem[data_start_in_page..data_end_in_page];
+                                dest_slice.copy_from_slice(&elf_data[src_start..src_end]);
                             }
 
                             temp_mapped_region.flush().unwrap();
@@ -632,8 +633,8 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                         .observe_mapping(curr_page_vaddr, PageBits::U8)?;
                 }
             } else {
-                // If the elf headers say to map something as read only, we can map in the pages directly
-                // from bootinfo
+                // If the elf headers say to map something as read only, we can map in the pages
+                // directly from bootinfo
 
                 // The address of the elf data in the address space executing this code
                 let elf_vaddr_here =
@@ -654,7 +655,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                     let child_vaddr = target_vaddr + page_offset;
 
                     let copied_page_cap = user_image_page.copy(
-                        &parent_cnode,
+                        parent_cnode,
                         // If this fails, it means that we weren't given enough
                         // resources to map all the pages.This shouldn't happen, as
                         // we've got it written down in a type that's extracted from
@@ -718,8 +719,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
                     user_image.pages_iter().zip(code_slots.into_strong_iter())
                 {
                     let address = user_image_page.cap_data.state.vaddr;
-                    let copied_page_cap =
-                        user_image_page.copy(&parent_cnode, slot, CapRights::R)?;
+                    let copied_page_cap = user_image_page.copy(parent_cnode, slot, CapRights::R)?;
                     let _ = vspace.map_page_at_addr_without_watermarking(
                         copied_page_cap,
                         address,
@@ -798,8 +798,10 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         asid: LocalCap<AssignedASID>,
         ut: LocalCap<WUntyped<memory_kind::General>>,
     ) -> Self {
-        let mut available_address_range = AvailableAddressRange::default();
-        available_address_range.bottom = next_addr;
+        let available_address_range = AvailableAddressRange {
+            bottom: next_addr,
+            ..Default::default()
+        };
         VSpace {
             layers: AddressSpace::new(),
             root: Cap {
@@ -850,17 +852,17 @@ impl VSpace<vspace_state::Imaged, role::Local> {
         }
 
         // Verify that we can fit this region into the address space.
-        match vaddr.checked_add(region.size_bytes()) {
-            None => return Err((VSpaceError::ExceededAddressableSpace, region)),
-            _ => (),
-        };
+        if vaddr.checked_add(region.size_bytes()) == None {
+            return Err((VSpaceError::ExceededAddressableSpace, region));
+        }
 
         let mut mapping_vaddr = vaddr;
         let cptr = region.caps.start_cptr;
         let size_bits = region.size_bits();
 
         // N.B. Currently expect a single continuous cap range of all pages.
-        // Revisit this size if heterogenous granule types / ranges begin to back memory regions.
+        // Revisit this size if heterogenous granule types / ranges begin to back memory
+        // regions.
         let mut mapped_pages: Option<WeakCapRange<Page<page_state::Mapped>, role::Local>> = None;
 
         fn unmap_mapped_page_cptrs(
@@ -869,8 +871,7 @@ impl VSpace<vspace_state::Imaged, role::Local> {
             if let Some(mapped_pages) = mapped_pages {
                 mapped_pages
                     .into_iter()
-                    .map(|page| page.unmap().map(|_p| ()))
-                    .collect()
+                    .try_for_each(|page| page.unmap().map(|_p| ()))
             } else {
                 Ok(())
             }
@@ -1402,7 +1403,7 @@ impl AvailableAddressRange {
         let size_bytes = bytes_from_size_bits(size_bits);
         let end = start
             .checked_add(size_bytes)
-            .ok_or_else(|| VSpaceError::ExceededAddressableSpace)?;
+            .ok_or(VSpaceError::ExceededAddressableSpace)?;
         if end < self.bottom || start > self.top {
             return Ok(());
         }
@@ -1425,7 +1426,7 @@ impl AvailableAddressRange {
         let proposed_start = self.bottom;
         let proposed_end = proposed_start
             .checked_add(size_bytes)
-            .ok_or_else(|| CouldNotAllocateRegion)?;
+            .ok_or(CouldNotAllocateRegion)?;
         if proposed_end > self.top {
             return Err(CouldNotAllocateRegion);
         }

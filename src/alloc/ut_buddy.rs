@@ -1,5 +1,6 @@
 /// UTBuddy is a type-safe static buddy allocator for Untyped capabilites.
 use core::marker::PhantomData;
+use core::mem;
 use core::ops::{Add, Mul, Sub};
 
 use arrayvec::ArrayVec;
@@ -85,7 +86,8 @@ where
     type NumSplits = TakeUntyped_NumSplits<Tail, Diff<UInt<IndexU, IndexB>, U1>>;
 }
 
-// Index is 0, and the head pool has resources: remove one from it, with no splits.
+// Index is 0, and the head pool has resources: remove one from it, with no
+// splits.
 impl<HeadU: Unsigned, HeadB: Bit, Tail: UList> _TakeUntyped<U0> for ULCons<UInt<HeadU, HeadB>, Tail>
 where
     UInt<HeadU, HeadB>: Sub<U1>,
@@ -280,8 +282,8 @@ impl WUTBuddy<role::Local> {
 
         // account for the resources we've used on our borrowed set of
         // slots.
-        slots.cap_data.offset = slots.cap_data.offset + slot_count;
-        slots.cap_data.size = slots.cap_data.size - slot_count;
+        slots.cap_data.offset += slot_count;
+        slots.cap_data.size -= slot_count;
 
         let ut = alloc(
             &mut self.pool,
@@ -304,8 +306,8 @@ impl WUTBuddy<role::Local> {
         if self.total_occupied_slots() > slots.cap_data.size {
             return Err(UTBuddyError::NotEnoughSlots);
         }
-        // N.B. We could be reclaiming the emptied local slots for future use, but are currently not
-        // purely for implementation-time-and-complexity reasons.
+        // N.B. We could be reclaiming the emptied local slots for future use, but are
+        // currently not purely for implementation-time-and-complexity reasons.
         let mut child_pool = make_pool();
         for (i, (local_bucket, child_bucket)) in
             (0..MaxUntypedSize::U8).zip(self.pool.iter().zip(child_pool.iter_mut()))
@@ -319,7 +321,8 @@ impl WUTBuddy<role::Local> {
                     cptr: *local_ut_cptr,
                     cap_data: WUntyped {
                         size_bits,
-                        // Note the strong assumption that WUTBuddy only represents memory_kind::General
+                        // Note the strong assumption that WUTBuddy only represents
+                        // memory_kind::General
                         kind: memory_kind::General,
                     },
                     _role: PhantomData,
@@ -379,7 +382,7 @@ fn alloc(
                 )
             }
             .as_result()
-            .map_err(|e| SeL4Error::UntypedRetype(e))?;
+            .map_err(SeL4Error::UntypedRetype)?;
 
             pool[usize::from(i) - 1].push(slot_offset);
             pool[usize::from(i) - 1].push(slot_offset + 1);
@@ -416,11 +419,16 @@ impl From<super::micro_alloc::Allocator> for WUTBuddy<role::Local> {
 
 fn make_pool() -> [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE] {
     unsafe {
-        let mut pool: [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE] =
-            core::mem::uninitialized();
+        let mut pool: [mem::MaybeUninit<ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>>;
+            MaxUntypedSize::USIZE] = mem::MaybeUninit::uninit().assume_init();
+        // Dropping a `MaybeUninit` does nothing. Thus using raw pointer
+        // assignment instead of `ptr::write` does not cause the old
+        // uninitialized value to be dropped.
         for p in pool.iter_mut() {
-            core::ptr::write(p, ArrayVec::default());
+            p.write(ArrayVec::default());
         }
-        pool
+        mem::transmute::<_, [ArrayVec<[usize; UTPoolSlotsPerSize::USIZE]>; MaxUntypedSize::USIZE]>(
+            pool,
+        )
     }
 }

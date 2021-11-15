@@ -19,8 +19,7 @@ use super::*;
 ///  * Initial process state (e.g. parameter data) written into a
 ///    `seL4_UserContext` and/or its stack.
 ///  * Said seL4_UserContext written into the TCB.
-///  * An IPC buffer and CSpace and fault handler associated with that
-///    TCB.
+///  * An IPC buffer and CSpace and fault handler associated with that TCB.
 pub struct StandardProcess<StackBitSize: Unsigned = DefaultStackBitSize> {
     tcb: LocalCap<ThreadControlBlock>,
     _stack_bit_size: PhantomData<StackBitSize>,
@@ -135,15 +134,12 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
             }
         };
 
-        // TODO - Probably ought to suspend or destroy the thread instead of endlessly yielding
-        match entry_point {
+        // TODO - Probably ought to suspend or destroy the thread instead of endlessly
+        // yielding
+        if let EntryPoint::Fork(_) = entry_point {
             // This doesn't work for elf procs, since yield_forever isn't there
-            EntryPoint::Fork(_) => {
-                set_thread_link_register(&mut registers, yield_forever);
-                ()
-            }
-            _ => (),
-        };
+            set_thread_link_register(&mut registers, yield_forever);
+        }
 
         // Reserve a guard page after the stack
         vspace.skip_pages(1)?;
@@ -164,7 +160,7 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
         tcb.configure(
             cspace,
             fault_source,
-            &vspace.root(),
+            vspace.root(),
             Some(ipc_buffer.to_page()),
         )?;
         unsafe {
@@ -206,13 +202,13 @@ impl<StackBitSize: Unsigned> StandardProcess<StackBitSize> {
     ) -> Result<(), SeL4Error> {
         unsafe { seL4_TCB_BindNotification(self.tcb.cptr, notification.cptr) }
             .as_result()
-            .map_err(|e| SeL4Error::TCBBindNotification(e))
+            .map_err(SeL4Error::TCBBindNotification)
     }
 
     pub fn start(&mut self) -> Result<(), SeL4Error> {
         unsafe { seL4_TCB_Resume(self.tcb.cptr) }
             .as_result()
-            .map_err(|e| SeL4Error::TCBResume(e))
+            .map_err(SeL4Error::TCBResume)
     }
 
     pub fn elim(self) -> usize {

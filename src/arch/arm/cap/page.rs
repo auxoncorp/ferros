@@ -31,13 +31,13 @@ impl LocalCap<Page<page_state::Unmapped>> {
             vm_attributes,
         )
         .as_result()
-        .map_err(|e| SeL4Error::PageMap(e))
+        .map_err(SeL4Error::PageMap)
     }
 }
 
 impl LocalCap<Page<page_state::Mapped>> {
-    /// Keeping this non-public in order to restrict mapping operations to owners
-    /// of a VSpace-related object
+    /// Keeping this non-public in order to restrict mapping operations to
+    /// owners of a VSpace-related object
     pub(crate) fn unmap(self) -> Result<LocalCap<Page<page_state::Unmapped>>, SeL4Error> {
         if self.rights().is_writable() {
             unsafe {
@@ -48,7 +48,7 @@ impl LocalCap<Page<page_state::Mapped>> {
                 )
             }
             .as_result()
-            .map_err(|e| SeL4Error::PageCleanInvalidateData(e))?;
+            .map_err(SeL4Error::PageCleanInvalidateData)?;
         }
 
         match unsafe { seL4_ARM_Page_Unmap(self.cptr) }.as_result() {

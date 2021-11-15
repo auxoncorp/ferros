@@ -27,11 +27,7 @@ impl From<CapRights> for seL4_CapRights_t {
 impl CapRights {
     pub fn is_writable(&self) -> bool {
         use CapRights::*;
-
-        match self {
-            W | RW | RWG | WG => true,
-            _ => false,
-        }
+        matches!(self, W | RW | RWG | WG)
     }
 }
 
@@ -39,7 +35,7 @@ pub trait Rights: private::SealedRights {
     fn as_caprights() -> CapRights;
 }
 
-#[allow(unused)]
+#[allow(unused, clippy::module_inception)]
 pub mod rights {
     use super::*;
 

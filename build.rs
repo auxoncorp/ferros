@@ -24,10 +24,12 @@ fn main() {
 }
 
 fn generate_root_task_stack_types(out_dir: &Path, config: &Contextualized) {
-    // TODO - check against target-pointer-width or similar for 32/64 bit differences and panic if unsupported
-    // Gleaned from: sel4/kernel/include/arch/arm/arch/32/mode/api/constants.h
-    // TODO - instead of calculating these now, we would much rather prefer to have typenum constants
-    // generated from the selected headers (e.g. in bindgen, or based on the bindgen output)
+    // TODO - check against target-pointer-width or similar for 32/64 bit
+    // differences and panic if unsupported Gleaned from:
+    // sel4/kernel/include/arch/arm/arch/32/mode/api/constants.h TODO - instead
+    // of calculating these now, we would much rather prefer to have typenum
+    // constants generated from the selected headers (e.g. in bindgen, or based
+    // on the bindgen output)
     let page_table_bits = 8;
     let pages_per_table = 2u32.pow(page_table_bits);
     let page_bits = 12;
@@ -60,14 +62,14 @@ fn generate_root_task_stack_types(out_dir: &Path, config: &Contextualized) {
         stack_reserved_page_tables
     );
 
-    const FILE_NAME: &'static str = "ROOT_TASK_STACK_PAGE_TABLE_COUNT";
+    const FILE_NAME: &str = "ROOT_TASK_STACK_PAGE_TABLE_COUNT";
     let mut file = File::create(out_dir.join(FILE_NAME))
-        .expect(&format!("Could not create {} file", FILE_NAME));
+        .unwrap_or_else(|_| panic!("Could not create {} file", FILE_NAME));
     file.write_all(typenum_for_reserved_page_tables_count.as_bytes())
-        .expect(&format!("Could not write to {}", FILE_NAME))
+        .unwrap_or_else(|_| panic!("Could not write to {}", FILE_NAME));
 }
 fn generate_kernel_retype_fan_out_limit_types(out_dir: &Path, config: &Contextualized) {
-    const FANOUT_PROP: &'static str = "KernelRetypeFanOutLimit";
+    const FANOUT_PROP: &str = "KernelRetypeFanOutLimit";
     let kernel_retype_fan_out_limit = match config
         .sel4_config
         .get(FANOUT_PROP)
@@ -104,11 +106,11 @@ fn generate_kernel_retype_fan_out_limit_types(out_dir: &Path, config: &Contextua
         "pub type {} = typenum::U{};",
         FANOUT_PROP, kernel_retype_fan_out_limit
     );
-    const FILE_NAME: &'static str = "KERNEL_RETYPE_FAN_OUT_LIMIT";
+    const FILE_NAME: &str = "KERNEL_RETYPE_FAN_OUT_LIMIT";
     let mut file = File::create(out_dir.join(FILE_NAME))
-        .expect(&format!("Could not create {} file", FILE_NAME));
+        .unwrap_or_else(|_| panic!("Could not create {} file", FILE_NAME));
     file.write_all(limit_type.as_bytes())
-        .expect(&format!("Could not write to {}", FILE_NAME))
+        .unwrap_or_else(|_| panic!("Could not write to {}", FILE_NAME));
 }
 
 fn is_typenum_const(check: u64) -> bool {

@@ -25,6 +25,7 @@ struct SelfHostedParams<T, Role: CNodeRole> {
     child_main: extern "C" fn(VSpace<vspace_state::Imaged, role::Local>, T) -> (),
 }
 
+#[allow(improper_ctypes_definitions)] // Not FFI-safe, see #5
 extern "C" fn self_hosted_run<T>(sh_params: SelfHostedParams<T, role::Local>) {
     let SelfHostedParams {
         params,
@@ -100,7 +101,7 @@ impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
         tcb.configure(
             cspace,
             fault_source,
-            &vspace.root(),
+            vspace.root(),
             Some(ipc_buffer.to_page()),
         )?;
 
@@ -184,6 +185,6 @@ impl<StackBitSize: Unsigned> SelfHostedProcess<StackBitSize> {
     pub fn start(self) -> Result<(), SeL4Error> {
         unsafe { seL4_TCB_Resume(self.tcb.cptr) }
             .as_result()
-            .map_err(|e| SeL4Error::TCBResume(e))
+            .map_err(SeL4Error::TCBResume)
     }
 }

@@ -27,15 +27,11 @@ pub mod page_state {
     }
     impl super::PageState for Mapped {
         fn offset_by(&self, bytes: usize) -> Option<Self> {
-            if let Some(b) = self.vaddr.checked_add(bytes) {
-                Some(Mapped {
-                    vaddr: b,
-                    asid: self.asid,
-                    rights: self.rights,
-                })
-            } else {
-                None
-            }
+            self.vaddr.checked_add(bytes).map(|b| Mapped {
+                vaddr: b,
+                asid: self.asid,
+                rights: self.rights,
+            })
         }
     }
 

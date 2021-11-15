@@ -71,7 +71,8 @@ where
     notification: Cap<Notification, Role>,
 }
 
-/// A multi-consumer that consumes interrupt-style notifications and from 1 queue
+/// A multi-consumer that consumes interrupt-style notifications and from 1
+/// queue
 ///
 /// Designed to be handed to a new process as a member of the
 /// initial thread parameters struct (see `VSpace::prepare_thread`).
@@ -86,7 +87,8 @@ where
     queue: QueueHandle<T, Role>,
 }
 
-/// A multi-consumer that consumes interrupt-style notifications and from 2 queues
+/// A multi-consumer that consumes interrupt-style notifications and from 2
+/// queues
 ///
 /// Designed to be handed to a new process as a member of the
 /// initial thread parameters struct (see `VSpace::prepare_thread`).
@@ -100,7 +102,8 @@ where
     queues: ((Badge, QueueHandle<E, Role>), (Badge, QueueHandle<F, Role>)),
 }
 
-/// A multi-consumer that consumes interrupt-style notifications and from 3 queues
+/// A multi-consumer that consumes interrupt-style notifications and from 3
+/// queues
 ///
 /// Designed to be handed to a new process as a member of the
 /// initial thread parameters struct (see `VSpace::prepare_thread`).
@@ -118,7 +121,8 @@ where
     ),
 }
 
-/// A multi-consumer that consumes interrupt-style notifications and from 4 queues
+/// A multi-consumer that consumes interrupt-style notifications and from 4
+/// queues
 ///
 /// Designed to be handed to a new process as a member of the
 /// initial thread parameters struct (see `VSpace::prepare_thread`).
@@ -243,17 +247,17 @@ where
         let notification =
             unbadged_notification.mint_inside_cnode(local_slot, CapRights::RWG, interrupt_badge)?;
 
-        // Make a new IRQHandler, link it to the notification and move both to the child CNode
+        // Make a new IRQHandler, link it to the notification and move both to the child
+        // CNode
         let (local_slot, _local_slots) = local_slots.alloc();
         let irq_handler = irq_control.create_handler(local_slot)?;
         let irq_handler = irq_handler.set_notification(&notification)?;
 
         let (consumer_slot, consumer_slots) = consumer_slots.alloc();
-        let irq_handler_in_child = irq_handler.move_to_slot(&local_cnode, consumer_slot)?;
+        let irq_handler_in_child = irq_handler.move_to_slot(local_cnode, consumer_slot)?;
 
         let (consumer_slot, _consumer_slots) = consumer_slots.alloc();
-        let notification_in_child =
-            notification.copy(&local_cnode, consumer_slot, CapRights::RW)?;
+        let notification_in_child = notification.copy(local_cnode, consumer_slot, CapRights::RW)?;
         Ok((
             InterruptConsumer {
                 irq_handler: irq_handler_in_child,
@@ -298,11 +302,10 @@ where
         let irq_handler = irq_handler.set_notification(&notification)?;
 
         let (consumer_slot, consumer_slots) = consumer_slots.alloc();
-        let irq_handler_in_child = irq_handler.move_to_slot(&local_cnode, consumer_slot)?;
+        let irq_handler_in_child = irq_handler.move_to_slot(local_cnode, consumer_slot)?;
 
         let (consumer_slot, _consumer_slots) = consumer_slots.alloc();
-        let notification_in_child =
-            notification.copy(&local_cnode, consumer_slot, CapRights::RW)?;
+        let notification_in_child = notification.copy(local_cnode, consumer_slot, CapRights::RW)?;
         let waker_setup = WakerSetup {
             interrupt_badge,
             // Construct a user-inaccessible copy of the local notification
@@ -365,9 +368,9 @@ where
         Pow<<EQueueSizeBits as Sub<PageBits>>::Output>:
             IsLessOrEqual<KernelRetypeFanOutLimit, Output = True>,
     {
-        // The consumer token should not have a vspace associated with it at all yet, since
-        // we have yet to require mapping any memory to it.
-        if let Some(_) = consumer_token.consumer_vspace_asid {
+        // The consumer token should not have a vspace associated with it at all yet,
+        // since we have yet to require mapping any memory to it.
+        if consumer_token.consumer_vspace_asid.is_some() {
             return Err(MultiConsumerError::ConsumerIdentityMismatch);
         }
         let (shared_region, consumer_shared_region) =
@@ -375,13 +378,14 @@ where
                 shared_region_ut,
                 local_vspace_scratch,
                 consumer_vspace,
-                &local_cnode,
+                local_cnode,
                 umr_slots,
                 shared_slots,
             )?;
         consumer_token.consumer_vspace_asid = Some(consumer_vspace.asid());
 
-        // Assumes we are using the one-hot style for identifying the interrupt badge index
+        // Assumes we are using the one-hot style for identifying the interrupt badge
+        // index
         let fresh_queue_badge = Badge::from(self.interrupt_badge.inner << 1);
         let producer_setup: ProducerSetup<E, ELen, EQueueSizeBits> = ProducerSetup {
             consumer_vspace_asid: consumer_vspace.asid(),
@@ -462,7 +466,7 @@ where
                 shared_region_ut,
                 local_vspace_scratch,
                 consumer_vspace,
-                &local_cnode,
+                local_cnode,
                 umr_slots,
                 shared_slots,
             )?;
@@ -471,7 +475,7 @@ where
             notification_ut.retype(notification_slot)?;
 
         let consumer_notification = local_notification.mint(
-            &local_cnode,
+            local_cnode,
             consumer_slot,
             CapRights::RWG,
             Badge::from(0x00), // Only for Wait'ing, no need to set badge bits
@@ -482,7 +486,7 @@ where
         let producer_setup: ProducerSetup<E, ELen, EQueueSizeBits> = ProducerSetup {
             consumer_vspace_asid: consumer_vspace.asid(),
             shared_region,
-            queue_badge: queue_badge,
+            queue_badge,
             // Construct a user-inaccessible copy of the local notification
             // purely for use in producing child-cnode-residing copies.
             notification: Cap {
@@ -579,7 +583,7 @@ where
                 shared_region_ut,
                 local_vspace_scratch,
                 consumer_vspace,
-                &local_cnode,
+                local_cnode,
                 umr_slots,
                 shared_slots,
             )?;
@@ -680,7 +684,7 @@ where
                 shared_region_ut,
                 local_vspace_scratch,
                 consumer_vspace,
-                &local_cnode,
+                local_cnode,
                 umr_slots,
                 shared_slots,
             )?;
@@ -782,7 +786,7 @@ where
                 shared_region_ut,
                 local_vspace_scratch,
                 consumer_vspace,
-                &local_cnode,
+                local_cnode,
                 umr_slots,
                 shared_slots,
             )?;
@@ -877,7 +881,6 @@ where
         // in order to reduces odds of the full ArrayQueue instance
         // materializing all at once on the local stack (potentially blowing it)
         ArrayQueue::<T>::new_at_ptr(aq_ptr, QLen::USIZE, size_of::<ArrayQueue<T>>());
-        core::mem::forget(aq_ptr);
     })?;
 
     let shared_region = region.to_shared();
@@ -898,7 +901,8 @@ where
 }
 
 /// Wrapper around the necessary capabilities for a given
-/// thread to awaken a multi-consumer to run the "non-queue-reading wakeup" path.
+/// thread to awaken a multi-consumer to run the "non-queue-reading wakeup"
+/// path.
 ///
 /// Designed to be handed to a new process as a member of the
 /// initial thread parameters struct (see `VSpace::prepare_thread`).
@@ -1386,12 +1390,12 @@ impl<T: Sized + Sync + Send, Role: CNodeRole> Producer<Role, T> {
             CapRights::RW,
             arch::vm_attributes::DEFAULT,
             local_slots,
-            &local_cnode,
+            local_cnode,
         )?;
         let notification =
             setup
                 .notification
-                .mint(&local_cnode, dest_slot, CapRights::RWG, setup.queue_badge)?;
+                .mint(local_cnode, dest_slot, CapRights::RWG, setup.queue_badge)?;
         Ok(Producer {
             notification,
             queue: QueueHandle {
