@@ -89,7 +89,7 @@ ferros_test_main!(&[
 #[cfg(test_case = "uart")]
 fn main() {
     debug_println!("Starting the test!");
-    let bootinfo = unsafe { &*sel4_start::BOOTINFO };
+    let bootinfo = unsafe { &*selfe_start::BOOTINFO };
     run(bootinfo);
 }
 

@@ -72,7 +72,7 @@ Tests may be parameterized by arguments of the following types:
 ### Running Tests
 
 You execute tests by passing a slice of such-annotated functions to the  `execute_tests` helper function,
-supplied with test-resources extracted from a `seL4_BootInfo` object. [sel4-start](https://github.com/auxoncorp/selfe-sys/tree/master/example_application/sel4-start) is one way to get
+supplied with test-resources extracted from a `seL4_BootInfo` object. [selfe-start](https://github.com/auxoncorp/selfe-sys/tree/master/example_application/selfe-start) is one way to get
 a handle on a boot info object.
 
 ```rust
@@ -80,7 +80,7 @@ a handle on a boot info object.
 use ferros::test_support::{execute_tests, Resources};
 
 fn main() {
-    let raw_boot_info = unsafe { &*sel4_start::BOOTINFO };
+    let raw_boot_info = unsafe { &*selfe_start::BOOTINFO };
     let (mut resources, reporter) = Resources::with_debug_reporting(raw_boot_info)
         .expect("Test resource setup failed");
     execute_tests(
@@ -101,7 +101,7 @@ the outcome of executing the tests should be printed.
 See the `minimal` application in the examples subdirectory for a full demonstration.
 
 For a simplified harness that uses `selfe_sys::DebugPutChar` based reporting
-and relies on `sel4-start` to acquire a boot info and manage panics, consider 
+and relies on `selfe-start` to acquire a boot info and manage panics, consider 
 using the `ferros_test_main` macro.
 
 ```rust
@@ -149,6 +149,6 @@ test seL4 harnesses. Some likely changes to support this would be:
  * Adjust the `#[ferros_test]` macro to export `#[test_case]` as a decorating attribute for the output function
    * This gives us automatic test gathering so the harness need no longer explicitly receive a list of tests to run
  * Move the test harness setup shown in the Usage section above to an independent custom-test-harness framework subcrate.
-   * This test harness subcrate will likely also pull in (or depend upon) sel4-start like functionality directly
+   * This test harness subcrate will likely also pull in (or depend upon) selfe-start like functionality directly
  * Expand the use of feature-flagging to parameterize harness/framework fit-to-platform-under-test rather
  than leaning on end-user manual selection of desired reporting strategy.
