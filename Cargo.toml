@@ -10,7 +10,7 @@ default = []
 test_support = []
 
 [dependencies]
-selfe-sys = { git = "https://github.com/auxoncorp/selfe-sys" }
+selfe-sys = "0.1"
 typenum = "1.10"
 generic-array = "0.13.2"
 cross_queue = { path = "./cross_queue" }
@@ -23,4 +23,4 @@ version = "0.4.10"
 default-features = false
 
 [build-dependencies]
-selfe-config = { git = "https://github.com/auxoncorp/selfe-sys" }
+selfe-config = "0.2"

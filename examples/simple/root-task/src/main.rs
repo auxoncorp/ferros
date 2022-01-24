@@ -27,7 +27,7 @@ mod resources {
 }
 
 fn main() {
-    let raw_bootinfo = unsafe { &*sel4_start::BOOTINFO };
+    let raw_bootinfo = unsafe { &*selfe_start::BOOTINFO };
     run(raw_bootinfo).expect("Failed to run root task setup");
 }
 

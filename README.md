@@ -37,7 +37,7 @@ use ferros::alloc::{self, micro_alloc, smart_alloc};
 use ferros::userland::{root_cnode, BootInfo};
 
 // The raw boot info is provided by the sel4_start library
-let raw_boot_info: &'static selfe_sys::seL4_BootInfo = unsafe { &*sel4_start::BOOTINFO };
+let raw_boot_info: &'static selfe_sys::seL4_BootInfo = unsafe { &*selfe_start::BOOTINFO };
 
 
 // Utility for finding and claiming `Untyped` instances supplied by the boot info.

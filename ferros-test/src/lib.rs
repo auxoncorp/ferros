@@ -6,7 +6,7 @@ pub use test_macro_impl::ferros_test;
 #[cfg(feature = "sel4_start_main")]
 #[doc(hidden)]
 pub fn sel4_start_main(tests: &[&ferros::test_support::RunTest]) {
-    let raw_boot_info = unsafe { &*sel4_start::BOOTINFO };
+    let raw_boot_info = unsafe { &*selfe_start::BOOTINFO };
     let allocator = ferros::alloc::micro_alloc::Allocator::bootstrap(raw_boot_info)
         .expect("Test allocator setup failure");
     let (mut resources, reporter) =
@@ -21,7 +21,7 @@ pub fn sel4_start_main(tests: &[&ferros::test_support::RunTest]) {
     if suspend_error != 0 {
         use core::fmt::Write;
         writeln!(
-            sel4_start::DebugOutHandle,
+            selfe_start::DebugOutHandle,
             "Error suspending root task thread: {}",
             suspend_error
         )

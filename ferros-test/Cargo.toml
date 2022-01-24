@@ -7,17 +7,17 @@ resolver = "2"
 
 [features]
 default = ["sel4_start_main"]
-sel4_start_main = ["sel4-start/panic_handler", "ferros", "selfe-sys"]
+sel4_start_main = ["selfe-start/panic_handler", "ferros", "selfe-sys"]
 
 [dependencies]
 test-macro-impl = { path = "./test-macro-impl" }
 
 [dependencies.selfe-sys]
-git = "https://github.com/auxoncorp/selfe-sys"
+version = "0.1"
 optional = true
 
-[dependencies.sel4-start]
-git = "https://github.com/auxoncorp/selfe-sys"
+[dependencies.selfe-start]
+version = "0.1"
 optional = true
 
 [dependencies.ferros]

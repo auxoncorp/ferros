@@ -30,7 +30,7 @@ A `ferros` example system that runs on the Boundary Devices SABRE Lite i.MX6 Dev
 
 * [selfe](https://github.com/auxoncorp/selfe-sys)
     ```bash
-    cargo install --git https://github.com/auxoncorp/selfe-sys selfe-config --bin selfe --features bin --force
+    cargo install selfe-config --bin selfe --features bin --force
     ```
 
 ## Build

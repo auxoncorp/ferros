@@ -6,6 +6,6 @@ edition = "2018"
 resolver = "2"
 
 [dependencies]
-selfe-arc = { git = "https://github.com/auxoncorp/selfe-sys" }
+selfe-arc = "0.1"
 xmas-elf = "0.7"
 memmap = "0.7"
